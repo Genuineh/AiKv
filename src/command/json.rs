@@ -60,8 +60,8 @@ impl JsonCommands {
         // Parse options
         let mut nx = false;
         let mut xx = false;
-        for i in 3..args.len() {
-            let option = String::from_utf8_lossy(&args[i]).to_uppercase();
+        for arg in args.iter().skip(3) {
+            let option = String::from_utf8_lossy(arg).to_uppercase();
             match option.as_str() {
                 "NX" => nx = true,
                 "XX" => xx = true,
