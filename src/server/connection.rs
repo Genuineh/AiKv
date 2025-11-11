@@ -33,14 +33,9 @@ impl Connection {
             }
 
             // Parse and process commands
-            loop {
-                match self.parser.parse()? {
-                    Some(value) => {
-                        let response = self.process_command(value).await;
-                        self.write_response(response).await?;
-                    }
-                    None => break, // Need more data
-                }
+            while let Some(value) = self.parser.parse()? {
+                let response = self.process_command(value).await;
+                self.write_response(response).await?;
             }
         }
     }

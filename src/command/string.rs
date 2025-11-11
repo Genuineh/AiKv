@@ -60,16 +60,12 @@ impl StringCommands {
         }
 
         // Check conditions
-        if nx {
-            if self.storage.exists(&key)? {
-                return Ok(RespValue::null_bulk_string());
-            }
+        if nx && self.storage.exists(&key)? {
+            return Ok(RespValue::null_bulk_string());
         }
 
-        if xx {
-            if !self.storage.exists(&key)? {
-                return Ok(RespValue::null_bulk_string());
-            }
+        if xx && !self.storage.exists(&key)? {
+            return Ok(RespValue::null_bulk_string());
         }
 
         self.storage.set(key, value)?;
@@ -135,7 +131,7 @@ impl StringCommands {
 
     /// MSET key value [key value ...]
     pub fn mset(&self, args: &[Bytes]) -> Result<RespValue> {
-        if args.is_empty() || args.len() % 2 != 0 {
+        if args.is_empty() || !args.len().is_multiple_of(2) {
             return Err(AikvError::WrongArgCount("MSET".to_string()));
         }
 

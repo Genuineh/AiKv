@@ -1,5 +1,5 @@
 use aikv::Server;
-use tracing_subscriber;
+use tracing_subscriber::{self};
 
 #[tokio::main]
 async fn main() {

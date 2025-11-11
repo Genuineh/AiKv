@@ -27,7 +27,7 @@ fn main() -> redis::RedisResult<()> {
     println!("=== Testing String Commands ===");
 
     // SET and GET
-    con.set("mykey", "Hello World")?;
+    con.set::<_, _, ()>("mykey", "Hello World")?;
     let value: String = con.get("mykey")?;
     println!("SET mykey 'Hello World'");
     println!("GET mykey -> {}\n", value);
