@@ -1,12 +1,14 @@
 pub mod database;
 pub mod json;
 pub mod key;
+pub mod script;
 pub mod server;
 pub mod string;
 
 use self::database::DatabaseCommands;
 use self::json::JsonCommands;
 use self::key::KeyCommands;
+use self::script::ScriptCommands;
 use self::server::ServerCommands;
 use self::string::StringCommands;
 use crate::error::{AikvError, Result};
@@ -21,6 +23,7 @@ pub struct CommandExecutor {
     database_commands: DatabaseCommands,
     key_commands: KeyCommands,
     server_commands: ServerCommands,
+    script_commands: ScriptCommands,
 }
 
 impl CommandExecutor {
@@ -31,6 +34,7 @@ impl CommandExecutor {
             database_commands: DatabaseCommands::new(storage.clone()),
             key_commands: KeyCommands::new(storage.clone()),
             server_commands: ServerCommands::new(),
+            script_commands: ScriptCommands::new(storage),
         }
     }
 
@@ -117,6 +121,26 @@ impl CommandExecutor {
                     "GETNAME" => self.server_commands.client_getname(&args[1..], client_id),
                     _ => Err(AikvError::InvalidCommand(format!(
                         "Unknown CLIENT subcommand: {}",
+                        subcommand
+                    ))),
+                }
+            }
+
+            // Script commands
+            "EVAL" => self.script_commands.eval(args, *current_db),
+            "EVALSHA" => self.script_commands.evalsha(args, *current_db),
+            "SCRIPT" => {
+                if args.is_empty() {
+                    return Err(AikvError::WrongArgCount("SCRIPT".to_string()));
+                }
+                let subcommand = String::from_utf8_lossy(&args[0]).to_uppercase();
+                match subcommand.as_str() {
+                    "LOAD" => self.script_commands.script_load(&args[1..]),
+                    "EXISTS" => self.script_commands.script_exists(&args[1..]),
+                    "FLUSH" => self.script_commands.script_flush(&args[1..]),
+                    "KILL" => self.script_commands.script_kill(&args[1..]),
+                    _ => Err(AikvError::InvalidCommand(format!(
+                        "Unknown SCRIPT subcommand: {}",
                         subcommand
                     ))),
                 }
