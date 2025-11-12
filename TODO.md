@@ -239,12 +239,12 @@
 - [ ] `PUBSUB` - 查询订阅信息
 
 ### 6.3 Lua 脚本
-- [ ] `EVAL` - 执行脚本
-- [ ] `EVALSHA` - 执行缓存脚本
-- [ ] `SCRIPT LOAD` - 加载脚本
-- [ ] `SCRIPT EXISTS` - 检查脚本存在
-- [ ] `SCRIPT FLUSH` - 清空脚本缓存
-- [ ] `SCRIPT KILL` - 终止脚本
+- [x] `EVAL` - 执行脚本
+- [x] `EVALSHA` - 执行缓存脚本
+- [x] `SCRIPT LOAD` - 加载脚本
+- [x] `SCRIPT EXISTS` - 检查脚本存在
+- [x] `SCRIPT FLUSH` - 清空脚本缓存
+- [x] `SCRIPT KILL` - 终止脚本
 
 ### 6.4 Stream 流数据类型
 - [ ] `XADD` - 添加消息

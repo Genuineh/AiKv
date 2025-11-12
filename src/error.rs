@@ -32,6 +32,9 @@ pub enum AikvError {
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
+    #[error("Script error: {0}")]
+    Script(String),
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }
