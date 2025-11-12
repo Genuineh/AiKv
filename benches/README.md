@@ -40,6 +40,8 @@ Basic performance benchmarks covering:
 - **RESP Parsing**: Simple string, integer, bulk string, array
 - **Storage Operations**: SET, GET, EXISTS, DELETE
 - **Multi-Key Operations**: MSET/MGET with 10, 100, 1000 keys
+- **JSON Operations**: JSON.SET, JSON.GET, JSON.TYPE, JSON.STRLEN, JSON.ARRLEN, JSON.OBJLEN, JSON.DEL
+- **JSON Data Sizes**: JSON operations with arrays and objects of different sizes (10, 100, 1000 elements)
 
 ### comprehensive_benchmark.rs
 Advanced performance benchmarks covering:

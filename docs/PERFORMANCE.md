@@ -37,6 +37,20 @@
 - MSET (1000 keys): ~79.4 µs
 - MGET (1000 keys): ~40.6 µs
 
+#### JSON Operations:
+JSON command benchmarks have been added to measure performance of JSON operations:
+- JSON.SET (simple object)
+- JSON.SET (nested object)
+- JSON.GET (root path)
+- JSON.GET (with path extraction)
+- JSON.TYPE
+- JSON.STRLEN
+- JSON.ARRLEN
+- JSON.OBJLEN
+- JSON.DEL
+
+Benchmarks include different data sizes (10, 100, 1000 elements) for both arrays and objects.
+
 ### Benchmark Infrastructure
 
 ✅ **Completed**:
@@ -54,7 +68,13 @@
    - Memory allocation patterns
    - RESP3 type benchmarks
 
-3. Integration with existing benchmarks
+3. Enhanced `benches/aikv_benchmark.rs` with JSON command benchmarks
+   - JSON.SET/GET operations with simple and nested objects
+   - JSON.TYPE, JSON.STRLEN, JSON.ARRLEN, JSON.OBJLEN operations
+   - JSON.DEL operation
+   - Different data sizes (10, 100, 1000 elements) for arrays and objects
+
+4. Integration with existing benchmarks
    - Added new benchmark to Cargo.toml
    - Compatible with `cargo bench` workflow
    - HTML report generation via Criterion
