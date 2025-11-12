@@ -3,6 +3,7 @@
 //! These benchmarks measure the performance of various operations in AiKv.
 //! Run with: `cargo bench`
 
+use aikv::command::json::JsonCommands;
 use aikv::protocol::parser::RespParser;
 use aikv::protocol::types::RespValue;
 use aikv::storage::StorageAdapter;
@@ -183,11 +184,287 @@ fn bench_multi_key_operations(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark JSON operations
+fn bench_json_operations(c: &mut Criterion) {
+    let mut group = c.benchmark_group("json_operations");
+
+    // Benchmark JSON.SET with simple object
+    group.bench_function("json_set_simple", |b| {
+        let json_cmd = JsonCommands::new(StorageAdapter::new());
+        let json_str = r#"{"name":"John","age":30}"#;
+        b.iter(|| {
+            json_cmd
+                .json_set(
+                    &[
+                        black_box(Bytes::from("user")),
+                        black_box(Bytes::from("$")),
+                        black_box(Bytes::from(json_str)),
+                    ],
+                    0,
+                )
+                .unwrap()
+        });
+    });
+
+    // Benchmark JSON.SET with nested object
+    group.bench_function("json_set_nested", |b| {
+        let json_cmd = JsonCommands::new(StorageAdapter::new());
+        let json_str =
+            r#"{"user":{"name":"John","age":30,"address":{"city":"NYC","zip":"10001"}}}"#;
+        b.iter(|| {
+            json_cmd
+                .json_set(
+                    &[
+                        black_box(Bytes::from("data")),
+                        black_box(Bytes::from("$")),
+                        black_box(Bytes::from(json_str)),
+                    ],
+                    0,
+                )
+                .unwrap()
+        });
+    });
+
+    // Benchmark JSON.GET
+    group.bench_function("json_get", |b| {
+        let json_cmd = JsonCommands::new(StorageAdapter::new());
+        let json_str = r#"{"name":"John","age":30}"#;
+        json_cmd
+            .json_set(
+                &[Bytes::from("user"), Bytes::from("$"), Bytes::from(json_str)],
+                0,
+            )
+            .unwrap();
+        b.iter(|| {
+            json_cmd
+                .json_get(&[black_box(Bytes::from("user"))], 0)
+                .unwrap()
+        });
+    });
+
+    // Benchmark JSON.GET with path
+    group.bench_function("json_get_path", |b| {
+        let json_cmd = JsonCommands::new(StorageAdapter::new());
+        let json_str = r#"{"user":{"name":"John","age":30}}"#;
+        json_cmd
+            .json_set(
+                &[Bytes::from("data"), Bytes::from("$"), Bytes::from(json_str)],
+                0,
+            )
+            .unwrap();
+        b.iter(|| {
+            json_cmd
+                .json_get(
+                    &[
+                        black_box(Bytes::from("data")),
+                        black_box(Bytes::from("$.user.name")),
+                    ],
+                    0,
+                )
+                .unwrap()
+        });
+    });
+
+    // Benchmark JSON.TYPE
+    group.bench_function("json_type", |b| {
+        let json_cmd = JsonCommands::new(StorageAdapter::new());
+        let json_str = r#"{"name":"John","age":30,"active":true}"#;
+        json_cmd
+            .json_set(
+                &[Bytes::from("user"), Bytes::from("$"), Bytes::from(json_str)],
+                0,
+            )
+            .unwrap();
+        b.iter(|| {
+            json_cmd
+                .json_type(
+                    &[
+                        black_box(Bytes::from("user")),
+                        black_box(Bytes::from("$.name")),
+                    ],
+                    0,
+                )
+                .unwrap()
+        });
+    });
+
+    // Benchmark JSON.STRLEN
+    group.bench_function("json_strlen", |b| {
+        let json_cmd = JsonCommands::new(StorageAdapter::new());
+        let json_str = r#"{"name":"John Doe","age":30}"#;
+        json_cmd
+            .json_set(
+                &[Bytes::from("user"), Bytes::from("$"), Bytes::from(json_str)],
+                0,
+            )
+            .unwrap();
+        b.iter(|| {
+            json_cmd
+                .json_strlen(
+                    &[
+                        black_box(Bytes::from("user")),
+                        black_box(Bytes::from("$.name")),
+                    ],
+                    0,
+                )
+                .unwrap()
+        });
+    });
+
+    // Benchmark JSON.ARRLEN
+    group.bench_function("json_arrlen", |b| {
+        let json_cmd = JsonCommands::new(StorageAdapter::new());
+        let json_str = "[1,2,3,4,5,6,7,8,9,10]";
+        json_cmd
+            .json_set(
+                &[Bytes::from("arr"), Bytes::from("$"), Bytes::from(json_str)],
+                0,
+            )
+            .unwrap();
+        b.iter(|| {
+            json_cmd
+                .json_arrlen(&[black_box(Bytes::from("arr"))], 0)
+                .unwrap()
+        });
+    });
+
+    // Benchmark JSON.OBJLEN
+    group.bench_function("json_objlen", |b| {
+        let json_cmd = JsonCommands::new(StorageAdapter::new());
+        let json_str = r#"{"a":1,"b":2,"c":3,"d":4,"e":5}"#;
+        json_cmd
+            .json_set(
+                &[Bytes::from("obj"), Bytes::from("$"), Bytes::from(json_str)],
+                0,
+            )
+            .unwrap();
+        b.iter(|| {
+            json_cmd
+                .json_objlen(&[black_box(Bytes::from("obj"))], 0)
+                .unwrap()
+        });
+    });
+
+    // Benchmark JSON.DEL
+    group.bench_function("json_del", |b| {
+        b.iter_batched(
+            || {
+                let json_cmd = JsonCommands::new(StorageAdapter::new());
+                let json_str = r#"{"name":"John","age":30}"#;
+                json_cmd
+                    .json_set(
+                        &[Bytes::from("user"), Bytes::from("$"), Bytes::from(json_str)],
+                        0,
+                    )
+                    .unwrap();
+                json_cmd
+            },
+            |json_cmd| {
+                json_cmd
+                    .json_del(&[black_box(Bytes::from("user"))], 0)
+                    .unwrap()
+            },
+            criterion::BatchSize::SmallInput,
+        );
+    });
+
+    group.finish();
+}
+
+/// Benchmark JSON operations with different data sizes
+fn bench_json_data_sizes(c: &mut Criterion) {
+    let mut group = c.benchmark_group("json_data_sizes");
+
+    for size in [10, 100, 1000].iter() {
+        // Benchmark JSON.SET with arrays of different sizes
+        group.bench_with_input(
+            BenchmarkId::new("json_set_array", size),
+            size,
+            |b, &size| {
+                let json_cmd = JsonCommands::new(StorageAdapter::new());
+                let array: Vec<i32> = (0..size).collect();
+                let json_str = serde_json::to_string(&array).unwrap();
+                b.iter(|| {
+                    json_cmd
+                        .json_set(
+                            &[
+                                black_box(Bytes::from("arr")),
+                                black_box(Bytes::from("$")),
+                                black_box(Bytes::from(json_str.clone())),
+                            ],
+                            0,
+                        )
+                        .unwrap()
+                });
+            },
+        );
+
+        // Benchmark JSON.GET with arrays of different sizes
+        group.bench_with_input(
+            BenchmarkId::new("json_get_array", size),
+            size,
+            |b, &size| {
+                let json_cmd = JsonCommands::new(StorageAdapter::new());
+                let array: Vec<i32> = (0..size).collect();
+                let json_str = serde_json::to_string(&array).unwrap();
+                json_cmd
+                    .json_set(
+                        &[
+                            Bytes::from("arr"),
+                            Bytes::from("$"),
+                            Bytes::from(json_str.clone()),
+                        ],
+                        0,
+                    )
+                    .unwrap();
+                b.iter(|| {
+                    json_cmd
+                        .json_get(&[black_box(Bytes::from("arr"))], 0)
+                        .unwrap()
+                });
+            },
+        );
+
+        // Benchmark JSON.SET with objects of different sizes
+        group.bench_with_input(
+            BenchmarkId::new("json_set_object", size),
+            size,
+            |b, &size| {
+                let json_cmd = JsonCommands::new(StorageAdapter::new());
+                let mut obj = serde_json::Map::new();
+                for i in 0..size {
+                    obj.insert(
+                        format!("key_{}", i),
+                        serde_json::json!(format!("value_{}", i)),
+                    );
+                }
+                let json_str = serde_json::to_string(&obj).unwrap();
+                b.iter(|| {
+                    json_cmd
+                        .json_set(
+                            &[
+                                black_box(Bytes::from("obj")),
+                                black_box(Bytes::from("$")),
+                                black_box(Bytes::from(json_str.clone())),
+                            ],
+                            0,
+                        )
+                        .unwrap()
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_resp_encoding,
     bench_resp_parsing,
     bench_storage_operations,
-    bench_multi_key_operations
+    bench_multi_key_operations,
+    bench_json_operations,
+    bench_json_data_sizes
 );
 criterion_main!(benches);
