@@ -186,12 +186,7 @@ fn test_eval_redis_call() {
 
     // Verify the value was actually stored
     let result = executor
-        .execute(
-            "GET",
-            &[Bytes::from("mykey")],
-            &mut current_db,
-            client_id,
-        )
+        .execute("GET", &[Bytes::from("mykey")], &mut current_db, client_id)
         .unwrap();
 
     if let RespValue::BulkString(Some(value)) = result {
@@ -301,7 +296,12 @@ fn test_script_flush() {
 
     // Flush all scripts
     let result = executor
-        .execute("SCRIPT", &[Bytes::from("FLUSH")], &mut current_db, client_id)
+        .execute(
+            "SCRIPT",
+            &[Bytes::from("FLUSH")],
+            &mut current_db,
+            client_id,
+        )
         .unwrap();
 
     assert_eq!(result, RespValue::simple_string("OK"));
