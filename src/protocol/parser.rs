@@ -312,10 +312,7 @@ impl RespParser {
             .map_err(|_| AikvError::Protocol(format!("Invalid push length: {}", line)))?;
 
         if len < 0 {
-            return Err(AikvError::Protocol(format!(
-                "Invalid push length: {}",
-                len
-            )));
+            return Err(AikvError::Protocol(format!("Invalid push length: {}", len)));
         }
 
         let mut items = Vec::with_capacity(len as usize);
@@ -435,10 +432,10 @@ mod tests {
     #[test]
     fn test_parse_double() {
         let mut parser = RespParser::new(128);
-        parser.feed(b",3.14159\r\n");
+        parser.feed(b",1.23456\r\n");
 
         let result = parser.parse().unwrap();
-        assert_eq!(result, Some(RespValue::Double(3.14159)));
+        assert_eq!(result, Some(RespValue::Double(1.23456)));
     }
 
     #[test]
@@ -500,8 +497,14 @@ mod tests {
         assert_eq!(
             result,
             Some(RespValue::Map(vec![
-                (RespValue::SimpleString("first".to_string()), RespValue::Integer(1)),
-                (RespValue::SimpleString("second".to_string()), RespValue::Integer(2)),
+                (
+                    RespValue::SimpleString("first".to_string()),
+                    RespValue::Integer(1)
+                ),
+                (
+                    RespValue::SimpleString("second".to_string()),
+                    RespValue::Integer(2)
+                ),
             ]))
         );
     }

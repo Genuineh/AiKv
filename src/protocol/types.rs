@@ -188,7 +188,10 @@ impl RespValue {
                 let bytes = e.as_bytes();
                 Bytes::from(format!("!{}\r\n{}\r\n", bytes.len(), e))
             }
-            RespValue::VerbatimString { format, data } => {
+            RespValue::VerbatimString {
+                format,
+                data,
+            } => {
                 let total_len = format.len() + 1 + data.len(); // format + ':' + data
                 let mut result = format!("={}\r\n{}:", total_len, format);
                 result.push_str(&String::from_utf8_lossy(data));
@@ -294,8 +297,8 @@ mod tests {
 
     #[test]
     fn test_double() {
-        let val = RespValue::double(3.14159);
-        assert_eq!(val.serialize(), Bytes::from(",3.14159\r\n"));
+        let val = RespValue::double(1.23456);
+        assert_eq!(val.serialize(), Bytes::from(",1.23456\r\n"));
     }
 
     #[test]
