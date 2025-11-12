@@ -45,3 +45,7 @@ path = "src/main.rs"
 [[bench]]
 name = "aikv_benchmark"
 harness = false
+
+[[bench]]
+name = "comprehensive_benchmark"
+harness = false
