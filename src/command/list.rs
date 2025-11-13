@@ -45,7 +45,8 @@ impl ListCommands {
         };
 
         let len = list.len();
-        self.storage.set_value(db_index, key, StoredValue::new_list(list))?;
+        self.storage
+            .set_value(db_index, key, StoredValue::new_list(list))?;
         Ok(RespValue::Integer(len as i64))
     }
 
@@ -78,7 +79,8 @@ impl ListCommands {
         };
 
         let len = list.len();
-        self.storage.set_value(db_index, key, StoredValue::new_list(list))?;
+        self.storage
+            .set_value(db_index, key, StoredValue::new_list(list))?;
         Ok(RespValue::Integer(len as i64))
     }
 
@@ -100,22 +102,23 @@ impl ListCommands {
 
         // Migrated: Logic moved from storage layer to command layer
         let mut values = Vec::new();
-        
+
         if let Some(stored) = self.storage.get_value(db_index, &key)? {
             let mut list = stored.as_list()?.clone();
-            
+
             // Pop elements from the front
             for _ in 0..count.min(list.len()) {
                 if let Some(value) = list.pop_front() {
                     values.push(value);
                 }
             }
-            
+
             // Update or delete the list
             if list.is_empty() {
                 self.storage.delete_from_db(db_index, &key)?;
             } else {
-                self.storage.set_value(db_index, key, StoredValue::new_list(list))?;
+                self.storage
+                    .set_value(db_index, key, StoredValue::new_list(list))?;
             }
         }
 
@@ -148,22 +151,23 @@ impl ListCommands {
 
         // Migrated: Logic moved from storage layer to command layer
         let mut values = Vec::new();
-        
+
         if let Some(stored) = self.storage.get_value(db_index, &key)? {
             let mut list = stored.as_list()?.clone();
-            
+
             // Pop elements from the back
             for _ in 0..count.min(list.len()) {
                 if let Some(value) = list.pop_back() {
                     values.push(value);
                 }
             }
-            
+
             // Update or delete the list
             if list.is_empty() {
                 self.storage.delete_from_db(db_index, &key)?;
             } else {
-                self.storage.set_value(db_index, key, StoredValue::new_list(list))?;
+                self.storage
+                    .set_value(db_index, key, StoredValue::new_list(list))?;
             }
         }
 
@@ -186,14 +190,14 @@ impl ListCommands {
         }
 
         let key = String::from_utf8_lossy(&args[0]).to_string();
-        
+
         // Migrated: Logic moved from storage layer to command layer
         let len = if let Some(stored) = self.storage.get_value(db_index, &key)? {
             stored.as_list()?.len()
         } else {
             0
         };
-        
+
         Ok(RespValue::Integer(len as i64))
     }
 
@@ -216,7 +220,7 @@ impl ListCommands {
         let values = if let Some(stored) = self.storage.get_value(db_index, &key)? {
             let list = stored.as_list()?;
             let len = list.len() as i64;
-            
+
             if len == 0 {
                 Vec::new()
             } else {
@@ -226,13 +230,13 @@ impl ListCommands {
                 } else {
                     start.min(len) as usize
                 };
-                
+
                 let stop_idx = if stop < 0 {
                     (len + stop).max(0) as usize
                 } else {
                     stop.min(len - 1) as usize
                 };
-                
+
                 // Extract range
                 if start_idx > stop_idx || start_idx >= len as usize {
                     Vec::new()
@@ -247,7 +251,7 @@ impl ListCommands {
         } else {
             Vec::new()
         };
-        
+
         Ok(RespValue::Array(Some(
             values.into_iter().map(RespValue::bulk_string).collect(),
         )))
@@ -269,17 +273,13 @@ impl ListCommands {
         let value = if let Some(stored) = self.storage.get_value(db_index, &key)? {
             let list = stored.as_list()?;
             let len = list.len() as i64;
-            
+
             if len == 0 {
                 None
             } else {
                 // Normalize negative index
-                let idx = if index < 0 {
-                    len + index
-                } else {
-                    index
-                };
-                
+                let idx = if index < 0 { len + index } else { index };
+
                 if idx >= 0 && idx < len {
                     list.get(idx as usize).cloned()
                 } else {
@@ -289,7 +289,7 @@ impl ListCommands {
         } else {
             None
         };
-        
+
         match value {
             Some(value) => Ok(RespValue::bulk_string(value)),
             None => Ok(RespValue::Null),
@@ -313,19 +313,16 @@ impl ListCommands {
         if let Some(stored) = self.storage.get_value(db_index, &key)? {
             let mut list = stored.as_list()?.clone();
             let len = list.len() as i64;
-            
+
             // Normalize negative index
-            let idx = if index < 0 {
-                len + index
-            } else {
-                index
-            };
-            
+            let idx = if index < 0 { len + index } else { index };
+
             if idx >= 0 && idx < len {
                 if let Some(elem) = list.get_mut(idx as usize) {
                     *elem = element;
                 }
-                self.storage.set_value(db_index, key, StoredValue::new_list(list))?;
+                self.storage
+                    .set_value(db_index, key, StoredValue::new_list(list))?;
                 Ok(RespValue::simple_string("OK"))
             } else {
                 Err(AikvError::InvalidArgument("index out of range".to_string()))
@@ -352,7 +349,7 @@ impl ListCommands {
         let removed = if let Some(stored) = self.storage.get_value(db_index, &key)? {
             let mut list = stored.as_list()?.clone();
             let mut removed_count = 0;
-            
+
             if count == 0 {
                 // Remove all occurrences
                 list.retain(|e| {
@@ -390,19 +387,20 @@ impl ListCommands {
                 }
                 list = new_list;
             }
-            
+
             // Update or delete the list
             if list.is_empty() {
                 self.storage.delete_from_db(db_index, &key)?;
             } else {
-                self.storage.set_value(db_index, key, StoredValue::new_list(list))?;
+                self.storage
+                    .set_value(db_index, key, StoredValue::new_list(list))?;
             }
-            
+
             removed_count
         } else {
             0
         };
-        
+
         Ok(RespValue::Integer(removed as i64))
     }
 
@@ -425,7 +423,7 @@ impl ListCommands {
         if let Some(stored) = self.storage.get_value(db_index, &key)? {
             let list = stored.as_list()?;
             let len = list.len() as i64;
-            
+
             if len == 0 {
                 // Empty list, just delete
                 self.storage.delete_from_db(db_index, &key)?;
@@ -436,29 +434,30 @@ impl ListCommands {
                 } else {
                     start.min(len) as usize
                 };
-                
+
                 let stop_idx = if stop < 0 {
                     (len + stop).max(0) as usize
                 } else {
                     stop.min(len - 1) as usize
                 };
-                
+
                 // Trim the list
                 if start_idx > stop_idx || start_idx >= len as usize {
                     // Result would be empty
                     self.storage.delete_from_db(db_index, &key)?;
                 } else {
-                    let trimmed: VecDeque<Bytes> = list.iter()
+                    let trimmed: VecDeque<Bytes> = list
+                        .iter()
                         .skip(start_idx)
                         .take(stop_idx - start_idx + 1)
                         .cloned()
                         .collect();
-                    self.storage.set_value(db_index, key, StoredValue::new_list(trimmed))?;
+                    self.storage
+                        .set_value(db_index, key, StoredValue::new_list(trimmed))?;
                 }
             }
         }
-        
+
         Ok(RespValue::simple_string("OK"))
     }
 }
-
