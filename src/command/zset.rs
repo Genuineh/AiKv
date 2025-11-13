@@ -1,7 +1,8 @@
 use crate::error::{AikvError, Result};
 use crate::protocol::RespValue;
-use crate::storage::StorageAdapter;
+use crate::storage::{StorageAdapter, StoredValue};
 use bytes::Bytes;
+use std::collections::BTreeMap;
 
 /// Sorted Set command handler
 pub struct ZSetCommands {
@@ -33,8 +34,30 @@ impl ZSetCommands {
             members.push((score, member));
         }
 
-        let count = self.storage.zset_add_in_db(db_index, &key, members)?;
-        Ok(RespValue::Integer(count as i64))
+        // Migrated: Logic moved from storage layer to command layer
+        let zset = if let Some(stored) = self.storage.get_value(db_index, &key)? {
+            let mut zset = stored.as_zset()?.clone();
+            let mut count = 0;
+            for (score, member) in &members {
+                if zset.insert(member.to_vec(), *score).is_none() {
+                    count += 1;
+                }
+            }
+            (count, zset)
+        } else {
+            let mut zset = BTreeMap::new();
+            let mut count = 0;
+            for (score, member) in &members {
+                if zset.insert(member.to_vec(), *score).is_none() {
+                    count += 1;
+                }
+            }
+            (count, zset)
+        };
+
+        self.storage
+            .set_value(db_index, key, StoredValue::new_zset(zset.1))?;
+        Ok(RespValue::Integer(zset.0 as i64))
     }
 
     /// ZREM key member [member ...]
@@ -47,7 +70,27 @@ impl ZSetCommands {
         let key = String::from_utf8_lossy(&args[0]).to_string();
         let members: Vec<Bytes> = args[1..].to_vec();
 
-        let count = self.storage.zset_rem_in_db(db_index, &key, members)?;
+        // Migrated: Logic moved from storage layer to command layer
+        let mut count = 0;
+
+        if let Some(stored) = self.storage.get_value(db_index, &key)? {
+            let mut zset = stored.as_zset()?.clone();
+            
+            for member in &members {
+                if zset.remove(&member.to_vec()).is_some() {
+                    count += 1;
+                }
+            }
+
+            // Update or delete the zset
+            if zset.is_empty() {
+                self.storage.delete_from_db(db_index, &key)?;
+            } else {
+                self.storage
+                    .set_value(db_index, key, StoredValue::new_zset(zset))?;
+            }
+        }
+
         Ok(RespValue::Integer(count as i64))
     }
 
@@ -61,7 +104,15 @@ impl ZSetCommands {
         let key = String::from_utf8_lossy(&args[0]).to_string();
         let member = args[1].clone();
 
-        match self.storage.zset_score_in_db(db_index, &key, &member)? {
+        // Migrated: Logic moved from storage layer to command layer
+        let score = if let Some(stored) = self.storage.get_value(db_index, &key)? {
+            let zset = stored.as_zset()?;
+            zset.get(&member.to_vec()).copied()
+        } else {
+            None
+        };
+
+        match score {
             Some(score) => Ok(RespValue::bulk_string(Bytes::from(score.to_string()))),
             None => Ok(RespValue::Null),
         }
@@ -77,10 +128,25 @@ impl ZSetCommands {
         let key = String::from_utf8_lossy(&args[0]).to_string();
         let member = args[1].clone();
 
-        match self
-            .storage
-            .zset_rank_in_db(db_index, &key, &member, false)?
-        {
+        // Migrated: Logic moved from storage layer to command layer
+        let rank = if let Some(stored) = self.storage.get_value(db_index, &key)? {
+            let zset = stored.as_zset()?;
+            let member_vec = member.to_vec();
+            
+            if !zset.contains_key(&member_vec) {
+                None
+            } else {
+                // Create sorted vec by score
+                let mut sorted: Vec<_> = zset.iter().collect();
+                sorted.sort_by(|a, b| a.1.partial_cmp(b.1).unwrap());
+
+                sorted.iter().position(|(m, _)| *m == &member_vec)
+            }
+        } else {
+            None
+        };
+
+        match rank {
             Some(rank) => Ok(RespValue::Integer(rank as i64)),
             None => Ok(RespValue::Null),
         }
@@ -96,10 +162,25 @@ impl ZSetCommands {
         let key = String::from_utf8_lossy(&args[0]).to_string();
         let member = args[1].clone();
 
-        match self
-            .storage
-            .zset_rank_in_db(db_index, &key, &member, true)?
-        {
+        // Migrated: Logic moved from storage layer to command layer
+        let rank = if let Some(stored) = self.storage.get_value(db_index, &key)? {
+            let zset = stored.as_zset()?;
+            let member_vec = member.to_vec();
+            
+            if !zset.contains_key(&member_vec) {
+                None
+            } else {
+                // Create sorted vec by score (reversed)
+                let mut sorted: Vec<_> = zset.iter().collect();
+                sorted.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap());
+
+                sorted.iter().position(|(m, _)| *m == &member_vec)
+            }
+        } else {
+            None
+        };
+
+        match rank {
             Some(rank) => Ok(RespValue::Integer(rank as i64)),
             None => Ok(RespValue::Null),
         }
@@ -123,9 +204,37 @@ impl ZSetCommands {
         let with_scores =
             args.len() > 3 && String::from_utf8_lossy(&args[3]).to_uppercase() == "WITHSCORES";
 
-        let members = self
-            .storage
-            .zset_range_in_db(db_index, &key, start, stop, false)?;
+        // Migrated: Logic moved from storage layer to command layer
+        let members = if let Some(stored) = self.storage.get_value(db_index, &key)? {
+            let zset = stored.as_zset()?;
+            let mut sorted: Vec<_> = zset.iter().collect();
+            sorted.sort_by(|a, b| a.1.partial_cmp(b.1).unwrap());
+
+            let len = sorted.len() as i64;
+            let start_idx = if start < 0 {
+                (len + start).max(0)
+            } else {
+                start.min(len)
+            } as usize;
+            let stop_idx = if stop < 0 {
+                (len + stop).max(-1) + 1
+            } else {
+                (stop + 1).min(len)
+            } as usize;
+
+            if start_idx >= stop_idx {
+                Vec::new()
+            } else {
+                sorted
+                    .iter()
+                    .skip(start_idx)
+                    .take(stop_idx - start_idx)
+                    .map(|(m, s)| (Bytes::from(m.to_vec()), **s))
+                    .collect()
+            }
+        } else {
+            Vec::new()
+        };
 
         let mut result = Vec::new();
         for (member, score) in members {
@@ -156,9 +265,37 @@ impl ZSetCommands {
         let with_scores =
             args.len() > 3 && String::from_utf8_lossy(&args[3]).to_uppercase() == "WITHSCORES";
 
-        let members = self
-            .storage
-            .zset_range_in_db(db_index, &key, start, stop, true)?;
+        // Migrated: Logic moved from storage layer to command layer
+        let members = if let Some(stored) = self.storage.get_value(db_index, &key)? {
+            let zset = stored.as_zset()?;
+            let mut sorted: Vec<_> = zset.iter().collect();
+            sorted.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap()); // Reverse order
+
+            let len = sorted.len() as i64;
+            let start_idx = if start < 0 {
+                (len + start).max(0)
+            } else {
+                start.min(len)
+            } as usize;
+            let stop_idx = if stop < 0 {
+                (len + stop).max(-1) + 1
+            } else {
+                (stop + 1).min(len)
+            } as usize;
+
+            if start_idx >= stop_idx {
+                Vec::new()
+            } else {
+                sorted
+                    .iter()
+                    .skip(start_idx)
+                    .take(stop_idx - start_idx)
+                    .map(|(m, s)| (Bytes::from(m.to_vec()), **s))
+                    .collect()
+            }
+        } else {
+            Vec::new()
+        };
 
         let mut result = Vec::new();
         for (member, score) in members {
@@ -189,9 +326,20 @@ impl ZSetCommands {
         let with_scores =
             args.len() > 3 && String::from_utf8_lossy(&args[3]).to_uppercase() == "WITHSCORES";
 
-        let members = self
-            .storage
-            .zset_rangebyscore_in_db(db_index, &key, min, max, false)?;
+        // Migrated: Logic moved from storage layer to command layer
+        let members = if let Some(stored) = self.storage.get_value(db_index, &key)? {
+            let zset = stored.as_zset()?;
+            let mut result: Vec<_> = zset
+                .iter()
+                .filter(|(_, s)| **s >= min && **s <= max)
+                .map(|(m, s)| (Bytes::from(m.to_vec()), *s))
+                .collect();
+
+            result.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+            result
+        } else {
+            Vec::new()
+        };
 
         let mut result = Vec::new();
         for (member, score) in members {
@@ -222,9 +370,20 @@ impl ZSetCommands {
         let with_scores =
             args.len() > 3 && String::from_utf8_lossy(&args[3]).to_uppercase() == "WITHSCORES";
 
-        let members = self
-            .storage
-            .zset_rangebyscore_in_db(db_index, &key, min, max, true)?;
+        // Migrated: Logic moved from storage layer to command layer
+        let members = if let Some(stored) = self.storage.get_value(db_index, &key)? {
+            let zset = stored.as_zset()?;
+            let mut result: Vec<_> = zset
+                .iter()
+                .filter(|(_, s)| **s >= min && **s <= max)
+                .map(|(m, s)| (Bytes::from(m.to_vec()), *s))
+                .collect();
+
+            result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap()); // Reverse order
+            result
+        } else {
+            Vec::new()
+        };
 
         let mut result = Vec::new();
         for (member, score) in members {
@@ -245,7 +404,15 @@ impl ZSetCommands {
         }
 
         let key = String::from_utf8_lossy(&args[0]).to_string();
-        let count = self.storage.zset_card_in_db(db_index, &key)?;
+        
+        // Migrated: Logic moved from storage layer to command layer
+        let count = if let Some(stored) = self.storage.get_value(db_index, &key)? {
+            let zset = stored.as_zset()?;
+            zset.len()
+        } else {
+            0
+        };
+
         Ok(RespValue::Integer(count as i64))
     }
 
@@ -264,7 +431,14 @@ impl ZSetCommands {
             .parse::<f64>()
             .map_err(|_| AikvError::InvalidArgument("invalid max score".to_string()))?;
 
-        let count = self.storage.zset_count_in_db(db_index, &key, min, max)?;
+        // Migrated: Logic moved from storage layer to command layer
+        let count = if let Some(stored) = self.storage.get_value(db_index, &key)? {
+            let zset = stored.as_zset()?;
+            zset.values().filter(|s| **s >= min && **s <= max).count()
+        } else {
+            0
+        };
+
         Ok(RespValue::Integer(count as i64))
     }
 
@@ -281,9 +455,23 @@ impl ZSetCommands {
             .map_err(|_| AikvError::InvalidArgument("invalid increment".to_string()))?;
         let member = args[2].clone();
 
-        let new_score = self
-            .storage
-            .zset_incrby_in_db(db_index, &key, increment, member)?;
-        Ok(RespValue::bulk_string(Bytes::from(new_score.to_string())))
+        // Migrated: Logic moved from storage layer to command layer
+        let zset = if let Some(stored) = self.storage.get_value(db_index, &key)? {
+            let mut zset = stored.as_zset()?.clone();
+            let member_vec = member.to_vec();
+            let current = zset.get(&member_vec).copied().unwrap_or(0.0);
+            let new_score = current + increment;
+            zset.insert(member_vec, new_score);
+            (new_score, zset)
+        } else {
+            let mut zset = BTreeMap::new();
+            let new_score = increment; // Starting from 0.0 + increment
+            zset.insert(member.to_vec(), new_score);
+            (new_score, zset)
+        };
+
+        self.storage
+            .set_value(db_index, key, StoredValue::new_zset(zset.1))?;
+        Ok(RespValue::bulk_string(Bytes::from(zset.0.to_string())))
     }
 }
