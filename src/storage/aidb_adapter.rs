@@ -869,46 +869,7 @@ impl AiDbStorageAdapter {
         Ok(true)
     }
 
-    /// Get multiple keys from a specific database
-    pub fn mget_from_db(&self, db_index: usize, keys: &[String]) -> Result<Vec<Option<Bytes>>> {
-        if db_index >= self.databases.len() {
-            return Err(AikvError::Storage(format!(
-                "Invalid database index: {}",
-                db_index
-            )));
-        }
 
-        let mut result = Vec::with_capacity(keys.len());
-        for key in keys {
-            result.push(self.get_from_db(db_index, key)?);
-        }
-        Ok(result)
-    }
-
-    /// Get multiple keys (from default database 0)
-    pub fn mget(&self, keys: &[String]) -> Result<Vec<Option<Bytes>>> {
-        self.mget_from_db(0, keys)
-    }
-
-    /// Set multiple key-value pairs in a specific database
-    pub fn mset_in_db(&self, db_index: usize, pairs: Vec<(String, Bytes)>) -> Result<()> {
-        if db_index >= self.databases.len() {
-            return Err(AikvError::Storage(format!(
-                "Invalid database index: {}",
-                db_index
-            )));
-        }
-
-        for (key, value) in pairs {
-            self.set_in_db(db_index, key, value)?;
-        }
-        Ok(())
-    }
-
-    /// Set multiple key-value pairs (in default database 0)
-    pub fn mset(&self, pairs: Vec<(String, Bytes)>) -> Result<()> {
-        self.mset_in_db(0, pairs)
-    }
 
     /// Get a random key from a database
     pub fn random_key_in_db(&self, db_index: usize) -> Result<Option<String>> {
@@ -1033,20 +994,38 @@ mod tests {
     fn test_mget_mset() {
         let (_dir, storage) = create_temp_storage();
 
+        // Migrated: Use set_value instead of mset
         storage
-            .mset(vec![
-                ("key1".to_string(), Bytes::from("value1")),
-                ("key2".to_string(), Bytes::from("value2")),
-            ])
+            .set_value(
+                0,
+                "key1".to_string(),
+                StoredValue::new_string(Bytes::from("value1")),
+            )
+            .unwrap();
+        storage
+            .set_value(
+                0,
+                "key2".to_string(),
+                StoredValue::new_string(Bytes::from("value2")),
+            )
             .unwrap();
 
-        let values = storage
-            .mget(&["key1".to_string(), "key2".to_string(), "key3".to_string()])
-            .unwrap();
-        assert_eq!(values.len(), 3);
-        assert_eq!(values[0], Some(Bytes::from("value1")));
-        assert_eq!(values[1], Some(Bytes::from("value2")));
-        assert_eq!(values[2], None);
+        // Migrated: Use get_value instead of mget
+        let value1 = storage.get_value(0, "key1").unwrap();
+        let value2 = storage.get_value(0, "key2").unwrap();
+        let value3 = storage.get_value(0, "key3").unwrap();
+
+        assert!(value1.is_some());
+        assert_eq!(
+            value1.unwrap().as_string().unwrap(),
+            &Bytes::from("value1")
+        );
+        assert!(value2.is_some());
+        assert_eq!(
+            value2.unwrap().as_string().unwrap(),
+            &Bytes::from("value2")
+        );
+        assert!(value3.is_none());
     }
 
     #[test]
