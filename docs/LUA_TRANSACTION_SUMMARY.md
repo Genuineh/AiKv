@@ -4,16 +4,47 @@
 
 本次实现为AiKv的Lua脚本添加了完整的事务性支持，实现了自动回滚机制。根据TODO文档的要求："希望让lua脚本执行失败时可以自动回滚，则在lua脚本里面执行的都需要先写入缓冲区，再一起刷入db,如果失败则丢弃这个写入来达到失败自动回滚的目的"。
 
+**重要更新（2024-11-17）**：根据@Genuineh的建议，实现已升级为使用**AiDb的WriteBatch API**，提供真正的原子批量写入和持久化保证。
+
 ## 实现方案
 
-### 选择的方案：写缓冲区（ScriptTransaction）
+### 核心架构：写缓冲区 + 原子批量提交
 
-我们选择了**方案A（写缓冲区）**而不是方案B（存储层事务），原因如下：
+我们采用了两层保证：
 
-1. **最小变更原则**：只需修改 `src/command/script.rs`，不影响存储层
-2. **实现简单**：使用 HashMap 作为缓冲区，代码清晰易懂
-3. **自动回滚**：利用 Rust 的 Drop 机制，无需手动清理
-4. **功能完整**：满足所有需求，支持"读自己的写"语义
+1. **脚本层缓冲**：`ScriptTransaction` 维护内存缓冲区，实现"读自己的写"
+2. **存储层原子性**：使用 `write_batch()` 接口实现原子提交
+   - **MemoryAdapter**：使用RwLock单锁保护，内存原子性
+   - **AiDbStorageAdapter**：使用 `aidb::WriteBatch`，WAL原子性 + 持久化
+
+### AiDb WriteBatch 优势
+
+**AiDb v0.1.0 提供的WriteBatch保证**：
+
+```rust
+// AiDb的原子批量写入
+pub fn write(&self, batch: WriteBatch) -> Result<()> {
+    // 1. 先写入WAL（Write-Ahead Log）
+    for op in batch.iter() {
+        wal.append(op)?;  // 所有操作记录到WAL
+    }
+    if self.options.sync_wal {
+        wal.sync()?;  // 单次fsync刷盘
+    }
+    
+    // 2. 应用到MemTable
+    for op in batch.iter() {
+        memtable.put(op)?;  // 原子更新内存
+    }
+    // 3. 如果任何步骤失败，整个batch回滚
+}
+```
+
+**提供的保证**：
+- ✅ **原子性**：所有操作一起成功或失败
+- ✅ **持久化**：WAL确保崩溃后可恢复
+- ✅ **高性能**：批量操作只需一次fsync
+- ✅ **崩溃恢复**：重启后从WAL重放完整batch
 
 ### 核心数据结构
 

@@ -1,6 +1,6 @@
 use crate::error::{AikvError, Result};
 use crate::protocol::RespValue;
-use crate::storage::StorageAdapter;
+use crate::storage::{BatchOp, StorageAdapter};
 use bytes::Bytes;
 use mlua::{Lua, LuaOptions, StdLib, Value as LuaValue};
 use sha1::{Digest, Sha1};
@@ -13,26 +13,20 @@ struct CachedScript {
     script: String,
 }
 
-/// Write operation in script transaction
-#[derive(Clone, Debug)]
-enum WriteOp {
-    /// Set a key to a value
-    Set(Bytes),
-    /// Delete a key
-    Delete,
-}
-
 /// Transaction context for Lua script execution
 ///
 /// This provides transactional semantics for Lua scripts by buffering all write
 /// operations and only committing them if the script completes successfully.
 /// If the script fails, the buffer is discarded, achieving automatic rollback.
+///
+/// When using AiDbStorageAdapter, this leverages AiDb's WriteBatch for true
+/// atomic batch writes with WAL durability guarantees.
 #[derive(Debug)]
 struct ScriptTransaction {
     /// Database index for this transaction
     db_index: usize,
     /// Write buffer: key -> operation
-    write_buffer: HashMap<String, WriteOp>,
+    write_buffer: HashMap<String, BatchOp>,
 }
 
 impl ScriptTransaction {
@@ -52,8 +46,8 @@ impl ScriptTransaction {
         // Check write buffer first
         if let Some(op) = self.write_buffer.get(key) {
             match op {
-                WriteOp::Set(value) => return Ok(Some(value.clone())),
-                WriteOp::Delete => return Ok(None),
+                BatchOp::Set(value) => return Ok(Some(value.clone())),
+                BatchOp::Delete => return Ok(None),
             }
         }
 
@@ -63,12 +57,12 @@ impl ScriptTransaction {
 
     /// Write a value to the buffer
     fn set(&mut self, key: String, value: Bytes) {
-        self.write_buffer.insert(key, WriteOp::Set(value));
+        self.write_buffer.insert(key, BatchOp::Set(value));
     }
 
     /// Mark a key for deletion in the buffer
     fn delete(&mut self, key: String) {
-        self.write_buffer.insert(key, WriteOp::Delete);
+        self.write_buffer.insert(key, BatchOp::Delete);
     }
 
     /// Check if a key exists, considering the buffer
@@ -76,8 +70,8 @@ impl ScriptTransaction {
         // Check write buffer first
         if let Some(op) = self.write_buffer.get(key) {
             match op {
-                WriteOp::Set(_) => return Ok(true),
-                WriteOp::Delete => return Ok(false),
+                BatchOp::Set(_) => return Ok(true),
+                BatchOp::Delete => return Ok(false),
             }
         }
 
@@ -85,18 +79,24 @@ impl ScriptTransaction {
         storage.exists_in_db(self.db_index, key)
     }
 
-    /// Commit the transaction - apply all buffered operations to storage
+    /// Commit the transaction - apply all buffered operations to storage atomically
+    ///
+    /// This method uses write_batch() which provides:
+    /// - For MemoryAdapter: In-memory atomicity within a single lock
+    /// - For AiDbStorageAdapter: True atomic batch writes via AiDb's WriteBatch
+    ///   with WAL durability guarantees (all operations written to WAL first,
+    ///   single fsync, atomic recovery on crash)
     fn commit(self, storage: &StorageAdapter) -> Result<()> {
-        for (key, op) in self.write_buffer {
-            match op {
-                WriteOp::Set(value) => {
-                    storage.set_in_db(self.db_index, key, value)?;
-                }
-                WriteOp::Delete => {
-                    storage.delete_from_db(self.db_index, &key)?;
-                }
-            }
+        if self.write_buffer.is_empty() {
+            return Ok(());
         }
+
+        // Convert HashMap to Vec for write_batch
+        let operations: Vec<(String, BatchOp)> = self.write_buffer.into_iter().collect();
+
+        // Use write_batch for atomic commit
+        storage.write_batch(self.db_index, operations)?;
+
         Ok(())
     }
 

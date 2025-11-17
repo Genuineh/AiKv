@@ -1,17 +1,16 @@
 /// Example demonstrating Lua script transaction support
-/// 
+///
 /// This example shows how Lua scripts in AiKv have transactional semantics:
 /// - Successful scripts commit all changes
 /// - Failed scripts rollback all changes
 /// - Scripts can read their own writes
-
 use aikv::command::script::ScriptCommands;
 use aikv::storage::StorageAdapter;
 use bytes::Bytes;
 
 fn main() {
     println!("=== Lua Script Transaction Demo ===\n");
-    
+
     let storage = StorageAdapter::with_db_count(16);
     let script_commands = ScriptCommands::new(storage.clone());
 
@@ -24,18 +23,24 @@ fn main() {
         return 'User created successfully'
     "#;
     let args1 = vec![Bytes::from(script1), Bytes::from("0")];
-    
+
     match script_commands.eval(&args1, 0) {
         Ok(result) => println!("Script result: {:?}", result),
         Err(e) => println!("Script failed: {}", e),
     }
-    
+
     // Verify changes are committed
     let name = storage.get_from_db(0, "user:1:name").unwrap();
     let email = storage.get_from_db(0, "user:1:email").unwrap();
     println!("After success:");
-    println!("  user:1:name = {:?}", name.map(|b| String::from_utf8_lossy(&b).to_string()));
-    println!("  user:1:email = {:?}", email.map(|b| String::from_utf8_lossy(&b).to_string()));
+    println!(
+        "  user:1:name = {:?}",
+        name.map(|b| String::from_utf8_lossy(&b).to_string())
+    );
+    println!(
+        "  user:1:email = {:?}",
+        email.map(|b| String::from_utf8_lossy(&b).to_string())
+    );
     println!();
 
     // Example 2: Automatic rollback
@@ -47,18 +52,24 @@ fn main() {
         error('Validation failed')
     "#;
     let args2 = vec![Bytes::from(script2), Bytes::from("0")];
-    
+
     match script_commands.eval(&args2, 0) {
         Ok(result) => println!("Script result: {:?}", result),
         Err(e) => println!("Script failed: {}", e),
     }
-    
+
     // Verify changes are rolled back
     let name = storage.get_from_db(0, "user:2:name").unwrap();
     let email = storage.get_from_db(0, "user:2:email").unwrap();
     println!("After failure:");
-    println!("  user:2:name = {:?}", name.map(|b| String::from_utf8_lossy(&b).to_string()));
-    println!("  user:2:email = {:?}", email.map(|b| String::from_utf8_lossy(&b).to_string()));
+    println!(
+        "  user:2:name = {:?}",
+        name.map(|b| String::from_utf8_lossy(&b).to_string())
+    );
+    println!(
+        "  user:2:email = {:?}",
+        email.map(|b| String::from_utf8_lossy(&b).to_string())
+    );
     println!();
 
     // Example 3: Read your own writes
@@ -77,24 +88,29 @@ fn main() {
         return {v1, v2, v3}
     "#;
     let args3 = vec![Bytes::from(script3), Bytes::from("0")];
-    
+
     match script_commands.eval(&args3, 0) {
         Ok(result) => println!("Script result: {:?}", result),
         Err(e) => println!("Script failed: {}", e),
     }
-    
+
     let final_value = storage.get_from_db(0, "counter").unwrap();
     println!("Final committed value:");
-    println!("  counter = {:?}", final_value.map(|b| String::from_utf8_lossy(&b).to_string()));
+    println!(
+        "  counter = {:?}",
+        final_value.map(|b| String::from_utf8_lossy(&b).to_string())
+    );
     println!();
 
     // Example 4: Delete and recreate
     println!("Example 4: Delete and Recreate");
     println!("--------------------------------");
-    
+
     // First set a value
-    storage.set_in_db(0, "temp_key".to_string(), Bytes::from("old_value")).unwrap();
-    
+    storage
+        .set_in_db(0, "temp_key".to_string(), Bytes::from("old_value"))
+        .unwrap();
+
     let script4 = r#"
         local exists1 = redis.call('EXISTS', 'temp_key')
         redis.call('DEL', 'temp_key')
@@ -105,15 +121,18 @@ fn main() {
         return {exists1, exists2, exists3, final_val}
     "#;
     let args4 = vec![Bytes::from(script4), Bytes::from("0")];
-    
+
     match script_commands.eval(&args4, 0) {
         Ok(result) => println!("Script result: {:?}", result),
         Err(e) => println!("Script failed: {}", e),
     }
-    
+
     let final_value = storage.get_from_db(0, "temp_key").unwrap();
     println!("Final committed value:");
-    println!("  temp_key = {:?}", final_value.map(|b| String::from_utf8_lossy(&b).to_string()));
+    println!(
+        "  temp_key = {:?}",
+        final_value.map(|b| String::from_utf8_lossy(&b).to_string())
+    );
 
     println!("\n=== Demo Complete ===");
     println!("\nKey Takeaways:");
