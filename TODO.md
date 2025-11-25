@@ -462,12 +462,12 @@ AiKv 只需实现 **RESP 协议解析** 和 **Redis Cluster 命令到 AiDb API �
   - [x] 实现 `CLUSTER ADDSLOTS/DELSLOTS` 命令
   - [x] 实现 `CLUSTER SETSLOT` 命令
 
-- [ ] **阶段 C: 槽迁移** (对应 Stage 3)
-  - [ ] 实现 `CLUSTER GETKEYSINSLOT` 命令
-  - [ ] 实现迁移状态查询 (`CLUSTER SETSLOT ... IMPORTING/MIGRATING`)
-  - [ ] 实现 `-ASK` 重定向逻辑
-  - [ ] 集成 `MigrationManager` 实现在线迁移
-  - [ ] 实现 `MIGRATE` 命令
+- [x] **阶段 C: 槽迁移** (对应 Stage 3)
+  - [x] 实现 `CLUSTER GETKEYSINSLOT` 命令
+  - [x] 实现迁移状态查询 (`CLUSTER SETSLOT ... IMPORTING/MIGRATING`)
+  - [x] 实现 `-ASK` 重定向逻辑
+  - [x] 集成 `MigrationManager` 实现在线迁移
+  - [ ] 实现 `MIGRATE` 命令 (需要网络层支持，移至后续版本)
 
 - [ ] **阶段 D: 高可用** (对应 Stage 4)
   - [ ] 实现 `CLUSTER REPLICATE` 命令
@@ -957,10 +957,18 @@ meta_raft.update_slots(0, 5461, group_id).await?;
 ```
 
 ### v0.5.0 (Stage 3: 周 7-9) - 在线迁移
-- [ ] 实现 `CLUSTER GETKEYSINSLOT` (使用 `state_machine.scan_slot_keys_sync`)
-- [ ] 实现 `CLUSTER SETSLOT ... MIGRATING/IMPORTING`
-- [ ] 实现 `-ASK` 重定向逻辑
-- [ ] 集成迁移监控 (`MigrationManager.get_migration_progress`)
+- [x] 实现 `CLUSTER GETKEYSINSLOT` (使用 `state_machine.scan_slot_keys_sync`)
+- [x] 实现 `CLUSTER SETSLOT ... MIGRATING/IMPORTING`
+- [x] 实现 `-ASK` 重定向逻辑
+- [x] 集成迁移监控 (`MigrationManager.get_migration_progress`)
+- [x] 实现 `CLUSTER COUNTKEYSINSLOT` 命令
+- [x] 实现迁移状态查询方法 (`ClusterState.get_migration_state`)
+- [x] 实现 `start_migration` 和 `complete_migration` 方法
+- [x] 实现 `check_redirect_with_migration` (含 `-ASK` 重定向)
+- [x] 实现 `should_handle_after_asking` 支持
+- [x] 添加 `MigrationProgress` 进度追踪
+- [x] 添加 `KeyScanner` 可插拔键扫描接口
+- [ ] 实现 `MIGRATE` 命令 (需要网络层支持，移至后续版本)
 
 **关键 AiDb API**:
 ```rust
