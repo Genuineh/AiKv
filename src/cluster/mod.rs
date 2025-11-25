@@ -50,7 +50,8 @@ mod node;
 mod router;
 
 pub use commands::{
-    ClusterCommands, ClusterState, KeyScanner, MigrationProgress, NodeInfo, RedirectType, SlotState,
+    ClusterCommands, ClusterState, KeyCounter, KeyScanner, MigrationProgress, NodeInfo,
+    RedirectType, SlotState,
 };
 pub use node::ClusterNode;
 pub use router::SlotRouter;

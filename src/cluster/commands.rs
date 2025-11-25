@@ -188,6 +188,17 @@ impl ClusterState {
 /// Returns: Vector of keys belonging to the slot
 pub type KeyScanner = Box<dyn Fn(usize, u16, usize) -> Vec<String> + Send + Sync>;
 
+/// Type alias for a key counter function.
+///
+/// This function is used by CLUSTER COUNTKEYSINSLOT to count keys
+/// belonging to a specific slot efficiently without loading them into memory.
+/// The function takes:
+/// - db_index: The database index to scan
+/// - slot: The slot number to count keys for
+///
+/// Returns: Number of keys belonging to the slot
+pub type KeyCounter = Box<dyn Fn(usize, u16) -> usize + Send + Sync>;
+
 /// Cluster commands handler.
 ///
 /// Implements Redis Cluster protocol commands:
@@ -210,6 +221,8 @@ pub struct ClusterCommands {
     state: Arc<RwLock<ClusterState>>,
     /// Optional key scanner for GETKEYSINSLOT command
     key_scanner: Option<Arc<KeyScanner>>,
+    /// Optional key counter for COUNTKEYSINSLOT command
+    key_counter: Option<Arc<KeyCounter>>,
 }
 
 impl ClusterCommands {
@@ -220,6 +233,7 @@ impl ClusterCommands {
             node_id: None,
             state: Arc::new(RwLock::new(ClusterState::new())),
             key_scanner: None,
+            key_counter: None,
         }
     }
 
@@ -239,6 +253,7 @@ impl ClusterCommands {
             node_id: Some(node_id),
             state,
             key_scanner: None,
+            key_counter: None,
         }
     }
 
@@ -251,6 +266,7 @@ impl ClusterCommands {
             node_id,
             state,
             key_scanner: None,
+            key_counter: None,
         }
     }
 
@@ -262,9 +278,23 @@ impl ClusterCommands {
         self.key_scanner = Some(Arc::new(scanner));
     }
 
+    /// Set the key counter for COUNTKEYSINSLOT command.
+    ///
+    /// The key counter is an efficient function that counts keys belonging to a specific slot
+    /// without loading them into memory.
+    pub fn set_key_counter(&mut self, counter: KeyCounter) {
+        self.key_counter = Some(Arc::new(counter));
+    }
+
     /// Create a ClusterCommands handler with a key scanner.
     pub fn with_key_scanner(mut self, scanner: KeyScanner) -> Self {
         self.key_scanner = Some(Arc::new(scanner));
+        self
+    }
+
+    /// Create a ClusterCommands handler with a key counter.
+    pub fn with_key_counter(mut self, counter: KeyCounter) -> Self {
+        self.key_counter = Some(Arc::new(counter));
         self
     }
 
@@ -1015,14 +1045,21 @@ cluster_stats_messages_received:0\r\n",
             )));
         }
 
-        // Use the key scanner to count keys (get all keys and count)
+        // Prefer the dedicated key counter for efficiency
+        if let Some(ref counter) = self.key_counter {
+            let count = counter(0, slot);
+            return Ok(RespValue::Integer(count as i64));
+        }
+
+        // Fall back to key scanner if available (less efficient)
         if let Some(ref scanner) = self.key_scanner {
-            // Use a large count to get all keys
+            // This is less efficient as it loads all keys into memory
+            // Consider providing a dedicated KeyCounter for better performance
             let keys = scanner(0, slot, usize::MAX);
             return Ok(RespValue::Integer(keys.len() as i64));
         }
 
-        // No key scanner configured, return 0
+        // No key scanner or counter configured, return 0
         Ok(RespValue::Integer(0))
     }
 
@@ -1176,12 +1213,20 @@ cluster_stats_messages_received:0\r\n",
         // Check if we're importing this slot
         if state.is_slot_importing(slot) {
             // We're importing this slot - the key might be here or at the source
-            // If the key exists locally (after ASKING), handle it locally
-            // Otherwise, this shouldn't happen (client should have sent ASKING first)
-            // For safety, redirect back to the owner
+            // This situation typically occurs when:
+            // 1. Client sent a request without ASKING first
+            // 2. The key may or may not have been migrated yet
+            //
+            // According to Redis Cluster spec, we should return -MOVED to the
+            // slot owner because the client should use ASKING if they want to
+            // access an importing slot.
+            //
+            // The key will be handled locally only if:
+            // - The client sent ASKING first (checked elsewhere via should_handle_after_asking)
+            // - AND the key exists locally
         }
 
-        // Generate -MOVED redirect
+        // Generate -MOVED redirect to the slot owner
         if let Some(node_info) = state.nodes.get(slot_owner) {
             return Some((RedirectType::Moved, slot, node_info.addr.clone()));
         }
@@ -1958,6 +2003,65 @@ mod tests {
         // Invalid slot number
         let result = cmd.execute(&[Bytes::from("COUNTKEYSINSLOT"), Bytes::from("99999")]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cluster_countkeysinslot_with_counter() {
+        let mut cmd = ClusterCommands::with_node_id(1);
+
+        // Set up a dedicated key counter (more efficient than scanner)
+        cmd.set_key_counter(Box::new(|_db_index, slot| {
+            if slot == 42 {
+                100 // Return 100 keys for slot 42
+            } else {
+                0
+            }
+        }));
+
+        // Count keys in slot 42
+        let result = cmd.execute(&[Bytes::from("COUNTKEYSINSLOT"), Bytes::from("42")]);
+        assert!(result.is_ok());
+
+        if let Ok(RespValue::Integer(count)) = result {
+            assert_eq!(count, 100);
+        } else {
+            panic!("Expected integer response");
+        }
+    }
+
+    #[test]
+    fn test_cluster_countkeysinslot_counter_priority() {
+        let mut cmd = ClusterCommands::with_node_id(1);
+
+        // Set up both scanner and counter - counter should be used
+        cmd.set_key_scanner(Box::new(|_db_index, slot, _count| {
+            if slot == 50 {
+                vec!["a", "b", "c"] // 3 keys via scanner
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .collect()
+            } else {
+                vec![]
+            }
+        }));
+
+        cmd.set_key_counter(Box::new(|_db_index, slot| {
+            if slot == 50 {
+                10 // Counter says 10 keys
+            } else {
+                0
+            }
+        }));
+
+        // Counter should take priority
+        let result = cmd.execute(&[Bytes::from("COUNTKEYSINSLOT"), Bytes::from("50")]);
+        assert!(result.is_ok());
+
+        if let Ok(RespValue::Integer(count)) = result {
+            assert_eq!(count, 10); // Should use counter, not scanner
+        } else {
+            panic!("Expected integer response");
+        }
     }
 
     #[test]
