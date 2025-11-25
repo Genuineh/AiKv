@@ -373,7 +373,17 @@ impl ClusterState {
 
                 // Update new master's replica_ids
                 if let Some(new_master) = self.nodes.get_mut(&replica_id) {
-                    new_master.replica_ids = new_replicas;
+                    new_master.replica_ids = new_replicas.clone();
+                }
+
+                // Update master_id for all transferred replicas (excluding the old master
+                // which was already updated above)
+                for other_replica_id in &new_replicas {
+                    if *other_replica_id != master_id {
+                        if let Some(other_replica) = self.nodes.get_mut(other_replica_id) {
+                            other_replica.master_id = Some(replica_id);
+                        }
+                    }
                 }
             }
         }
@@ -524,6 +534,11 @@ impl ClusterCommands {
     /// When readonly mode is enabled, this replica node can serve read requests
     /// for keys it doesn't own (its master's keys).
     ///
+    /// Note: In a full Redis Cluster implementation, readonly mode should be tracked
+    /// per-client-connection rather than globally. This implementation provides the
+    /// command interface; the actual per-connection tracking should be done at the
+    /// server connection handler level.
+    ///
     /// # Returns
     ///
     /// OK on success
@@ -538,6 +553,11 @@ impl ClusterCommands {
     /// When readonly mode is disabled, the node will only serve requests
     /// for keys it owns.
     ///
+    /// Note: In a full Redis Cluster implementation, readonly mode should be tracked
+    /// per-client-connection rather than globally. This implementation provides the
+    /// command interface; the actual per-connection tracking should be done at the
+    /// server connection handler level.
+    ///
     /// # Returns
     ///
     /// OK on success
@@ -548,6 +568,9 @@ impl ClusterCommands {
     }
 
     /// Check if readonly mode is enabled.
+    ///
+    /// Note: In a full implementation, this would check the per-connection readonly
+    /// flag set by the READONLY command for that specific client connection.
     pub fn is_readonly(&self) -> bool {
         self.state.read().map(|s| s.readonly_mode).unwrap_or(false)
     }
