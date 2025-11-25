@@ -480,13 +480,23 @@ cluster_stats_messages_received:0\r\n",
 
         let addr = format!("{}:{}", ip, port);
 
-        // Generate a node ID based on address hash
-        // In a real implementation, this would use the node's actual ID
+        // Generate a temporary node ID based on address hash for initial node tracking.
+        // Note: In a production cluster implementation with AiDb's MultiRaft integration,
+        // node IDs would be provided by the actual node through the cluster handshake
+        // or from a configuration. This hash-based approach is sufficient for the
+        // glue layer's slot and node management tracking.
         let node_id = {
             use std::collections::hash_map::DefaultHasher;
             use std::hash::{Hash, Hasher};
             let mut hasher = DefaultHasher::new();
+            // Include timestamp-like component to reduce collision probability
+            // when same address is used at different times
             addr.hash(&mut hasher);
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+                .hash(&mut hasher);
             hasher.finish()
         };
 
@@ -649,16 +659,32 @@ cluster_stats_messages_received:0\r\n",
 
         let mut state = self.state.write().unwrap();
 
-        // Check if slots are assigned to this node (or unassigned)
+        // Check if slots are assigned to this node or unassigned
+        // When node_id is None (standalone mode), only allow deleting unassigned slots
+        // When node_id is Some, only allow deleting slots owned by this node or unassigned slots
         for &slot in &slots_to_del {
             if let Some(assigned_to) = state.slot_assignments[slot as usize] {
-                if my_node_id.is_some() && Some(assigned_to) != my_node_id {
-                    return Err(AikvError::InvalidArgument(format!(
-                        "Slot {} is not owned by this node",
-                        slot
-                    )));
+                match my_node_id {
+                    Some(my_id) if assigned_to == my_id => {
+                        // This node owns the slot, OK to delete
+                    }
+                    Some(_) => {
+                        // Slot is owned by another node
+                        return Err(AikvError::InvalidArgument(format!(
+                            "Slot {} is not owned by this node",
+                            slot
+                        )));
+                    }
+                    None => {
+                        // Standalone mode without node ID cannot delete assigned slots
+                        return Err(AikvError::InvalidArgument(format!(
+                            "Slot {} is already assigned. Set node_id to manage slots",
+                            slot
+                        )));
+                    }
                 }
             }
+            // Unassigned slots (None) are OK to "delete" (no-op)
         }
 
         // Remove all slot assignments
