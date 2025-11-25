@@ -87,15 +87,23 @@ impl SlotRouter {
     ///
     /// Hash tags allow multiple keys to be stored in the same slot.
     /// Format: key{tag}suffix - only "tag" is used for hashing.
+    ///
+    /// Returns `None` if:
+    /// - No opening brace is found
+    /// - No closing brace is found after the opening brace
+    /// - The hash tag is empty (e.g., "{}")
     fn extract_hash_tag<'a>(&self, key: &'a [u8]) -> Option<&'a [u8]> {
         // Find opening brace
-        let start = key.iter().position(|&b| b == b'{')?;
-        // Find closing brace after opening
-        let end = key[start + 1..].iter().position(|&b| b == b'}')?;
+        let open_brace_pos = key.iter().position(|&b| b == b'{')?;
 
-        // Hash tag must not be empty
-        if end > 0 {
-            Some(&key[start + 1..start + 1 + end])
+        // Find closing brace after opening brace
+        let content_start = open_brace_pos + 1;
+        let close_brace_offset = key[content_start..].iter().position(|&b| b == b'}')?;
+
+        // Return the hash tag only if it's non-empty
+        // close_brace_offset == 0 means {} (empty hash tag), which we ignore
+        if close_brace_offset > 0 {
+            Some(&key[content_start..content_start + close_brace_offset])
         } else {
             None
         }

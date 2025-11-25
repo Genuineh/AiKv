@@ -44,7 +44,6 @@ async fn main() -> anyhow::Result<()> {
 
     // Configure the cluster node
     let port = 6378 + node_id as u16;
-    let cluster_port = 16378 + node_id as u16;
     let bind_addr = format!("127.0.0.1:{}", port);
 
     let config = ClusterConfig::new(node_id, &bind_addr, &data_dir).with_members(vec![
@@ -55,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
 
     info!(
         "Node {} configured: bind={}, cluster_port={}",
-        node_id, bind_addr, cluster_port
+        node_id, bind_addr, config.cluster_port
     );
 
     // Create the cluster node

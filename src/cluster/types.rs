@@ -40,12 +40,22 @@ pub struct SlotRange {
 
 impl SlotRange {
     /// Create a new slot range
-    pub fn new(start: u16, end: u16) -> Self {
-        assert!(start < end, "start must be less than end");
-        assert!(end <= 16384, "end must be <= 16384");
-        Self {
-            start,
-            end,
+    ///
+    /// # Arguments
+    /// * `start` - Start slot (inclusive, must be less than end)
+    /// * `end` - End slot (exclusive, must be <= 16384)
+    ///
+    /// # Returns
+    /// * `Some(SlotRange)` if the range is valid
+    /// * `None` if start >= end or end > 16384
+    pub fn new(start: u16, end: u16) -> Option<Self> {
+        if start >= end || end > 16384 {
+            None
+        } else {
+            Some(Self {
+                start,
+                end,
+            })
         }
     }
 
@@ -123,11 +133,16 @@ mod tests {
 
     #[test]
     fn test_slot_range() {
-        let range = SlotRange::new(0, 5461);
+        let range = SlotRange::new(0, 5461).expect("valid range");
         assert!(range.contains(0));
         assert!(range.contains(5460));
         assert!(!range.contains(5461));
         assert_eq!(range.len(), 5461);
+
+        // Test invalid ranges
+        assert!(SlotRange::new(5461, 0).is_none()); // start >= end
+        assert!(SlotRange::new(0, 16385).is_none()); // end > 16384
+        assert!(SlotRange::new(100, 100).is_none()); // start == end
     }
 
     #[test]
