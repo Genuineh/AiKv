@@ -35,12 +35,23 @@
 //! │  (Router, MultiRaftNode, MetaRaftNode)      │
 //! └─────────────────────────────────────────────┘
 //! ```
+//!
+//! # Stage C: Slot Migration
+//!
+//! This module includes support for online slot migration:
+//! - `CLUSTER GETKEYSINSLOT` - Get keys belonging to a specific slot
+//! - `CLUSTER COUNTKEYSINSLOT` - Count keys in a slot
+//! - Migration state management (`MIGRATING`/`IMPORTING`)
+//! - `-ASK` redirection logic
+//! - Migration progress tracking
 
 mod commands;
 mod node;
 mod router;
 
-pub use commands::{ClusterCommands, ClusterState, NodeInfo, SlotState};
+pub use commands::{
+    ClusterCommands, ClusterState, KeyScanner, MigrationProgress, NodeInfo, RedirectType, SlotState,
+};
 pub use node::ClusterNode;
 pub use router::SlotRouter;
 
