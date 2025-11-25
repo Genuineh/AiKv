@@ -322,26 +322,177 @@
 
 ---
 
-## 优先级 9 - 集群和高可用
+## 优先级 9 - 集群和高可用 (基于 AiDb v0.4.1 MultiRaft API)
 
-### 9.1 主从复制
-- [ ] 实现主从复制协议
-- [ ] 支持增量复制
-- [ ] 实现复制偏移量追踪
-- [ ] 添加主从切换支持
+**设计理念**: AiDb v0.4.1 已提供完整的 MultiRaft 集群管理 API，AiKv 应直接使用这些 API 实现 Redis Cluster 协议适配，最大化代码复用，最小化自主开发。
 
-### 9.2 哨兵模式 (Sentinel)
-- [ ] 实现哨兵协议
-- [ ] 自动故障转移
-- [ ] 主节点选举
+**核心依赖**: 通过 `aidb/raft-cluster` feature 启用集群功能
 
-### 9.3 集群模式 (Cluster)
-- [ ] 实现 Redis Cluster 协议
-- [ ] 数据分片支持
-- [ ] 节点间通信
-- [ ] 集群重配置
+```toml
+[features]
+cluster = ["aidb/raft-cluster"]
+```
+
+### 9.1 AiDb MultiRaft API 组件导入
+
+启用 `cluster` feature 后，可通过 `aidb::cluster` 导入以下组件：
+
+```rust
+use aidb::cluster::{
+    // 核心节点管理
+    MultiRaftNode,        // 多 Raft Group 节点管理
+    MetaRaftNode,         // 集群元数据 Raft 管理
+    
+    // 路由和分片
+    Router,               // key→slot→group 路由器
+    SLOT_COUNT,           // slot 总数 (16384)
+    
+    // 迁移管理
+    MigrationManager,     // 在线 slot 迁移
+    MigrationConfig,      // 迁移配置
+    
+    // 成员管理
+    MembershipCoordinator, // 成员变更协调
+    ReplicaAllocator,      // 副本分配算法
+    
+    // 数据结构
+    ClusterMeta,          // 集群元数据
+    GroupMeta,            // Raft Group 元数据
+    NodeInfo,             // 节点信息
+    NodeStatus,           // 节点状态
+    SlotMigration,        // 迁移状态
+    SlotMigrationState,   // 迁移状态枚举
+    
+    // 类型别名
+    NodeId,               // 节点 ID 类型 (u64)
+    GroupId,              // Group ID 类型 (u64)
+};
+```
+
+### 9.2 Redis Cluster 协议胶水层实现 (AiKv 开发内容)
+
+AiKv 只需实现 **RESP 协议解析** 和 **Redis Cluster 命令到 AiDb API 的映射**：
+
+#### 9.2.1 集群信息命令映射
+
+| Redis 命令 | AiDb API | AiKv 胶水层实现 |
+|-----------|----------|----------------|
+| `CLUSTER INFO` | `meta_raft.get_cluster_meta()` | 解析 `ClusterMeta` 生成 Redis 格式输出 |
+| `CLUSTER NODES` | `meta_raft.get_cluster_meta().nodes` | 遍历节点，格式化为 Redis CLUSTER NODES 格式 |
+| `CLUSTER SLOTS` | `meta_raft.get_cluster_meta().slots` + `.groups` | 组合 slots 和 groups 生成 Redis 格式 |
+| `CLUSTER MYID` | `multi_raft_node.node_id()` | 返回当前节点 ID |
+| `CLUSTER KEYSLOT key` | `Router::key_to_slot(key)` | 直接调用，CRC16/XMODEM 与 Redis 完全兼容 |
+
+#### 9.2.2 节点管理命令映射
+
+| Redis 命令 | AiDb API | AiKv 胶水层实现 |
+|-----------|----------|----------------|
+| `CLUSTER MEET ip port` | `meta_raft.add_node(node_id, addr)` | 生成 node_id，添加节点 |
+| `CLUSTER FORGET node_id` | `meta_raft.remove_node(node_id)` | 从集群移除节点 |
+
+#### 9.2.3 Slot 管理命令映射
+
+| Redis 命令 | AiDb API | AiKv 胶水层实现 |
+|-----------|----------|----------------|
+| `CLUSTER ADDSLOTS slot...` | `meta_raft.update_slots(start, end, group_id)` | 批量分配 slots |
+| `CLUSTER DELSLOTS slot...` | `meta_raft.update_slots(start, end, 0)` | 标记为未分配 |
+| `CLUSTER SETSLOT slot NODE` | `meta_raft.update_slots(slot, slot+1, group_id)` | 分配单个 slot |
+| `CLUSTER SETSLOT MIGRATING` | `migration_manager.start_migration(slot, from, to)` | 开始迁移 |
+| `CLUSTER SETSLOT IMPORTING` | 自动处理 | 由 MigrationManager 内部管理 |
+| `CLUSTER GETKEYSINSLOT` | `state_machine.scan_slot_keys_sync(group, slot)` | 扫描 slot 内 keys |
+
+#### 9.2.4 成员管理命令映射
+
+| Redis 命令 | AiDb API | AiKv 胶水层实现 |
+|-----------|----------|----------------|
+| `CLUSTER REPLICATE` | `membership_coordinator.add_learner()` | 添加副本 |
+| `CLUSTER FAILOVER` | `raft.trigger_elect()` (openraft) | 触发选举 |
+
+#### 9.2.5 数据操作路由
+
+| Redis 命令 | AiDb API | 说明 |
+|-----------|----------|------|
+| `SET key value` | `multi_raft_node.put(key, value)` | 自动路由 |
+| `GET key` | `multi_raft_node.get(&key)` | 自动路由 |
+| `DEL key` | `multi_raft_node.delete(&key)` | 自动路由 |
+| `MIGRATE` | `migration_manager.migrate_key()` | 单 key 迁移 |
+
+### 9.3 AiKv 胶水层架构
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     AiKv RESP Listener (6379)                       │
+│                             ↓                                       │
+│                   Command Parser (现有代码)                          │
+│                             ↓                                       │
+│    ┌────────────────────────────────────────────────────────┐       │
+│    │           Redis Cluster 协议胶水层 (新增)               │       │
+│    │  • ClusterCommands: CLUSTER INFO/NODES/SLOTS/KEYSLOT   │       │
+│    │  • SlotRedirector: -MOVED/-ASK 错误处理                │       │
+│    │  • ClusterBus: 节点间通信 (端口 +10000)                │       │
+│    └────────────────────────────────────────────────────────┘       │
+│                             ↓                                       │
+│    ┌────────────────────────────────────────────────────────┐       │
+│    │           AiDb MultiRaft API (v0.4.1)                   │       │
+│    │  • MultiRaftNode: 节点管理、自动路由                   │       │
+│    │  • MetaRaftNode: 元数据 Raft                           │       │
+│    │  • Router: CRC16 槽路由                                │       │
+│    │  • MigrationManager: 在线迁移                          │       │
+│    │  • MembershipCoordinator: 成员变更                     │       │
+│    └────────────────────────────────────────────────────────┘       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 9.4 实现任务清单
+
+- [ ] **阶段 A: 基础集成** (对应 Stage 0-1)
+  - [ ] 添加 `cluster` feature 和 AiDb v0.4.1 依赖
+  - [ ] 创建 `src/cluster/mod.rs` 模块
+  - [ ] 实现 `ClusterNode` 封装 `MultiRaftNode`
+  - [ ] 实现 `CLUSTER KEYSLOT` 命令 (使用 `Router::key_to_slot`)
+  - [ ] 实现 `-MOVED` 重定向逻辑
+
+- [ ] **阶段 B: 集群命令** (对应 Stage 2)
+  - [ ] 实现 `CLUSTER INFO` 命令
+  - [ ] 实现 `CLUSTER NODES` 命令
+  - [ ] 实现 `CLUSTER SLOTS` 命令
+  - [ ] 实现 `CLUSTER MYID` 命令
+  - [ ] 实现 `CLUSTER MEET` 命令
+  - [ ] 实现 `CLUSTER FORGET` 命令
+  - [ ] 实现 `CLUSTER ADDSLOTS/DELSLOTS` 命令
+  - [ ] 实现 `CLUSTER SETSLOT` 命令
+
+- [ ] **阶段 C: 槽迁移** (对应 Stage 3)
+  - [ ] 实现 `CLUSTER GETKEYSINSLOT` 命令
+  - [ ] 实现迁移状态查询 (`CLUSTER SETSLOT ... IMPORTING/MIGRATING`)
+  - [ ] 实现 `-ASK` 重定向逻辑
+  - [ ] 集成 `MigrationManager` 实现在线迁移
+  - [ ] 实现 `MIGRATE` 命令
+
+- [ ] **阶段 D: 高可用** (对应 Stage 4)
+  - [ ] 实现 `CLUSTER REPLICATE` 命令
+  - [ ] 实现 `CLUSTER FAILOVER` 命令
+  - [ ] 实现 `READONLY/READWRITE` 命令
+  - [ ] 集成 `MembershipCoordinator`
+
+- [ ] **阶段 E: Cluster Bus** (可选优化)
+  - [ ] 实现节点间 gossip 协议
+  - [ ] 实现心跳检测
+  - [ ] 实现故障检测
+
+### 9.5 代码量估算
+
+| 模块 | 估算行数 | 说明 |
+|------|----------|------|
+| ClusterCommands | ~500 行 | Redis 命令解析和响应格式化 |
+| SlotRedirector | ~200 行 | -MOVED/-ASK 处理 |
+| ClusterBus | ~300 行 | 节点间通信 (可选) |
+| **总计** | ~1000 行 | 纯胶水层代码，核心逻辑由 AiDb 提供 |
+
+**对比**: 如果不使用 AiDb，从零实现 MultiRaft + 迁移 + 成员管理需要 ~10000+ 行代码
 
 ---
+
 
 ## 优先级 10 - 文档和工具
 
@@ -627,49 +778,68 @@
 
 ## AiKv v1.0.0 完整终极规划 (2025.11.26 – 2026.03.31)
 
-**目标**: 发布全球第一个 100% Redis Cluster 协议兼容 + 完全 Rust 原生 + 基于 AiDb v0.4.0 Multi-Raft 的生产级分布式 KV 引擎
+**目标**: 发布全球第一个 100% Redis Cluster 协议兼容 + 完全 Rust 原生 + 基于 AiDb v0.4.1 Multi-Raft 的生产级分布式 KV 引擎
+
+**核心策略**: 最大化利用 AiDb v0.4.1 已提供的 MultiRaft API，AiKv 只需实现 Redis Cluster 协议胶水层
 
 **最终版本号**: AiKv v1.0.0 (2026 年 3 月 31 日发布)
 
-### 最终技术架构
+### 技术架构 (基于 AiDb v0.4.1 API)
 
 ```
-每个 AiKv 节点 = 1 个 MultiRaftCluster（16384 个独立 Raft Group + 1 个 MetaRaft）
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     RESP Listener (6379)                            │
+│                     AiKv RESP Listener (6379)                       │
 │                             ↓                                       │
-│                   Command Parser + CRC16 Slot Calc                  │
+│                   Command Parser (现有代码)                          │
 │                             ↓                                       │
-│                ┌───────────────────────────────┐                    │
-│                │      MetaRaft 查询槽拥有者      │                    │
-│                └───────────────────────────────┘                    │
-│         Local? → Yes → MultiRaftCluster.handle_group(slot, cmd)     │
-│         Remote? → No → 返回 -MOVED 或 gRPC 转发到目标节点           │
+│    ┌────────────────────────────────────────────────────────┐       │
+│    │         Redis Cluster 协议胶水层 (AiKv 新增 ~1000 行)   │       │
+│    │  • CLUSTER 命令处理 → 调用 AiDb MetaRaftNode API        │       │
+│    │  • 槽路由 → 使用 Router::key_to_slot()                 │       │
+│    │  • -MOVED/-ASK 重定向 → 使用 Router.slot_to_group()    │       │
+│    │  • 迁移管理 → 使用 MigrationManager API                │       │
+│    └────────────────────────────────────────────────────────┘       │
 │                             ↓                                       │
-│             ┌─────────────────────────────────────────────┐         │
-│             │            MultiRaftCluster (AiDb v0.4.0)   │         │
-│             │  • MetaRaft：全局槽映射、节点状态、配置变更  │         │
-│             │  • 16384 个 Raft Group → 每个对应 1 个 Redis 槽│       │
-│             │  • 每个 Group 独立 AiDb LSM + Thin WAL 复制  │         │
-│             │  • Stage 5 在线槽迁移（双写 + 原子切换）     │         │
-│             └─────────────────────────────────────────────┘         │
+│    ┌────────────────────────────────────────────────────────┐       │
+│    │         AiDb MultiRaft API (v0.4.1 完整提供)            │       │
+│    │  • MultiRaftNode: 自动路由、数据读写                   │       │
+│    │  • MetaRaftNode: 元数据 Raft、节点管理                 │       │
+│    │  • Router: CRC16 槽计算 (Redis 兼容)                   │       │
+│    │  • MigrationManager: 在线迁移、双写、原子切换           │       │
+│    │  • MembershipCoordinator: 成员变更、副本分配           │       │
+│    │  • 16384 Slots → Raft Groups 映射                      │       │
+│    └────────────────────────────────────────────────────────┘       │
 │                             ↓                                       │
 │               Cluster Bus 端口 16379（gossip + 心跳）               │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 18 周完整里程碑（7 大阶段）
+### AiDb API 与 Redis Cluster 命令映射速查
 
-| 周次 | 阶段 & 里程碑 | 核心交付物 | 验收标准 |
-|------|---------------|------------|----------|
-| **周 1-2** | **Stage 0**: AiKv 完整接入 AiDb v0.4.0 Multi-Raft | v0.2.0 | 3 节点启动成功，MetaRaft 选举正常，Thin Replication 同步 < 50ms |
-| **周 3-4** | **Stage 1**: 16384 槽完美映射 + 路由核心 | v0.3.0 | `redis-cli --cluster create` 成功建集群，-c 自动跳槽 |
-| **周 5-6** | **Stage 2**: CLUSTER 全命令 + 节点管理 | v0.4.0 | `redis-cli --cluster add-node/del-node/check/info` 全通过 |
-| **周 7-9** | **Stage 3**: 槽在线迁移 (reshard) | v0.5.0 | `redis-cli --cluster reshard` 迁移 1000 槽 < 25s，零数据丢失 |
-| **周 10-12** | **Stage 4**: 副本 + 高可用 + 自动 failover | v0.6.0 | 3 主 3 从集群，杀任意主 < 10s 自动切换 |
-| **周 13-15** | **Stage 5**: 高级数据类型 + Lua + Pub/Sub | v0.8.0 | List/Set/Hash/Zset/JSON 跨槽支持，EVAL 多槽拆分执行 |
-| **周 16-17** | **Stage 6**: 极限压测 + 官方测试套件 | v0.9.0 | 100% 通过 redis/tests/cluster 全套测试 (> 800 个 case) |
-| **周 18** | **Stage 7**: 发布 v1.0.0 + 生态 | v1.0.0 | Docker 镜像、helm chart、Prometheus exporter、完整文档 |
+| Redis Cluster 命令 | AiDb v0.4.1 API | 实现复杂度 |
+|-------------------|-----------------|-----------|
+| `CLUSTER KEYSLOT` | `Router::key_to_slot(key)` | ⭐ 简单 |
+| `CLUSTER INFO` | `meta_raft.get_cluster_meta()` | ⭐ 简单 |
+| `CLUSTER NODES` | `meta_raft.get_cluster_meta().nodes` | ⭐⭐ 中等 (格式化) |
+| `CLUSTER SLOTS` | `meta_raft.get_cluster_meta().slots/groups` | ⭐⭐ 中等 |
+| `CLUSTER MEET` | `meta_raft.add_node(id, addr)` | ⭐ 简单 |
+| `CLUSTER ADDSLOTS` | `meta_raft.update_slots(start, end, group)` | ⭐ 简单 |
+| `SET/GET/DEL` | `multi_raft.put/get/delete` | ⭐ 简单 (自动路由) |
+| 在线迁移 | `migration_manager.start_migration()` | ⭐⭐ 中等 |
+| 副本管理 | `membership_coordinator.add_learner()` | ⭐⭐ 中等 |
+
+### 18 周完整里程碑（基于 AiDb API 重新规划）
+
+| 周次 | 阶段 & 里程碑 | 核心交付物 | AiDb API 使用 |
+|------|---------------|------------|--------------|
+| **周 1-2** | **Stage 0**: 集成 AiDb v0.4.1 cluster feature | v0.2.0 | `MultiRaftNode`, `MetaRaftNode` 初始化 |
+| **周 3-4** | **Stage 1**: 槽路由 + KEYSLOT + -MOVED | v0.3.0 | `Router::key_to_slot()`, `Router.route()` |
+| **周 5-6** | **Stage 2**: CLUSTER 命令实现 | v0.4.0 | `meta_raft.get_cluster_meta()`, `add_node()` |
+| **周 7-9** | **Stage 3**: 在线迁移 | v0.5.0 | `MigrationManager.start_migration()` |
+| **周 10-12** | **Stage 4**: 副本 + failover | v0.6.0 | `MembershipCoordinator`, `ReplicaAllocator` |
+| **周 13-15** | **Stage 5**: 高级功能 | v0.8.0 | 迁移感知读写 |
+| **周 16-17** | **Stage 6**: 测试 + 压测 | v0.9.0 | 完整集成测试 |
+| **周 18** | **Stage 7**: 发布 | v1.0.0 | 文档 + 镜像 |
 
 ### v1.0.0 硬性指标 (CI 强制)
 
@@ -730,7 +900,7 @@ redis-cli --cluster create 172.20.0.2:6379 172.20.0.3:6380 172.20.0.4:6381 \
 
 ---
 
-## 版本规划
+## 版本规划 (基于 AiDb v0.4.1 API)
 
 ### v0.1.0 (当前版本 - 已完成)
 - ✅ RESP2/RESP3 协议支持
@@ -738,60 +908,95 @@ redis-cli --cluster create 172.20.0.2:6379 172.20.0.3:6380 172.20.0.4:6381 \
 - ✅ JSON 命令 (7个)
 - ✅ 基础 TCP 服务器
 - ✅ 内存存储适配器
-- ✅ AiDb v0.4.0 集成（已升级）
+- ✅ AiDb v0.4.1 集成（已升级）
 - ✅ 多数据库支持 (16 个数据库)
 - ✅ 键过期机制 (TTL 支持)
 - ✅ 存储层架构重构完成
 - ✅ List/Set/Hash/ZSet 数据类型
 - ✅ Lua 脚本支持
 
-### v0.2.0 (Stage 0: 周 1-2)
-- [ ] Multi-Raft 框架集成
-- [ ] MetaRaft 选举和状态管理
-- [ ] Thin Replication 同步
-- [ ] 3 节点启动验证
+### v0.2.0 (Stage 0: 周 1-2) - AiDb MultiRaft 集成
+- [ ] 添加 `cluster` feature (`aidb/raft-cluster`)
+- [ ] 创建 `src/cluster/mod.rs` 模块
+- [ ] 封装 `MultiRaftNode` 初始化
+- [ ] 封装 `MetaRaftNode` 初始化
+- [ ] 实现 3 节点启动和验证
 
-### v0.3.0 (Stage 1: 周 3-4)
-- [ ] 16384 槽映射初始化
-- [ ] CRC16 槽计算
-- [ ] -MOVED/-ASK 重定向
-- [ ] 基础 CLUSTER 命令 (MEET/NODES/INFO)
+**关键 AiDb API**:
+```rust
+use aidb::cluster::{MultiRaftNode, MetaRaftNode};
+let node = MultiRaftNode::new(node_id, "./data", config).await?;
+node.init_meta_raft(config).await?;
+```
 
-### v0.4.0 (Stage 2: 周 5-6)
-- [ ] CLUSTER 全命令实现
-- [ ] 节点管理 (add-node/del-node)
-- [ ] CLUSTER NODES 标准格式
-- [ ] Cluster Bus (端口 16379)
-- [ ] 节点发现和心跳
+### v0.3.0 (Stage 1: 周 3-4) - 槽路由核心
+- [ ] 实现 `CLUSTER KEYSLOT` 命令 (使用 `Router::key_to_slot`)
+- [ ] 实现 `-MOVED` 重定向逻辑 (使用 `Router.slot_to_group`)
+- [ ] 初始化 16384 槽到 Raft Group 映射
 
-### v0.5.0 (Stage 3: 周 7-9)
-- [ ] 槽在线迁移 (reshard)
-- [ ] 双写机制
-- [ ] 原子切换
-- [ ] 数据一致性验证
-- [ ] 迁移进度监控
+**关键 AiDb API**:
+```rust
+use aidb::cluster::{Router, SLOT_COUNT};
+let slot = Router::key_to_slot(b"mykey");  // 与 Redis 完全兼容
+let group_id = router.slot_to_group(slot)?;
+```
 
-### v0.6.0 (Stage 4: 周 10-12)
-- [ ] 副本同步
-- [ ] 高可用架构
-- [ ] 自动 failover
-- [ ] READONLY/READWRITE
-- [ ] CLUSTER FAILOVER
+### v0.4.0 (Stage 2: 周 5-6) - CLUSTER 命令
+- [ ] 实现 `CLUSTER INFO` (使用 `meta_raft.get_cluster_meta()`)
+- [ ] 实现 `CLUSTER NODES` (格式化 `ClusterMeta.nodes`)
+- [ ] 实现 `CLUSTER SLOTS` (组合 `ClusterMeta.slots` 和 `.groups`)
+- [ ] 实现 `CLUSTER MEET` (使用 `meta_raft.add_node()`)
+- [ ] 实现 `CLUSTER ADDSLOTS/DELSLOTS` (使用 `meta_raft.update_slots()`)
 
-### v0.8.0 (Stage 5: 周 13-15)
+**关键 AiDb API**:
+```rust
+use aidb::cluster::{MetaRaftNode, ClusterMeta, NodeInfo};
+let meta: ClusterMeta = meta_raft.get_cluster_meta();
+meta_raft.add_node(node_id, addr).await?;
+meta_raft.update_slots(0, 5461, group_id).await?;
+```
+
+### v0.5.0 (Stage 3: 周 7-9) - 在线迁移
+- [ ] 实现 `CLUSTER GETKEYSINSLOT` (使用 `state_machine.scan_slot_keys_sync`)
+- [ ] 实现 `CLUSTER SETSLOT ... MIGRATING/IMPORTING`
+- [ ] 实现 `-ASK` 重定向逻辑
+- [ ] 集成迁移监控 (`MigrationManager.get_migration_progress`)
+
+**关键 AiDb API**:
+```rust
+use aidb::cluster::{MigrationManager, MigrationConfig};
+let manager = MigrationManager::new(config, router, state_machine);
+manager.start_migration(slot, from_group, to_group).await?;
+// 迁移感知读写 (双写期间)
+manager.put_with_migration_awareness(&key, value)?;
+manager.get_with_migration_awareness(&key)?;
+```
+
+### v0.6.0 (Stage 4: 周 10-12) - 高可用
+- [ ] 实现 `CLUSTER REPLICATE` (使用 `MembershipCoordinator.add_learner`)
+- [ ] 实现 `CLUSTER FAILOVER` (使用 openraft `trigger_elect`)
+- [ ] 实现 `READONLY/READWRITE` 命令
+
+**关键 AiDb API**:
+```rust
+use aidb::cluster::{MembershipCoordinator, ReplicaAllocator};
+coordinator.add_learner(group_id, node_id, addr).await?;
+coordinator.promote_learner(group_id, new_members).await?;
+```
+
+### v0.8.0 (Stage 5: 周 13-15) - 高级功能
 - [ ] 高级数据类型跨槽支持
 - [ ] EVAL/EVALSHA 多槽拆分
 - [ ] PUBLISH 跨节点投递
 - [ ] 事务支持 (MULTI/EXEC/WATCH)
-- [ ] Bitmap/HyperLogLog/Stream
 
-### v0.9.0 (Stage 6: 周 16-17)
+### v0.9.0 (Stage 6: 周 16-17) - 测试和优化
 - [ ] 极限压测
 - [ ] 官方测试套件通过
 - [ ] 性能调优
 - [ ] 稳定性测试
 
-### v1.0.0 (Stage 7: 周 18 - 2026.03.31)
+### v1.0.0 (Stage 7: 周 18 - 2026.03.31) - 发布
 - [ ] Docker 官方镜像
 - [ ] Helm Chart
 - [ ] Prometheus Exporter
