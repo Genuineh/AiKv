@@ -40,7 +40,7 @@ mod commands;
 mod node;
 mod router;
 
-pub use commands::ClusterCommands;
+pub use commands::{ClusterCommands, ClusterState, NodeInfo, SlotState};
 pub use node::ClusterNode;
 pub use router::SlotRouter;
 

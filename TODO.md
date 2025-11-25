@@ -452,15 +452,15 @@ AiKv 只需实现 **RESP 协议解析** 和 **Redis Cluster 命令到 AiDb API �
   - [x] 实现 `CLUSTER KEYSLOT` 命令 (使用 `Router::key_to_slot`)
   - [x] 实现 `-MOVED` 重定向逻辑
 
-- [ ] **阶段 B: 集群命令** (对应 Stage 2)
+- [x] **阶段 B: 集群命令** (对应 Stage 2)
   - [x] 实现 `CLUSTER INFO` 命令 (基础版本)
   - [x] 实现 `CLUSTER NODES` 命令 (基础版本)
   - [x] 实现 `CLUSTER SLOTS` 命令 (基础版本)
   - [x] 实现 `CLUSTER MYID` 命令
-  - [ ] 实现 `CLUSTER MEET` 命令
-  - [ ] 实现 `CLUSTER FORGET` 命令
-  - [ ] 实现 `CLUSTER ADDSLOTS/DELSLOTS` 命令
-  - [ ] 实现 `CLUSTER SETSLOT` 命令
+  - [x] 实现 `CLUSTER MEET` 命令
+  - [x] 实现 `CLUSTER FORGET` 命令
+  - [x] 实现 `CLUSTER ADDSLOTS/DELSLOTS` 命令
+  - [x] 实现 `CLUSTER SETSLOT` 命令
 
 - [ ] **阶段 C: 槽迁移** (对应 Stage 3)
   - [ ] 实现 `CLUSTER GETKEYSINSLOT` 命令
