@@ -21,8 +21,8 @@
   - [x] 编译检查 (debug 和 release)
   - [x] 运行所有单元测试
   - [x] 运行集成测试
-  - [x] 代码覆盖率报告
-  - [x] 多平台构建 (Linux, macOS)
+  - ~~[x] 代码覆盖率报告~~ (已移除，简化CI流程)
+  - ~~[x] 多平台构建 (Linux, macOS)~~ (已简化为仅Linux)
   - [ ] 多 Rust 版本测试 (stable, beta, nightly) - 当前仅支持 stable
 
 - [x] 创建 `.github/workflows/release.yml` - 发布流水线
@@ -445,18 +445,18 @@ AiKv 只需实现 **RESP 协议解析** 和 **Redis Cluster 命令到 AiDb API �
 
 ### 9.4 实现任务清单
 
-- [ ] **阶段 A: 基础集成** (对应 Stage 0-1)
-  - [ ] 添加 `cluster` feature 和 AiDb v0.4.1 依赖
-  - [ ] 创建 `src/cluster/mod.rs` 模块
-  - [ ] 实现 `ClusterNode` 封装 `MultiRaftNode`
-  - [ ] 实现 `CLUSTER KEYSLOT` 命令 (使用 `Router::key_to_slot`)
-  - [ ] 实现 `-MOVED` 重定向逻辑
+- [x] **阶段 A: 基础集成** (对应 Stage 0-1)
+  - [x] 添加 `cluster` feature 和 AiDb v0.4.1 依赖
+  - [x] 创建 `src/cluster/mod.rs` 模块
+  - [x] 实现 `ClusterNode` 封装 `MultiRaftNode`
+  - [x] 实现 `CLUSTER KEYSLOT` 命令 (使用 `Router::key_to_slot`)
+  - [x] 实现 `-MOVED` 重定向逻辑
 
 - [ ] **阶段 B: 集群命令** (对应 Stage 2)
-  - [ ] 实现 `CLUSTER INFO` 命令
-  - [ ] 实现 `CLUSTER NODES` 命令
-  - [ ] 实现 `CLUSTER SLOTS` 命令
-  - [ ] 实现 `CLUSTER MYID` 命令
+  - [x] 实现 `CLUSTER INFO` 命令 (基础版本)
+  - [x] 实现 `CLUSTER NODES` 命令 (基础版本)
+  - [x] 实现 `CLUSTER SLOTS` 命令 (基础版本)
+  - [x] 实现 `CLUSTER MYID` 命令
   - [ ] 实现 `CLUSTER MEET` 命令
   - [ ] 实现 `CLUSTER FORGET` 命令
   - [ ] 实现 `CLUSTER ADDSLOTS/DELSLOTS` 命令
