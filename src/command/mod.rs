@@ -36,6 +36,8 @@ pub struct CommandExecutor {
     hash_commands: HashCommands,
     set_commands: SetCommands,
     zset_commands: ZSetCommands,
+    #[cfg(feature = "cluster")]
+    cluster_commands: crate::cluster::ClusterCommands,
 }
 
 impl CommandExecutor {
@@ -51,6 +53,8 @@ impl CommandExecutor {
             hash_commands: HashCommands::new(storage.clone()),
             set_commands: SetCommands::new(storage.clone()),
             zset_commands: ZSetCommands::new(storage),
+            #[cfg(feature = "cluster")]
+            cluster_commands: crate::cluster::ClusterCommands::new(),
         }
     }
 
@@ -216,6 +220,10 @@ impl CommandExecutor {
             "ZCARD" => self.zset_commands.zcard(args, *current_db),
             "ZCOUNT" => self.zset_commands.zcount(args, *current_db),
             "ZINCRBY" => self.zset_commands.zincrby(args, *current_db),
+
+            // Cluster commands (only available with cluster feature)
+            #[cfg(feature = "cluster")]
+            "CLUSTER" => self.cluster_commands.execute(args),
 
             // Utility commands
             "PING" => Ok(RespValue::simple_string("PONG")),
