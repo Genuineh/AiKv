@@ -419,6 +419,15 @@ fn test_ping_command() {
         )
         .unwrap();
     assert_eq!(result, RespValue::bulk_string("hello world!"));
+
+    // Test PING with too many arguments - should return error
+    let result = executor.execute(
+        "PING",
+        &[Bytes::from("hello"), Bytes::from("world")],
+        &mut current_db,
+        client_id,
+    );
+    assert!(result.is_err());
 }
 
 #[test]

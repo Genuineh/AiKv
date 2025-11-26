@@ -233,9 +233,11 @@ impl CommandExecutor {
             "PING" => {
                 if args.is_empty() {
                     Ok(RespValue::simple_string("PONG"))
-                } else {
+                } else if args.len() == 1 {
                     // Return a copy of the argument as a bulk string
                     Ok(RespValue::bulk_string(args[0].clone()))
+                } else {
+                    Err(AikvError::WrongArgCount("PING".to_string()))
                 }
             }
             "ECHO" => {
