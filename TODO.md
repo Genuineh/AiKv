@@ -58,13 +58,15 @@
 - [ ] 封装 `MetaRaftNode` 初始化
 - [ ] 实现 3 节点启动和验证
 
-### 🔴 P0: Cluster Bus 实现
+### 🔴 P0: Cluster Bus 实现 (AiDb 胶水层)
 
-> 预计时间: 2-3 周
+> 预计时间: 1 周
+> 注：由于 AiDb 已实现 OpenRaft，不需要独立实现 gossip 协议。
+> 心跳和故障检测通过对接 AiDb API 完成，保持胶水层设计理念。
 
-- [ ] 实现节点间 gossip 协议
-- [ ] 实现心跳检测
-- [ ] 实现故障检测
+- [x] ~~实现节点间 gossip 协议~~ (不需要 - AiDb 的 Raft 共识处理集群元数据同步)
+- [ ] 对接 AiDb 心跳检测 API (`MetaRaftNode` leader heartbeat)
+- [ ] 对接 AiDb 故障检测 API (`NodeStatus::Online/Offline` + election timeout)
 
 ### 🟠 P1: 核心命令补全
 
