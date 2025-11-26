@@ -2,7 +2,7 @@ use aikv::{Server, StorageEngine};
 use serde::Deserialize;
 use std::fs;
 use tracing::{info, warn};
-use tracing_subscriber::{self, EnvFilter};
+use tracing_subscriber::{self, filter::LevelFilter, EnvFilter};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const LOGO: &str = r#"
@@ -320,17 +320,16 @@ async fn main() {
 
     // Initialize logging with configured level
     let log_level = logging_config.level.to_lowercase();
-    let valid_levels = ["trace", "debug", "info", "warn", "error"];
-    let effective_level = if valid_levels.contains(&log_level.as_str()) {
-        log_level
-    } else {
+    let level_filter = log_level.parse::<LevelFilter>().unwrap_or_else(|_| {
         eprintln!(
             "Warning: Invalid log level '{}', using 'info'",
             logging_config.level
         );
-        "info".to_string()
-    };
-    let filter = EnvFilter::new(&effective_level);
+        LevelFilter::INFO
+    });
+    let filter = EnvFilter::builder()
+        .with_default_directive(level_filter.into())
+        .from_env_lossy();
     tracing_subscriber::fmt()
         .with_target(false)
         .with_level(true)
