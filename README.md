@@ -257,9 +257,27 @@ OK
 
 ## 🔧 配置
 
+项目提供了完整的配置模板，位于 `config/` 目录：
+
+| 配置文件 | 说明 |
+|---------|-----|
+| [`config/aikv.toml`](config/aikv.toml) | 单机模式配置模板 |
+| [`config/aikv-cluster.toml`](config/aikv-cluster.toml) | 集群模式配置模板 |
+
 ### 单节点配置
 
-创建 `config.toml` 文件：
+```bash
+# 复制配置模板
+cp config/aikv.toml config.toml
+
+# 编辑配置
+vim config.toml
+
+# 启动服务
+./target/release/aikv --config config.toml
+```
+
+示例配置：
 
 ```toml
 [server]
@@ -279,6 +297,20 @@ file = "./logs/aikv.log"
 ```
 
 ### 集群配置 (Feature: cluster)
+
+```bash
+# 复制集群配置模板
+cp config/aikv-cluster.toml config.toml
+
+# 编辑配置（修改 node_id, peers 等）
+vim config.toml
+
+# 使用集群特性编译并启动
+cargo build --release --features cluster
+./target/release/aikv --config config.toml
+```
+
+示例配置：
 
 ```toml
 [server]
@@ -302,6 +334,8 @@ peers = [
 engine = "aidb"  # 集群模式推荐使用持久化存储
 data_dir = "./data"
 ```
+
+> 完整的配置选项请参考 [config/README.md](config/README.md)
 
 ### 存储引擎说明
 
