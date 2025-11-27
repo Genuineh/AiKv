@@ -282,20 +282,22 @@ impl ConnectionMetrics {
         self.rejected_connections.get()
     }
 
-    /// Get instantaneous input kbps (requires periodic calculation)
-    pub fn input_kbps(&self, bytes_in_period: u64, period_secs: f64) -> f64 {
+    /// Calculate kbps from bytes in a period
+    fn calculate_kbps(bytes_in_period: u64, period_secs: f64) -> f64 {
         if period_secs <= 0.0 {
             return 0.0;
         }
         (bytes_in_period as f64 / 1024.0) / period_secs
     }
 
+    /// Get instantaneous input kbps (requires periodic calculation)
+    pub fn input_kbps(&self, bytes_in_period: u64, period_secs: f64) -> f64 {
+        Self::calculate_kbps(bytes_in_period, period_secs)
+    }
+
     /// Get instantaneous output kbps (requires periodic calculation)
     pub fn output_kbps(&self, bytes_in_period: u64, period_secs: f64) -> f64 {
-        if period_secs <= 0.0 {
-            return 0.0;
-        }
-        (bytes_in_period as f64 / 1024.0) / period_secs
+        Self::calculate_kbps(bytes_in_period, period_secs)
     }
 }
 

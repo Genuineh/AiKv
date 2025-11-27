@@ -454,53 +454,48 @@ impl ServerCommands {
         let parameter = String::from_utf8_lossy(&args[0]).to_string();
         let value = String::from_utf8_lossy(&args[1]).to_string();
 
-        // Handle special parameters with side effects
-        match parameter.to_lowercase().as_str() {
-            "server" | "version" | "port" => {
-                return Err(AikvError::InvalidArgument(
-                    "ERR configuration parameter is read-only".to_string(),
-                ));
+        // Handle special parameters with side effects (case-insensitive comparison)
+        let param_lower = parameter.to_lowercase();
+        if param_lower == "server" || param_lower == "version" || param_lower == "port" {
+            return Err(AikvError::InvalidArgument(
+                "ERR configuration parameter is read-only".to_string(),
+            ));
+        } else if param_lower == "loglevel" {
+            // Dynamic log level adjustment
+            if let Some(level) = LogConfig::parse_level(&value) {
+                if let Ok(mut current) = self.current_log_level.write() {
+                    *current = level;
+                }
+            } else {
+                return Err(AikvError::InvalidArgument(format!(
+                    "ERR invalid log level: {}",
+                    value
+                )));
             }
-            "loglevel" => {
-                // Dynamic log level adjustment
-                if let Some(level) = LogConfig::parse_level(&value) {
-                    if let Ok(mut current) = self.current_log_level.write() {
-                        *current = level;
-                    }
-                } else {
-                    return Err(AikvError::InvalidArgument(format!(
-                        "ERR invalid log level: {}",
-                        value
-                    )));
+        } else if param_lower == "slowlog-log-slower-than" {
+            // Update slow query threshold
+            match value.parse::<u64>() {
+                Ok(threshold) => {
+                    self.slow_query_log.set_threshold_us(threshold);
+                }
+                Err(_) => {
+                    return Err(AikvError::InvalidArgument(
+                        "ERR invalid slowlog threshold value".to_string(),
+                    ));
                 }
             }
-            "slowlog-log-slower-than" => {
-                // Update slow query threshold
-                match value.parse::<u64>() {
-                    Ok(threshold) => {
-                        self.slow_query_log.set_threshold_us(threshold);
-                    }
-                    Err(_) => {
-                        return Err(AikvError::InvalidArgument(
-                            "ERR invalid slowlog threshold value".to_string(),
-                        ));
-                    }
+        } else if param_lower == "slowlog-max-len" {
+            // Update slow query max length
+            match value.parse::<usize>() {
+                Ok(max_len) => {
+                    self.slow_query_log.set_max_len(max_len);
+                }
+                Err(_) => {
+                    return Err(AikvError::InvalidArgument(
+                        "ERR invalid slowlog max length value".to_string(),
+                    ));
                 }
             }
-            "slowlog-max-len" => {
-                // Update slow query max length
-                match value.parse::<usize>() {
-                    Ok(max_len) => {
-                        self.slow_query_log.set_max_len(max_len);
-                    }
-                    Err(_) => {
-                        return Err(AikvError::InvalidArgument(
-                            "ERR invalid slowlog max length value".to_string(),
-                        ));
-                    }
-                }
-            }
-            _ => {}
         }
 
         let mut config = self
