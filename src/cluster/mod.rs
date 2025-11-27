@@ -36,6 +36,13 @@
 //! └─────────────────────────────────────────────┘
 //! ```
 //!
+//! # Cluster Bus (v0.3.0)
+//!
+//! This module includes the Cluster Bus for inter-node communication:
+//! - Heartbeat detection via `MetaRaftNode` leader heartbeat
+//! - Failure detection via `NodeStatus::Online/Offline` + election timeout
+//! - Health monitoring with configurable thresholds
+//!
 //! # Stage C: Slot Migration
 //!
 //! This module includes support for online slot migration:
@@ -62,10 +69,12 @@
 //! - Automatic key-to-slot-to-group routing
 //! - Support for 3-node cluster startup
 
+mod cluster_bus;
 mod commands;
 mod node;
 mod router;
 
+pub use cluster_bus::{ClusterBus, ClusterBusConfig, NodeHealthInfo, NodeHealthStatus};
 pub use commands::{
     ClusterCommands, ClusterState, FailoverMode, KeyCounter, KeyScanner, MigrationProgress,
     NodeInfo, RedirectType, SlotState,
@@ -79,7 +88,10 @@ pub use node::{ClusterConfig, GroupId};
 
 // Re-export AiDb cluster types when cluster feature is enabled
 #[cfg(feature = "cluster")]
-pub use aidb::cluster::{MetaRaftNode, MultiRaftNode, Router as AiDbRouter, SLOT_COUNT};
+pub use aidb::cluster::{
+    MetaNodeInfo as AiDbNodeInfo, MetaRaftNode, MultiRaftNode, NodeStatus as AiDbNodeStatus,
+    Router as AiDbRouter, SLOT_COUNT,
+};
 
 /// Default slot count for Redis Cluster (16384 slots)
 #[cfg(not(feature = "cluster"))]
