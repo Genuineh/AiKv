@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
+use tracing::debug;
 
 /// A monitor message containing command details
 #[derive(Clone, Debug)]
@@ -138,7 +139,15 @@ impl MonitorBroadcaster {
             return 0;
         }
 
-        self.sender.send(message).unwrap_or_default()
+        match self.sender.send(message) {
+            Ok(count) => count,
+            Err(e) => {
+                // This can happen if all receivers have been dropped.
+                // Log at debug level since this is expected during cleanup.
+                debug!("Monitor broadcast failed (no active receivers): {}", e);
+                0
+            }
+        }
     }
 
     /// Broadcast a command with the given details

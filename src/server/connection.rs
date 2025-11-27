@@ -14,6 +14,10 @@ use tracing::{debug, warn};
 
 static CLIENT_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+/// Commands that should not be broadcast to MONITOR clients.
+/// These are typically internal, debugging, or replication commands.
+const MONITOR_EXCLUDED_COMMANDS: &[&str] = &["MONITOR", "DEBUG", "SYNC", "PSYNC"];
+
 /// Protocol version
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ProtocolVersion {
@@ -43,6 +47,15 @@ pub struct Connection {
 }
 
 impl Connection {
+    /// Create a new connection handler.
+    ///
+    /// # Arguments
+    /// * `stream` - The TCP stream for this connection
+    /// * `executor` - Command executor for processing Redis commands
+    /// * `metrics` - Optional metrics collector for connection statistics
+    /// * `monitor_broadcaster` - Optional broadcaster for MONITOR command support.
+    ///   If None, MONITOR command will return an error. This is typically None
+    ///   only in unit tests or when MONITOR support is intentionally disabled.
     pub fn new(
         stream: TcpStream,
         executor: CommandExecutor,
@@ -258,11 +271,8 @@ impl Connection {
                     })
                     .collect();
 
-                // Broadcast to monitors (except MONITOR itself and some internal commands)
-                if !matches!(
-                    command_upper.as_str(),
-                    "MONITOR" | "DEBUG" | "SYNC" | "PSYNC"
-                ) {
+                // Broadcast to monitors (except excluded internal/debugging commands)
+                if !MONITOR_EXCLUDED_COMMANDS.contains(&command_upper.as_str()) {
                     self.broadcast_to_monitors(&command_upper, &args);
                 }
 

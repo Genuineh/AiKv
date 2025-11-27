@@ -6,6 +6,9 @@
 use aikv::server::monitor::{MonitorBroadcaster, MonitorMessage};
 use std::sync::Arc;
 
+/// Unix timestamp for 2000-01-01 00:00:00 UTC
+const YEAR_2000_UNIX_TIMESTAMP: f64 = 946684800.0;
+
 #[test]
 fn test_monitor_message_format_basic() {
     let msg = MonitorMessage::new(
@@ -219,7 +222,7 @@ fn test_monitor_message_timestamp() {
     let msg = MonitorMessage::new(0, "127.0.0.1:60866".to_string(), "PING".to_string(), vec![]);
 
     // Timestamp should be a reasonable Unix timestamp (after year 2000)
-    assert!(msg.timestamp > 946684800.0); // Unix timestamp for 2000-01-01
+    assert!(msg.timestamp > YEAR_2000_UNIX_TIMESTAMP);
 
     // Formatted message should contain the timestamp
     let formatted = msg.format();
