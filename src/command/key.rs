@@ -512,7 +512,7 @@ impl KeyCommands {
         stored_checksum == calculated_checksum
     }
 
-    /// RESTORE key ttl serialized-value [REPLACE] [ABSTTL] [IDLETIME seconds] [FREQ frequency]
+    /// RESTORE key ttl serialized-value \[REPLACE\] \[ABSTTL\] \[IDLETIME seconds\] \[FREQ frequency\]
     ///
     /// Create a key using the provided serialized value, previously obtained using DUMP.
     ///
@@ -631,7 +631,7 @@ impl KeyCommands {
         Ok(RespValue::ok())
     }
 
-    /// MIGRATE host port key|"" destination-db timeout [COPY] [REPLACE] [AUTH password] [AUTH2 username password] [KEYS key [key ...]]
+    /// MIGRATE host port key|"" destination-db timeout \[COPY\] \[REPLACE\] \[AUTH password\] \[AUTH2 username password\] \[KEYS key \[key ...\]\]
     ///
     /// Atomically transfer a key from a source Redis instance to a destination Redis instance.
     ///
