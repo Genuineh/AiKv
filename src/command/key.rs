@@ -1,7 +1,11 @@
 use crate::error::{AikvError, Result};
 use crate::protocol::RespValue;
-use crate::storage::StorageEngine;
+use crate::storage::{SerializableStoredValue, StorageEngine, StoredValue};
 use bytes::Bytes;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Default number of databases (matching Redis default)
+const DEFAULT_DB_COUNT: usize = 16;
 
 /// Key command handler
 pub struct KeyCommands {
@@ -429,5 +433,344 @@ impl KeyCommands {
         let expire_time_ms = self.storage.get_expire_time_in_db(current_db, &key)?;
 
         Ok(RespValue::integer(expire_time_ms))
+    }
+
+    /// DUMP key - Serialize the value stored at key in a Redis-specific format
+    ///
+    /// Returns a serialized representation of the value that can be restored
+    /// using the RESTORE command. The serialization format is compatible with
+    /// Redis's RDB format structure (simplified version).
+    ///
+    /// Format:
+    /// - 1 byte: type
+    /// - variable: serialized value (bincode)
+    /// - 2 bytes: RDB version (0x0009)
+    /// - 8 bytes: CRC64 checksum
+    pub fn dump(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
+        if args.len() != 1 {
+            return Err(AikvError::WrongArgCount("DUMP".to_string()));
+        }
+
+        let key = String::from_utf8_lossy(&args[0]).to_string();
+
+        // Get the value
+        match self.storage.get_value(current_db, &key)? {
+            Some(stored_value) => {
+                // Serialize the value
+                let serializable = stored_value.to_serializable();
+                let serialized = bincode::serialize(&serializable)
+                    .map_err(|e| AikvError::Storage(format!("Failed to serialize value: {}", e)))?;
+
+                // Build the dump format:
+                // - serialized value
+                // - 2 bytes RDB version (0x0009 = 9)
+                // - 8 bytes checksum (simplified additive checksum)
+                let mut dump_data = serialized;
+                dump_data.extend_from_slice(&[0x00, 0x09]); // RDB version 9
+
+                // Calculate a simple 64-bit additive checksum for data integrity
+                let checksum = Self::calculate_checksum(&dump_data);
+                dump_data.extend_from_slice(&checksum.to_le_bytes());
+
+                Ok(RespValue::bulk_string(Bytes::from(dump_data)))
+            }
+            None => Ok(RespValue::null_bulk_string()),
+        }
+    }
+
+    /// Calculate a simple 64-bit additive checksum for the data
+    fn calculate_checksum(data: &[u8]) -> u64 {
+        let mut checksum: u64 = 0;
+        for (i, byte) in data.iter().enumerate() {
+            checksum =
+                checksum.wrapping_add((*byte as u64).wrapping_mul((i as u64).wrapping_add(1)));
+        }
+        checksum
+    }
+
+    /// Verify the checksum in the dump data
+    fn verify_checksum(data: &[u8]) -> bool {
+        if data.len() < 10 {
+            return false;
+        }
+
+        // Extract checksum (last 8 bytes)
+        let stored_checksum = u64::from_le_bytes([
+            data[data.len() - 8],
+            data[data.len() - 7],
+            data[data.len() - 6],
+            data[data.len() - 5],
+            data[data.len() - 4],
+            data[data.len() - 3],
+            data[data.len() - 2],
+            data[data.len() - 1],
+        ]);
+
+        // Calculate checksum on data without the checksum itself
+        let calculated_checksum = Self::calculate_checksum(&data[..data.len() - 8]);
+
+        stored_checksum == calculated_checksum
+    }
+
+    /// RESTORE key ttl serialized-value \[REPLACE\] \[ABSTTL\] \[IDLETIME seconds\] \[FREQ frequency\]
+    ///
+    /// Create a key using the provided serialized value, previously obtained using DUMP.
+    ///
+    /// Arguments:
+    /// - key: The key name to create
+    /// - ttl: Time to live in milliseconds (0 means no expiration)
+    /// - serialized-value: The serialized value from DUMP command
+    /// - REPLACE: Replace existing key if present
+    /// - ABSTTL: TTL is an absolute Unix timestamp in milliseconds
+    pub fn restore(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
+        if args.len() < 3 {
+            return Err(AikvError::WrongArgCount("RESTORE".to_string()));
+        }
+
+        let key = String::from_utf8_lossy(&args[0]).to_string();
+        let ttl_str = String::from_utf8_lossy(&args[1]);
+        let ttl = ttl_str
+            .parse::<i64>()
+            .map_err(|_| AikvError::InvalidArgument("ERR invalid TTL value".to_string()))?;
+
+        let serialized_value = &args[2];
+
+        // Parse options
+        let mut replace = false;
+        let mut absttl = false;
+
+        let mut i = 3;
+        while i < args.len() {
+            let option = String::from_utf8_lossy(&args[i]).to_uppercase();
+            match option.as_str() {
+                "REPLACE" => {
+                    replace = true;
+                }
+                "ABSTTL" => {
+                    absttl = true;
+                }
+                "IDLETIME" | "FREQ" => {
+                    // These options are accepted but ignored (for Redis compatibility)
+                    if i + 1 >= args.len() {
+                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
+                    }
+                    i += 1; // Skip the value
+                }
+                _ => {
+                    return Err(AikvError::InvalidArgument(format!(
+                        "ERR syntax error, unknown option: {}",
+                        option
+                    )));
+                }
+            }
+            i += 1;
+        }
+
+        // Check if key already exists
+        if !replace && self.storage.exists_in_db(current_db, &key)? {
+            return Err(AikvError::InvalidArgument(
+                "BUSYKEY Target key name already exists".to_string(),
+            ));
+        }
+
+        // Verify the serialized value format
+        if serialized_value.len() < 10 {
+            return Err(AikvError::InvalidArgument(
+                "ERR DUMP payload version or checksum are wrong".to_string(),
+            ));
+        }
+
+        // Verify checksum
+        if !Self::verify_checksum(serialized_value) {
+            return Err(AikvError::InvalidArgument(
+                "ERR DUMP payload version or checksum are wrong".to_string(),
+            ));
+        }
+
+        // Extract the serialized data (without RDB version and checksum)
+        let data_len = serialized_value.len() - 10; // -2 for version, -8 for checksum
+        let data = &serialized_value[..data_len];
+
+        // Deserialize the value
+        let serializable: SerializableStoredValue = bincode::deserialize(data).map_err(|e| {
+            AikvError::InvalidArgument(format!(
+                "ERR DUMP payload version or checksum are wrong: {}",
+                e
+            ))
+        })?;
+
+        let mut stored_value = StoredValue::from_serializable(serializable);
+
+        // Set expiration if TTL is provided
+        if ttl > 0 {
+            let expires_at = if absttl {
+                // TTL is an absolute timestamp
+                ttl as u64
+            } else {
+                // TTL is relative (milliseconds from now)
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64;
+                now + (ttl as u64)
+            };
+            stored_value.set_expiration(Some(expires_at));
+        } else if ttl == 0 {
+            // No expiration
+            stored_value.set_expiration(None);
+        } else {
+            // Negative TTL is an error
+            return Err(AikvError::InvalidArgument(
+                "ERR invalid TTL value, must be >= 0".to_string(),
+            ));
+        }
+
+        // Store the value
+        self.storage.set_value(current_db, key, stored_value)?;
+
+        Ok(RespValue::ok())
+    }
+
+    /// MIGRATE host port key|"" destination-db timeout \[COPY\] \[REPLACE\] \[AUTH password\] \[AUTH2 username password\] \[KEYS key \[key ...\]\]
+    ///
+    /// Atomically transfer a key from a source Redis instance to a destination Redis instance.
+    ///
+    /// Note: This is a simplified implementation that works within a single AiKv instance.
+    /// It simulates migration by moving/copying keys between databases.
+    ///
+    /// For true cross-instance migration, a network client would need to be implemented.
+    pub fn migrate(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
+        if args.len() < 5 {
+            return Err(AikvError::WrongArgCount("MIGRATE".to_string()));
+        }
+
+        let _host = String::from_utf8_lossy(&args[0]).to_string();
+        let _port = String::from_utf8_lossy(&args[1]);
+        let key_arg = String::from_utf8_lossy(&args[2]).to_string();
+        let dest_db_str = String::from_utf8_lossy(&args[3]);
+        let dest_db = dest_db_str
+            .parse::<usize>()
+            .map_err(|_| AikvError::InvalidArgument("ERR invalid DB index".to_string()))?;
+        let _timeout_str = String::from_utf8_lossy(&args[4]);
+        let _timeout = _timeout_str
+            .parse::<i64>()
+            .map_err(|_| AikvError::InvalidArgument("ERR timeout is not an integer".to_string()))?;
+
+        // Parse options
+        let mut copy = false;
+        let mut replace = false;
+        let mut keys: Vec<String> = Vec::new();
+
+        let mut i = 5;
+        while i < args.len() {
+            let option = String::from_utf8_lossy(&args[i]).to_uppercase();
+            match option.as_str() {
+                "COPY" => {
+                    copy = true;
+                }
+                "REPLACE" => {
+                    replace = true;
+                }
+                "AUTH" => {
+                    // Skip AUTH argument (password)
+                    if i + 1 >= args.len() {
+                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
+                    }
+                    i += 1;
+                }
+                "AUTH2" => {
+                    // Skip AUTH2 arguments (username, password)
+                    if i + 2 >= args.len() {
+                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
+                    }
+                    i += 2;
+                }
+                "KEYS" => {
+                    // Collect all remaining arguments as keys
+                    i += 1;
+                    while i < args.len() {
+                        keys.push(String::from_utf8_lossy(&args[i]).to_string());
+                        i += 1;
+                    }
+                    break;
+                }
+                _ => {
+                    return Err(AikvError::InvalidArgument(format!(
+                        "ERR syntax error, unknown option: {}",
+                        option
+                    )));
+                }
+            }
+            i += 1;
+        }
+
+        // If no KEYS argument, use the single key
+        if keys.is_empty() {
+            if key_arg.is_empty() {
+                return Err(AikvError::InvalidArgument(
+                    "ERR empty key specified".to_string(),
+                ));
+            }
+            keys.push(key_arg);
+        }
+
+        // Validate destination database
+        if dest_db >= DEFAULT_DB_COUNT {
+            return Err(AikvError::InvalidArgument(
+                "ERR invalid DB index".to_string(),
+            ));
+        }
+
+        // Process each key
+        let mut migrated_count = 0;
+        for key in &keys {
+            // Check if source key exists
+            if !self.storage.exists_in_db(current_db, key)? {
+                continue;
+            }
+
+            // Check if destination key exists and REPLACE is not set
+            if self.storage.exists_in_db(dest_db, key)? && !replace {
+                return Err(AikvError::InvalidArgument(
+                    "BUSYKEY Target key name already exists".to_string(),
+                ));
+            }
+
+            // Get the source value
+            if let Some(stored_value) = self.storage.get_value(current_db, key)? {
+                // Remember if destination had a value for rollback
+                let dest_had_value = self.storage.exists_in_db(dest_db, key)?;
+                let dest_old_value = if dest_had_value && replace {
+                    self.storage.get_value(dest_db, key)?
+                } else {
+                    None
+                };
+
+                // Copy to destination
+                self.storage
+                    .set_value(dest_db, key.clone(), stored_value.clone())?;
+
+                // Delete from source if not COPY mode
+                if !copy {
+                    if let Err(e) = self.storage.delete_from_db(current_db, key) {
+                        // Rollback: restore destination to previous state
+                        if let Some(old_val) = dest_old_value {
+                            let _ = self.storage.set_value(dest_db, key.clone(), old_val);
+                        } else if !dest_had_value {
+                            let _ = self.storage.delete_from_db(dest_db, key);
+                        }
+                        return Err(e);
+                    }
+                }
+
+                migrated_count += 1;
+            }
+        }
+
+        if migrated_count == 0 {
+            Ok(RespValue::simple_string("NOKEY"))
+        } else {
+            Ok(RespValue::ok())
+        }
     }
 }

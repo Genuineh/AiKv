@@ -667,3 +667,519 @@ fn test_set_with_expire_options() {
         panic!("Expected integer PTTL");
     }
 }
+
+#[test]
+fn test_dump_and_restore_commands() {
+    let storage = StorageEngine::new_memory(16);
+    let executor = CommandExecutor::new(storage);
+    let mut current_db = 0;
+    let client_id = 1;
+
+    // Set up test data
+    executor
+        .execute(
+            "SET",
+            &[Bytes::from("mykey"), Bytes::from("hello world")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+
+    // Test DUMP
+    let result = executor
+        .execute("DUMP", &[Bytes::from("mykey")], &mut current_db, client_id)
+        .unwrap();
+    let dump_data = match result {
+        RespValue::BulkString(Some(data)) => data,
+        _ => panic!("Expected bulk string for DUMP"),
+    };
+
+    // Delete the key
+    executor
+        .execute("DEL", &[Bytes::from("mykey")], &mut current_db, client_id)
+        .unwrap();
+
+    // Verify key is gone
+    let result = executor
+        .execute(
+            "EXISTS",
+            &[Bytes::from("mykey")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::integer(0));
+
+    // Test RESTORE
+    let result = executor
+        .execute(
+            "RESTORE",
+            &[Bytes::from("mykey"), Bytes::from("0"), dump_data.clone()],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::ok());
+
+    // Verify key is restored
+    let result = executor
+        .execute("GET", &[Bytes::from("mykey")], &mut current_db, client_id)
+        .unwrap();
+    assert_eq!(result, RespValue::bulk_string("hello world"));
+
+    // Test RESTORE with REPLACE on existing key
+    executor
+        .execute(
+            "SET",
+            &[Bytes::from("otherkey"), Bytes::from("other value")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+
+    let result = executor
+        .execute(
+            "RESTORE",
+            &[
+                Bytes::from("otherkey"),
+                Bytes::from("0"),
+                dump_data.clone(),
+                Bytes::from("REPLACE"),
+            ],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::ok());
+
+    // Verify it was replaced
+    let result = executor
+        .execute(
+            "GET",
+            &[Bytes::from("otherkey")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::bulk_string("hello world"));
+
+    // Test RESTORE without REPLACE should fail
+    let result = executor.execute(
+        "RESTORE",
+        &[Bytes::from("otherkey"), Bytes::from("0"), dump_data.clone()],
+        &mut current_db,
+        client_id,
+    );
+    assert!(result.is_err());
+
+    // Test RESTORE with TTL
+    let result = executor
+        .execute(
+            "RESTORE",
+            &[
+                Bytes::from("ttlkey"),
+                Bytes::from("5000"),
+                dump_data.clone(),
+            ],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::ok());
+
+    // Verify TTL was set
+    let result = executor
+        .execute("PTTL", &[Bytes::from("ttlkey")], &mut current_db, client_id)
+        .unwrap();
+    if let RespValue::Integer(pttl) = result {
+        assert!(pttl > 0 && pttl <= 5000);
+    } else {
+        panic!("Expected integer PTTL");
+    }
+
+    // Test DUMP on non-existent key
+    let result = executor
+        .execute(
+            "DUMP",
+            &[Bytes::from("nonexistent")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::null_bulk_string());
+}
+
+#[test]
+fn test_dump_restore_with_complex_types() {
+    let storage = StorageEngine::new_memory(16);
+    let executor = CommandExecutor::new(storage);
+    let mut current_db = 0;
+    let client_id = 1;
+
+    // Test with List
+    executor
+        .execute(
+            "RPUSH",
+            &[
+                Bytes::from("mylist"),
+                Bytes::from("a"),
+                Bytes::from("b"),
+                Bytes::from("c"),
+            ],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+
+    let result = executor
+        .execute("DUMP", &[Bytes::from("mylist")], &mut current_db, client_id)
+        .unwrap();
+    let list_dump = match result {
+        RespValue::BulkString(Some(data)) => data,
+        _ => panic!("Expected bulk string for DUMP"),
+    };
+
+    // Restore to new key
+    let result = executor
+        .execute(
+            "RESTORE",
+            &[Bytes::from("restoredlist"), Bytes::from("0"), list_dump],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::ok());
+
+    // Verify list content
+    let result = executor
+        .execute(
+            "LRANGE",
+            &[
+                Bytes::from("restoredlist"),
+                Bytes::from("0"),
+                Bytes::from("-1"),
+            ],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    if let RespValue::Array(Some(items)) = result {
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0], RespValue::bulk_string("a"));
+        assert_eq!(items[1], RespValue::bulk_string("b"));
+        assert_eq!(items[2], RespValue::bulk_string("c"));
+    } else {
+        panic!("Expected array for LRANGE");
+    }
+
+    // Test with Hash
+    executor
+        .execute(
+            "HSET",
+            &[
+                Bytes::from("myhash"),
+                Bytes::from("field1"),
+                Bytes::from("value1"),
+                Bytes::from("field2"),
+                Bytes::from("value2"),
+            ],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+
+    let result = executor
+        .execute("DUMP", &[Bytes::from("myhash")], &mut current_db, client_id)
+        .unwrap();
+    let hash_dump = match result {
+        RespValue::BulkString(Some(data)) => data,
+        _ => panic!("Expected bulk string for DUMP"),
+    };
+
+    // Restore to new key
+    let result = executor
+        .execute(
+            "RESTORE",
+            &[Bytes::from("restoredhash"), Bytes::from("0"), hash_dump],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::ok());
+
+    // Verify hash content
+    let result = executor
+        .execute(
+            "HGET",
+            &[Bytes::from("restoredhash"), Bytes::from("field1")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::bulk_string("value1"));
+}
+
+#[test]
+fn test_migrate_command() {
+    let storage = StorageEngine::new_memory(16);
+    let executor = CommandExecutor::new(storage);
+    let mut current_db = 0;
+    let client_id = 1;
+
+    // Set up test data in database 0
+    executor
+        .execute(
+            "SET",
+            &[Bytes::from("migratekey"), Bytes::from("migrate value")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+
+    // Test basic MIGRATE to database 1
+    let result = executor
+        .execute(
+            "MIGRATE",
+            &[
+                Bytes::from("localhost"),
+                Bytes::from("6379"),
+                Bytes::from("migratekey"),
+                Bytes::from("1"),
+                Bytes::from("1000"),
+            ],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::ok());
+
+    // Verify key is gone from database 0
+    let result = executor
+        .execute(
+            "EXISTS",
+            &[Bytes::from("migratekey")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::integer(0));
+
+    // Switch to database 1 and verify key exists
+    executor
+        .execute("SELECT", &[Bytes::from("1")], &mut current_db, client_id)
+        .unwrap();
+    let result = executor
+        .execute(
+            "GET",
+            &[Bytes::from("migratekey")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::bulk_string("migrate value"));
+
+    // Test MIGRATE with COPY option
+    executor
+        .execute(
+            "SET",
+            &[Bytes::from("copykey"), Bytes::from("copy value")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+
+    let result = executor
+        .execute(
+            "MIGRATE",
+            &[
+                Bytes::from("localhost"),
+                Bytes::from("6379"),
+                Bytes::from("copykey"),
+                Bytes::from("2"),
+                Bytes::from("1000"),
+                Bytes::from("COPY"),
+            ],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::ok());
+
+    // Verify key still exists in database 1
+    let result = executor
+        .execute(
+            "EXISTS",
+            &[Bytes::from("copykey")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::integer(1));
+
+    // Verify key also exists in database 2
+    executor
+        .execute("SELECT", &[Bytes::from("2")], &mut current_db, client_id)
+        .unwrap();
+    let result = executor
+        .execute("GET", &[Bytes::from("copykey")], &mut current_db, client_id)
+        .unwrap();
+    assert_eq!(result, RespValue::bulk_string("copy value"));
+
+    // Test MIGRATE non-existent key
+    let result = executor
+        .execute(
+            "MIGRATE",
+            &[
+                Bytes::from("localhost"),
+                Bytes::from("6379"),
+                Bytes::from("nonexistent"),
+                Bytes::from("3"),
+                Bytes::from("1000"),
+            ],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::simple_string("NOKEY"));
+
+    // Test MIGRATE with REPLACE option
+    // Set a key in database 3
+    executor
+        .execute("SELECT", &[Bytes::from("3")], &mut current_db, client_id)
+        .unwrap();
+    executor
+        .execute(
+            "SET",
+            &[Bytes::from("replacekey"), Bytes::from("original")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+
+    // Set a key in database 0
+    executor
+        .execute("SELECT", &[Bytes::from("0")], &mut current_db, client_id)
+        .unwrap();
+    executor
+        .execute(
+            "SET",
+            &[Bytes::from("replacekey"), Bytes::from("new value")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+
+    // Migrate with REPLACE
+    let result = executor
+        .execute(
+            "MIGRATE",
+            &[
+                Bytes::from("localhost"),
+                Bytes::from("6379"),
+                Bytes::from("replacekey"),
+                Bytes::from("3"),
+                Bytes::from("1000"),
+                Bytes::from("REPLACE"),
+            ],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::ok());
+
+    // Verify value was replaced in database 3
+    executor
+        .execute("SELECT", &[Bytes::from("3")], &mut current_db, client_id)
+        .unwrap();
+    let result = executor
+        .execute(
+            "GET",
+            &[Bytes::from("replacekey")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::bulk_string("new value"));
+}
+
+#[test]
+fn test_migrate_with_keys_option() {
+    let storage = StorageEngine::new_memory(16);
+    let executor = CommandExecutor::new(storage);
+    let mut current_db = 0;
+    let client_id = 1;
+
+    // Set up multiple keys in database 0
+    executor
+        .execute(
+            "SET",
+            &[Bytes::from("key1"), Bytes::from("value1")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    executor
+        .execute(
+            "SET",
+            &[Bytes::from("key2"), Bytes::from("value2")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    executor
+        .execute(
+            "SET",
+            &[Bytes::from("key3"), Bytes::from("value3")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+
+    // Migrate multiple keys with KEYS option
+    let result = executor
+        .execute(
+            "MIGRATE",
+            &[
+                Bytes::from("localhost"),
+                Bytes::from("6379"),
+                Bytes::from(""),
+                Bytes::from("4"),
+                Bytes::from("1000"),
+                Bytes::from("KEYS"),
+                Bytes::from("key1"),
+                Bytes::from("key2"),
+            ],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::ok());
+
+    // Verify keys are gone from database 0
+    let result = executor
+        .execute("EXISTS", &[Bytes::from("key1")], &mut current_db, client_id)
+        .unwrap();
+    assert_eq!(result, RespValue::integer(0));
+    let result = executor
+        .execute("EXISTS", &[Bytes::from("key2")], &mut current_db, client_id)
+        .unwrap();
+    assert_eq!(result, RespValue::integer(0));
+    // key3 should still exist
+    let result = executor
+        .execute("EXISTS", &[Bytes::from("key3")], &mut current_db, client_id)
+        .unwrap();
+    assert_eq!(result, RespValue::integer(1));
+
+    // Verify keys exist in database 4
+    executor
+        .execute("SELECT", &[Bytes::from("4")], &mut current_db, client_id)
+        .unwrap();
+    let result = executor
+        .execute("GET", &[Bytes::from("key1")], &mut current_db, client_id)
+        .unwrap();
+    assert_eq!(result, RespValue::bulk_string("value1"));
+    let result = executor
+        .execute("GET", &[Bytes::from("key2")], &mut current_db, client_id)
+        .unwrap();
+    assert_eq!(result, RespValue::bulk_string("value2"));
+}

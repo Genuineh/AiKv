@@ -105,6 +105,9 @@ impl CommandExecutor {
             "RENAMENX" => self.key_commands.renamenx(args, *current_db),
             "TYPE" => self.key_commands.get_type(args, *current_db),
             "COPY" => self.key_commands.copy(args, *current_db),
+            "DUMP" => self.key_commands.dump(args, *current_db),
+            "RESTORE" => self.key_commands.restore(args, *current_db),
+            "MIGRATE" => self.key_commands.migrate(args, *current_db),
 
             // Key expiration commands
             "EXPIRE" => self.key_commands.expire(args, *current_db),

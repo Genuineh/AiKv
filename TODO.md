@@ -31,12 +31,12 @@
 | **Set 命令** | 13 个 | ✅ 完成 |
 | **Sorted Set 命令** | 12 个 | ✅ 完成 |
 | **Database 命令** | 6 个 | ✅ 完成 |
-| **Key 命令** | 17 个 | ✅ 完成 |
+| **Key 命令** | 20 个 | ✅ 完成 |
 | **Server 命令** | 9 个 | ✅ 完成 |
 | **Lua 脚本命令** | 6 个 + 事务性 | ✅ 完成 |
 | **Cluster 命令** | 17 个 (框架) | ✅ 完成 |
 | **Cluster Bus** | 心跳 + 故障检测 | ✅ 完成 |
-| **单元测试** | 96+ 个 | ✅ 全部通过 |
+| **单元测试** | 100+ 个 | ✅ 全部通过 |
 
 ### 核心能力
 
@@ -91,10 +91,10 @@
 
 ### 🟠 P1: 核心命令补全
 
-**Key 命令** (3 个待完成):
-- [ ] `DUMP` - 序列化键的值 (返回 RDB 格式)
-- [ ] `RESTORE` - 反序列化并创建键 (接受 RDB 格式 + 可选 TTL)
-- [ ] `MIGRATE` - 原子性迁移键到另一个 Redis 实例
+**Key 命令** (已完成):
+- [x] `DUMP` - 序列化键的值 (返回 RDB 格式) ✅
+- [x] `RESTORE` - 反序列化并创建键 (接受 RDB 格式 + 可选 TTL) ✅
+- [x] `MIGRATE` - 原子性迁移键到另一个 Redis 实例 ✅
 
 **Key 排序命令** (2 个):
 - [ ] `SORT` - 排序列表、集合或有序集合
@@ -322,7 +322,7 @@
 
 **Database (6 个)**: SELECT, DBSIZE, FLUSHDB, FLUSHALL, SWAPDB, MOVE
 
-**Key (17 个)**: KEYS, SCAN, RANDOMKEY, RENAME, RENAMENX, TYPE, COPY, EXPIRE, EXPIREAT, PEXPIRE, PEXPIREAT, TTL, PTTL, PERSIST, EXPIRETIME, PEXPIRETIME, DEL/EXISTS
+**Key (20 个)**: KEYS, SCAN, RANDOMKEY, RENAME, RENAMENX, TYPE, COPY, EXPIRE, EXPIREAT, PEXPIRE, PEXPIREAT, TTL, PTTL, PERSIST, EXPIRETIME, PEXPIRETIME, DEL/EXISTS, DUMP, RESTORE, MIGRATE
 
 **Server (9 个)**: PING, ECHO, INFO, CONFIG GET/SET, TIME, CLIENT LIST/SETNAME/GETNAME
 
