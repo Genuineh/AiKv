@@ -363,7 +363,7 @@ impl HashCommands {
     /// Sets multiple field-value pairs in the hash stored at key
     /// This command is deprecated in favor of HSET, but still supported for compatibility
     pub fn hmset(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() < 3 || !(args.len() - 1).is_multiple_of(2) {
+        if args.len() < 3 || args.len().is_multiple_of(2) {
             return Err(AikvError::WrongArgCount("HMSET".to_string()));
         }
 
