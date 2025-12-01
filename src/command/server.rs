@@ -3,6 +3,7 @@ use crate::observability::{LogConfig, SlowQueryLog};
 use crate::protocol::RespValue;
 use bytes::Bytes;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tracing::Level;
@@ -22,6 +23,23 @@ pub struct ClientInfo {
     pub addr: String,
 }
 
+/// Command information structure for COMMAND command
+#[derive(Clone, Debug)]
+pub struct CommandInfo {
+    /// Command name
+    pub name: &'static str,
+    /// Number of arguments (negative means variable)
+    pub arity: i64,
+    /// Command flags
+    pub flags: &'static [&'static str],
+    /// First key position
+    pub first_key: i64,
+    /// Last key position
+    pub last_key: i64,
+    /// Key step
+    pub step: i64,
+}
+
 /// Server command handler
 pub struct ServerCommands {
     clients: Arc<RwLock<HashMap<usize, ClientInfo>>>,
@@ -31,6 +49,891 @@ pub struct ServerCommands {
     tcp_port: u16,
     current_log_level: Arc<RwLock<Level>>,
     slow_query_log: Arc<SlowQueryLog>,
+    /// Last save timestamp (Unix epoch in seconds)
+    last_save_time: Arc<AtomicU64>,
+    /// Shutdown flag
+    shutdown_requested: Arc<AtomicBool>,
+}
+
+/// All supported commands with their metadata
+fn get_command_table() -> Vec<CommandInfo> {
+    vec![
+        // String commands
+        CommandInfo {
+            name: "GET",
+            arity: 2,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "SET",
+            arity: -3,
+            flags: &["write", "denyoom"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "DEL",
+            arity: -2,
+            flags: &["write"],
+            first_key: 1,
+            last_key: -1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "EXISTS",
+            arity: -2,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: -1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "MGET",
+            arity: -2,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: -1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "MSET",
+            arity: -3,
+            flags: &["write", "denyoom"],
+            first_key: 1,
+            last_key: -1,
+            step: 2,
+        },
+        CommandInfo {
+            name: "STRLEN",
+            arity: 2,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "APPEND",
+            arity: 3,
+            flags: &["write", "denyoom", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        // JSON commands
+        CommandInfo {
+            name: "JSON.GET",
+            arity: -2,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "JSON.SET",
+            arity: -4,
+            flags: &["write", "denyoom"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "JSON.DEL",
+            arity: -2,
+            flags: &["write"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "JSON.TYPE",
+            arity: -2,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "JSON.STRLEN",
+            arity: -2,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "JSON.ARRLEN",
+            arity: -2,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "JSON.OBJLEN",
+            arity: -2,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        // List commands
+        CommandInfo {
+            name: "LPUSH",
+            arity: -3,
+            flags: &["write", "denyoom", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "RPUSH",
+            arity: -3,
+            flags: &["write", "denyoom", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "LPOP",
+            arity: -2,
+            flags: &["write", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "RPOP",
+            arity: -2,
+            flags: &["write", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "LLEN",
+            arity: 2,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "LRANGE",
+            arity: 4,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "LINDEX",
+            arity: 3,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "LSET",
+            arity: 4,
+            flags: &["write", "denyoom"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "LREM",
+            arity: 4,
+            flags: &["write"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "LTRIM",
+            arity: 4,
+            flags: &["write"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "LINSERT",
+            arity: 5,
+            flags: &["write", "denyoom"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "LMOVE",
+            arity: 5,
+            flags: &["write", "denyoom"],
+            first_key: 1,
+            last_key: 2,
+            step: 1,
+        },
+        // Hash commands
+        CommandInfo {
+            name: "HSET",
+            arity: -4,
+            flags: &["write", "denyoom", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "HSETNX",
+            arity: 4,
+            flags: &["write", "denyoom", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "HGET",
+            arity: 3,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "HMGET",
+            arity: -3,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "HMSET",
+            arity: -4,
+            flags: &["write", "denyoom", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "HDEL",
+            arity: -3,
+            flags: &["write", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "HEXISTS",
+            arity: 3,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "HLEN",
+            arity: 2,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "HKEYS",
+            arity: 2,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "HVALS",
+            arity: 2,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "HGETALL",
+            arity: 2,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "HINCRBY",
+            arity: 4,
+            flags: &["write", "denyoom", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "HINCRBYFLOAT",
+            arity: 4,
+            flags: &["write", "denyoom", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "HSCAN",
+            arity: -3,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        // Set commands
+        CommandInfo {
+            name: "SADD",
+            arity: -3,
+            flags: &["write", "denyoom", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "SREM",
+            arity: -3,
+            flags: &["write", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "SISMEMBER",
+            arity: 3,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "SMEMBERS",
+            arity: 2,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "SCARD",
+            arity: 2,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "SPOP",
+            arity: -2,
+            flags: &["write", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "SRANDMEMBER",
+            arity: -2,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "SUNION",
+            arity: -2,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: -1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "SINTER",
+            arity: -2,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: -1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "SDIFF",
+            arity: -2,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: -1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "SUNIONSTORE",
+            arity: -3,
+            flags: &["write", "denyoom"],
+            first_key: 1,
+            last_key: -1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "SINTERSTORE",
+            arity: -3,
+            flags: &["write", "denyoom"],
+            first_key: 1,
+            last_key: -1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "SDIFFSTORE",
+            arity: -3,
+            flags: &["write", "denyoom"],
+            first_key: 1,
+            last_key: -1,
+            step: 1,
+        },
+        // Sorted Set commands
+        CommandInfo {
+            name: "ZADD",
+            arity: -4,
+            flags: &["write", "denyoom", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "ZREM",
+            arity: -3,
+            flags: &["write", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "ZSCORE",
+            arity: 3,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "ZRANK",
+            arity: 3,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "ZREVRANK",
+            arity: 3,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "ZRANGE",
+            arity: -4,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "ZREVRANGE",
+            arity: -4,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "ZRANGEBYSCORE",
+            arity: -4,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "ZREVRANGEBYSCORE",
+            arity: -4,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "ZCARD",
+            arity: 2,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "ZCOUNT",
+            arity: 4,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "ZINCRBY",
+            arity: 4,
+            flags: &["write", "denyoom", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        // Database commands
+        CommandInfo {
+            name: "SELECT",
+            arity: 2,
+            flags: &["fast"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "DBSIZE",
+            arity: 1,
+            flags: &["readonly", "fast"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "FLUSHDB",
+            arity: -1,
+            flags: &["write"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "FLUSHALL",
+            arity: -1,
+            flags: &["write"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "SWAPDB",
+            arity: 3,
+            flags: &["write", "fast"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "MOVE",
+            arity: 3,
+            flags: &["write", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        // Key commands
+        CommandInfo {
+            name: "KEYS",
+            arity: 2,
+            flags: &["readonly"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "SCAN",
+            arity: -2,
+            flags: &["readonly"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "RANDOMKEY",
+            arity: 1,
+            flags: &["readonly"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "RENAME",
+            arity: 3,
+            flags: &["write"],
+            first_key: 1,
+            last_key: 2,
+            step: 1,
+        },
+        CommandInfo {
+            name: "RENAMENX",
+            arity: 3,
+            flags: &["write", "fast"],
+            first_key: 1,
+            last_key: 2,
+            step: 1,
+        },
+        CommandInfo {
+            name: "TYPE",
+            arity: 2,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "COPY",
+            arity: -3,
+            flags: &["write", "denyoom"],
+            first_key: 1,
+            last_key: 2,
+            step: 1,
+        },
+        CommandInfo {
+            name: "DUMP",
+            arity: 2,
+            flags: &["readonly"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "RESTORE",
+            arity: -4,
+            flags: &["write", "denyoom"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "MIGRATE",
+            arity: -6,
+            flags: &["write"],
+            first_key: 3,
+            last_key: 3,
+            step: 1,
+        },
+        CommandInfo {
+            name: "EXPIRE",
+            arity: -3,
+            flags: &["write", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "EXPIREAT",
+            arity: -3,
+            flags: &["write", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "PEXPIRE",
+            arity: -3,
+            flags: &["write", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "PEXPIREAT",
+            arity: -3,
+            flags: &["write", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "TTL",
+            arity: 2,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "PTTL",
+            arity: 2,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "PERSIST",
+            arity: 2,
+            flags: &["write", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "EXPIRETIME",
+            arity: 2,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        CommandInfo {
+            name: "PEXPIRETIME",
+            arity: 2,
+            flags: &["readonly", "fast"],
+            first_key: 1,
+            last_key: 1,
+            step: 1,
+        },
+        // Server commands
+        CommandInfo {
+            name: "PING",
+            arity: -1,
+            flags: &["fast", "stale"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "ECHO",
+            arity: 2,
+            flags: &["fast"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "INFO",
+            arity: -1,
+            flags: &["stale", "fast"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "CONFIG",
+            arity: -2,
+            flags: &["admin", "stale"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "SLOWLOG",
+            arity: -2,
+            flags: &["admin", "stale"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "TIME",
+            arity: 1,
+            flags: &["fast", "stale"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "CLIENT",
+            arity: -2,
+            flags: &["admin", "stale"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "COMMAND",
+            arity: -1,
+            flags: &["stale"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "SAVE",
+            arity: 1,
+            flags: &["admin"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "BGSAVE",
+            arity: -1,
+            flags: &["admin"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "LASTSAVE",
+            arity: 1,
+            flags: &["fast", "stale"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "SHUTDOWN",
+            arity: -1,
+            flags: &["admin"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "MONITOR",
+            arity: 1,
+            flags: &["admin"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        // Script commands
+        CommandInfo {
+            name: "EVAL",
+            arity: -3,
+            flags: &["write", "denyoom"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "EVALSHA",
+            arity: -3,
+            flags: &["write", "denyoom"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        CommandInfo {
+            name: "SCRIPT",
+            arity: -2,
+            flags: &["admin"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+        // Connection commands
+        CommandInfo {
+            name: "HELLO",
+            arity: -1,
+            flags: &["fast", "stale"],
+            first_key: 0,
+            last_key: 0,
+            step: 0,
+        },
+    ]
 }
 
 /// Generate a random 40-character hex string for run_id (similar to Redis)
@@ -72,6 +975,12 @@ impl ServerCommands {
         default_config.insert("slowlog-log-slower-than".to_string(), "10000".to_string());
         default_config.insert("slowlog-max-len".to_string(), "128".to_string());
 
+        // Initialize last_save_time to current time
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
         Self {
             clients: Arc::new(RwLock::new(HashMap::new())),
             config: Arc::new(RwLock::new(default_config)),
@@ -80,6 +989,8 @@ impl ServerCommands {
             tcp_port: port,
             current_log_level: Arc::new(RwLock::new(Level::INFO)),
             slow_query_log: Arc::new(SlowQueryLog::new()),
+            last_save_time: Arc::new(AtomicU64::new(now)),
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -678,6 +1589,304 @@ impl ServerCommands {
 
         clients.remove(&id);
         Ok(())
+    }
+
+    /// COMMAND - Get array of all commands or specific command info
+    pub fn command(&self, args: &[Bytes]) -> Result<RespValue> {
+        if args.is_empty() {
+            // COMMAND with no args returns all commands
+            let commands = get_command_table();
+            let result: Vec<RespValue> = commands
+                .iter()
+                .map(|cmd| self.format_command_info(cmd))
+                .collect();
+            return Ok(RespValue::array(result));
+        }
+
+        let subcommand = String::from_utf8_lossy(&args[0]).to_uppercase();
+        match subcommand.as_str() {
+            "COUNT" => self.command_count(),
+            "INFO" => self.command_info(&args[1..]),
+            "DOCS" => self.command_docs(&args[1..]),
+            "GETKEYS" => self.command_getkeys(&args[1..]),
+            "HELP" => self.command_help(),
+            _ => Err(AikvError::InvalidCommand(format!(
+                "Unknown COMMAND subcommand: {}",
+                subcommand
+            ))),
+        }
+    }
+
+    /// Format a single command info for COMMAND response
+    fn format_command_info(&self, cmd: &CommandInfo) -> RespValue {
+        let flags: Vec<RespValue> = cmd
+            .flags
+            .iter()
+            .map(|f| RespValue::simple_string(*f))
+            .collect();
+
+        RespValue::array(vec![
+            RespValue::bulk_string(cmd.name.to_lowercase()),
+            RespValue::integer(cmd.arity),
+            RespValue::array(flags),
+            RespValue::integer(cmd.first_key),
+            RespValue::integer(cmd.last_key),
+            RespValue::integer(cmd.step),
+        ])
+    }
+
+    /// COMMAND COUNT - Get total number of commands
+    fn command_count(&self) -> Result<RespValue> {
+        let count = get_command_table().len();
+        Ok(RespValue::integer(count as i64))
+    }
+
+    /// COMMAND INFO command [command ...] - Get info for specific commands
+    fn command_info(&self, args: &[Bytes]) -> Result<RespValue> {
+        if args.is_empty() {
+            return Err(AikvError::WrongArgCount("COMMAND INFO".to_string()));
+        }
+
+        let commands = get_command_table();
+        let command_map: HashMap<&str, &CommandInfo> =
+            commands.iter().map(|c| (c.name, c)).collect();
+
+        let result: Vec<RespValue> = args
+            .iter()
+            .map(|arg| {
+                let name = String::from_utf8_lossy(arg).to_uppercase();
+                match command_map.get(name.as_str()) {
+                    Some(cmd) => self.format_command_info(cmd),
+                    None => RespValue::null_bulk_string(),
+                }
+            })
+            .collect();
+
+        Ok(RespValue::array(result))
+    }
+
+    /// COMMAND DOCS - Get command documentation (simplified)
+    fn command_docs(&self, args: &[Bytes]) -> Result<RespValue> {
+        if args.is_empty() {
+            // Return docs for all commands (simplified)
+            let commands = get_command_table();
+            let result: Vec<(RespValue, RespValue)> = commands
+                .iter()
+                .map(|cmd| {
+                    (
+                        RespValue::bulk_string(cmd.name.to_lowercase()),
+                        RespValue::map(vec![
+                            (
+                                RespValue::bulk_string("summary"),
+                                RespValue::bulk_string(format!("{} command", cmd.name)),
+                            ),
+                            (
+                                RespValue::bulk_string("since"),
+                                RespValue::bulk_string("1.0.0"),
+                            ),
+                            (
+                                RespValue::bulk_string("group"),
+                                RespValue::bulk_string("generic"),
+                            ),
+                        ]),
+                    )
+                })
+                .collect();
+            return Ok(RespValue::map(result));
+        }
+
+        // Return docs for specific commands
+        let commands = get_command_table();
+        let command_map: HashMap<&str, &CommandInfo> =
+            commands.iter().map(|c| (c.name, c)).collect();
+
+        let result: Vec<(RespValue, RespValue)> = args
+            .iter()
+            .filter_map(|arg| {
+                let name = String::from_utf8_lossy(arg).to_uppercase();
+                command_map.get(name.as_str()).map(|cmd| {
+                    (
+                        RespValue::bulk_string(cmd.name.to_lowercase()),
+                        RespValue::map(vec![
+                            (
+                                RespValue::bulk_string("summary"),
+                                RespValue::bulk_string(format!("{} command", cmd.name)),
+                            ),
+                            (
+                                RespValue::bulk_string("since"),
+                                RespValue::bulk_string("1.0.0"),
+                            ),
+                            (
+                                RespValue::bulk_string("group"),
+                                RespValue::bulk_string("generic"),
+                            ),
+                        ]),
+                    )
+                })
+            })
+            .collect();
+
+        Ok(RespValue::map(result))
+    }
+
+    /// COMMAND GETKEYS command [arg ...] - Extract keys from a command
+    fn command_getkeys(&self, args: &[Bytes]) -> Result<RespValue> {
+        if args.is_empty() {
+            return Err(AikvError::WrongArgCount("COMMAND GETKEYS".to_string()));
+        }
+
+        let cmd_name = String::from_utf8_lossy(&args[0]).to_uppercase();
+        let commands = get_command_table();
+
+        let cmd = commands.iter().find(|c| c.name == cmd_name.as_str());
+
+        match cmd {
+            Some(cmd_info) => {
+                if cmd_info.first_key == 0 {
+                    return Ok(RespValue::array(vec![]));
+                }
+
+                let cmd_args = &args[1..];
+                let mut keys = Vec::new();
+
+                if cmd_info.last_key == -1 {
+                    // All remaining args from first_key are keys
+                    let start = (cmd_info.first_key - 1) as usize;
+                    for (i, arg) in cmd_args.iter().enumerate().skip(start) {
+                        if cmd_info.step == 1 || (i - start).is_multiple_of(cmd_info.step as usize)
+                        {
+                            keys.push(RespValue::bulk_string(arg.clone()));
+                        }
+                    }
+                } else if cmd_info.last_key >= cmd_info.first_key {
+                    let start = (cmd_info.first_key - 1) as usize;
+                    let end = (cmd_info.last_key - 1) as usize;
+                    for i in (start..=end.min(cmd_args.len().saturating_sub(1)))
+                        .step_by(cmd_info.step.max(1) as usize)
+                    {
+                        if i < cmd_args.len() {
+                            keys.push(RespValue::bulk_string(cmd_args[i].clone()));
+                        }
+                    }
+                }
+
+                Ok(RespValue::array(keys))
+            }
+            None => Err(AikvError::InvalidCommand(format!(
+                "Invalid command specified: {}",
+                cmd_name
+            ))),
+        }
+    }
+
+    /// COMMAND HELP - Show help for COMMAND subcommands
+    fn command_help(&self) -> Result<RespValue> {
+        Ok(RespValue::array(vec![
+            RespValue::bulk_string("COMMAND - Return information about all commands"),
+            RespValue::bulk_string("COMMAND COUNT - Return the total number of commands"),
+            RespValue::bulk_string(
+                "COMMAND INFO <command-name> [<command-name> ...] - Return details about command(s)",
+            ),
+            RespValue::bulk_string(
+                "COMMAND DOCS [<command-name> ...] - Return documentation for command(s)",
+            ),
+            RespValue::bulk_string(
+                "COMMAND GETKEYS <command> [<arg> ...] - Extract keys from a full command",
+            ),
+            RespValue::bulk_string("COMMAND HELP - Show this help"),
+        ]))
+    }
+
+    /// CONFIG REWRITE - Rewrite the configuration file
+    pub fn config_rewrite(&self, _args: &[Bytes]) -> Result<RespValue> {
+        // In AiKv, we don't persist configuration changes to a file automatically
+        // This is a stub that returns OK for compatibility
+        // A real implementation would write the current config to the config file
+        Ok(RespValue::ok())
+    }
+
+    /// SAVE - Synchronously save the dataset to disk
+    /// Note: This is a stub implementation. Actual persistence is handled by the storage engine.
+    pub fn save(&self, _args: &[Bytes]) -> Result<RespValue> {
+        // Update last save time
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.last_save_time.store(now, Ordering::SeqCst);
+
+        // In AiKv with memory storage, there's no actual persistence
+        // With AiDb storage, persistence is automatic via LSM-Tree
+        Ok(RespValue::ok())
+    }
+
+    /// BGSAVE - Asynchronously save the dataset to disk
+    /// Note: This is a stub implementation. Actual persistence is handled by the storage engine.
+    pub fn bgsave(&self, _args: &[Bytes]) -> Result<RespValue> {
+        // Update last save time
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.last_save_time.store(now, Ordering::SeqCst);
+
+        // In AiKv, background save is simulated
+        // With AiDb storage, persistence is automatic via LSM-Tree
+        Ok(RespValue::simple_string("Background saving started"))
+    }
+
+    /// LASTSAVE - Get the Unix timestamp of the last successful save
+    pub fn lastsave(&self, _args: &[Bytes]) -> Result<RespValue> {
+        let last_save = self.last_save_time.load(Ordering::SeqCst);
+        Ok(RespValue::integer(last_save as i64))
+    }
+
+    /// SHUTDOWN - Shut down the server
+    /// Note: This sets a shutdown flag but doesn't actually terminate the process
+    /// The actual shutdown should be handled by the server loop
+    pub fn shutdown(&self, args: &[Bytes]) -> Result<RespValue> {
+        // Parse optional arguments: NOSAVE, SAVE, NOW, FORCE, ABORT
+        let mut _nosave = false;
+        let mut _save = false;
+        let mut _now = false;
+        let mut _force = false;
+        let mut abort = false;
+
+        for arg in args {
+            let arg_str = String::from_utf8_lossy(arg).to_uppercase();
+            match arg_str.as_str() {
+                "NOSAVE" => _nosave = true,
+                "SAVE" => _save = true,
+                "NOW" => _now = true,
+                "FORCE" => _force = true,
+                "ABORT" => abort = true,
+                _ => {
+                    return Err(AikvError::InvalidArgument(format!(
+                        "Unknown SHUTDOWN option: {}",
+                        arg_str
+                    )));
+                }
+            }
+        }
+
+        if abort {
+            // Abort a pending shutdown
+            self.shutdown_requested.store(false, Ordering::SeqCst);
+            return Ok(RespValue::ok());
+        }
+
+        // Set shutdown flag
+        self.shutdown_requested.store(true, Ordering::SeqCst);
+
+        // In a real implementation, the server would check this flag and exit gracefully
+        // For now, we just return an error indicating shutdown was requested
+        // The connection will be closed, and the client should reconnect
+        Err(AikvError::Storage("Server is shutting down".to_string()))
+    }
+
+    /// Check if shutdown has been requested
+    pub fn is_shutdown_requested(&self) -> bool {
+        self.shutdown_requested.load(Ordering::SeqCst)
     }
 }
 

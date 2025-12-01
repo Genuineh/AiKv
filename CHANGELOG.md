@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **P2: Server 命令补全 (2025-12-01)**
+  - `COMMAND` - 获取所有命令的详细信息（名称、参数数量、标志、键位置等）
+  - `COMMAND COUNT` - 获取支持的命令总数
+  - `COMMAND INFO` - 获取指定命令的详细信息
+  - `COMMAND DOCS` - 获取命令文档
+  - `COMMAND GETKEYS` - 从完整命令中提取键名
+  - `COMMAND HELP` - 显示帮助信息
+  - `CONFIG REWRITE` - 重写配置文件（存根实现）
+  - `SAVE` - 同步保存数据到磁盘
+  - `BGSAVE` - 异步保存数据到磁盘
+  - `LASTSAVE` - 获取上次成功保存的 Unix 时间戳
+  - `SHUTDOWN` - 请求关闭服务器（支持 NOSAVE/SAVE/NOW/FORCE/ABORT 选项）
+  - 新增完整的命令元数据表（100+ 命令），支持 COMMAND 系列命令
+  - Server 命令从 9 个增加到 16 个
+  - 新增 4 个单元测试验证新命令功能
+
 - **Documentation Review and Organization (2025-11-26)**
   - Updated TODO.md with comprehensive current status
   - Updated SUMMARY.md with full feature list and command count

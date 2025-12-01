@@ -130,6 +130,7 @@ impl CommandExecutor {
                 match subcommand.as_str() {
                     "GET" => self.server_commands.config_get(&args[1..]),
                     "SET" => self.server_commands.config_set(&args[1..]),
+                    "REWRITE" => self.server_commands.config_rewrite(&args[1..]),
                     _ => Err(AikvError::InvalidCommand(format!(
                         "Unknown CONFIG subcommand: {}",
                         subcommand
@@ -138,6 +139,11 @@ impl CommandExecutor {
             }
             "SLOWLOG" => self.server_commands.slowlog(args),
             "TIME" => self.server_commands.time(args),
+            "COMMAND" => self.server_commands.command(args),
+            "SAVE" => self.server_commands.save(args),
+            "BGSAVE" => self.server_commands.bgsave(args),
+            "LASTSAVE" => self.server_commands.lastsave(args),
+            "SHUTDOWN" => self.server_commands.shutdown(args),
             "CLIENT" => {
                 if args.is_empty() {
                     return Err(AikvError::WrongArgCount("CLIENT".to_string()));

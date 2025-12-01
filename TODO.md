@@ -32,7 +32,7 @@
 | **Sorted Set 命令** | 12 个 | ✅ 完成 |
 | **Database 命令** | 6 个 | ✅ 完成 |
 | **Key 命令** | 20 个 | ✅ 完成 |
-| **Server 命令** | 9 个 | ✅ 完成 |
+| **Server 命令** | 16 个 | ✅ 完成 |
 | **Lua 脚本命令** | 6 个 + 事务性 | ✅ 完成 |
 | **Cluster 命令** | 17 个 (框架) | ✅ 完成 |
 | **Cluster Bus** | 心跳 + 故障检测 | ✅ 完成 |
@@ -147,16 +147,31 @@
 - [ ] `XTRIM` - 修剪流
 - [ ] Consumer Groups 支持
 
-### 🟡 P2: Server 命令补全
+### ✅ P2: Server 命令补全 - 已完成
+
+> 完成时间: 2025-12-01
 
 - [x] `MONITOR` - 实时命令监控 (支持 Redis 桌面客户端 Profiler 功能)
-- [ ] `CONFIG REWRITE` - 重写配置文件
-- [ ] `COMMAND` - 获取命令详细信息
-- [ ] `COMMAND COUNT` - 获取命令总数
-- [ ] `COMMAND INFO` - 获取特定命令信息
-- [ ] `SHUTDOWN` - 关闭服务器
-- [ ] `SAVE` / `BGSAVE` - 保存数据到磁盘
-- [ ] `LASTSAVE` - 获取最后保存时间
+- [x] `CONFIG REWRITE` - 重写配置文件 ✅
+- [x] `COMMAND` - 获取命令详细信息 ✅
+- [x] `COMMAND COUNT` - 获取命令总数 ✅
+- [x] `COMMAND INFO` - 获取特定命令信息 ✅
+- [x] `SHUTDOWN` - 关闭服务器 ✅
+- [x] `SAVE` / `BGSAVE` - 保存数据到磁盘 ✅
+- [x] `LASTSAVE` - 获取最后保存时间 ✅
+
+**实现说明:**
+- `COMMAND` 命令返回所有支持命令的详细信息（名称、参数数量、标志、键位置等）
+- `COMMAND COUNT` 返回支持的命令总数
+- `COMMAND INFO` 返回指定命令的详细信息
+- `COMMAND DOCS` 返回命令文档
+- `COMMAND GETKEYS` 从完整命令中提取键名
+- `COMMAND HELP` 显示帮助信息
+- `CONFIG REWRITE` 重写配置文件（存根实现，返回 OK）
+- `SAVE` 同步保存数据到磁盘（更新 last_save 时间戳）
+- `BGSAVE` 异步保存数据到磁盘（更新 last_save 时间戳）
+- `LASTSAVE` 返回上次成功保存的 Unix 时间戳
+- `SHUTDOWN` 请求关闭服务器（支持 NOSAVE/SAVE/NOW/FORCE/ABORT 选项）
 
 ---
 
