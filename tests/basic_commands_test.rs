@@ -1183,3 +1183,188 @@ fn test_migrate_with_keys_option() {
         .unwrap();
     assert_eq!(result, RespValue::bulk_string("value2"));
 }
+
+#[test]
+fn test_command_commands() {
+    let storage = StorageEngine::new_memory(16);
+    let executor = CommandExecutor::new(storage);
+    let mut current_db = 0;
+    let client_id = 1;
+
+    // Test COMMAND (returns all commands)
+    let result = executor
+        .execute("COMMAND", &[], &mut current_db, client_id)
+        .unwrap();
+    if let RespValue::Array(Some(arr)) = result {
+        // Should have a reasonable number of commands
+        assert!(arr.len() > 50);
+    } else {
+        panic!("Expected array for COMMAND");
+    }
+
+    // Test COMMAND COUNT
+    let result = executor
+        .execute(
+            "COMMAND",
+            &[Bytes::from("COUNT")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    if let RespValue::Integer(count) = result {
+        assert!(count > 50);
+    } else {
+        panic!("Expected integer for COMMAND COUNT");
+    }
+
+    // Test COMMAND INFO for a specific command
+    let result = executor
+        .execute(
+            "COMMAND",
+            &[Bytes::from("INFO"), Bytes::from("GET")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    if let RespValue::Array(Some(arr)) = result {
+        assert_eq!(arr.len(), 1);
+        // Check that the returned value is an array with command info
+        if let RespValue::Array(Some(cmd_info)) = &arr[0] {
+            assert!(!cmd_info.is_empty());
+            // First element should be the command name
+            assert_eq!(cmd_info[0], RespValue::bulk_string("get"));
+        } else {
+            panic!("Expected array for command info");
+        }
+    } else {
+        panic!("Expected array for COMMAND INFO");
+    }
+
+    // Test COMMAND INFO for non-existent command
+    let result = executor
+        .execute(
+            "COMMAND",
+            &[Bytes::from("INFO"), Bytes::from("NONEXISTENT")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    if let RespValue::Array(Some(arr)) = result {
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0], RespValue::null_bulk_string());
+    } else {
+        panic!("Expected array for COMMAND INFO");
+    }
+
+    // Test COMMAND HELP
+    let result = executor
+        .execute(
+            "COMMAND",
+            &[Bytes::from("HELP")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert!(matches!(result, RespValue::Array(Some(_))));
+}
+
+#[test]
+fn test_save_lastsave_commands() {
+    let storage = StorageEngine::new_memory(16);
+    let executor = CommandExecutor::new(storage);
+    let mut current_db = 0;
+    let client_id = 1;
+
+    // Test LASTSAVE - should return a timestamp
+    let result = executor
+        .execute("LASTSAVE", &[], &mut current_db, client_id)
+        .unwrap();
+    if let RespValue::Integer(timestamp) = result {
+        // Should be a reasonable Unix timestamp
+        assert!(timestamp > 0);
+    } else {
+        panic!("Expected integer for LASTSAVE");
+    }
+
+    // Test SAVE
+    let result = executor
+        .execute("SAVE", &[], &mut current_db, client_id)
+        .unwrap();
+    assert_eq!(result, RespValue::ok());
+
+    // Test BGSAVE
+    let result = executor
+        .execute("BGSAVE", &[], &mut current_db, client_id)
+        .unwrap();
+    assert_eq!(
+        result,
+        RespValue::simple_string("Background saving started")
+    );
+
+    // Test LASTSAVE after save - should have updated timestamp
+    let result = executor
+        .execute("LASTSAVE", &[], &mut current_db, client_id)
+        .unwrap();
+    if let RespValue::Integer(timestamp) = result {
+        assert!(timestamp > 0);
+    } else {
+        panic!("Expected integer for LASTSAVE");
+    }
+}
+
+#[test]
+fn test_config_rewrite_command() {
+    let storage = StorageEngine::new_memory(16);
+    let executor = CommandExecutor::new(storage);
+    let mut current_db = 0;
+    let client_id = 1;
+
+    // Test CONFIG REWRITE - should return OK (stub implementation)
+    let result = executor
+        .execute(
+            "CONFIG",
+            &[Bytes::from("REWRITE")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::ok());
+}
+
+#[test]
+fn test_shutdown_command() {
+    let storage = StorageEngine::new_memory(16);
+    let executor = CommandExecutor::new(storage);
+    let mut current_db = 0;
+    let client_id = 1;
+
+    // Test SHUTDOWN with ABORT (should not actually shutdown)
+    let result = executor
+        .execute(
+            "SHUTDOWN",
+            &[Bytes::from("ABORT")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::ok());
+
+    // Verify shutdown is not requested after abort
+    assert!(!executor.server_commands().is_shutdown_requested());
+
+    // Test SHUTDOWN with invalid option
+    let result = executor.execute(
+        "SHUTDOWN",
+        &[Bytes::from("INVALID")],
+        &mut current_db,
+        client_id,
+    );
+    assert!(result.is_err());
+
+    // Test basic SHUTDOWN (returns error because server is shutting down)
+    let result = executor.execute("SHUTDOWN", &[], &mut current_db, client_id);
+    assert!(result.is_err());
+
+    // Verify shutdown was requested
+    assert!(executor.server_commands().is_shutdown_requested());
+}
