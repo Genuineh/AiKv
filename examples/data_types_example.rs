@@ -375,7 +375,8 @@ fn cleanup(con: &mut Connection) {
         "temp:key",
     ];
     for key in &keys {
-        let _: redis::RedisResult<()> = redis::cmd("DEL").arg(key).query(con);
+        // Intentionally ignore cleanup errors as this is just cleanup
+        redis::cmd("DEL").arg(key).query::<()>(con).ok();
     }
     println!("Cleaned up test keys");
 }

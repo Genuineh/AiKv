@@ -72,9 +72,17 @@ fn demo_pipeline_comparison(con: &mut Connection) -> redis::RedisResult<()> {
     let pipeline_time = start.elapsed();
     println!("  Pipeline: {:?}", pipeline_time);
 
-    // Calculate speedup
-    let speedup = individual_time.as_micros() as f64 / pipeline_time.as_micros().max(1) as f64;
-    println!("\n  Speedup: {:.1}x faster with pipeline!", speedup);
+    // Calculate speedup (handle edge case where pipeline_time is 0)
+    let pipeline_micros = pipeline_time.as_micros();
+    let individual_micros = individual_time.as_micros();
+    if pipeline_micros > 0 {
+        let speedup = individual_micros as f64 / pipeline_micros as f64;
+        println!("\n  Speedup: {:.1}x faster with pipeline!", speedup);
+    } else if individual_micros > 0 {
+        println!("\n  Pipeline completed instantly (< 1µs)!");
+    } else {
+        println!("\n  Both completed instantly (< 1µs)!");
+    }
 
     Ok(())
 }
