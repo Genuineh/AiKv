@@ -150,20 +150,26 @@ async fn handle_build_options_key(app: &mut App, key: KeyCode) -> Result<()> {
             app.set_status("Building AiKv...");
             app.add_log("Starting build process...");
 
-            // Run build command
-            match commands::build(
+            // Run build command with output capture
+            match commands::build_with_output(
                 &app.project_dir,
                 app.build_config.cluster,
                 app.build_config.release,
             )
             .await
             {
-                Ok(()) => {
-                    app.add_log("Build completed successfully!");
-                    app.set_status("Build completed successfully!");
+                Ok(result) => {
+                    for log in &result.logs {
+                        app.add_log(log);
+                    }
+                    if result.success {
+                        app.set_status("Build completed successfully!");
+                    } else {
+                        app.set_status("Build failed!");
+                    }
                 }
                 Err(e) => {
-                    app.add_log(&format!("Build failed: {}", e));
+                    app.add_log(&format!("Build error: {}", e));
                     app.set_status(&format!("Build failed: {}", e));
                 }
             }
@@ -191,13 +197,19 @@ async fn handle_docker_options_key(app: &mut App, key: KeyCode) -> Result<()> {
                 "latest"
             };
 
-            match commands::build_docker(&app.project_dir, app.build_config.cluster, tag).await {
-                Ok(()) => {
-                    app.add_log("Docker image built successfully!");
-                    app.set_status("Docker image built successfully!");
+            match commands::build_docker_with_output(&app.project_dir, app.build_config.cluster, tag).await {
+                Ok(result) => {
+                    for log in &result.logs {
+                        app.add_log(log);
+                    }
+                    if result.success {
+                        app.set_status("Docker image built successfully!");
+                    } else {
+                        app.set_status("Docker build failed!");
+                    }
                 }
                 Err(e) => {
-                    app.add_log(&format!("Docker build failed: {}", e));
+                    app.add_log(&format!("Docker build error: {}", e));
                     app.set_status(&format!("Docker build failed: {}", e));
                 }
             }
@@ -215,6 +227,9 @@ async fn handle_deploy_options_key(app: &mut App, key: KeyCode) -> Result<()> {
         KeyCode::Char('t') => {
             app.toggle_deploy_type();
         }
+        KeyCode::Char('e') => {
+            app.toggle_storage_engine();
+        }
         KeyCode::Char('+') => {
             if app.deploy_config.node_count < 9 {
                 app.deploy_config.node_count += 1;
@@ -229,10 +244,11 @@ async fn handle_deploy_options_key(app: &mut App, key: KeyCode) -> Result<()> {
             app.set_status("Generating deployment files...");
             app.add_log("Starting deployment generation...");
 
-            match deploy::generate(
+            match deploy::generate_with_engine(
                 &app.project_dir,
                 app.deploy_config.deploy_type.as_str(),
                 &app.deploy_config.output_dir,
+                &app.deploy_config.storage_engine,
                 None,
             )
             .await

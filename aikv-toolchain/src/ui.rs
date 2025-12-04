@@ -238,7 +238,7 @@ fn draw_docker_options(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_deploy_options(frame: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(16), Constraint::Min(5)])
+        .constraints([Constraint::Length(18), Constraint::Min(5)])
         .split(area);
 
     let deploy_type = match app.deploy_config.deploy_type {
@@ -265,7 +265,7 @@ fn draw_deploy_options(frame: &mut Frame, app: &App, area: Rect) {
         )),
         Line::from(format!("  Base Port: {}", app.deploy_config.base_port)),
         Line::from(format!(
-            "  Storage Engine: {}",
+            "  Storage Engine: {} (e)",
             app.deploy_config.storage_engine
         )),
         Line::from(""),
@@ -281,8 +281,8 @@ fn draw_deploy_options(frame: &mut Frame, app: &App, area: Rect) {
             "Commands:",
             Style::default().add_modifier(Modifier::BOLD),
         )),
-        Line::from("  t - Toggle deployment type | +/- - Adjust node count"),
-        Line::from("  g/Enter - Generate | q/Esc - Back"),
+        Line::from("  t - Toggle deployment type | e - Toggle storage engine"),
+        Line::from("  +/- - Adjust node count | g/Enter - Generate | q/Esc - Back"),
     ])
     .block(
         Block::default()
