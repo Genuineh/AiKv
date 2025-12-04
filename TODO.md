@@ -89,6 +89,30 @@
 - 新增 `NodeHealthInfo` 和 `NodeHealthStatus` 用于节点健康状态管理
 - 完整的单元测试覆盖
 
+### 🔴 P0: Redis 集群协议兼容性 - 需要 AiDb 支持
+
+> 状态: **需要 AiDb 实现网络层**
+> 详见: [CLUSTER_BUS_ANALYSIS.md](docs/CLUSTER_BUS_ANALYSIS.md)
+
+**问题描述:**
+`redis-cli --cluster create` 初始化集群时卡在 "Waiting for the cluster to join"。原因是 AiKv 缺少 Redis 集群总线协议实现：
+
+- [ ] TCP 监听器 (端口 16379 = 数据端口 + 10000)
+- [ ] 集群总线二进制协议解析器
+- [ ] Gossip 消息处理 (PING/PONG/MEET/FAIL)
+- [ ] 节点间状态同步
+
+**当前状态:**
+- ✅ `cluster_enabled:1` 在 INFO 中正确报告
+- ✅ CLUSTER 命令 (MEET, ADDSLOTS, NODES 等) 已实现
+- ✅ 本地集群状态存储
+- ❌ **不监听集群总线端口** - 需要 AiDb 实现
+- ❌ **不实现 Redis 集群 gossip 协议** - 需要 AiDb 实现
+
+**建议:**
+这需要在 AiDb 中实现一个 `ClusterBusServer` 组件，与 Raft 共识集成。
+详见 [CLUSTER_BUS_ANALYSIS.md](docs/CLUSTER_BUS_ANALYSIS.md) 获取完整分析和建议的 API 设计。
+
 ### 🟠 P1: 核心命令补全
 
 **Key 命令** (已完成):
@@ -428,6 +452,7 @@
 |------|------|
 | [ARCHITECTURE_REFACTORING.md](docs/ARCHITECTURE_REFACTORING.md) | 存储层架构重构详情 |
 | [AIDB_CLUSTER_API_REFERENCE.md](docs/AIDB_CLUSTER_API_REFERENCE.md) | 集群 API 参考 |
+| [CLUSTER_BUS_ANALYSIS.md](docs/CLUSTER_BUS_ANALYSIS.md) | **集群总线协议分析 - 初始化问题根因** |
 | [LUA_TRANSACTION_DESIGN.md](docs/LUA_TRANSACTION_DESIGN.md) | Lua 脚本事务设计 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
 
