@@ -50,7 +50,8 @@ RUN mkdir -p src && \
 
 # Build dependencies only (this layer will be cached)
 # Use features if specified (e.g., cluster)
-RUN cargo build --release $CARGO_FEATURES && rm -rf src
+RUN cargo build --release $CARGO_FEATURES \
+    && rm -rf src
 
 # Copy actual source code
 COPY src ./src
