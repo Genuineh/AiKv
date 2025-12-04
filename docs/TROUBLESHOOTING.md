@@ -551,6 +551,78 @@ tail -100 /var/log/aikv/aikv.log
 
 ---
 
-**最后更新**: 2025-12-02  
+## 集群问题
+
+### 1. 集群初始化卡住 - "Waiting for the cluster to join"
+
+#### 症状
+```bash
+$ redis-cli --cluster create 127.0.0.1:6379 127.0.0.1:6380 127.0.0.1:6381 ...
+>>> Performing hash slots allocation on 6 nodes...
+...
+Waiting for the cluster to join
+...................................................................................^C
+```
+
+#### 原因分析
+
+**这是一个已知的架构限制**。AiKv 目前不实现 Redis 集群总线（gossip）协议。详见 [CLUSTER_BUS_ANALYSIS.md](CLUSTER_BUS_ANALYSIS.md)。
+
+**技术说明:**
+- AiKv 正确报告 `cluster_enabled:1`
+- CLUSTER 命令（MEET, ADDSLOTS, NODES 等）已实现
+- **但是**：没有监听集群总线端口（16379 等）
+- **但是**：没有实现节点间 gossip 通信
+
+#### 验证步骤
+
+```bash
+# 1. 检查集群模式是否启用
+redis-cli -p 6379 INFO cluster
+# 应该显示: cluster_enabled:1
+
+# 2. 检查集群总线端口是否监听
+netstat -tlnp | grep 16379
+# 如果没有输出，说明没有监听（这是预期的）
+
+# 3. 检查 CLUSTER NODES 输出
+redis-cli -p 6379 CLUSTER NODES
+redis-cli -p 6380 CLUSTER NODES
+# 每个节点只能看到自己，无法看到完整集群
+```
+
+#### 解决方案
+
+**目前没有解决方案** - 这需要在 AiDb 中实现集群总线协议。
+
+**临时替代方案:**
+1. 使用 AiKv 单节点模式
+2. 使用应用层分片（客户端分片）
+3. 等待 AiDb 实现集群网络层
+
+**相关文档:**
+- [CLUSTER_BUS_ANALYSIS.md](CLUSTER_BUS_ANALYSIS.md) - 详细技术分析
+- [TODO.md](../TODO.md) - 项目路线图
+
+### 2. CLUSTER MEET 后节点不同步
+
+#### 症状
+```bash
+# 在节点 6379 执行
+redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6380
+OK
+
+# 但是 CLUSTER NODES 仍然只显示部分节点
+redis-cli -p 6379 CLUSTER NODES
+# 只显示本节点和手动添加的节点
+```
+
+#### 原因
+
+这与上述问题相同 - `CLUSTER MEET` 只更新本地状态，不会通过 gossip 传播到其他节点。
+
+---
+
+**最后更新**: 2025-12-04  
 **版本**: v0.1.0  
 **维护者**: @Genuineh, @copilot
