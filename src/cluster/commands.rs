@@ -504,7 +504,7 @@ impl ClusterCommands {
     /// The node ID is generated based on:
     /// - Current timestamp in nanoseconds
     /// - Process ID
-    /// - A random component from the hasher
+    /// - Thread ID
     ///
     /// This ensures uniqueness across restarts and different nodes.
     pub fn generate_node_id() -> u64 {
@@ -523,7 +523,7 @@ impl ClusterCommands {
         // Include process ID for uniqueness across processes
         std::process::id().hash(&mut hasher);
 
-        // Include thread ID for additional entropy
+        // Include thread ID for additional variation
         std::thread::current().id().hash(&mut hasher);
 
         hasher.finish()
