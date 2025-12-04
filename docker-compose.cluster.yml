@@ -50,8 +50,7 @@ services:
     image: aikv:cluster
     container_name: aikv1
     hostname: aikv1
-    command: >
-      /app/aikv --host 0.0.0.0 --port 6379
+    command: ["--host", "0.0.0.0", "--port", "6379"]
     ports:
       - "6379:6379"
       - "16379:16379"
@@ -97,8 +96,7 @@ services:
     image: aikv:cluster
     container_name: aikv2
     hostname: aikv2
-    command: >
-      /app/aikv --host 0.0.0.0 --port 6380
+    command: ["--host", "0.0.0.0", "--port", "6380"]
     ports:
       - "6380:6380"
       - "16380:16380"
@@ -144,8 +142,7 @@ services:
     image: aikv:cluster
     container_name: aikv3
     hostname: aikv3
-    command: >
-      /app/aikv --host 0.0.0.0 --port 6381
+    command: ["--host", "0.0.0.0", "--port", "6381"]
     ports:
       - "6381:6381"
       - "16381:16381"
@@ -191,8 +188,7 @@ services:
     image: aikv:cluster
     container_name: aikv4
     hostname: aikv4
-    command: >
-      /app/aikv --host 0.0.0.0 --port 6382
+    command: ["--host", "0.0.0.0", "--port", "6382"]
     ports:
       - "6382:6382"
       - "16382:16382"
@@ -238,8 +234,7 @@ services:
     image: aikv:cluster
     container_name: aikv5
     hostname: aikv5
-    command: >
-      /app/aikv --host 0.0.0.0 --port 6383
+    command: ["--host", "0.0.0.0", "--port", "6383"]
     ports:
       - "6383:6383"
       - "16383:16383"
@@ -285,8 +280,7 @@ services:
     image: aikv:cluster
     container_name: aikv6
     hostname: aikv6
-    command: >
-      /app/aikv --host 0.0.0.0 --port 6384
+    command: ["--host", "0.0.0.0", "--port", "6384"]
     ports:
       - "6384:6384"
       - "16384:16384"
