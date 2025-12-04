@@ -233,6 +233,13 @@ impl App {
         };
     }
 
+    pub fn toggle_storage_engine(&mut self) {
+        self.deploy_config.storage_engine = match self.deploy_config.storage_engine.as_str() {
+            "memory" => "aidb".to_string(),
+            _ => "memory".to_string(),
+        };
+    }
+
     pub fn scroll_up(&mut self) {
         if self.scroll_offset > 0 {
             self.scroll_offset -= 1;

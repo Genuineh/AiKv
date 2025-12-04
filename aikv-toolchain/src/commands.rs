@@ -5,6 +5,81 @@ use std::path::Path;
 use std::process::Stdio;
 use tokio::process::Command;
 
+/// Build result containing output logs
+pub struct CommandResult {
+    /// Whether the command completed successfully
+    pub success: bool,
+    /// Log lines captured from the command output (stdout and stderr)
+    pub logs: Vec<String>,
+}
+
+/// Build AiKv project with output capture for TUI
+pub async fn build_with_output(
+    project_dir: &Path,
+    cluster: bool,
+    release: bool,
+) -> Result<CommandResult> {
+    let mut logs = Vec::new();
+    logs.push("Building AiKv...".to_string());
+
+    let mut cmd = Command::new("cargo");
+    cmd.current_dir(project_dir);
+    cmd.arg("build");
+
+    if release {
+        cmd.arg("--release");
+        logs.push("  Mode: release".to_string());
+    } else {
+        logs.push("  Mode: debug".to_string());
+    }
+
+    if cluster {
+        cmd.arg("--features").arg("cluster");
+        logs.push("  Feature: cluster".to_string());
+    }
+
+    let output = cmd.output().await?;
+
+    // Capture stdout
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if !line.trim().is_empty() {
+            logs.push(line.to_string());
+        }
+    }
+
+    // Capture stderr (cargo outputs to stderr)
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for line in stderr.lines() {
+        if !line.trim().is_empty() {
+            logs.push(line.to_string());
+        }
+    }
+
+    if output.status.success() {
+        let mode = if release { "release" } else { "debug" };
+        let features = if cluster { " (with cluster)" } else { "" };
+        logs.push(format!(
+            "✅ Build completed successfully! ({} mode{})",
+            mode, features
+        ));
+        logs.push(format!(
+            "   Binary location: target/{}/aikv",
+            if release { "release" } else { "debug" }
+        ));
+        Ok(CommandResult {
+            success: true,
+            logs,
+        })
+    } else {
+        logs.push("❌ Build failed".to_string());
+        Ok(CommandResult {
+            success: false,
+            logs,
+        })
+    }
+}
+
 /// Build AiKv project
 pub async fn build(project_dir: &Path, cluster: bool, release: bool) -> Result<()> {
     println!("Building AiKv...");
@@ -41,6 +116,77 @@ pub async fn build(project_dir: &Path, cluster: bool, release: bool) -> Result<(
         Ok(())
     } else {
         Err(anyhow!("Build failed"))
+    }
+}
+
+/// Build Docker image with output capture for TUI
+pub async fn build_docker_with_output(
+    project_dir: &Path,
+    cluster: bool,
+    tag: &str,
+) -> Result<CommandResult> {
+    let mut logs = Vec::new();
+    logs.push("Building Docker image...".to_string());
+    logs.push(format!("  Image tag: aikv:{}", tag));
+
+    // Check if docker is available
+    let docker_check = Command::new("docker").arg("--version").output().await;
+
+    if docker_check.is_err() {
+        logs.push("❌ Docker is not installed or not in PATH".to_string());
+        return Ok(CommandResult {
+            success: false,
+            logs,
+        });
+    }
+
+    if cluster {
+        logs.push("  Feature: cluster".to_string());
+    }
+
+    let mut cmd = Command::new("docker");
+    cmd.current_dir(project_dir);
+    cmd.arg("build");
+    cmd.arg("-t").arg(format!("aikv:{}", tag));
+
+    if cluster {
+        cmd.arg("--build-arg").arg("FEATURES=cluster");
+    }
+
+    cmd.arg(".");
+
+    let output = cmd.output().await?;
+
+    // Capture stdout
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if !line.trim().is_empty() {
+            logs.push(line.to_string());
+        }
+    }
+
+    // Capture stderr
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for line in stderr.lines() {
+        if !line.trim().is_empty() {
+            logs.push(line.to_string());
+        }
+    }
+
+    if output.status.success() {
+        logs.push("✅ Docker image built successfully!".to_string());
+        logs.push(format!("   Image: aikv:{}", tag));
+        logs.push(format!("   To run: docker run -d -p 6379:6379 aikv:{}", tag));
+        Ok(CommandResult {
+            success: true,
+            logs,
+        })
+    } else {
+        logs.push("❌ Docker build failed".to_string());
+        Ok(CommandResult {
+            success: false,
+            logs,
+        })
     }
 }
 
