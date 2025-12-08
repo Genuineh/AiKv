@@ -255,31 +255,57 @@ impl MetaRaftClient {
     /// The `data_addr` and `raft_addr` fields in `ClusterNodeInfo` are currently
     /// set to the same value from MetaRaft. In a production setup, these would
     /// be tracked separately (Redis port vs gRPC port).
+    ///
+    /// TODO: Track data_addr and raft_addr separately when cluster configuration is extended.
     pub fn get_cluster_view(&self) -> ClusterView {
         let meta = self.meta_raft.get_cluster_meta();
 
         let mut nodes = std::collections::HashMap::new();
+        // Note: Using 0 as fallback for timestamp is acceptable here since it only
+        // affects the `last_heartbeat` field which is informational. The actual
+        // node liveness is determined by `is_online` from Raft status.
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
-        // Collect which nodes own slots (masters)
-        let mut nodes_with_slots: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        // In AiDb's model, slots are assigned to Raft groups, not directly to nodes.
+        // A node is considered a "master" if it's a member of any group that owns slots.
+        // For simplicity, we check if the node is in any group that has slots assigned.
+        let mut groups_with_slots: std::collections::HashSet<u64> = std::collections::HashSet::new();
         for &group_id in meta.slots.iter() {
             if group_id != UNASSIGNED_GROUP {
-                nodes_with_slots.insert(group_id);
+                groups_with_slots.insert(group_id);
+            }
+        }
+
+        // Build a map of which nodes are in which groups
+        let mut node_to_groups: std::collections::HashMap<u64, Vec<u64>> =
+            std::collections::HashMap::new();
+        for (group_id, group_meta) in &meta.groups {
+            for &member_node_id in &group_meta.replicas {
+                node_to_groups
+                    .entry(member_node_id)
+                    .or_default()
+                    .push(*group_id);
             }
         }
 
         for (node_id, node_info) in &meta.nodes {
-            let is_online = matches!(node_info.status, aidb::cluster::NodeStatus::Online);
-            // A node is a master if it owns any slots
-            let is_master = nodes_with_slots.contains(node_id);
+            use aidb::cluster::NodeStatus;
+            let is_online = matches!(node_info.status, NodeStatus::Online);
+
+            // A node is a master if it's a member of any Raft group that owns slots
+            let is_master = node_to_groups
+                .get(node_id)
+                .map(|groups| groups.iter().any(|g| groups_with_slots.contains(g)))
+                .unwrap_or(false);
+
             nodes.insert(
                 *node_id,
                 ClusterNodeInfo {
                     node_id: *node_id,
+                    // TODO: Track data_addr separately from raft_addr
                     data_addr: node_info.addr.clone(),
                     raft_addr: node_info.addr.clone(),
                     is_online,
@@ -290,6 +316,8 @@ impl MetaRaftClient {
         }
 
         // Get slot assignments from the cluster metadata
+        // Note: In AiDb, slots are assigned to groups. We return the group_id as the "owner"
+        // since that's what AiKv's cluster model expects.
         let slot_assignments = meta
             .slots
             .iter()
