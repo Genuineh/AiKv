@@ -145,23 +145,33 @@ Instead of implementing the complex Redis gossip protocol, we use **AiDb's Multi
 - `CLUSTER INFO` shows `cluster_state:ok` when all slots assigned
 - `CLUSTER NODES` shows all nodes as connected
 
-### Example: Cluster Creation Flow
+### Example: Cluster Creation Flow (Conceptual)
+
+> **Note**: The exact command line flags may vary. Use `aikv --help` to see available options.
+> The `--raft-addr` flag is a proposed extension for Multi-Raft cluster support.
 
 ```bash
-# Start 3 AiKv nodes with Multi-Raft
+# Start 3 AiKv nodes with Multi-Raft (conceptual - flags may vary)
 aikv --port 6379 --raft-addr 127.0.0.1:50051
 aikv --port 6380 --raft-addr 127.0.0.1:50052
 aikv --port 6381 --raft-addr 127.0.0.1:50053
 
-# Use redis-cli to create cluster (works without port 16379!)
-redis-cli --cluster create 127.0.0.1:6379 127.0.0.1:6380 127.0.0.1:6381
+# Manual cluster setup (works today):
+redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6380
+redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6381
+redis-cli -p 6379 CLUSTER ADDSLOTS {0..5460}
+redis-cli -p 6380 CLUSTER ADDSLOTS {5461..10922}
+redis-cli -p 6381 CLUSTER ADDSLOTS {10923..16383}
 
 # Behind the scenes:
-# 1. CLUSTER MEET adds nodes to Raft cluster
+# 1. CLUSTER MEET adds nodes to local state + proposes via Raft
 # 2. CLUSTER ADDSLOTS proposes slot assignments via Raft
-# 3. All nodes see consistent state immediately
-# 4. "Waiting for cluster to join" completes instantly
+# 3. All nodes see consistent state through Raft log replication
 ```
+
+> **Current Status**: `redis-cli --cluster create` is not yet supported because it waits
+> for gossip-based node discovery. Use manual `CLUSTER MEET` and `CLUSTER ADDSLOTS`
+> commands until Multi-Raft state synchronization is fully implemented.
 
 ## Verification Steps
 

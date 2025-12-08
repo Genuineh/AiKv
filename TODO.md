@@ -101,10 +101,10 @@
 - [x] ✅ `cluster_enabled:1` 在 INFO 中正确报告
 - [x] ✅ CLUSTER 命令 (MEET, ADDSLOTS, NODES 等) 已实现
 - [x] ✅ 本地集群状态存储 (`ClusterState`)
-- [ ] 🔄 将 `ClusterState` 存入 MetaRaft 状态机
-- [ ] 🔄 `CLUSTER MEET` 通过 Raft 共识提议节点加入
-- [ ] 🔄 `CLUSTER ADDSLOTS` 通过 Raft 共识提议槽分配
-- [ ] 🔄 节点启动时从 Raft 日志同步集群状态
+- [ ] 将 `ClusterState` 存入 MetaRaft 状态机
+- [ ] `CLUSTER MEET` 通过 Raft 共识提议节点加入
+- [ ] `CLUSTER ADDSLOTS` 通过 Raft 共识提议槽分配
+- [ ] 节点启动时从 Raft 日志同步集群状态
 
 **核心优势:**
 - ❌ **不需要端口 16379** - 无需 gossip 协议

@@ -578,25 +578,32 @@ Waiting for the cluster to join
 
 AiKv 集群使用 Raft 共识而非 gossip 协议，推荐使用以下方式初始化：
 
+> **注意**: 以下命令行参数可能因版本而异。请使用 `aikv --help` 查看实际可用的选项。
+> `--raft-addr` 参数是计划中的 Multi-Raft 集群支持扩展。
+
 ```bash
-# 1. 启动 AiKv 节点（确保 Raft RPC 端口可达）
-aikv --port 6379 --raft-addr 127.0.0.1:50051
-aikv --port 6380 --raft-addr 127.0.0.1:50052
-aikv --port 6381 --raft-addr 127.0.0.1:50053
+# 1. 启动 AiKv 节点（当前版本）
+aikv --host 127.0.0.1 --port 6379
+aikv --host 127.0.0.1 --port 6380
+aikv --host 127.0.0.1 --port 6381
 
 # 2. 手动添加节点到集群（通过 CLUSTER MEET）
 redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6380
 redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6381
 
 # 3. 分配槽位
-redis-cli -p 6379 CLUSTER ADDSLOTS {0..5460}
-redis-cli -p 6380 CLUSTER ADDSLOTS {5461..10922}
-redis-cli -p 6381 CLUSTER ADDSLOTS {10923..16383}
+# 注意: bash 的 {0..5460} 语法可能需要 xargs 或循环
+for i in $(seq 0 5460); do redis-cli -p 6379 CLUSTER ADDSLOTS $i; done
+for i in $(seq 5461 10922); do redis-cli -p 6380 CLUSTER ADDSLOTS $i; done
+for i in $(seq 10923 16383); do redis-cli -p 6381 CLUSTER ADDSLOTS $i; done
 
 # 4. 验证集群状态
 redis-cli -p 6379 CLUSTER INFO
 redis-cli -p 6379 CLUSTER NODES
 ```
+
+> **当前限制**: `redis-cli --cluster create` 命令暂不支持，因为它依赖 gossip 协议
+> 进行节点发现。请使用上述手动方式配置集群。
 
 #### 验证步骤
 
