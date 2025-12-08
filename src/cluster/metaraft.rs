@@ -199,11 +199,7 @@ impl MetaRaftClient {
     ///
     /// The data address (Redis protocol) is stored separately in `ClusterState`.
     /// This method only registers the Raft RPC address with the MetaRaft cluster.
-    pub async fn propose_node_join(
-        &self,
-        target_node_id: NodeId,
-        raft_addr: String,
-    ) -> Result<()> {
+    pub async fn propose_node_join(&self, target_node_id: NodeId, raft_addr: String) -> Result<()> {
         self.meta_raft
             .add_node(target_node_id, raft_addr)
             .await
@@ -272,7 +268,8 @@ impl MetaRaftClient {
         // In AiDb's model, slots are assigned to Raft groups, not directly to nodes.
         // A node is considered a "master" if it's a member of any group that owns slots.
         // For simplicity, we check if the node is in any group that has slots assigned.
-        let mut groups_with_slots: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        let mut groups_with_slots: std::collections::HashSet<u64> =
+            std::collections::HashSet::new();
         for &group_id in meta.slots.iter() {
             if group_id != UNASSIGNED_GROUP {
                 groups_with_slots.insert(group_id);
@@ -441,7 +438,9 @@ pub struct MetaRaftClient {
 impl MetaRaftClient {
     /// Create a stub MetaRaftClient (non-cluster mode).
     pub fn new_stub(node_id: NodeId) -> Self {
-        Self { node_id }
+        Self {
+            node_id,
+        }
     }
 
     /// Get this node's ID.
