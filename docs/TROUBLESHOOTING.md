@@ -574,15 +574,12 @@ Waiting for the cluster to join
 - AiKv 使用 AiDb 的 Multi-Raft 进行状态同步
 - **不需要端口 16379** - 这是设计选择，不是缺陷
 
-#### 解决方案: 使用 Multi-Raft 方式初始化集群
+#### 解决方案: 使用手动方式初始化集群
 
-AiKv 集群使用 Raft 共识而非 gossip 协议，推荐使用以下方式初始化：
-
-> **注意**: 以下命令行参数可能因版本而异。请使用 `aikv --help` 查看实际可用的选项。
-> `--raft-addr` 参数是计划中的 Multi-Raft 集群支持扩展。
+AiKv 集群使用 Raft 共识而非 gossip 协议，请使用以下方式初始化：
 
 ```bash
-# 1. 启动 AiKv 节点（当前版本）
+# 1. 启动 AiKv 节点（使用 aikv --help 查看可用选项）
 aikv --host 127.0.0.1 --port 6379
 aikv --host 127.0.0.1 --port 6380
 aikv --host 127.0.0.1 --port 6381
@@ -591,8 +588,7 @@ aikv --host 127.0.0.1 --port 6381
 redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6380
 redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6381
 
-# 3. 分配槽位
-# 注意: bash 的 {0..5460} 语法可能需要 xargs 或循环
+# 3. 分配槽位（使用循环以确保跨 shell 兼容性）
 for i in $(seq 0 5460); do redis-cli -p 6379 CLUSTER ADDSLOTS $i; done
 for i in $(seq 5461 10922); do redis-cli -p 6380 CLUSTER ADDSLOTS $i; done
 for i in $(seq 10923 16383); do redis-cli -p 6381 CLUSTER ADDSLOTS $i; done

@@ -145,35 +145,41 @@ Instead of implementing the complex Redis gossip protocol, we use **AiDb's Multi
 - `CLUSTER INFO` shows `cluster_state:ok` when all slots assigned
 - `CLUSTER NODES` shows all nodes as connected
 
-### Example: Cluster Creation Flow (Conceptual)
+### Example: Manual Cluster Setup (Available Today)
 
-> **Note**: The exact command line flags may vary. Use `aikv --help` to see available options.
-> The `--raft-addr` flag is a proposed extension for Multi-Raft cluster support.
+The following commands work with the current AiKv implementation:
 
 ```bash
-# Start 3 AiKv nodes with Multi-Raft (conceptual - flags may vary)
-aikv --port 6379 --raft-addr 127.0.0.1:50051
-aikv --port 6380 --raft-addr 127.0.0.1:50052
-aikv --port 6381 --raft-addr 127.0.0.1:50053
+# Start 3 AiKv nodes (use aikv --help for available options)
+aikv --host 127.0.0.1 --port 6379
+aikv --host 127.0.0.1 --port 6380
+aikv --host 127.0.0.1 --port 6381
 
-# Manual cluster setup (works today):
+# Add nodes to cluster via CLUSTER MEET
 redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6380
 redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6381
 
-# Assign slots (use loops for shell compatibility)
+# Assign slots (use loops for cross-shell compatibility)
 for i in $(seq 0 5460); do redis-cli -p 6379 CLUSTER ADDSLOTS $i; done
 for i in $(seq 5461 10922); do redis-cli -p 6380 CLUSTER ADDSLOTS $i; done
 for i in $(seq 10923 16383); do redis-cli -p 6381 CLUSTER ADDSLOTS $i; done
 
-# Behind the scenes:
-# 1. CLUSTER MEET adds nodes to local state + proposes via Raft
-# 2. CLUSTER ADDSLOTS proposes slot assignments via Raft
-# 3. All nodes see consistent state through Raft log replication
+# Verify cluster state
+redis-cli -p 6379 CLUSTER INFO
+redis-cli -p 6379 CLUSTER NODES
 ```
 
-> **Current Status**: `redis-cli --cluster create` is not yet supported because it waits
-> for gossip-based node discovery. Use manual `CLUSTER MEET` and `CLUSTER ADDSLOTS`
-> commands until Multi-Raft state synchronization is fully implemented.
+### Future: Automatic redis-cli Support (Planned)
+
+> **Planned Feature**: Once Multi-Raft state synchronization is fully implemented,
+> `redis-cli --cluster create` will be supported. This requires adding the `--raft-addr`
+> command line flag and enabling automatic Raft-based node discovery.
+
+```bash
+# Future syntax (not yet available):
+# aikv --port 6379 --raft-addr 127.0.0.1:50051
+# redis-cli --cluster create 127.0.0.1:6379 127.0.0.1:6380 127.0.0.1:6381
+```
 
 ## Verification Steps
 
