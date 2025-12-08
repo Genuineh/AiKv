@@ -670,17 +670,31 @@ impl ClusterCommands {
 
         // Update nodes from cluster view
         for (node_id, node_info) in cluster_view.nodes {
+            // Check if this node has local slot assignments
+            let node_has_slots = state
+                .slot_assignments
+                .iter()
+                .any(|slot| slot.as_ref() == Some(&node_id));
+
             if let Some(existing_node) = state.nodes.get_mut(&node_id) {
                 // Update existing node
                 existing_node.is_connected = node_info.is_online;
-                // Preserve local replication state set by CLUSTER REPLICATE
-                // Only update is_master if this node doesn't have an explicit replication relationship
-                if existing_node.master_id.is_none() && existing_node.replica_ids.is_empty() {
-                    existing_node.is_master = node_info.is_master;
+                
+                // Preserve local state that hasn't been synced to MetaRaft yet:
+                // 1. Explicit replication relationships set by CLUSTER REPLICATE
+                // 2. Master status for nodes with local slot assignments (from ADDSLOTS)
+                
+                // If this node has local slot assignments, it's a master
+                if node_has_slots {
+                    existing_node.is_master = true;
                 }
-                // If this node has a master_id, it's definitely a replica regardless of MetaRaft view
-                if existing_node.master_id.is_some() {
+                // If this node has a master_id, it's definitely a replica
+                else if existing_node.master_id.is_some() {
                     existing_node.is_master = false;
+                }
+                // Otherwise, only update is_master if node has no local replication state
+                else if existing_node.replica_ids.is_empty() {
+                    existing_node.is_master = node_info.is_master;
                 }
             } else {
                 // Add new node
