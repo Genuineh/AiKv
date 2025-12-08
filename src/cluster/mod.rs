@@ -71,6 +71,7 @@
 
 mod cluster_bus;
 mod commands;
+mod metaraft;
 mod node;
 mod router;
 
@@ -79,6 +80,7 @@ pub use commands::{
     ClusterCommands, ClusterState, FailoverMode, KeyCounter, KeyScanner, MigrationProgress,
     NodeInfo, RedirectType, SlotState,
 };
+pub use metaraft::{ClusterNodeInfo, ClusterView, MetaRaftClient, MetaRaftClientConfig};
 pub use node::{ClusterNode, NodeId};
 pub use router::SlotRouter;
 

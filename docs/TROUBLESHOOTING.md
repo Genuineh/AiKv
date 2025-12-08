@@ -551,6 +551,118 @@ tail -100 /var/log/aikv/aikv.log
 
 ---
 
-**最后更新**: 2025-12-02  
+## 集群问题
+
+### 1. 集群初始化卡住 - "Waiting for the cluster to join"
+
+#### 症状
+```bash
+$ redis-cli --cluster create 127.0.0.1:6379 127.0.0.1:6380 127.0.0.1:6381 ...
+>>> Performing hash slots allocation on 6 nodes...
+...
+Waiting for the cluster to join
+...................................................................................^C
+```
+
+#### 原因分析
+
+这是因为 AiKv 使用 **Multi-Raft 共识** 而非 Redis gossip 协议来同步集群状态。详见 [CLUSTER_BUS_ANALYSIS.md](CLUSTER_BUS_ANALYSIS.md)。
+
+**技术说明:**
+- AiKv 正确报告 `cluster_enabled:1`
+- CLUSTER 命令（MEET, ADDSLOTS, NODES 等）已实现
+- AiKv 使用 AiDb 的 Multi-Raft 进行状态同步
+- **不需要端口 16379** - 这是设计选择，不是缺陷
+
+#### 解决方案: 使用手动方式初始化集群
+
+AiKv 集群使用 Raft 共识而非 gossip 协议，请使用以下方式初始化：
+
+```bash
+# 1. 启动 AiKv 节点（使用 aikv --help 查看可用选项）
+aikv --host 127.0.0.1 --port 6379
+aikv --host 127.0.0.1 --port 6380
+aikv --host 127.0.0.1 --port 6381
+
+# 2. 手动添加节点到集群（通过 CLUSTER MEET）
+redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6380
+redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6381
+
+# 3. 分配槽位（使用循环以确保跨 shell 兼容性）
+for i in $(seq 0 5460); do redis-cli -p 6379 CLUSTER ADDSLOTS $i; done
+for i in $(seq 5461 10922); do redis-cli -p 6380 CLUSTER ADDSLOTS $i; done
+for i in $(seq 10923 16383); do redis-cli -p 6381 CLUSTER ADDSLOTS $i; done
+
+# 4. 验证集群状态
+redis-cli -p 6379 CLUSTER INFO
+redis-cli -p 6379 CLUSTER NODES
+```
+
+> **当前限制**: `redis-cli --cluster create` 命令暂不支持，因为它依赖 gossip 协议
+> 进行节点发现。请使用上述手动方式配置集群。
+
+#### 验证步骤
+
+```bash
+# 1. 检查集群模式是否启用
+redis-cli -p 6379 INFO cluster
+# 应该显示: cluster_enabled:1
+
+# 2. 检查 CLUSTER INFO
+redis-cli -p 6379 CLUSTER INFO
+# cluster_state:ok (如果所有槽位已分配)
+
+# 3. 检查 CLUSTER NODES 输出
+redis-cli -p 6379 CLUSTER NODES
+# 应该显示所有节点
+```
+
+**相关文档:**
+- [CLUSTER_BUS_ANALYSIS.md](CLUSTER_BUS_ANALYSIS.md) - Multi-Raft 集群方案详解
+- [TODO.md](../TODO.md) - 项目路线图
+
+### 2. CLUSTER MEET 后节点不同步
+
+#### 症状
+```bash
+# 在节点 6379 执行
+redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6380
+OK
+
+# 但是 CLUSTER NODES 仍然只显示部分节点
+redis-cli -p 6379 CLUSTER NODES
+# 只显示本节点和手动添加的节点
+```
+
+#### 原因
+
+当前版本中，`CLUSTER MEET` 更新本地状态并通过 MetaRaft 提议节点加入。如果 Raft 共识尚未完成或节点间 Raft RPC 不可达，状态同步会延迟。
+
+#### 解决方案
+
+1. **确保 Raft RPC 端口可达**:
+   ```bash
+   # 检查 Raft 端口连通性
+   nc -zv 127.0.0.1 50051
+   nc -zv 127.0.0.1 50052
+   ```
+
+2. **等待 Raft 共识完成**:
+   ```bash
+   # 稍等几秒后重试
+   sleep 2
+   redis-cli -p 6379 CLUSTER NODES
+   ```
+
+3. **手动在所有节点执行 MEET**:
+   ```bash
+   # 确保双向可见
+   redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6380
+   redis-cli -p 6380 CLUSTER MEET 127.0.0.1 6379
+   ```
+
+---
+
+**最后更新**: 2025-12-08  
 **版本**: v0.1.0  
 **维护者**: @Genuineh, @copilot
