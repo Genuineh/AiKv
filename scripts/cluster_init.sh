@@ -131,14 +131,23 @@ redis_exec() {
     local host=$1
     local port=$2
     shift 2
-    ${REDIS_CLI} -h ${host} -p ${port} "$@" 2>/dev/null
+    local output
+    local exit_code
+    output=$(${REDIS_CLI} -h ${host} -p ${port} "$@" 2>&1)
+    exit_code=$?
+    if [ ${exit_code} -ne 0 ]; then
+        print_warn "Command failed on ${host}:${port}: $*"
+        print_warn "Error: ${output}"
+    fi
+    echo "${output}"
+    return ${exit_code}
 }
 
 # Function to get node ID
 get_node_id() {
     local host=$1
     local port=$2
-    local node_id=$(redis_exec ${host} ${port} CLUSTER MYID 2>/dev/null)
+    local node_id=$(${REDIS_CLI} -h ${host} -p ${port} CLUSTER MYID 2>&1 | grep -v "^\[" | head -1)
     echo "${node_id}"
 }
 
@@ -146,7 +155,7 @@ get_node_id() {
 check_node() {
     local host=$1
     local port=$2
-    if redis_exec ${host} ${port} PING | grep -q "PONG"; then
+    if redis_exec ${host} ${port} PING 2>&1 | grep -q "PONG"; then
         return 0
     else
         return 1
@@ -188,6 +197,9 @@ print_info "Step 3: Forming cluster (CLUSTER MEET)..."
 first_master="${MASTERS[0]}"
 IFS=':' read -r first_host first_port <<< "${first_master}"
 
+MEET_FAILURES=0
+MAX_MEET_RETRIES=2
+
 for node in "${ALL_NODES[@]}"; do
     if [ "${node}" == "${first_master}" ]; then
         continue
@@ -197,10 +209,26 @@ for node in "${ALL_NODES[@]}"; do
     
     # Execute MEET command on the first master to add this node
     print_info "Meeting ${node} from ${first_master}..."
-    if redis_exec ${first_host} ${first_port} CLUSTER MEET ${host} ${port} | grep -q "OK"; then
-        print_success "Successfully met ${node}"
-    else
-        print_warn "CLUSTER MEET may have failed for ${node}, continuing..."
+    retry_count=0
+    meet_success=false
+    
+    while [ ${retry_count} -lt ${MAX_MEET_RETRIES} ]; do
+        if redis_exec ${first_host} ${first_port} CLUSTER MEET ${host} ${port} | grep -q "OK"; then
+            print_success "Successfully met ${node}"
+            meet_success=true
+            break
+        else
+            retry_count=$((retry_count + 1))
+            if [ ${retry_count} -lt ${MAX_MEET_RETRIES} ]; then
+                print_warn "CLUSTER MEET attempt ${retry_count} failed, retrying..."
+                sleep 1
+            fi
+        fi
+    done
+    
+    if [ "${meet_success}" = false ]; then
+        print_error "Failed to meet ${node} after ${MAX_MEET_RETRIES} attempts"
+        MEET_FAILURES=$((MEET_FAILURES + 1))
     fi
     
     # Also execute MEET in reverse direction to ensure bidirectional connection
@@ -208,12 +236,17 @@ for node in "${ALL_NODES[@]}"; do
     if redis_exec ${host} ${port} CLUSTER MEET ${first_host} ${first_port} | grep -q "OK"; then
         print_success "Reverse MEET successful"
     else
-        print_warn "Reverse CLUSTER MEET may have failed, continuing..."
+        print_warn "Reverse CLUSTER MEET failed, but this is expected if forward MEET succeeded"
     fi
     
     # Small delay to allow nodes to sync
     sleep 0.5
 done
+
+if [ ${MEET_FAILURES} -gt 0 ]; then
+    print_error "${MEET_FAILURES} node(s) failed to join the cluster"
+    exit 1
+fi
 
 # Additional cross-meets between all nodes to ensure full connectivity
 print_info "Ensuring full mesh connectivity..."

@@ -664,7 +664,9 @@ impl ClusterCommands {
         })?;
 
         let cluster_view = meta_client.get_cluster_view();
-        let mut state = self.state.write().unwrap();
+        let mut state = self.state.write().map_err(|e| {
+            AikvError::Storage(format!("Failed to acquire cluster state write lock: {}", e))
+        })?;
 
         // Update nodes from cluster view
         for (node_id, node_info) in cluster_view.nodes {
@@ -682,10 +684,15 @@ impl ClusterCommands {
         }
 
         // Update slot assignments from cluster view
+        // MetaRaft guarantees this vector has exactly TOTAL_SLOTS_USIZE elements
+        debug_assert_eq!(
+            cluster_view.slot_assignments.len(),
+            TOTAL_SLOTS_USIZE,
+            "MetaRaft slot assignments should always have {} elements",
+            TOTAL_SLOTS_USIZE
+        );
         for (slot_idx, node_id_opt) in cluster_view.slot_assignments.iter().enumerate() {
-            if slot_idx < TOTAL_SLOTS_USIZE {
-                state.slot_assignments[slot_idx] = *node_id_opt;
-            }
+            state.slot_assignments[slot_idx] = *node_id_opt;
         }
 
         // Update config epoch
