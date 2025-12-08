@@ -159,9 +159,11 @@ aikv --port 6381 --raft-addr 127.0.0.1:50053
 # Manual cluster setup (works today):
 redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6380
 redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6381
-redis-cli -p 6379 CLUSTER ADDSLOTS {0..5460}
-redis-cli -p 6380 CLUSTER ADDSLOTS {5461..10922}
-redis-cli -p 6381 CLUSTER ADDSLOTS {10923..16383}
+
+# Assign slots (use loops for shell compatibility)
+for i in $(seq 0 5460); do redis-cli -p 6379 CLUSTER ADDSLOTS $i; done
+for i in $(seq 5461 10922); do redis-cli -p 6380 CLUSTER ADDSLOTS $i; done
+for i in $(seq 10923 16383); do redis-cli -p 6381 CLUSTER ADDSLOTS $i; done
 
 # Behind the scenes:
 # 1. CLUSTER MEET adds nodes to local state + proposes via Raft
