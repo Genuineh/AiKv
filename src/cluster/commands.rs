@@ -22,6 +22,9 @@ use std::sync::{Arc, RwLock};
 #[cfg(feature = "cluster")]
 use aidb::cluster::MultiRaftNode;
 
+#[cfg(feature = "cluster")]
+use crate::cluster::metaraft::MetaRaftClient;
+
 /// Total number of slots in Redis Cluster (16384)
 const TOTAL_SLOTS: u16 = 16384;
 /// Total slots as usize for vector indexing
@@ -450,6 +453,9 @@ pub struct ClusterCommands {
     /// Optional MultiRaftNode for cluster operations (when cluster feature is enabled)
     #[cfg(feature = "cluster")]
     multi_raft: Option<Arc<MultiRaftNode>>,
+    /// Optional MetaRaftClient for cluster state synchronization via Raft consensus
+    #[cfg(feature = "cluster")]
+    meta_raft_client: Option<Arc<MetaRaftClient>>,
 }
 
 impl ClusterCommands {
@@ -463,6 +469,8 @@ impl ClusterCommands {
             key_counter: None,
             #[cfg(feature = "cluster")]
             multi_raft: None,
+            #[cfg(feature = "cluster")]
+            meta_raft_client: None,
         }
     }
 
@@ -493,6 +501,8 @@ impl ClusterCommands {
             key_counter: None,
             #[cfg(feature = "cluster")]
             multi_raft: None,
+            #[cfg(feature = "cluster")]
+            meta_raft_client: None,
         }
     }
 
@@ -508,6 +518,8 @@ impl ClusterCommands {
             key_counter: None,
             #[cfg(feature = "cluster")]
             multi_raft: None,
+            #[cfg(feature = "cluster")]
+            meta_raft_client: None,
         }
     }
 
@@ -528,6 +540,30 @@ impl ClusterCommands {
             key_scanner: None,
             key_counter: None,
             multi_raft: Some(multi_raft),
+            meta_raft_client: None,
+        }
+    }
+
+    /// Create a new ClusterCommands handler with MetaRaftClient.
+    ///
+    /// This is the preferred constructor for full Multi-Raft cluster support.
+    /// The MetaRaftClient provides Raft-based cluster state synchronization,
+    /// eliminating the need for Redis gossip protocol.
+    #[cfg(feature = "cluster")]
+    pub fn with_meta_raft_client(
+        node_id: Option<u64>,
+        state: Arc<RwLock<ClusterState>>,
+        multi_raft: Arc<MultiRaftNode>,
+        meta_raft_client: Arc<MetaRaftClient>,
+    ) -> Self {
+        Self {
+            router: SlotRouter::new(),
+            node_id,
+            state,
+            key_scanner: None,
+            key_counter: None,
+            multi_raft: Some(multi_raft),
+            meta_raft_client: Some(meta_raft_client),
         }
     }
 
@@ -535,6 +571,18 @@ impl ClusterCommands {
     #[cfg(feature = "cluster")]
     pub fn set_multi_raft(&mut self, multi_raft: Arc<MultiRaftNode>) {
         self.multi_raft = Some(multi_raft);
+    }
+
+    /// Set the MetaRaftClient for cluster state synchronization.
+    #[cfg(feature = "cluster")]
+    pub fn set_meta_raft_client(&mut self, client: Arc<MetaRaftClient>) {
+        self.meta_raft_client = Some(client);
+    }
+
+    /// Get the MetaRaftClient if available.
+    #[cfg(feature = "cluster")]
+    pub fn meta_raft_client(&self) -> Option<&Arc<MetaRaftClient>> {
+        self.meta_raft_client.as_ref()
     }
 
     /// Generate a unique node ID for this cluster node.
@@ -944,8 +992,8 @@ cluster_stats_messages_received:0\r\n",
     /// CLUSTER MEET ip port [cluster-port]
     ///
     /// Add a node to the cluster by specifying its address.
-    /// When AiDb MultiRaft is available, this uses the MetaRaft consensus
-    /// to add the node to the cluster.
+    /// When MetaRaftClient is available, this uses the MetaRaft consensus
+    /// to add the node to the cluster via Raft.
     ///
     /// # Arguments
     ///
@@ -998,46 +1046,64 @@ cluster_stats_messages_received:0\r\n",
             state.config_epoch += 1;
         }
 
-        // If MultiRaftNode is available, use AiDb's cluster API to add the node
+        // Prefer using MetaRaftClient for Raft-based cluster state synchronization
         #[cfg(feature = "cluster")]
-        if let Some(ref multi_raft) = self.multi_raft {
-            // Add node address to the network factory for Raft RPC communication
-            multi_raft.add_node_address(target_node_id, raft_addr.clone());
-
-            // If MetaRaft is available, add node to cluster metadata via Raft consensus
-            if let Some(meta_raft) = multi_raft.meta_raft() {
-                let meta_raft = meta_raft.clone();
+        {
+            if let Some(ref meta_client) = self.meta_raft_client {
+                // Use MetaRaftClient for Raft consensus-based node join
+                let meta_client = Arc::clone(meta_client);
                 let data_addr_clone = data_addr.clone();
                 let raft_addr_clone = raft_addr.clone();
 
-                // Spawn async task to add node via Raft consensus.
-                // Note: Like Redis's CLUSTER MEET, we return OK immediately and let
-                // the actual cluster join happen asynchronously. Failures are logged
-                // but don't prevent the command from succeeding (the node is already
-                // added to local state for immediate visibility in CLUSTER NODES).
                 tokio::spawn(async move {
-                    match meta_raft.add_node(target_node_id, raft_addr_clone).await {
+                    match meta_client
+                        .propose_node_join(target_node_id, raft_addr_clone)
+                        .await
+                    {
                         Ok(_) => {
                             tracing::info!(
-                                "CLUSTER MEET: Successfully added node {} ({}) to cluster via Raft consensus",
+                                "CLUSTER MEET: Node {} ({}) added via MetaRaftClient",
                                 data_addr_clone,
                                 target_node_id
                             );
                         }
                         Err(e) => {
                             tracing::warn!(
-                                "CLUSTER MEET: Failed to add node {} via Raft consensus: {}. Node added to local state only.",
+                                "CLUSTER MEET: MetaRaftClient failed to add node {}: {}",
                                 data_addr_clone,
                                 e
                             );
                         }
                     }
                 });
-            } else {
-                tracing::debug!(
-                    "CLUSTER MEET: MetaRaft not available, node {} added to local state and network factory only",
-                    data_addr
-                );
+            } else if let Some(ref multi_raft) = self.multi_raft {
+                // Fallback to direct MultiRaftNode usage
+                multi_raft.add_node_address(target_node_id, raft_addr.clone());
+
+                if let Some(meta_raft) = multi_raft.meta_raft() {
+                    let meta_raft = meta_raft.clone();
+                    let data_addr_clone = data_addr.clone();
+                    let raft_addr_clone = raft_addr.clone();
+
+                    tokio::spawn(async move {
+                        match meta_raft.add_node(target_node_id, raft_addr_clone).await {
+                            Ok(_) => {
+                                tracing::info!(
+                                    "CLUSTER MEET: Node {} ({}) added via MetaRaft",
+                                    data_addr_clone,
+                                    target_node_id
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "CLUSTER MEET: MetaRaft failed to add node {}: {}",
+                                    data_addr_clone,
+                                    e
+                                );
+                            }
+                        }
+                    });
+                }
             }
         }
 
@@ -1047,6 +1113,8 @@ cluster_stats_messages_received:0\r\n",
     /// CLUSTER FORGET node-id
     ///
     /// Remove a node from the cluster.
+    /// When MetaRaftClient is available, this uses Raft consensus
+    /// to remove the node from the cluster.
     ///
     /// # Arguments
     ///
@@ -1071,27 +1139,79 @@ cluster_stats_messages_received:0\r\n",
             ));
         }
 
-        let mut state = self.state.write().unwrap();
+        {
+            let mut state = self.state.write().unwrap();
 
-        // Check if node exists
-        if !state.nodes.contains_key(&node_id) {
-            return Err(AikvError::InvalidArgument(format!(
-                "Unknown node {}",
-                node_id_str
-            )));
+            // Check if node exists
+            if !state.nodes.contains_key(&node_id) {
+                return Err(AikvError::InvalidArgument(format!(
+                    "Unknown node {}",
+                    node_id_str
+                )));
+            }
+
+            // Remove the node
+            state.nodes.remove(&node_id);
+
+            // Remove any slot assignments to this node
+            for slot in state.slot_assignments.iter_mut() {
+                if *slot == Some(node_id) {
+                    *slot = None;
+                }
+            }
+
+            state.config_epoch += 1;
         }
 
-        // Remove the node
-        state.nodes.remove(&node_id);
+        // Use MetaRaftClient to remove node via Raft consensus
+        #[cfg(feature = "cluster")]
+        {
+            if let Some(ref meta_client) = self.meta_raft_client {
+                let meta_client = Arc::clone(meta_client);
+                let node_id_str_clone = node_id_str.clone();
 
-        // Remove any slot assignments to this node
-        for slot in state.slot_assignments.iter_mut() {
-            if *slot == Some(node_id) {
-                *slot = None;
+                tokio::spawn(async move {
+                    match meta_client.propose_node_leave(node_id).await {
+                        Ok(_) => {
+                            tracing::info!(
+                                "CLUSTER FORGET: Node {} removed via MetaRaftClient",
+                                node_id_str_clone
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "CLUSTER FORGET: MetaRaftClient failed to remove node {}: {}",
+                                node_id_str_clone,
+                                e
+                            );
+                        }
+                    }
+                });
+            } else if let Some(ref multi_raft) = self.multi_raft {
+                if let Some(meta_raft) = multi_raft.meta_raft() {
+                    let meta_raft = meta_raft.clone();
+                    let node_id_str_clone = node_id_str.clone();
+
+                    tokio::spawn(async move {
+                        match meta_raft.remove_node(node_id).await {
+                            Ok(_) => {
+                                tracing::info!(
+                                    "CLUSTER FORGET: Node {} removed via MetaRaft",
+                                    node_id_str_clone
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "CLUSTER FORGET: MetaRaft failed to remove node {}: {}",
+                                    node_id_str_clone,
+                                    e
+                                );
+                            }
+                        }
+                    });
+                }
             }
         }
-
-        state.config_epoch += 1;
 
         Ok(RespValue::simple_string("OK"))
     }

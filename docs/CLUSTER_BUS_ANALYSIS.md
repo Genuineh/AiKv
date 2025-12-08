@@ -233,21 +233,54 @@ impl MetaRaftClient {
 
 ### Integration with CLUSTER Commands
 
-The existing `CLUSTER MEET` command already integrates with MetaRaftNode:
+The `CLUSTER MEET` and `CLUSTER FORGET` commands now use `MetaRaftClient` for Raft-based cluster state synchronization:
 
 ```rust
 // In ClusterCommands::meet()
 #[cfg(feature = "cluster")]
-if let Some(ref multi_raft) = self.multi_raft {
-    multi_raft.add_node_address(target_node_id, raft_addr.clone());
-    
-    if let Some(meta_raft) = multi_raft.meta_raft() {
-        // Propose node join via Raft consensus
+{
+    // Prefer MetaRaftClient for Raft consensus-based node join
+    if let Some(ref meta_client) = self.meta_raft_client {
         tokio::spawn(async move {
-            meta_raft.add_node(target_node_id, raft_addr).await.ok();
+            meta_client.propose_node_join(target_node_id, raft_addr).await.ok();
+        });
+    } else if let Some(ref multi_raft) = self.multi_raft {
+        // Fallback to direct MultiRaftNode usage
+        multi_raft.add_node_address(target_node_id, raft_addr.clone());
+        // ...
+    }
+}
+
+// In ClusterCommands::forget()
+#[cfg(feature = "cluster")]
+{
+    if let Some(ref meta_client) = self.meta_raft_client {
+        tokio::spawn(async move {
+            meta_client.propose_node_leave(node_id).await.ok();
         });
     }
 }
+```
+
+### Setting Up ClusterCommands with MetaRaftClient
+
+```rust
+// Create MetaRaftClient from MultiRaftNode's MetaRaft
+let meta_raft = multi_raft.meta_raft().unwrap();
+let meta_raft_client = Arc::new(MetaRaftClient::new(
+    Arc::clone(meta_raft),
+    node_id,
+    "127.0.0.1:6379".to_string(),
+    "127.0.0.1:16379".to_string(),
+));
+
+// Create ClusterCommands with MetaRaftClient
+let cluster_commands = ClusterCommands::with_meta_raft_client(
+    Some(node_id),
+    cluster_state,
+    multi_raft,
+    meta_raft_client,
+);
 ```
 
 ## Conclusion
@@ -259,11 +292,11 @@ By leveraging AiDb's Multi-Raft consensus instead of implementing the Redis goss
 3. **Stronger consistency guarantees**
 4. **Simpler implementation using existing infrastructure**
 
-This approach has been implemented in the `MetaRaftClient` module and is now the recommended way to manage AiKv clusters.
+This approach has been implemented in the `MetaRaftClient` module and integrated into `ClusterCommands`.
 
 ---
 **Last Updated**: 2025-12-08
 **Implementation Status**: ✅ Completed
-**Module**: `src/cluster/metaraft.rs`
-**Issue Reference**: Cluster initialization stuck at "Waiting for the cluster to join"
-**Status**: Solution Identified - Use Multi-Raft for State Synchronization
+**Modules**: 
+- `src/cluster/metaraft.rs` - MetaRaftClient implementation
+- `src/cluster/commands.rs` - Integration with CLUSTER commands

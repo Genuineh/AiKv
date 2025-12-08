@@ -104,8 +104,10 @@
 - [x] ✅ 本地集群状态存储 (`ClusterState`)
 - [x] ✅ `MetaRaftClient` 封装 AiDb MetaRaftNode API
 - [x] ✅ `CLUSTER MEET` 通过 Raft 共识提议节点加入
+- [x] ✅ `CLUSTER FORGET` 通过 Raft 共识提议节点移除
 - [x] ✅ 节点心跳任务 (通过 OpenRaft 内置机制)
 - [x] ✅ `get_cluster_view()` 从 MetaRaft 读取集群状态
+- [x] ✅ `ClusterCommands` 集成 `MetaRaftClient`
 
 **实现说明:**
 
@@ -115,6 +117,13 @@
 - `get_cluster_view()` - 从 Raft 状态机读取集群视图
 - `start_heartbeat()` - 启动心跳任务
 - `is_leader()` / `get_leader()` - 查询 Raft 领导者
+
+集成到 `ClusterCommands` (`src/cluster/commands.rs`)：
+- `with_meta_raft_client()` - 使用 MetaRaftClient 创建 ClusterCommands
+- `set_meta_raft_client()` - 设置 MetaRaftClient
+- `meta_raft_client()` - 获取 MetaRaftClient 引用
+- `meet()` - 优先使用 MetaRaftClient 添加节点
+- `forget()` - 优先使用 MetaRaftClient 移除节点
 
 **核心优势:**
 - ❌ **不需要端口 16379** - 无需 gossip 协议
@@ -126,15 +135,15 @@
 ```
 Redis Client (redis-cli)
     │
-    ▼ CLUSTER MEET / ADDSLOTS / NODES
+    ▼ CLUSTER MEET / FORGET / NODES
     │
-ClusterCommands
+ClusterCommands (with MetaRaftClient)
     │
-    ▼ propose_node_join() / get_cluster_view()
+    ▼ propose_node_join() / propose_node_leave()
     │
 MetaRaftClient  ←─────────────────────────┐
     │                                      │
-    ▼ add_node() / get_cluster_meta()     │ Raft 日志复制
+    ▼ add_node() / remove_node()          │ Raft 日志复制
     │                                      │
 AiDb MetaRaftNode (Group 0) ──────────────┘
 ```
