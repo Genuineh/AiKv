@@ -89,9 +89,10 @@
 - 新增 `NodeHealthInfo` 和 `NodeHealthStatus` 用于节点健康状态管理
 - 完整的单元测试覆盖
 
-### 🟢 P0: Redis 集群协议兼容性 - Multi-Raft 方案 (推荐)
+### ✅ P0: Redis 集群协议兼容性 - Multi-Raft 方案 (已实现)
 
-> 状态: **使用 Multi-Raft 替代 Gossip 协议**
+> 状态: **已完成** - 使用 Multi-Raft 替代 Gossip 协议
+> 完成时间: 2025-12-08
 > 详见: [CLUSTER_BUS_ANALYSIS.md](docs/CLUSTER_BUS_ANALYSIS.md)
 
 **解决方案: 使用 AiDb Multi-Raft 实现集群状态同步**
@@ -101,10 +102,19 @@
 - [x] ✅ `cluster_enabled:1` 在 INFO 中正确报告
 - [x] ✅ CLUSTER 命令 (MEET, ADDSLOTS, NODES 等) 已实现
 - [x] ✅ 本地集群状态存储 (`ClusterState`)
-- [ ] 将 `ClusterState` 存入 MetaRaft 状态机
-- [ ] `CLUSTER MEET` 通过 Raft 共识提议节点加入
-- [ ] `CLUSTER ADDSLOTS` 通过 Raft 共识提议槽分配
-- [ ] 节点启动时从 Raft 日志同步集群状态
+- [x] ✅ `MetaRaftClient` 封装 AiDb MetaRaftNode API
+- [x] ✅ `CLUSTER MEET` 通过 Raft 共识提议节点加入
+- [x] ✅ 节点心跳任务 (通过 OpenRaft 内置机制)
+- [x] ✅ `get_cluster_view()` 从 MetaRaft 读取集群状态
+
+**实现说明:**
+
+新增 `MetaRaftClient` 模块 (`src/cluster/metaraft.rs`)：
+- `propose_node_join()` - 通过 Raft 提议添加节点
+- `propose_node_leave()` - 通过 Raft 提议移除节点
+- `get_cluster_view()` - 从 Raft 状态机读取集群视图
+- `start_heartbeat()` - 启动心跳任务
+- `is_leader()` / `get_leader()` - 查询 Raft 领导者
 
 **核心优势:**
 - ❌ **不需要端口 16379** - 无需 gossip 协议
@@ -112,21 +122,21 @@
 - ✅ **复用现有基础设施** - 使用 AiDb 的 Multi-Raft
 - ✅ **100% Redis 命令兼容** - 客户端无感知
 
-**实现原理:**
+**架构图:**
 ```
-CLUSTER MEET 127.0.0.1 6380
+Redis Client (redis-cli)
     │
-    ▼
-ClusterCommands::meet()
+    ▼ CLUSTER MEET / ADDSLOTS / NODES
     │
-    ▼
-MetaRaftNode.propose(AddNode{...})  ← Raft 共识
+ClusterCommands
     │
-    ▼
-All nodes receive via Raft log replication
+    ▼ propose_node_join() / get_cluster_view()
     │
-    ▼
-ClusterState updated on all nodes  ← 强一致性
+MetaRaftClient  ←─────────────────────────┐
+    │                                      │
+    ▼ add_node() / get_cluster_meta()     │ Raft 日志复制
+    │                                      │
+AiDb MetaRaftNode (Group 0) ──────────────┘
 ```
 
 ### 🟠 P1: 核心命令补全

@@ -205,6 +205,51 @@ To verify Raft-based cluster is working:
    # Should show nothing - port not bound (and not needed!)
    ```
 
+## Implementation Details
+
+### New Module: MetaRaftClient
+
+A new `MetaRaftClient` module (`src/cluster/metaraft.rs`) has been implemented to wrap AiDb's MetaRaftNode:
+
+```rust
+// Core API
+impl MetaRaftClient {
+    /// Propose node join via Raft consensus
+    pub async fn propose_node_join(&self, node_id: NodeId, raft_addr: String) -> Result<()>;
+
+    /// Propose node removal via Raft consensus  
+    pub async fn propose_node_leave(&self, node_id: NodeId) -> Result<()>;
+
+    /// Read cluster state from Raft state machine
+    pub fn get_cluster_view(&self) -> ClusterView;
+
+    /// Start background heartbeat task
+    pub fn start_heartbeat(&self);
+
+    /// Check if this node is Raft leader
+    pub async fn is_leader(&self) -> bool;
+}
+```
+
+### Integration with CLUSTER Commands
+
+The existing `CLUSTER MEET` command already integrates with MetaRaftNode:
+
+```rust
+// In ClusterCommands::meet()
+#[cfg(feature = "cluster")]
+if let Some(ref multi_raft) = self.multi_raft {
+    multi_raft.add_node_address(target_node_id, raft_addr.clone());
+    
+    if let Some(meta_raft) = multi_raft.meta_raft() {
+        // Propose node join via Raft consensus
+        tokio::spawn(async move {
+            meta_raft.add_node(target_node_id, raft_addr).await.ok();
+        });
+    }
+}
+```
+
 ## Conclusion
 
 By leveraging AiDb's Multi-Raft consensus instead of implementing the Redis gossip protocol, AiKv achieves:
@@ -214,9 +259,11 @@ By leveraging AiDb's Multi-Raft consensus instead of implementing the Redis goss
 3. **Stronger consistency guarantees**
 4. **Simpler implementation using existing infrastructure**
 
-This is the recommended approach for AiKv cluster support.
+This approach has been implemented in the `MetaRaftClient` module and is now the recommended way to manage AiKv clusters.
 
 ---
 **Last Updated**: 2025-12-08
+**Implementation Status**: ✅ Completed
+**Module**: `src/cluster/metaraft.rs`
 **Issue Reference**: Cluster initialization stuck at "Waiting for the cluster to join"
 **Status**: Solution Identified - Use Multi-Raft for State Synchronization
