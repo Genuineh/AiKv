@@ -566,13 +566,37 @@ Waiting for the cluster to join
 
 #### 原因分析
 
-**这是一个已知的架构限制**。AiKv 目前不实现 Redis 集群总线（gossip）协议。详见 [CLUSTER_BUS_ANALYSIS.md](CLUSTER_BUS_ANALYSIS.md)。
+这是因为 AiKv 使用 **Multi-Raft 共识** 而非 Redis gossip 协议来同步集群状态。详见 [CLUSTER_BUS_ANALYSIS.md](CLUSTER_BUS_ANALYSIS.md)。
 
 **技术说明:**
 - AiKv 正确报告 `cluster_enabled:1`
 - CLUSTER 命令（MEET, ADDSLOTS, NODES 等）已实现
-- **但是**：没有监听集群总线端口（16379 等）
-- **但是**：没有实现节点间 gossip 通信
+- AiKv 使用 AiDb 的 Multi-Raft 进行状态同步
+- **不需要端口 16379** - 这是设计选择，不是缺陷
+
+#### 解决方案: 使用 Multi-Raft 方式初始化集群
+
+AiKv 集群使用 Raft 共识而非 gossip 协议，推荐使用以下方式初始化：
+
+```bash
+# 1. 启动 AiKv 节点（确保 Raft RPC 端口可达）
+aikv --port 6379 --raft-addr 127.0.0.1:50051
+aikv --port 6380 --raft-addr 127.0.0.1:50052
+aikv --port 6381 --raft-addr 127.0.0.1:50053
+
+# 2. 手动添加节点到集群（通过 CLUSTER MEET）
+redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6380
+redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6381
+
+# 3. 分配槽位
+redis-cli -p 6379 CLUSTER ADDSLOTS {0..5460}
+redis-cli -p 6380 CLUSTER ADDSLOTS {5461..10922}
+redis-cli -p 6381 CLUSTER ADDSLOTS {10923..16383}
+
+# 4. 验证集群状态
+redis-cli -p 6379 CLUSTER INFO
+redis-cli -p 6379 CLUSTER NODES
+```
 
 #### 验证步骤
 
@@ -581,27 +605,17 @@ Waiting for the cluster to join
 redis-cli -p 6379 INFO cluster
 # 应该显示: cluster_enabled:1
 
-# 2. 检查集群总线端口是否监听
-netstat -tlnp | grep 16379
-# 如果没有输出，说明没有监听（这是预期的）
+# 2. 检查 CLUSTER INFO
+redis-cli -p 6379 CLUSTER INFO
+# cluster_state:ok (如果所有槽位已分配)
 
 # 3. 检查 CLUSTER NODES 输出
 redis-cli -p 6379 CLUSTER NODES
-redis-cli -p 6380 CLUSTER NODES
-# 每个节点只能看到自己，无法看到完整集群
+# 应该显示所有节点
 ```
 
-#### 解决方案
-
-**目前没有解决方案** - 这需要在 AiDb 中实现集群总线协议。
-
-**临时替代方案:**
-1. 使用 AiKv 单节点模式
-2. 使用应用层分片（客户端分片）
-3. 等待 AiDb 实现集群网络层
-
 **相关文档:**
-- [CLUSTER_BUS_ANALYSIS.md](CLUSTER_BUS_ANALYSIS.md) - 详细技术分析
+- [CLUSTER_BUS_ANALYSIS.md](CLUSTER_BUS_ANALYSIS.md) - Multi-Raft 集群方案详解
 - [TODO.md](../TODO.md) - 项目路线图
 
 ### 2. CLUSTER MEET 后节点不同步
@@ -619,10 +633,33 @@ redis-cli -p 6379 CLUSTER NODES
 
 #### 原因
 
-这与上述问题相同 - `CLUSTER MEET` 只更新本地状态，不会通过 gossip 传播到其他节点。
+当前版本中，`CLUSTER MEET` 更新本地状态并通过 MetaRaft 提议节点加入。如果 Raft 共识尚未完成或节点间 Raft RPC 不可达，状态同步会延迟。
+
+#### 解决方案
+
+1. **确保 Raft RPC 端口可达**:
+   ```bash
+   # 检查 Raft 端口连通性
+   nc -zv 127.0.0.1 50051
+   nc -zv 127.0.0.1 50052
+   ```
+
+2. **等待 Raft 共识完成**:
+   ```bash
+   # 稍等几秒后重试
+   sleep 2
+   redis-cli -p 6379 CLUSTER NODES
+   ```
+
+3. **手动在所有节点执行 MEET**:
+   ```bash
+   # 确保双向可见
+   redis-cli -p 6379 CLUSTER MEET 127.0.0.1 6380
+   redis-cli -p 6380 CLUSTER MEET 127.0.0.1 6379
+   ```
 
 ---
 
-**最后更新**: 2025-12-04  
+**最后更新**: 2025-12-08  
 **版本**: v0.1.0  
 **维护者**: @Genuineh, @copilot

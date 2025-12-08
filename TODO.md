@@ -89,29 +89,45 @@
 - 新增 `NodeHealthInfo` 和 `NodeHealthStatus` 用于节点健康状态管理
 - 完整的单元测试覆盖
 
-### 🔴 P0: Redis 集群协议兼容性 - 需要 AiDb 支持
+### 🟢 P0: Redis 集群协议兼容性 - Multi-Raft 方案 (推荐)
 
-> 状态: **需要 AiDb 实现网络层**
+> 状态: **使用 Multi-Raft 替代 Gossip 协议**
 > 详见: [CLUSTER_BUS_ANALYSIS.md](docs/CLUSTER_BUS_ANALYSIS.md)
 
-**问题描述:**
-`redis-cli --cluster create` 初始化集群时卡在 "Waiting for the cluster to join"。原因是 AiKv 缺少 Redis 集群总线协议实现：
+**解决方案: 使用 AiDb Multi-Raft 实现集群状态同步**
 
-- [ ] TCP 监听器 (端口 16379 = 数据端口 + 10000)
-- [ ] 集群总线二进制协议解析器
-- [ ] Gossip 消息处理 (PING/PONG/MEET/FAIL)
-- [ ] 节点间状态同步
+这是比 Redis Gossip 协议更优雅的方案（强一致性 vs 最终一致性）：
 
-**当前状态:**
-- ✅ `cluster_enabled:1` 在 INFO 中正确报告
-- ✅ CLUSTER 命令 (MEET, ADDSLOTS, NODES 等) 已实现
-- ✅ 本地集群状态存储
-- ❌ **不监听集群总线端口** - 需要 AiDb 实现
-- ❌ **不实现 Redis 集群 gossip 协议** - 需要 AiDb 实现
+- [x] ✅ `cluster_enabled:1` 在 INFO 中正确报告
+- [x] ✅ CLUSTER 命令 (MEET, ADDSLOTS, NODES 等) 已实现
+- [x] ✅ 本地集群状态存储 (`ClusterState`)
+- [ ] 🔄 将 `ClusterState` 存入 MetaRaft 状态机
+- [ ] 🔄 `CLUSTER MEET` 通过 Raft 共识提议节点加入
+- [ ] 🔄 `CLUSTER ADDSLOTS` 通过 Raft 共识提议槽分配
+- [ ] 🔄 节点启动时从 Raft 日志同步集群状态
 
-**建议:**
-这需要在 AiDb 中实现一个 `ClusterBusServer` 组件，与 Raft 共识集成。
-详见 [CLUSTER_BUS_ANALYSIS.md](docs/CLUSTER_BUS_ANALYSIS.md) 获取完整分析和建议的 API 设计。
+**核心优势:**
+- ❌ **不需要端口 16379** - 无需 gossip 协议
+- ✅ **强一致性** - Raft 共识优于 gossip 的最终一致性
+- ✅ **复用现有基础设施** - 使用 AiDb 的 Multi-Raft
+- ✅ **100% Redis 命令兼容** - 客户端无感知
+
+**实现原理:**
+```
+CLUSTER MEET 127.0.0.1 6380
+    │
+    ▼
+ClusterCommands::meet()
+    │
+    ▼
+MetaRaftNode.propose(AddNode{...})  ← Raft 共识
+    │
+    ▼
+All nodes receive via Raft log replication
+    │
+    ▼
+ClusterState updated on all nodes  ← 强一致性
+```
 
 ### 🟠 P1: 核心命令补全
 

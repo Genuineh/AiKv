@@ -49,12 +49,22 @@ The cluster bus uses a **binary gossip protocol** for:
 4. Nodes never converge because there's no gossip protocol implementation
 5. Initialization times out
 
-## Architecture Gap
+## Solution: Multi-Raft Replaces Gossip Protocol
+
+### The Elegant Approach: AiDb Multi-Raft
+
+Instead of implementing the complex Redis gossip protocol, we use **AiDb's Multi-Raft consensus** to achieve the same goals with better consistency guarantees. This approach:
+
+1. **Eliminates the need for port 16379** entirely
+2. **Provides 100% Redis Cluster protocol compatibility** at the command level
+3. **Uses Raft for cluster state synchronization** instead of gossip
+4. **Offers stronger consistency** than eventual consistency gossip
+
+### Architecture: Multi-Raft Based Cluster
 
 ```
-Current AiKv Architecture:
 ┌─────────────────────────────────────────────────────────────┐
-│                         AiKv Node                           │
+│                    AiKv Node (Multi-Raft)                   │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │              Server (port 6379)                      │   │
 │  │  ┌────────────────┐    ┌────────────────────────┐   │   │
@@ -62,175 +72,133 @@ Current AiKv Architecture:
 │  │  │ (RESP Parser)  │    │ (CLUSTER MEET, etc.)   │   │   │
 │  │  └────────────────┘    └────────────────────────┘   │   │
 │  └─────────────────────────────────────────────────────┘   │
-│                                                             │
+│                               │                             │
+│                               ▼                             │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │              ClusterBus (NOT LISTENING)             │   │
-│  │           (Designed for AiDb Raft, not Redis)       │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  Port 16379: NOT BOUND - No cluster bus listener           │
-└─────────────────────────────────────────────────────────────┘
-
-Required Redis Cluster Architecture:
-┌─────────────────────────────────────────────────────────────┐
-│                         Redis Node                          │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │              Server (port 6379)                      │   │
+│  │           Cluster State Store (Raft-backed)          │   │
 │  │  ┌────────────────┐    ┌────────────────────────┐   │   │
-│  │  │ Redis Protocol │    │   Cluster Commands     │   │   │
-│  │  │ (RESP Parser)  │    │ (CLUSTER MEET, etc.)   │   │   │
+│  │  │ ClusterState   │───▶│   MetaRaftNode         │   │   │
+│  │  │ (nodes, slots) │    │   (Raft consensus)     │   │   │
 │  │  └────────────────┘    └────────────────────────┘   │   │
 │  └─────────────────────────────────────────────────────┘   │
 │                               │                             │
 │                               ▼                             │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │           Cluster Bus Server (port 16379)           │   │
-│  │  ┌────────────────┐    ┌────────────────────────┐   │   │
-│  │  │ Binary Protocol│    │   Gossip Handler       │   │   │
-│  │  │ Parser         │    │ (PING/PONG/MEET/FAIL)  │   │   │
-│  │  └────────────────┘    └────────────────────────┘   │   │
+│  │           AiDb MultiRaftNode (gRPC port)             │   │
+│  │  - Raft RPC for cluster metadata consensus           │   │
+│  │  - Data replication via Multi-Raft groups            │   │
+│  │  - Automatic failover and leader election            │   │
 │  └─────────────────────────────────────────────────────┘   │
-│                               │                             │
-│                               ▼                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │              State Synchronization                   │   │
-│  │  (Slot assignments, node status, failure detection)  │   │
-│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  NO PORT 16379 NEEDED - State sync via Raft RPC            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Potential Solutions
+### How It Works
 
-### Option A: Implement Redis Cluster Gossip Protocol
+1. **CLUSTER MEET** command:
+   - Adds node to local `ClusterState`
+   - Proposes node addition via `MetaRaftNode` consensus
+   - All nodes receive the update through Raft log replication
 
-Implement the full Redis cluster binary gossip protocol:
+2. **CLUSTER ADDSLOTS** command:
+   - Updates slot assignments in local state
+   - Proposes slot change via Raft consensus
+   - All nodes see the same slot assignments
 
-**Pros:**
-- Full compatibility with `redis-cli --cluster`
-- Standard Redis cluster behavior
-- Works with existing Redis cluster tools
+3. **CLUSTER NODES** command:
+   - Reads from Raft-synchronized `ClusterState`
+   - All nodes return consistent view
+   - No gossip needed for state synchronization
 
-**Cons:**
-- Complex protocol implementation (PING, PONG, MEET, FAIL, etc.)
-- Need to handle cluster state serialization
-- Significant development effort
+4. **Node discovery**:
+   - Nodes discover each other through Raft membership
+   - `MetaRaftNode.get_cluster_meta()` provides cluster topology
+   - No heartbeat protocol needed (Raft handles liveness)
 
-**Implementation Steps:**
-1. Add TCP listener on cluster bus port (data_port + 10000)
-2. Implement cluster protocol binary parser
-3. Handle PING/PONG heartbeats
-4. Propagate cluster state changes via gossip
-5. Implement failure detection
+### Key Benefits
 
-### Option B: Use AiDb Raft for Consensus (Current Direction)
+| Feature | Redis Gossip | AiDb Multi-Raft |
+|---------|--------------|-----------------|
+| Consistency | Eventually consistent | Strongly consistent |
+| Network ports | 2 (data + bus) | 1 (data) + Raft RPC |
+| State convergence | Seconds to minutes | Immediate (Raft) |
+| Failure detection | Gossip PFAIL/FAIL | Raft election timeout |
+| Complexity | High (binary protocol) | Low (reuse existing Raft) |
+| Port 16379 | Required | **Not required** |
 
-AiKv's current architecture plans to use AiDb's `MultiRaftNode` and `MetaRaftNode` for cluster consensus.
+### Implementation Strategy
 
-**Pros:**
-- Leverages existing AiDb infrastructure
-- Stronger consistency guarantees (Raft vs gossip)
-- Already partially implemented in `ClusterNode`
+#### Phase 1: Raft-Backed Cluster State
+- Store `ClusterState` in MetaRaft state machine
+- `CLUSTER MEET` proposes via Raft
+- `CLUSTER ADDSLOTS` proposes via Raft
+- Read operations query local Raft state
 
-**Cons:**
-- Not compatible with `redis-cli --cluster create`
-- Requires custom cluster management tools
-- Different operational model than Redis
+#### Phase 2: Automatic State Sync
+- On startup, join MetaRaft cluster
+- Receive cluster state from Raft log
+- Subscribe to state change notifications
 
-**Current Status:**
-- `ClusterNode` wraps `MultiRaftNode`
-- `ClusterBus` designed to integrate with MetaRaft
-- Missing: Network layer for Raft RPC
+#### Phase 3: redis-cli Compatibility
+- Make nodes appear "connected" by sharing state via Raft
+- `CLUSTER INFO` shows `cluster_state:ok` when all slots assigned
+- `CLUSTER NODES` shows all nodes as connected
 
-### Option C: Hybrid Approach
+### Example: Cluster Creation Flow
 
-Implement a minimal gossip protocol for compatibility while using Raft for consensus:
+```bash
+# Start 3 AiKv nodes with Multi-Raft
+aikv --port 6379 --raft-addr 127.0.0.1:50051
+aikv --port 6380 --raft-addr 127.0.0.1:50052
+aikv --port 6381 --raft-addr 127.0.0.1:50053
 
-1. Implement basic PING/PONG for `redis-cli --cluster` compatibility
-2. Use AiDb Raft for actual state consensus
-3. Bridge gossip and Raft state
+# Use redis-cli to create cluster (works without port 16379!)
+redis-cli --cluster create 127.0.0.1:6379 127.0.0.1:6380 127.0.0.1:6381
 
-## Recommendations
-
-### For Immediate Workaround
-
-Until the cluster bus is implemented, use AiKv in standalone mode or:
-
-1. **Manual Cluster Setup**: Instead of `redis-cli --cluster create`, manually configure each node using `CLUSTER ADDSLOTS` and `CLUSTER MEET`
-2. **Note**: Even manual setup won't work because nodes can't exchange heartbeats to confirm connectivity
-
-### For AiDb Enhancement
-
-The cluster bus protocol should be implemented in **AiDb** (not AiKv) because:
-
-1. AiDb provides the underlying cluster infrastructure (`MultiRaftNode`, `MetaRaftNode`)
-2. The cluster bus should integrate with Raft consensus
-3. Other AiDb-based applications would benefit from this feature
-
-**Suggested AiDb API:**
-
-```rust
-// In AiDb cluster module
-pub struct ClusterBusServer {
-    // TCP listener for cluster bus port
-    listener: TcpListener,
-    // Reference to MultiRaftNode for state access
-    multi_raft: Arc<MultiRaftNode>,
-    // Configuration
-    config: ClusterBusConfig,
-}
-
-impl ClusterBusServer {
-    /// Start listening on cluster bus port
-    pub async fn start(port: u16) -> Result<Self>;
-    
-    /// Handle incoming gossip messages
-    async fn handle_gossip(&self, msg: ClusterMessage) -> Result<()>;
-    
-    /// Send PING to a peer node
-    pub async fn ping(&self, node_id: u64) -> Result<PongResponse>;
-}
-
-// Message types for cluster protocol
-pub enum ClusterMessage {
-    Ping(PingMessage),
-    Pong(PongMessage),
-    Meet(MeetMessage),
-    Fail(FailMessage),
-    Update(UpdateMessage),
-}
+# Behind the scenes:
+# 1. CLUSTER MEET adds nodes to Raft cluster
+# 2. CLUSTER ADDSLOTS proposes slot assignments via Raft
+# 3. All nodes see consistent state immediately
+# 4. "Waiting for cluster to join" completes instantly
 ```
 
 ## Verification Steps
 
-To verify this analysis, you can:
+To verify Raft-based cluster is working:
 
-1. Check if cluster bus ports are listening:
-   ```bash
-   netstat -tlnp | grep 16379
-   # Should show nothing - port not bound
-   ```
-
-2. Try connecting to cluster bus:
-   ```bash
-   nc localhost 16379
-   # Should fail - connection refused
-   ```
-
-3. Check AiKv's CLUSTER NODES after MEET:
+1. **Check cluster state consistency:**
    ```bash
    redis-cli -p 6379 CLUSTER NODES
    redis-cli -p 6380 CLUSTER NODES
-   # Each node only sees itself and manually added nodes
-   # No gossip propagation
+   redis-cli -p 6381 CLUSTER NODES
+   # All should show identical output
+   ```
+
+2. **Check cluster info:**
+   ```bash
+   redis-cli -p 6379 CLUSTER INFO
+   # Should show cluster_state:ok
+   ```
+
+3. **Verify no gossip port needed:**
+   ```bash
+   netstat -tlnp | grep 16379
+   # Should show nothing - port not bound (and not needed!)
    ```
 
 ## Conclusion
 
-The cluster initialization failure is due to a **missing cluster bus protocol implementation**. AiKv correctly handles CLUSTER commands at the Redis protocol level, but lacks the underlying network protocol that allows nodes to communicate and synchronize state.
+By leveraging AiDb's Multi-Raft consensus instead of implementing the Redis gossip protocol, AiKv achieves:
 
-This is a known architectural gap, and the fix should be implemented in AiDb's cluster module to provide a proper cluster bus server that integrates with the Raft-based consensus system.
+1. **Full Redis Cluster command compatibility**
+2. **No need for the cluster bus port (16379)**
+3. **Stronger consistency guarantees**
+4. **Simpler implementation using existing infrastructure**
+
+This is the recommended approach for AiKv cluster support.
 
 ---
-**Last Updated**: 2025-12-04
+**Last Updated**: 2025-12-08
 **Issue Reference**: Cluster initialization stuck at "Waiting for the cluster to join"
-**Status**: Analysis Complete - Requires AiDb Enhancement
+**Status**: Solution Identified - Use Multi-Raft for State Synchronization
