@@ -673,7 +673,15 @@ impl ClusterCommands {
             if let Some(existing_node) = state.nodes.get_mut(&node_id) {
                 // Update existing node
                 existing_node.is_connected = node_info.is_online;
-                existing_node.is_master = node_info.is_master;
+                // Preserve local replication state set by CLUSTER REPLICATE
+                // Only update is_master if this node doesn't have an explicit replication relationship
+                if existing_node.master_id.is_none() && existing_node.replica_ids.is_empty() {
+                    existing_node.is_master = node_info.is_master;
+                }
+                // If this node has a master_id, it's definitely a replica regardless of MetaRaft view
+                if existing_node.master_id.is_some() {
+                    existing_node.is_master = false;
+                }
             } else {
                 // Add new node
                 let mut new_node = NodeInfo::new(node_id, node_info.data_addr.clone());
