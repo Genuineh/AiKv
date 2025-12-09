@@ -313,6 +313,28 @@ for i in "${!MASTERS[@]}"; do
 done
 echo
 
+# Step 4.5: Synchronize cluster metadata across all nodes
+print_info "Step 4.5: Synchronizing cluster metadata..."
+# Execute CLUSTER NODES on each node to trigger sync_from_metaraft()
+# This ensures all nodes have the latest cluster view from MetaRaft
+# before we proceed to set up replication relationships
+for node in "${ALL_NODES[@]}"; do
+    IFS=':' read -r host port <<< "${node}"
+    print_info "Syncing metadata on ${node}..."
+    
+    # CLUSTER NODES automatically calls sync_from_metaraft() to get latest state
+    if redis_exec ${host} ${port} CLUSTER NODES > /dev/null 2>&1; then
+        print_success "Metadata synced on ${node}"
+    else
+        print_warn "Failed to sync metadata on ${node}, but continuing..."
+    fi
+done
+
+# Give MetaRaft time to propagate all node information
+print_info "Waiting for MetaRaft convergence..."
+sleep 2
+echo
+
 # Step 5: Set up replication
 print_info "Step 5: Setting up replication..."
 
@@ -339,6 +361,9 @@ for i in "${!MASTERS[@]}"; do
         
         print_info "Setting ${replica} as replica of ${master} (ID: ${master_id})..."
         
+        # One final sync before REPLICATE to ensure replica has master's metadata
+        redis_exec ${host} ${port} CLUSTER NODES > /dev/null 2>&1 || true
+        
         output=$(redis_exec ${host} ${port} CLUSTER REPLICATE ${master_id})
         exit_code=$?
         
@@ -348,6 +373,8 @@ for i in "${!MASTERS[@]}"; do
             print_error "Failed to set up replication for ${replica}"
             print_error "Command output: ${output}"
             print_error "Exit code: ${exit_code}"
+            print_error "Hint: Master ID ${master_id} may not be known to replica ${replica}"
+            print_error "This usually means cluster metadata hasn't fully propagated."
             exit 1
         fi
         
