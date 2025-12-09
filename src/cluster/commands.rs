@@ -689,8 +689,6 @@ impl ClusterCommands {
             if let Some(existing_node) = state.nodes.get_mut(&node_id) {
                 // Update existing node
                 let old_is_master = existing_node.is_master;
-                let has_master_id = existing_node.master_id.is_some();
-                let has_replica_ids = !existing_node.replica_ids.is_empty();
 
                 existing_node.is_connected = node_info.is_online;
 
@@ -713,6 +711,8 @@ impl ClusterCommands {
                 }
 
                 if old_is_master != existing_node.is_master {
+                    let has_master_id = existing_node.master_id.is_some();
+                    let has_replica_ids = !existing_node.replica_ids.is_empty();
                     tracing::info!(
                         "sync_from_metaraft: Node {:016x} role changed from {} to {} (has_slots: {}, has_master_id: {}, has_replica_ids: {}, metaraft_says_master: {})",
                         node_id,
@@ -729,8 +729,8 @@ impl ClusterCommands {
                         node_id,
                         if existing_node.is_master { "master" } else { "slave" },
                         node_has_slots,
-                        has_master_id,
-                        has_replica_ids,
+                        existing_node.master_id.is_some(),
+                        !existing_node.replica_ids.is_empty(),
                         node_info.is_master
                     );
                 }
