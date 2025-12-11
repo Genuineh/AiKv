@@ -249,7 +249,7 @@ OK
 │    └────────────────────────────────────────────────────────┘       │
 │                             ↓                                       │
 │    ┌────────────────────────────────────────────────────────┐       │
-│    │           AiDb MultiRaft API (v0.4.1)                   │       │
+│    │           AiDb MultiRaft API (v0.5.0)                   │       │
 │    │  • MultiRaftNode: 自动路由、数据读写                   │       │
 │    │  • MetaRaftNode: 元数据 Raft                           │       │
 │    │  • 16384 Slots → Raft Groups 映射                      │       │
@@ -555,7 +555,7 @@ redis-benchmark -h 127.0.0.1 -p 6379 -c -t set,get -n 100000 -q
 - ✅ -MOVED/-ASK 重定向
 - ✅ 槽迁移状态管理
 - ✅ 副本管理和故障转移
-- ⬜ Multi-Raft 完整集成 (AiDb v0.4.1)
+- ⬜ Multi-Raft 完整集成 (AiDb v0.5.0)
 - ⬜ Cluster Bus (gossip 心跳)
 
 ### v0.5.0 (Stage 2-4: 集群完善)

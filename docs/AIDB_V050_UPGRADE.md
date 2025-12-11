@@ -19,7 +19,7 @@ This document summarizes the upgrade of AiDb from v0.4.1 to v0.5.0 and the re-ad
 ### New Dependencies
 ```toml
 # Added in Cargo.toml
-rmp-serde = { version = "1.1", optional = true }
+rmp-serde = { version = "1.3", optional = true }
 ```
 
 The `rmp-serde` dependency was added to the `raft-cluster` feature for improved MessagePack serialization support in Raft consensus operations.

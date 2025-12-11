@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the integration of AiDb v0.4.1 storage engine into AiKv, completing Priority 4 task from the TODO list.
+This document describes the integration of AiDb v0.5.0 storage engine into AiKv, completing Priority 4 task from the TODO list.
 
 ## What was Done
 
