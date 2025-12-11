@@ -32,6 +32,9 @@ const TOTAL_SLOTS: u16 = 16384;
 const TOTAL_SLOTS_USIZE: usize = 16384;
 /// Timeout for waiting for Raft proposals in cluster commands (seconds)
 const RAFT_PROPOSAL_TIMEOUT_SECS: u64 = 5;
+/// Delay after successful Raft proposal to allow follower replication (milliseconds)
+/// This gives follower nodes time to apply committed entries to their state machines
+const RAFT_REPLICATION_DELAY_MS: u64 = 200;
 
 /// Slot state enumeration for CLUSTER SETSLOT command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1315,9 +1318,15 @@ cluster_stats_messages_received:0\r\n",
 
                 // Wait for the async task to complete with a timeout (blocking receive)
                 // This ensures CLUSTER MEET doesn't return OK until Raft consensus is reached
+                //
+                // Note: This waits for the leader to commit the entry. Follower nodes may
+                // still need a short time to apply the entry to their local state machines.
+                // We add a small delay after successful completion to improve convergence.
                 match rx.recv_timeout(Duration::from_secs(RAFT_PROPOSAL_TIMEOUT_SECS)) {
                     Ok(Ok(_)) => {
                         tracing::debug!("CLUSTER MEET: Raft proposal completed successfully");
+                        // Give followers time to apply the committed entry
+                        std::thread::sleep(Duration::from_millis(RAFT_REPLICATION_DELAY_MS));
                     }
                     Ok(Err(e)) => {
                         return Err(AikvError::Storage(format!(
@@ -1378,6 +1387,8 @@ cluster_stats_messages_received:0\r\n",
                     match rx.recv_timeout(Duration::from_secs(RAFT_PROPOSAL_TIMEOUT_SECS)) {
                         Ok(Ok(_)) => {
                             tracing::debug!("CLUSTER MEET: Raft proposal completed successfully (via MultiRaft)");
+                            // Give followers time to apply the committed entry
+                            std::thread::sleep(Duration::from_millis(RAFT_REPLICATION_DELAY_MS));
                         }
                         Ok(Err(e)) => {
                             return Err(e);
