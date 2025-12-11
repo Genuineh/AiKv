@@ -1312,8 +1312,12 @@ cluster_stats_messages_received:0\r\n",
                         }
                     }
                     
-                    // Send result back to the synchronous context
-                    let _ = tx.send(result);
+                    // Send result back - warn if channel is closed (shouldn't happen in normal operation)
+                    if tx.send(result).is_err() {
+                        tracing::warn!(
+                            "CLUSTER MEET: Failed to send result back - receiver may have been dropped"
+                        );
+                    }
                 });
 
                 // Wait for the async task to complete with a timeout (blocking receive)
@@ -1360,7 +1364,8 @@ cluster_stats_messages_received:0\r\n",
 
                     tokio::spawn(async move {
                         let result = meta_raft.add_node(target_node_id, raft_addr_clone).await
-                            .map(|_| ()) // Ignore MetaResponse, we only care about success/failure
+                            // Discard MetaResponse content - we only need success/failure for consensus confirmation
+                            .map(|_| ())
                             .map_err(|e| AikvError::Storage(format!("Failed to add node: {}", e)));
                         
                         match &result {
@@ -1380,7 +1385,12 @@ cluster_stats_messages_received:0\r\n",
                             }
                         }
                         
-                        let _ = tx.send(result);
+                        // Send result back - warn if channel is closed (shouldn't happen in normal operation)
+                        if tx.send(result).is_err() {
+                            tracing::warn!(
+                                "CLUSTER MEET: Failed to send result back - receiver may have been dropped"
+                            );
+                        }
                     });
                     
                     // Wait for completion with timeout
@@ -1494,7 +1504,12 @@ cluster_stats_messages_received:0\r\n",
                         }
                     }
                     
-                    let _ = tx.send(result);
+                    // Send result back - warn if channel is closed
+                    if tx.send(result).is_err() {
+                        tracing::warn!(
+                            "CLUSTER FORGET: Failed to send result back - receiver may have been dropped"
+                        );
+                    }
                 });
 
                 // Wait for the async task to complete with a timeout
@@ -1530,7 +1545,8 @@ cluster_stats_messages_received:0\r\n",
 
                     tokio::spawn(async move {
                         let result = meta_raft.remove_node(node_id).await
-                            .map(|_| ()) // Ignore MetaResponse, we only care about success/failure
+                            // Discard MetaResponse content - we only need success/failure for consensus confirmation
+                            .map(|_| ())
                             .map_err(|e| AikvError::Storage(format!("Failed to remove node: {}", e)));
                         
                         match &result {
@@ -1549,7 +1565,12 @@ cluster_stats_messages_received:0\r\n",
                             }
                         }
                         
-                        let _ = tx.send(result);
+                        // Send result back - warn if channel is closed
+                        if tx.send(result).is_err() {
+                            tracing::warn!(
+                                "CLUSTER FORGET: Failed to send result back - receiver may have been dropped"
+                            );
+                        }
                     });
                     
                     // Wait for completion with timeout
