@@ -31,7 +31,7 @@ const TOTAL_SLOTS: u16 = 16384;
 /// Total slots as usize for vector indexing
 const TOTAL_SLOTS_USIZE: usize = 16384;
 /// Timeout for waiting for Raft proposals in cluster commands (seconds)
-const RAFT_PROPOSAL_TIMEOUT_SECS: u64 = 5;
+const RAFT_PROPOSAL_TIMEOUT_SECS: u64 = 20;
 /// Delay after successful Raft proposal to allow follower replication (milliseconds)
 /// This gives follower nodes time to apply committed entries to their state machines
 const RAFT_REPLICATION_DELAY_MS: u64 = 200;
@@ -1291,9 +1291,51 @@ cluster_stats_messages_received:0\r\n",
 
                 // Spawn async task for Raft proposal
                 tokio::spawn(async move {
-                    let result = meta_client
-                        .propose_node_join(target_node_id, raft_addr_clone)
-                        .await;
+                    let result = async {
+                        // Wait for leader election before proposing changes
+                        let mut attempts = 0;
+                        const MAX_LEADER_WAIT_ATTEMPTS: u32 = 50; // 5 seconds max wait
+                        const LEADER_WAIT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+
+                        loop {
+                            attempts += 1;
+
+                            // Check if we have a leader
+                            if let Some(leader_id) = meta_client.get_leader().await {
+                                tracing::debug!(
+                                    "MetaRaft: Leader {} found after {} attempts ({}ms), proceeding with node join",
+                                    leader_id,
+                                    attempts,
+                                    attempts as u64 * LEADER_WAIT_INTERVAL.as_millis() as u64
+                                );
+                                tracing::debug!(
+                                    "MetaRaft: Leader {} found after {} attempts, proceeding with node join",
+                                    leader_id,
+                                    attempts
+                                );
+                                break;
+                            }
+
+                            if attempts >= MAX_LEADER_WAIT_ATTEMPTS {
+                                return Err(AikvError::Storage(
+                                    format!("Timeout waiting for Raft leader election ({} attempts)", MAX_LEADER_WAIT_ATTEMPTS)
+                                ));
+                            }
+
+                            tracing::debug!(
+                                "MetaRaft: No leader found, waiting... (attempt {}/{})",
+                                attempts,
+                                MAX_LEADER_WAIT_ATTEMPTS
+                            );
+
+                            tokio::time::sleep(LEADER_WAIT_INTERVAL).await;
+                        }
+
+                        // Now proceed with the node join proposal
+                        meta_client
+                            .propose_node_join(target_node_id, raft_addr_clone)
+                            .await
+                    }.await;
 
                     match &result {
                         Ok(_) => {
@@ -1486,7 +1528,43 @@ cluster_stats_messages_received:0\r\n",
                 let (tx, rx) = std::sync::mpsc::sync_channel::<Result<()>>(1);
 
                 tokio::spawn(async move {
-                    let result = meta_client.propose_node_leave(node_id).await;
+                    let result = async {
+                        // Wait for leader election before proposing changes
+                        let mut attempts = 0;
+                        const MAX_LEADER_WAIT_ATTEMPTS: u32 = 50; // 5 seconds max wait
+                        const LEADER_WAIT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+
+                        loop {
+                            attempts += 1;
+
+                            // Check if we have a leader
+                            if let Some(leader_id) = meta_client.get_leader().await {
+                                tracing::debug!(
+                                    "MetaRaft: Leader {} found after {} attempts, proceeding with node leave",
+                                    leader_id,
+                                    attempts
+                                );
+                                break;
+                            }
+
+                            if attempts >= MAX_LEADER_WAIT_ATTEMPTS {
+                                return Err(AikvError::Storage(
+                                    format!("Timeout waiting for Raft leader election ({} attempts)", MAX_LEADER_WAIT_ATTEMPTS)
+                                ));
+                            }
+
+                            tracing::debug!(
+                                "MetaRaft: No leader found, waiting... (attempt {}/{})",
+                                attempts,
+                                MAX_LEADER_WAIT_ATTEMPTS
+                            );
+
+                            tokio::time::sleep(LEADER_WAIT_INTERVAL).await;
+                        }
+
+                        // Now proceed with the node leave proposal
+                        meta_client.propose_node_leave(node_id).await
+                    }.await;
 
                     match &result {
                         Ok(_) => {

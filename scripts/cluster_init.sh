@@ -26,7 +26,9 @@ REDIS_CLI="${REDIS_CLI:-redis-cli}"
 # Retry and timing configuration
 MAX_SYNC_RETRIES=3
 MAX_MEET_RETRIES=2
-METARAFT_CONVERGENCE_WAIT=2  # seconds to wait for MetaRaft convergence
+METARAFT_CONVERGENCE_WAIT=2  # seconds to wait between convergence polls
+METARAFT_CONVERGENCE_TIMEOUT=60 # max seconds to wait for full convergence
+CONVERGENCE_POLL_INTERVAL=1
 NODE_ID_LENGTH=40  # Redis node IDs are SHA-1 hashes (40 hex chars) - for documentation only, used as literal in grep
 
 # Print functions
@@ -359,7 +361,31 @@ fi
 # Give MetaRaft time to propagate all node information
 # Wait and verify nodes know about each other
 print_info "Waiting for MetaRaft convergence..."
-sleep ${METARAFT_CONVERGENCE_WAIT}
+
+# Wait for nodes to converge using polling - ensures all nodes have the same cluster view
+start_time=$(date +%s)
+while true; do
+    ALL_CONVERGED=true
+    for node in "${ALL_NODES[@]}"; do
+        IFS=':' read -r host port <<< "${node}"
+        node_count=$(redis_exec ${host} ${port} CLUSTER NODES 2>/dev/null | grep -cE "^[0-9a-f]{40}" || echo "0")
+        expected_count=${#ALL_NODES[@]}
+        if [ "${node_count}" -ne "${expected_count}" ]; then
+            print_warn "Node ${node} knows about ${node_count}/${expected_count} nodes (waiting)"
+            ALL_CONVERGED=false
+        fi
+    done
+    if [ "${ALL_CONVERGED}" = true ]; then
+        break
+    fi
+    now=$(date +%s)
+    elapsed=$((now - start_time))
+    if [ ${elapsed} -ge ${METARAFT_CONVERGENCE_TIMEOUT} ]; then
+        print_error "Timeout while waiting for MetaRaft convergence (${METARAFT_CONVERGENCE_TIMEOUT}s)"
+        break
+    fi
+    sleep ${CONVERGENCE_POLL_INTERVAL}
+done
 
 # Verify convergence by checking if nodes know about each other
 print_info "Verifying cluster convergence..."
@@ -378,7 +404,34 @@ for node in "${ALL_NODES[@]}"; do
         print_error "Node ${node} reports ${node_count}/${expected_count} nodes (possible duplicates or metadata inconsistency)"
         CONVERGENCE_FAILURES=$((CONVERGENCE_FAILURES + 1))
     else
-        print_error "Node ${node} only knows about ${node_count}/${expected_count} nodes"
+        print_warn "Node ${node} only knows about ${node_count}/${expected_count} nodes"
+        # Try to repair by issuing CLUSTER MEET for missing nodes directly to this node
+        # Parse CLUSTER NODES output to gather known node IDs
+        known_ids=$(redis_exec ${host} ${port} CLUSTER NODES 2>/dev/null | awk '{print $1}')
+        missing_nodes=()
+        for n in "${ALL_NODES[@]}"; do
+            IFS=':' read -r mh mp <<< "${n}"
+            nid=${NODE_IDS[${n}]}
+            # If this node does not list nid, schedule a meet
+            if ! echo "${known_ids}" | grep -q "${nid}"; then
+                missing_nodes+=("${n}:${nid}")
+            fi
+        done
+
+        if [ ${#missing_nodes[@]} -gt 0 ]; then
+            print_info "Repairing ${node}: meeting ${#missing_nodes[@]} missing node(s)"
+            for mn in "${missing_nodes[@]}"; do
+                mn_pair=${mn%%:*}
+                mn_id=${mn##*:}
+                IFS=':' read -r mh mp <<< "${mn_pair}"
+                # Ask this node to meet the missing node directly
+                if redis_exec ${host} ${port} CLUSTER MEET ${mh} ${mp} ${mn_id} | grep -q "OK"; then
+                    print_success "Repaired ${node} -> met ${mn_pair}"
+                else
+                    print_warn "Failed to repair ${node} by meeting ${mn_pair}" 
+                fi
+            done
+        fi
         CONVERGENCE_FAILURES=$((CONVERGENCE_FAILURES + 1))
     fi
 done

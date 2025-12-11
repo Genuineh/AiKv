@@ -42,9 +42,6 @@ use crate::error::{AikvError, Result};
 use std::sync::Arc;
 use std::time::Duration;
 
-#[cfg(feature = "cluster")]
-use aidb::cluster::MetaRaftNode;
-
 /// Type alias for node ID
 pub type NodeId = u64;
 
@@ -108,8 +105,8 @@ impl Default for MetaRaftClientConfig {
 /// - Consistent cluster view reads
 #[cfg(feature = "cluster")]
 pub struct MetaRaftClient {
-    /// Reference to the MetaRaftNode
-    meta_raft: Arc<MetaRaftNode>,
+    /// Reference to the MultiRaftNode (contains MetaRaftNode)
+    multi_raft: Arc<aidb::cluster::MultiRaftNode>,
     /// This node's ID
     node_id: NodeId,
     /// This node's data address
@@ -128,18 +125,18 @@ impl MetaRaftClient {
     ///
     /// # Arguments
     ///
-    /// * `meta_raft` - Reference to the AiDb MetaRaftNode
+    /// * `multi_raft` - Reference to the AiDb MultiRaftNode
     /// * `node_id` - This node's unique identifier
     /// * `data_addr` - This node's data port address (for Redis protocol)
     /// * `raft_addr` - This node's Raft RPC address (for gRPC)
     pub fn new(
-        meta_raft: Arc<MetaRaftNode>,
+        multi_raft: Arc<aidb::cluster::MultiRaftNode>,
         node_id: NodeId,
         data_addr: String,
         raft_addr: String,
     ) -> Self {
         Self {
-            meta_raft,
+            multi_raft,
             node_id,
             data_addr,
             raft_addr,
@@ -150,14 +147,14 @@ impl MetaRaftClient {
 
     /// Create a new MetaRaftClient with custom configuration.
     pub fn with_config(
-        meta_raft: Arc<MetaRaftNode>,
+        multi_raft: Arc<aidb::cluster::MultiRaftNode>,
         node_id: NodeId,
         data_addr: String,
         raft_addr: String,
         config: MetaRaftClientConfig,
     ) -> Self {
         Self {
-            meta_raft,
+            multi_raft,
             node_id,
             data_addr,
             raft_addr,
@@ -200,7 +197,16 @@ impl MetaRaftClient {
     /// The data address (Redis protocol) is stored separately in `ClusterState`.
     /// This method only registers the Raft RPC address with the MetaRaft cluster.
     pub async fn propose_node_join(&self, target_node_id: NodeId, raft_addr: String) -> Result<()> {
-        self.meta_raft
+        // First register the node's address for Raft communication
+        self.multi_raft.add_node_address(target_node_id, raft_addr.clone());
+
+        // Get MetaRaft from MultiRaftNode
+        let meta_raft = self.multi_raft.meta_raft().ok_or_else(|| {
+            AikvError::Storage("MetaRaft not available".to_string())
+        })?;
+
+        // Then propose the node join via Raft consensus
+        meta_raft
             .add_node(target_node_id, raft_addr)
             .await
             .map_err(|e| AikvError::Storage(format!("Failed to propose node join: {}", e)))?;
@@ -223,7 +229,11 @@ impl MetaRaftClient {
     ///
     /// Ok(()) if the proposal was accepted, Err if it failed
     pub async fn propose_node_leave(&self, target_node_id: NodeId) -> Result<()> {
-        self.meta_raft
+        let meta_raft = self.multi_raft.meta_raft().ok_or_else(|| {
+            AikvError::Storage("MetaRaft not available".to_string())
+        })?;
+
+        meta_raft
             .remove_node(target_node_id)
             .await
             .map_err(|e| AikvError::Storage(format!("Failed to propose node leave: {}", e)))?;
@@ -254,7 +264,8 @@ impl MetaRaftClient {
     ///
     /// TODO: Track data_addr and raft_addr separately when cluster configuration is extended.
     pub fn get_cluster_view(&self) -> ClusterView {
-        let meta = self.meta_raft.get_cluster_meta();
+        let meta_raft = self.multi_raft.meta_raft().expect("MetaRaft should be available");
+        let meta = meta_raft.get_cluster_meta();
 
         let mut nodes = std::collections::HashMap::new();
         // Note: Using 0 as fallback for timestamp is acceptable here since it only
@@ -337,12 +348,14 @@ impl MetaRaftClient {
 
     /// Check if this node is the Raft leader.
     pub async fn is_leader(&self) -> bool {
-        self.meta_raft.is_leader().await
+        let meta_raft = self.multi_raft.meta_raft().expect("MetaRaft should be available");
+        meta_raft.is_leader().await
     }
 
     /// Get the current Raft leader.
     pub async fn get_leader(&self) -> Option<NodeId> {
-        self.meta_raft.get_leader().await
+        let meta_raft = self.multi_raft.meta_raft().expect("MetaRaft should be available");
+        meta_raft.get_leader().await
     }
 
     /// Start the background heartbeat task.
@@ -369,7 +382,8 @@ impl MetaRaftClient {
             return;
         }
 
-        let meta_raft = Arc::clone(&self.meta_raft);
+        let meta_raft = self.multi_raft.meta_raft().expect("MetaRaft should be available");
+        let meta_raft = Arc::clone(&meta_raft);
         let node_id = self.node_id;
         let interval = self.config.heartbeat_interval;
         let running = Arc::clone(&self.heartbeat_running);

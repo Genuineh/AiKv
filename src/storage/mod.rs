@@ -37,6 +37,14 @@ impl StorageEngine {
         )?))
     }
 
+    /// When using AiDb, return the base data path (useful for cluster/raft wiring).
+    pub fn aidb_data_path(&self) -> Option<std::path::PathBuf> {
+        match self {
+            StorageEngine::AiDb(adapter) => Some(adapter.data_path()),
+            _ => None,
+        }
+    }
+
     // ========================================================================
     // CORE STORAGE METHODS
     // ========================================================================

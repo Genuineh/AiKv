@@ -350,7 +350,7 @@ async fn main() {
     let storage = create_storage_engine(&storage_config);
 
     // Create and run server
-    let server = Server::new(addr, storage);
+    let mut server = Server::new(addr, storage);
 
     if let Err(e) = server.run().await {
         eprintln!("Server error: {}", e);

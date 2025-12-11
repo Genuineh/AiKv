@@ -67,6 +67,8 @@ pub struct AiDbStorageAdapter {
     /// Multiple databases (default: 16 databases like Redis)
     /// Each database is a separate AiDb instance with its own directory
     databases: Arc<Vec<Arc<DB>>>,
+    /// Base path used to create/open the databases (kept for cluster/raft wiring)
+    base_path: Arc<std::path::PathBuf>,
 }
 
 impl AiDbStorageAdapter {
@@ -105,7 +107,13 @@ impl AiDbStorageAdapter {
 
         Ok(Self {
             databases: Arc::new(databases),
+            base_path: Arc::new(base_path.to_path_buf()),
         })
+    }
+
+    /// Return the base data directory path used by this adapter.
+    pub fn data_path(&self) -> std::path::PathBuf {
+        (*self.base_path).clone()
     }
 
     /// Get current time in milliseconds

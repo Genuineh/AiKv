@@ -25,7 +25,7 @@ use crate::storage::StorageEngine;
 use bytes::Bytes;
 
 #[cfg(feature = "cluster")]
-use crate::cluster::ClusterState;
+use crate::cluster::{ClusterState, MetaRaftClient, MultiRaftNode};
 #[cfg(feature = "cluster")]
 use std::sync::{Arc, RwLock};
 
@@ -93,6 +93,46 @@ impl CommandExecutor {
                 Some(node_id),
                 cluster_state,
             ),
+        }
+    }
+
+    /// Create a command executor with shared cluster state and MetaRaft client.
+    ///
+    /// MetaRaft provides Raft-based metadata convergence; MultiRaft enables data group operations.
+    #[cfg(feature = "cluster")]
+    pub fn with_shared_cluster_state_and_meta(
+        storage: StorageEngine,
+        port: u16,
+        node_id: u64,
+        cluster_state: Arc<RwLock<ClusterState>>,
+        meta_raft_client: Option<Arc<MetaRaftClient>>,
+        multi_raft: Option<Arc<MultiRaftNode>>,
+    ) -> Self {
+        let mut cluster_commands = crate::cluster::ClusterCommands::with_shared_state(
+            Some(node_id),
+            cluster_state,
+        );
+
+        if let Some(mr) = multi_raft {
+            cluster_commands.set_multi_raft(mr);
+        }
+
+        if let Some(meta) = meta_raft_client {
+            cluster_commands.set_meta_raft_client(meta);
+        }
+
+        Self {
+            string_commands: StringCommands::new(storage.clone()),
+            json_commands: JsonCommands::new(storage.clone()),
+            database_commands: DatabaseCommands::new(storage.clone()),
+            key_commands: KeyCommands::new(storage.clone()),
+            server_commands: ServerCommands::with_port(port),
+            script_commands: ScriptCommands::new(storage.clone()),
+            list_commands: ListCommands::new(storage.clone()),
+            hash_commands: HashCommands::new(storage.clone()),
+            set_commands: SetCommands::new(storage.clone()),
+            zset_commands: ZSetCommands::new(storage),
+            cluster_commands,
         }
     }
 
