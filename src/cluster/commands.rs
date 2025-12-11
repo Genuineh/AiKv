@@ -14,7 +14,7 @@ use std::sync::Arc;
 #[cfg(feature = "cluster")]
 use aidb::cluster::{
     ClusterMeta, GroupId, MetaNodeInfo, MetaRaftNode, MigrationManager, MultiRaftNode, NodeId,
-    NodeStatus, Router, ShardedStateMachine, SLOT_COUNT,
+    NodeStatus, Router,
 };
 
 /// Redis Cluster has 16384 slots
@@ -319,7 +319,7 @@ impl ClusterCommands {
             }
         }
         
-        RespValue::Array(elements)
+        RespValue::Array(Some(elements))
     }
 
     /// Format node info for CLUSTER SLOTS response
@@ -455,7 +455,7 @@ impl ClusterCommands {
     /// Maps to: `state_machine.scan_slot_keys_sync(group, slot)`
     ///
     /// Note: This requires access to ShardedStateMachine which we'll need to add
-    pub fn cluster_getkeysinslot(&self, slot: u16, count: usize) -> Result<RespValue> {
+    pub fn cluster_getkeysinslot(&self, slot: u16, _count: usize) -> Result<RespValue> {
         if slot >= TOTAL_SLOTS {
             return Err(AikvError::Invalid(format!("Invalid slot: {}", slot)));
         }
@@ -490,6 +490,72 @@ impl ClusterCommands {
         // Mix with random bits
         let random: u64 = rand::random();
         timestamp ^ random
+    }
+
+    /// Execute a CLUSTER subcommand.
+    ///
+    /// This is the main dispatcher for CLUSTER commands.
+    pub fn execute(&self, args: &[Bytes]) -> Result<RespValue> {
+        if args.is_empty() {
+            return Err(AikvError::WrongArgCount("CLUSTER".to_string()));
+        }
+        
+        let subcommand = String::from_utf8_lossy(&args[0]).to_uppercase();
+        match subcommand.as_str() {
+            "INFO" => self.cluster_info(),
+            "NODES" => self.cluster_nodes(),
+            "SLOTS" => self.cluster_slots(),
+            "MYID" => self.cluster_myid(),
+            "KEYSLOT" => {
+                if args.len() != 2 {
+                    return Err(AikvError::WrongArgCount("CLUSTER KEYSLOT".to_string()));
+                }
+                self.cluster_keyslot(&args[1])
+            }
+            "GETKEYSINSLOT" => {
+                if args.len() != 3 {
+                    return Err(AikvError::WrongArgCount("CLUSTER GETKEYSINSLOT".to_string()));
+                }
+                let slot = String::from_utf8_lossy(&args[1])
+                    .parse::<u16>()
+                    .map_err(|_| AikvError::Invalid("Invalid slot".to_string()))?;
+                let count = String::from_utf8_lossy(&args[2])
+                    .parse::<usize>()
+                    .map_err(|_| AikvError::Invalid("Invalid count".to_string()))?;
+                self.cluster_getkeysinslot(slot, count)
+            }
+            "COUNTKEYSINSLOT" => {
+                if args.len() != 2 {
+                    return Err(AikvError::WrongArgCount("CLUSTER COUNTKEYSINSLOT".to_string()));
+                }
+                let slot = String::from_utf8_lossy(&args[1])
+                    .parse::<u16>()
+                    .map_err(|_| AikvError::Invalid("Invalid slot".to_string()))?;
+                self.cluster_countkeysinslot(slot)
+            }
+            _ => Err(AikvError::InvalidCommand(format!(
+                "Unknown CLUSTER subcommand: {}",
+                subcommand
+            ))),
+        }
+    }
+
+    /// Handle READONLY command.
+    ///
+    /// Sets connection to read-only mode for replica reads.
+    pub fn readonly(&self) -> Result<RespValue> {
+        // For now, just return OK
+        // In a full implementation, this would set a flag on the connection
+        Ok(RespValue::SimpleString("OK".to_string()))
+    }
+
+    /// Handle READWRITE command.
+    ///
+    /// Sets connection back to read-write mode (default).
+    pub fn readwrite(&self) -> Result<RespValue> {
+        // For now, just return OK
+        // In a full implementation, this would clear the read-only flag
+        Ok(RespValue::SimpleString("OK".to_string()))
     }
 }
 

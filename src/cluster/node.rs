@@ -98,14 +98,12 @@ impl ClusterNode {
         let raft_config = RaftConfig::default();
         
         // Create MultiRaftNode
-        let multi_raft = MultiRaftNode::new(
+        let mut multi_raft = MultiRaftNode::new(
             self.config.node_id,
             &self.config.data_dir,
             raft_config.clone(),
         ).await
         .map_err(|e| crate::error::AikvError::Internal(format!("Failed to create MultiRaftNode: {}", e)))?;
-        
-        let multi_raft = Arc::new(multi_raft);
         
         // Initialize MetaRaft
         multi_raft.init_meta_raft(raft_config).await
@@ -117,15 +115,21 @@ impl ClusterNode {
                 .map_err(|e| crate::error::AikvError::Internal(format!("Failed to bootstrap MetaRaft: {}", e)))?;
         }
         
+        // Wrap in Arc after initialization
+        let multi_raft = Arc::new(multi_raft);
+        
         // Get MetaRaftNode reference
         let meta_raft = multi_raft.meta_raft()
             .ok_or_else(|| crate::error::AikvError::Internal("MetaRaft not initialized".to_string()))?;
         
-        // Initialize Router
-        let router = Arc::new(aidb::cluster::Router::new(meta_raft.clone()));
+        // Get initial cluster metadata from MetaRaft
+        let cluster_meta = meta_raft.get_cluster_meta();
         
-        self.multi_raft = Some(multi_raft);
-        self.meta_raft = Some(meta_raft);
+        // Initialize Router with cluster metadata
+        let router = Arc::new(aidb::cluster::Router::new(cluster_meta));
+        
+        self.multi_raft = Some(multi_raft.clone());
+        self.meta_raft = Some(meta_raft.clone());
         self.router = Some(router);
         
         Ok(())
