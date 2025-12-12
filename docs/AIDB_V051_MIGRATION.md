@@ -1,8 +1,8 @@
-# AiDb v0.5.1 Multi-Raft API Migration Guide
+# AiDb v0.5.2 Multi-Raft API Migration Guide
 
 ## Overview
 
-This document describes the migration from a custom cluster state management to AiDb v0.5.1's official Multi-Raft API.
+This document describes the migration from a custom cluster state management to AiDb v0.5.2's official Multi-Raft API.
 
 ## What Changed
 
@@ -17,7 +17,7 @@ Server → ClusterState → NodeInfo (custom tracking)
          ClusterCommands (stateful)
 ```
 
-**New Architecture (v0.5.1):**
+**New Architecture (v0.5.2):**
 ```
 Server → ClusterNode → MultiRaftNode (AiDb)
                     → MetaRaftNode (AiDb)
@@ -277,6 +277,7 @@ Check: All nodes have initialized_meta_cluster() or joined existing cluster
 
 ## Version History
 
+- **2025-12-12**: Upgraded to AiDb v0.5.2 - Fixed metadata synchronization issues (all 7 cluster tests now pass)
 - **2025-12-11**: Initial migration to AiDb v0.5.1 Multi-Raft API
 - **2025-11-27**: Cluster bus implementation using AiDb
 - **2025-11-26**: Multi-Raft integration started

@@ -310,11 +310,19 @@ mod cluster_tests {
         let meta = node.meta_raft().ok_or_else(|| {
             aikv::error::AikvError::Internal("Meta raft not initialized".to_string())
         })?;
+
+        sleep(Duration::from_millis(500)).await;
+
+        // Add this node to the cluster metadata
+        meta.add_node(1, "127.0.0.1:50091".to_string())
+            .await
+            .map_err(|e| aikv::error::AikvError::Internal(e.to_string()))?;
+
+        sleep(Duration::from_millis(300)).await;
+
         let cluster_meta = meta.get_cluster_meta();
         let router = Arc::new(Router::new(cluster_meta));
         let cmd = ClusterCommands::new(1, meta.clone(), node, router);
-
-        sleep(Duration::from_millis(500)).await;
 
         // Test: Get cluster nodes
         let nodes = cmd.cluster_nodes()?;
