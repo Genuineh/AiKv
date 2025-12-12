@@ -509,6 +509,51 @@ impl ClusterCommands {
         Ok(RespValue::SimpleString("OK".to_string()))
     }
 
+    /// Handle CLUSTER REPLICATE command.
+    ///
+    /// Sets this node as a replica of the specified master node.
+    /// Maps to: `meta_raft.update_group_members(group_id, new_replicas)`
+    pub async fn cluster_replicate(&self, master_id: NodeId) -> Result<RespValue> {
+        let meta = self.meta_raft.get_cluster_meta();
+
+        // Find the group that the master belongs to
+        let group_id = meta
+            .groups
+            .iter()
+            .find(|(_, g)| g.leader == Some(master_id) || g.replicas.contains(&master_id))
+            .map(|(gid, _)| *gid)
+            .ok_or_else(|| {
+                AikvError::Internal(format!(
+                    "Master node {:040x} does not belong to any group",
+                    master_id
+                ))
+            })?;
+
+        // Get current group members
+        let group = meta.groups.get(&group_id).ok_or_else(|| {
+            AikvError::Internal(format!("Group {} not found", group_id))
+        })?;
+
+        // Add this node to the group's replicas if not already present
+        let mut new_replicas = group.replicas.clone();
+        if !new_replicas.contains(&self.node_id) {
+            new_replicas.push(self.node_id);
+            
+            // Update group membership via MetaRaft
+            self.meta_raft
+                .update_group_members(group_id, new_replicas)
+                .await
+                .map_err(|e| {
+                    AikvError::Internal(format!(
+                        "Failed to add replica to group {}: {}",
+                        group_id, e
+                    ))
+                })?;
+        }
+
+        Ok(RespValue::SimpleString("OK".to_string()))
+    }
+
     /// Handle CLUSTER GETKEYSINSLOT command.
     ///
     /// Maps to: `state_machine.scan_slot_keys_sync(group, slot)`

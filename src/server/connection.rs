@@ -457,12 +457,10 @@ impl Connection {
                 }
                 
                 let id_str = String::from_utf8_lossy(&args[0]);
-                let _master_id = u64::from_str_radix(&id_str, 16)
+                let master_id = u64::from_str_radix(&id_str, 16)
                     .map_err(|_| AikvError::Invalid("Invalid node ID".to_string()))?;
                 
-                // Find cluster_replicate method
-                // For now return error as this method doesn't exist yet
-                Err(AikvError::InvalidCommand("CLUSTER REPLICATE not yet implemented".to_string()))
+                cluster_cmds.cluster_replicate(master_id).await
             }
             _ => Err(AikvError::InvalidCommand(format!(
                 "Unknown async CLUSTER subcommand: {}",
