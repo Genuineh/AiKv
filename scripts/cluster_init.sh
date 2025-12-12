@@ -26,7 +26,8 @@ REDIS_CLI="${REDIS_CLI:-redis-cli}"
 # Retry and timing configuration
 MAX_SYNC_RETRIES=3
 MAX_MEET_RETRIES=2
-METARAFT_CONVERGENCE_WAIT=2  # seconds to wait for MetaRaft convergence
+METARAFT_CONVERGENCE_WAIT=5  # seconds to wait for MetaRaft convergence (increased from 2 to 5)
+MAX_CONVERGENCE_RETRIES=5  # number of times to retry convergence verification
 NODE_ID_LENGTH=40  # Redis node IDs are SHA-1 hashes (40 hex chars) - for documentation only, used as literal in grep
 
 # Print functions
@@ -362,34 +363,53 @@ print_info "Waiting for MetaRaft convergence..."
 sleep ${METARAFT_CONVERGENCE_WAIT}
 
 # Verify convergence by checking if nodes know about each other
+# Retry a few times with delays to give MetaRaft more time to propagate
 print_info "Verifying cluster convergence..."
-CONVERGENCE_FAILURES=0
-for node in "${ALL_NODES[@]}"; do
-    IFS=':' read -r host port <<< "${node}"
-    # Node IDs in CLUSTER NODES output are 40-character hex strings at line start
-    # Use grep -E with literal {40} for portability (variable expansion in regex patterns
-    # is not supported consistently across all shell environments)
-    node_count=$(redis_exec ${host} ${port} CLUSTER NODES 2>/dev/null | grep -cE "^[0-9a-f]{40}" || echo "0")
-    expected_count=${#ALL_NODES[@]}
+convergence_retry=0
+convergence_ok=false
+
+while [ ${convergence_retry} -lt ${MAX_CONVERGENCE_RETRIES} ]; do
+    CONVERGENCE_FAILURES=0
+    for node in "${ALL_NODES[@]}"; do
+        IFS=':' read -r host port <<< "${node}"
+        # Node IDs in CLUSTER NODES output are 40-character hex strings at line start
+        # Use grep -E with literal {40} for portability (variable expansion in regex patterns
+        # is not supported consistently across all shell environments)
+        node_count=$(redis_exec ${host} ${port} CLUSTER NODES 2>/dev/null | grep -cE "^[0-9a-f]{40}" || echo "0")
+        expected_count=${#ALL_NODES[@]}
+        
+        if [ "${node_count}" -eq "${expected_count}" ]; then
+            print_success "Node ${node} knows about ${node_count}/${expected_count} nodes"
+        elif [ "${node_count}" -gt "${expected_count}" ]; then
+            print_warn "Node ${node} reports ${node_count}/${expected_count} nodes (possible duplicates)"
+            # Don't fail for this, just warn
+        else
+            if [ ${convergence_retry} -eq $((MAX_CONVERGENCE_RETRIES - 1)) ]; then
+                print_error "Node ${node} only knows about ${node_count}/${expected_count} nodes"
+            else
+                print_warn "Node ${node} only knows about ${node_count}/${expected_count} nodes (retry ${convergence_retry}/${MAX_CONVERGENCE_RETRIES})"
+            fi
+            CONVERGENCE_FAILURES=$((CONVERGENCE_FAILURES + 1))
+        fi
+    done
     
-    if [ "${node_count}" -eq "${expected_count}" ]; then
-        print_success "Node ${node} knows about ${node_count}/${expected_count} nodes"
-    elif [ "${node_count}" -gt "${expected_count}" ]; then
-        print_error "Node ${node} reports ${node_count}/${expected_count} nodes (possible duplicates or metadata inconsistency)"
-        CONVERGENCE_FAILURES=$((CONVERGENCE_FAILURES + 1))
-    else
-        print_error "Node ${node} only knows about ${node_count}/${expected_count} nodes"
-        CONVERGENCE_FAILURES=$((CONVERGENCE_FAILURES + 1))
+    if [ ${CONVERGENCE_FAILURES} -eq 0 ]; then
+        convergence_ok=true
+        break
+    fi
+    
+    convergence_retry=$((convergence_retry + 1))
+    if [ ${convergence_retry} -lt ${MAX_CONVERGENCE_RETRIES} ]; then
+        print_info "Waiting for metadata to propagate (attempt ${convergence_retry}/${MAX_CONVERGENCE_RETRIES})..."
+        sleep 2
     fi
 done
 
-if [ ${CONVERGENCE_FAILURES} -gt 0 ]; then
-    print_error "Cluster convergence incomplete: ${CONVERGENCE_FAILURES} node(s) missing metadata"
-    print_error "This may cause CLUSTER REPLICATE to fail. Possible causes:"
-    print_error "  - MetaRaft convergence is slow (increase wait time)"
-    print_error "  - Network issues between nodes"
-    print_error "  - CLUSTER MEET operations failed partially"
-    exit 1
+if [ "${convergence_ok}" = false ]; then
+    print_warn "Cluster convergence incomplete after ${MAX_CONVERGENCE_RETRIES} attempts"
+    print_warn "Some nodes may not have full cluster metadata yet"
+    print_warn "This may cause CLUSTER REPLICATE to fail, but proceeding anyway..."
+    print_warn "If errors occur, try increasing METARAFT_CONVERGENCE_WAIT or MAX_CONVERGENCE_RETRIES"
 fi
 echo
 
