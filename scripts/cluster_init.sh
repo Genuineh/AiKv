@@ -285,55 +285,54 @@ print_info "Waiting for cluster to stabilize..."
 sleep ${METARAFT_CONVERGENCE_WAIT}
 
 # Step 4: Assign hash slots to masters
-print_info "Step 4: Assigning hash slots..."
+print_info "Step 4: Assigning hash slots to masters..."
 TOTAL_SLOTS=16384
+SLOTS_PER_MASTER=$((TOTAL_SLOTS / MASTER_COUNT))
 
-# WORKAROUND: Due to MetaRaft architecture, only the bootstrap node (Raft leader)
-# can propose changes to assign slots. Non-bootstrap nodes cannot create groups
-# or assign slots because they're not Raft voters.
-# 
-# For now, we assign all slots to the first master (bootstrap node).
-# TODO: Implement proper Raft membership changes so all masters can assign slots
-
-first_master="${MASTERS[0]}"
-IFS=':' read -r first_host first_port <<< "${first_master}"
-
-print_warn "Limitation: Only bootstrap node can assign slots (MetaRaft voter requirement)"
-print_info "Assigning all ${TOTAL_SLOTS} slots to ${first_master}..."
-
-# Assign slots in batches to avoid OpenRaft snapshot issues
-BATCH_SIZE=500
-current_slot=0
-
-while [ ${current_slot} -lt ${TOTAL_SLOTS} ]; do
-    batch_end=$((current_slot + BATCH_SIZE - 1))
-    if [ ${batch_end} -ge ${TOTAL_SLOTS} ]; then
-        batch_end=$((TOTAL_SLOTS - 1))
+for i in "${!MASTERS[@]}"; do
+    master="${MASTERS[$i]}"
+    IFS=':' read -r host port <<< "${master}"
+    
+    start_slot=$((i * SLOTS_PER_MASTER))
+    if [ $i -eq $((MASTER_COUNT - 1)) ]; then
+        # Last master gets remaining slots
+        end_slot=$((TOTAL_SLOTS - 1))
+    else
+        end_slot=$((start_slot + SLOTS_PER_MASTER - 1))
     fi
     
-    slot_args=()
-    for ((slot=current_slot; slot<=batch_end; slot++)); do
-        slot_args+=("${slot}")
+    print_info "Assigning slots ${start_slot}-${end_slot} to ${master}..."
+    
+    # Assign slots in batches to avoid OpenRaft snapshot issues
+    # Each master can now propose changes since they're MetaRaft voters after CLUSTER MEET
+    BATCH_SIZE=500
+    current_slot=${start_slot}
+    
+    while [ ${current_slot} -le ${end_slot} ]; do
+        batch_end=$((current_slot + BATCH_SIZE - 1))
+        if [ ${batch_end} -gt ${end_slot} ]; then
+            batch_end=${end_slot}
+        fi
+        
+        slot_args=()
+        for ((slot=current_slot; slot<=batch_end; slot++)); do
+            slot_args+=("${slot}")
+        done
+        
+        # Execute ADDSLOTS command on the master node
+        if redis_exec ${host} ${port} CLUSTER ADDSLOTS "${slot_args[@]}" 2>/dev/null | grep -q "OK"; then
+            print_success "  Batch ${current_slot}-${batch_end} assigned"
+        else
+            print_error "Failed to assign batch ${current_slot}-${batch_end} to ${master}"
+            exit 1
+        fi
+        
+        current_slot=$((batch_end + 1))
+        sleep 0.1  # Small delay between batches
     done
     
-    print_info "  Assigning batch ${current_slot}-${batch_end}..."
-    if redis_exec ${first_host} ${first_port} CLUSTER ADDSLOTS "${slot_args[@]}" 2>/dev/null | grep -q "OK"; then
-        print_success "  Batch ${current_slot}-${batch_end} assigned"
-    else
-        print_error "Failed to assign batch ${current_slot}-${batch_end}"
-        exit 1
-    fi
-    
-    current_slot=$((batch_end + 1))
-    sleep 0.1  # Small delay between batches to avoid overwhelming Raft
+    print_success "Assigned slots ${start_slot}-${end_slot} to ${master}"
 done
-
-print_success "All ${TOTAL_SLOTS} slots assigned to ${first_master}"
-echo
-
-print_warn "Note: Slot distribution across multiple masters not yet implemented"
-print_warn "All slots are currently assigned to the bootstrap node"
-print_warn "Slot migration/rebalancing feature is planned for future releases"
 echo
 
 # Step 4.5: Synchronize cluster metadata across all nodes
@@ -433,58 +432,56 @@ echo
 # Step 5: Set up replication
 print_info "Step 5: Setting up replication..."
 
-# Since only the first master has slots, set all replicas to replicate from it
-first_master="${MASTERS[0]}"
-first_master_id="${NODE_IDS[${first_master}]}"
+# Calculate replicas per master
+REPLICAS_PER_MASTER=$((REPLICA_COUNT / MASTER_COUNT))
+if [ ${REPLICAS_PER_MASTER} -eq 0 ]; then
+    print_warn "Not enough replicas for all masters. Some masters will have no replicas."
+    REPLICAS_PER_MASTER=1
+fi
 
-print_info "Setting all replicas to replicate from ${first_master} (ID: ${first_master_id})..."
-
-for replica in "${REPLICAS[@]}"; do
-    IFS=':' read -r host port <<< "${replica}"
-    
-    print_info "Setting ${replica} as replica of ${first_master}..."
-    
-    # One final sync before REPLICATE to ensure replica has master's metadata
-    sync_retry=0
-    sync_ok=false
-    while [ ${sync_retry} -lt ${MAX_SYNC_RETRIES} ]; do
-        if redis_exec ${host} ${port} CLUSTER NODES > /dev/null 2>&1; then
-            sync_ok=true
-            break
-        fi
-        sync_retry=$((sync_retry + 1))
-        if [ ${sync_retry} -lt ${MAX_SYNC_RETRIES} ]; then
-            print_warn "Failed to sync metadata on ${replica} (attempt ${sync_retry}/${MAX_SYNC_RETRIES}), retrying..."
-            sleep 1
-        fi
-    done
-    
-    if [ "${sync_ok}" = false ]; then
-        print_warn "Failed to sync metadata on ${replica}, attempting REPLICATE anyway..."
+replica_idx=0
+for i in "${!MASTERS[@]}"; do
+    if [ ${replica_idx} -ge ${REPLICA_COUNT} ]; then
+        break
     fi
     
-    output=$(redis_exec ${host} ${port} CLUSTER REPLICATE ${first_master_id})
-    exit_code=$?
+    master="${MASTERS[$i]}"
+    master_id="${NODE_IDS[${master}]}"
     
-    if echo "${output}" | grep -q "OK"; then
-        print_success "${replica} is now a replica of ${first_master}"
-    else
-        print_warn "Failed to set up replication for ${replica}: ${output}"
-        print_warn "This may be due to metadata sync issues, but cluster can still function"
-    fi
-done
+    # Assign replica(s) to this master
+    for ((r=0; r<REPLICAS_PER_MASTER && replica_idx<REPLICA_COUNT; r++)); do
+        replica="${REPLICAS[$replica_idx]}"
+        IFS=':' read -r host port <<< "${replica}"
+        
+        print_info "Setting ${replica} as replica of ${master} (ID: ${master_id})..."
+        
+        # One final sync before REPLICATE to ensure replica has master's metadata
+        sync_retry=0
+        sync_ok=false
+        while [ ${sync_retry} -lt ${MAX_SYNC_RETRIES} ]; do
+            if redis_exec ${host} ${port} CLUSTER NODES > /dev/null 2>&1; then
+                sync_ok=true
+                break
+            fi
+            sync_retry=$((sync_retry + 1))
+            if [ ${sync_retry} -lt ${MAX_SYNC_RETRIES} ]; then
+                print_warn "Failed to sync metadata on ${replica} (attempt ${sync_retry}/${MAX_SYNC_RETRIES}), retrying..."
+                sleep 1
+            fi
+        done
+        
+        if [ "${sync_ok}" = false ]; then
+            print_warn "Failed to sync metadata on ${replica}, attempting REPLICATE anyway..."
+        fi
+        
         output=$(redis_exec ${host} ${port} CLUSTER REPLICATE ${master_id})
         exit_code=$?
         
         if echo "${output}" | grep -q "OK"; then
             print_success "${replica} is now a replica of ${master}"
         else
-            print_error "Failed to set up replication for ${replica}"
-            print_error "Command output: ${output}"
-            print_error "Exit code: ${exit_code}"
-            print_error "Hint: Master ID ${master_id} may not be known to replica ${replica}"
-            print_error "This usually means cluster metadata hasn't fully propagated."
-            exit 1
+            print_warn "Failed to set up replication for ${replica}: ${output}"
+            print_warn "Cluster can still function without all replicas"
         fi
         
         replica_idx=$((replica_idx + 1))

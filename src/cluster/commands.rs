@@ -13,8 +13,8 @@ use std::sync::Arc;
 
 #[cfg(feature = "cluster")]
 use aidb::cluster::{
-    ClusterMeta, GroupId, MetaNodeInfo, MetaRaftNode, MigrationManager, MultiRaftNode, NodeId,
-    NodeStatus, Router,
+    ClusterMeta, GroupId, MembershipCoordinator, MetaNodeInfo, MetaRaftNode, MigrationManager,
+    MultiRaftNode, NodeId, NodeStatus, Router,
 };
 
 /// Redis Cluster has 16384 slots
@@ -419,11 +419,12 @@ impl ClusterCommands {
             hasher.finish()
         });
 
-        // Add node via MetaRaft - this will sync to all nodes via Raft consensus
+        // Add node to cluster metadata via MetaRaft
+        // This adds the node to the cluster's node list
         self.meta_raft
-            .add_node(node_id, addr)
+            .add_node(node_id, addr.clone())
             .await
-            .map_err(|e| AikvError::Internal(format!("Failed to add node: {}", e)))?;
+            .map_err(|e| AikvError::Internal(format!("Failed to add node to cluster: {}", e)))?;
 
         Ok(RespValue::SimpleString("OK".to_string()))
     }
