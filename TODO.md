@@ -299,23 +299,28 @@ AiDb MetaRaftNode (Group 0) ──────────────┘
 - [ ] 考虑引入事务支持的存储接口
 - [ ] 优化锁粒度和并发性能
 
-### 🔵 P3: 集群高级特性 (Future Enhancements)
+### ✅ P3: 集群高级特性 (Future Enhancements) - 已完成
 
-- [ ] **动态 MetaRaft 成员变更** (Dynamic MetaRaft Membership Changes) - **必需功能**
-  - **当前状态**: 预配置 peers 列表方案因 OpenRaft 限制无法工作
-    - 问题：`initialize_meta_cluster(peers)` 要求所有 peers 必须已启动并可达
-    - 现状：Bootstrap 节点启动时其他节点尚未就绪，导致初始化挂起
-    - 临时方案：Bootstrap 节点初始化为单节点集群
-  - **必需实现**: 在运行时动态添加/移除 MetaRaft 投票节点
-  - 在 CLUSTER MEET 时自动将节点提升为 MetaRaft voter
-  - 支持 learner → voter 的安全转换
-  - 实现步骤：
-    1. Bootstrap 节点以单节点模式初始化 MetaRaft
-    2. 其他主节点启动后作为 learner 加入
-    3. 通过 CLUSTER MEET 或专门命令将 learner 提升为 voter
-    4. 最终所有主节点都是 MetaRaft voters，可以提议 Raft 变更
-  - 参考：OpenRaft `change_membership()` API
-  - 优先级：**P1 (高优先级)** - 阻塞多主节点功能
+> 完成时间: 2025-12-15
+
+- [x] **动态 MetaRaft 成员变更** (Dynamic MetaRaft Membership Changes) - **已实现**
+  - **解决方案**: 实现了完整的 learner → voter 工作流
+  - **新增 API**:
+    - `ClusterNode::add_meta_learner()` - 添加节点为 MetaRaft learner
+    - `ClusterNode::promote_meta_voter()` - 提升 learner 为 voter
+    - `ClusterNode::change_meta_membership()` - 直接变更 MetaRaft 成员
+  - **新增 Redis 命令**:
+    - `CLUSTER METARAFT ADDLEARNER node_id addr` - 添加 learner
+    - `CLUSTER METARAFT PROMOTE node_id [node_id ...]` - 提升为 voter
+    - `CLUSTER METARAFT MEMBERS` - 查看 voters 和 learners
+  - **实现步骤**:
+    1. ✅ Bootstrap 节点以单节点模式初始化 MetaRaft
+    2. ✅ 其他主节点启动后可作为 learner 加入
+    3. ✅ 通过 CLUSTER METARAFT PROMOTE 命令将 learner 提升为 voter
+    4. ✅ 最终所有主节点都是 MetaRaft voters，可以提议 Raft 变更
+  - **参考**: AiDb v0.5.2 Multi-Raft API (OpenRaft `add_learner()` + `change_membership()`)
+  - **测试**: 新增 5 个测试用例验证完整工作流
+  - **优先级**: ✅ **已完成** - 解除多主节点功能阻塞
 
 ---
 
