@@ -17,6 +17,9 @@ use aidb::cluster::{
     MultiRaftNode, NodeId, NodeStatus, Router,
 };
 
+#[cfg(feature = "cluster")]
+use openraft::BasicNode;
+
 /// Redis Cluster has 16384 slots
 const TOTAL_SLOTS: u16 = 16384;
 
@@ -701,7 +704,6 @@ impl ClusterCommands {
         node_id: NodeId,
         addr: String,
     ) -> Result<RespValue> {
-        use openraft::BasicNode;
         let node = BasicNode { addr };
 
         self.meta_raft

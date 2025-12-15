@@ -14,6 +14,9 @@ mod metaraft_tests {
     use std::path::PathBuf;
     use tokio::time::{sleep, Duration};
 
+    /// Time to wait for cluster to stabilize after operations
+    const CLUSTER_STABILIZATION_DELAY: Duration = CLUSTER_STABILIZATION_DELAY;
+
     /// Test adding a node as a MetaRaft learner
     #[tokio::test]
     async fn test_add_meta_learner() -> Result<()> {
@@ -35,7 +38,7 @@ mod metaraft_tests {
         node1.initialize().await?;
 
         // Wait for cluster to stabilize
-        sleep(Duration::from_millis(500)).await;
+        sleep(CLUSTER_STABILIZATION_DELAY).await;
 
         // Add node 2 as a learner
         node1
@@ -43,7 +46,7 @@ mod metaraft_tests {
             .await?;
 
         // Wait for learner to be added
-        sleep(Duration::from_millis(500)).await;
+        sleep(CLUSTER_STABILIZATION_DELAY).await;
 
         // Verify learner was added by checking Raft metrics
         let meta_raft = node1.meta_raft().unwrap();
@@ -86,7 +89,7 @@ mod metaraft_tests {
         node1.initialize().await?;
 
         // Wait for cluster to stabilize
-        sleep(Duration::from_millis(500)).await;
+        sleep(CLUSTER_STABILIZATION_DELAY).await;
 
         // Add node 2 as a learner
         node1
@@ -94,13 +97,13 @@ mod metaraft_tests {
             .await?;
 
         // Wait for learner to be added
-        sleep(Duration::from_millis(500)).await;
+        sleep(CLUSTER_STABILIZATION_DELAY).await;
 
         // Promote node 2 to voter
         node1.promote_meta_voter(vec![1, 2]).await?;
 
         // Wait for promotion to complete
-        sleep(Duration::from_millis(500)).await;
+        sleep(CLUSTER_STABILIZATION_DELAY).await;
 
         // Verify node 2 is now a voter
         let meta_raft = node1.meta_raft().unwrap();
@@ -142,7 +145,7 @@ mod metaraft_tests {
         node1.initialize().await?;
 
         // Wait for cluster to stabilize
-        sleep(Duration::from_millis(500)).await;
+        sleep(CLUSTER_STABILIZATION_DELAY).await;
 
         // Add nodes 2 and 3 as learners
         node1
@@ -153,7 +156,7 @@ mod metaraft_tests {
             .await?;
 
         // Wait for learners to be added
-        sleep(Duration::from_millis(500)).await;
+        sleep(CLUSTER_STABILIZATION_DELAY).await;
 
         // Change membership to include all three nodes as voters
         node1
@@ -161,7 +164,7 @@ mod metaraft_tests {
             .await?;
 
         // Wait for membership change to complete
-        sleep(Duration::from_millis(500)).await;
+        sleep(CLUSTER_STABILIZATION_DELAY).await;
 
         // Verify all nodes are voters
         let meta_raft = node1.meta_raft().unwrap();
@@ -202,7 +205,7 @@ mod metaraft_tests {
         node.initialize().await?;
 
         // Wait for cluster to stabilize
-        sleep(Duration::from_millis(500)).await;
+        sleep(CLUSTER_STABILIZATION_DELAY).await;
 
         // Verify node is initialized and is a voter
         let meta_raft = node.meta_raft().unwrap();
@@ -241,7 +244,7 @@ mod metaraft_tests {
         node1.initialize().await?;
 
         // Wait for cluster to stabilize
-        sleep(Duration::from_millis(500)).await;
+        sleep(CLUSTER_STABILIZATION_DELAY).await;
 
         // Step 2: Add node 2 as learner
         node1
@@ -249,13 +252,13 @@ mod metaraft_tests {
             .await?;
 
         // Wait for learner to sync logs
-        sleep(Duration::from_millis(500)).await;
+        sleep(CLUSTER_STABILIZATION_DELAY).await;
 
         // Step 3: Promote node 2 to voter
         node1.promote_meta_voter(vec![1, 2]).await?;
 
         // Wait for promotion
-        sleep(Duration::from_millis(500)).await;
+        sleep(CLUSTER_STABILIZATION_DELAY).await;
 
         // Step 4: Verify node 2 is a voter
         let meta_raft = node1.meta_raft().unwrap();
@@ -274,13 +277,13 @@ mod metaraft_tests {
             .await?;
 
         // Wait for learner to sync
-        sleep(Duration::from_millis(500)).await;
+        sleep(CLUSTER_STABILIZATION_DELAY).await;
 
         // Step 6: Promote node 3 to voter
         node1.promote_meta_voter(vec![1, 2, 3]).await?;
 
         // Wait for promotion
-        sleep(Duration::from_millis(500)).await;
+        sleep(CLUSTER_STABILIZATION_DELAY).await;
 
         // Step 7: Verify all 3 nodes are voters
         let metrics = raft.metrics().borrow().clone();

@@ -478,7 +478,7 @@ impl Connection {
                         
                         let node_id = String::from_utf8_lossy(&args[1])
                             .parse::<u64>()
-                            .map_err(|_| AikvError::Invalid("Invalid node ID".to_string()))?;
+                            .map_err(|_| AikvError::Invalid("Invalid node ID: must be a positive integer".to_string()))?;
                         let addr = String::from_utf8_lossy(&args[2]).to_string();
                         
                         cluster_cmds.cluster_metaraft_addlearner(node_id, addr).await
@@ -493,7 +493,7 @@ impl Connection {
                         for arg in &args[1..] {
                             let node_id = String::from_utf8_lossy(arg)
                                 .parse::<u64>()
-                                .map_err(|_| AikvError::Invalid("Invalid node ID".to_string()))?;
+                                .map_err(|_| AikvError::Invalid("Invalid node ID: must be a positive integer".to_string()))?;
                             voters.push(node_id);
                         }
                         

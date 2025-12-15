@@ -7,6 +7,9 @@ use crate::error::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[cfg(feature = "cluster")]
+use openraft::BasicNode;
+
 /// Node ID type alias
 pub type NodeId = u64;
 
@@ -228,7 +231,6 @@ impl ClusterNode {
             crate::error::AikvError::Internal("MetaRaft not initialized".to_string())
         })?;
 
-        use openraft::BasicNode;
         let node = BasicNode { addr };
 
         meta_raft
