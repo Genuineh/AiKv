@@ -8,6 +8,7 @@ use crate::command::CommandExecutor;
 use crate::error::Result;
 use crate::observability::Metrics;
 use crate::storage::StorageEngine;
+use tracing::warn;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
