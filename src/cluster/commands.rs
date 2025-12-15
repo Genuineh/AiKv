@@ -13,8 +13,8 @@ use std::sync::Arc;
 
 #[cfg(feature = "cluster")]
 use aidb::cluster::{
-    ClusterMeta, GroupId, MetaNodeInfo, MetaRaftNode, MigrationManager, MultiRaftNode, NodeId,
-    NodeStatus, Router,
+    ClusterMeta, GroupId, MetaNodeInfo, MetaRaftNode, MigrationManager,
+    MultiRaftNode, NodeId, NodeStatus, Router,
 };
 
 /// Redis Cluster has 16384 slots
@@ -419,11 +419,12 @@ impl ClusterCommands {
             hasher.finish()
         });
 
-        // Add node via MetaRaft - this will sync to all nodes via Raft consensus
+        // Add node to cluster metadata via MetaRaft
+        // This adds the node to the cluster's node list
         self.meta_raft
-            .add_node(node_id, addr)
+            .add_node(node_id, addr.clone())
             .await
-            .map_err(|e| AikvError::Internal(format!("Failed to add node: {}", e)))?;
+            .map_err(|e| AikvError::Internal(format!("Failed to add node to cluster: {}", e)))?;
 
         Ok(RespValue::SimpleString("OK".to_string()))
     }
@@ -447,16 +448,29 @@ impl ClusterCommands {
     ///
     /// Note: For Redis compatibility, we need to assign slots to a group.
     /// The group_id is determined by finding which group this node belongs to.
+    /// If the node doesn't belong to any group yet, we create one automatically.
     pub async fn cluster_addslots(&self, slots: Vec<u16>) -> Result<RespValue> {
         let meta = self.meta_raft.get_cluster_meta();
 
-        // Find the group that this node belongs to
-        let group_id = meta
+        // Find the group that this node belongs to, or create one if it doesn't exist
+        let group_id = if let Some((gid, _)) = meta
             .groups
             .iter()
             .find(|(_, g)| g.replicas.contains(&self.node_id))
-            .map(|(gid, _)| *gid)
-            .ok_or_else(|| AikvError::Internal("Node does not belong to any group".to_string()))?;
+        {
+            *gid
+        } else {
+            // Auto-create a group for this node using its node_id as the group_id
+            // This matches Redis behavior where each master initially forms its own group
+            let group_id = self.node_id;
+            self.meta_raft
+                .create_group(group_id, vec![self.node_id])
+                .await
+                .map_err(|e| {
+                    AikvError::Internal(format!("Failed to create group for node: {}", e))
+                })?;
+            group_id
+        };
 
         // Assign each slot to this node's group - sync via Raft consensus
         for slot in slots {
@@ -490,6 +504,51 @@ impl ClusterCommands {
                 .await
                 .map_err(|e| {
                     AikvError::Internal(format!("Failed to delete slot {}: {}", slot, e))
+                })?;
+        }
+
+        Ok(RespValue::SimpleString("OK".to_string()))
+    }
+
+    /// Handle CLUSTER REPLICATE command.
+    ///
+    /// Sets this node as a replica of the specified master node.
+    /// Maps to: `meta_raft.update_group_members(group_id, new_replicas)`
+    pub async fn cluster_replicate(&self, master_id: NodeId) -> Result<RespValue> {
+        let meta = self.meta_raft.get_cluster_meta();
+
+        // Find the group that the master belongs to
+        let group_id = meta
+            .groups
+            .iter()
+            .find(|(_, g)| g.leader == Some(master_id) || g.replicas.contains(&master_id))
+            .map(|(gid, _)| *gid)
+            .ok_or_else(|| {
+                AikvError::Internal(format!(
+                    "Master node {:040x} does not belong to any group",
+                    master_id
+                ))
+            })?;
+
+        // Get current group members
+        let group = meta.groups.get(&group_id).ok_or_else(|| {
+            AikvError::Internal(format!("Group {} not found", group_id))
+        })?;
+
+        // Add this node to the group's replicas if not already present
+        let mut new_replicas = group.replicas.clone();
+        if !new_replicas.contains(&self.node_id) {
+            new_replicas.push(self.node_id);
+            
+            // Update group membership via MetaRaft
+            self.meta_raft
+                .update_group_members(group_id, new_replicas)
+                .await
+                .map_err(|e| {
+                    AikvError::Internal(format!(
+                        "Failed to add replica to group {}: {}",
+                        group_id, e
+                    ))
                 })?;
         }
 
@@ -536,6 +595,17 @@ impl ClusterCommands {
         // Mix with random bits
         let random: u64 = rand::random();
         timestamp ^ random
+    }
+
+    /// Generate a consistent node ID from a peer address.
+    /// This ensures all nodes agree on each other's IDs in multi-master setup.
+    pub fn generate_node_id_from_addr(addr: &str) -> NodeId {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        addr.hash(&mut hasher);
+        hasher.finish()
     }
 
     /// Execute a CLUSTER subcommand.

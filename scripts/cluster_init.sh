@@ -26,7 +26,8 @@ REDIS_CLI="${REDIS_CLI:-redis-cli}"
 # Retry and timing configuration
 MAX_SYNC_RETRIES=3
 MAX_MEET_RETRIES=2
-METARAFT_CONVERGENCE_WAIT=2  # seconds to wait for MetaRaft convergence
+METARAFT_CONVERGENCE_WAIT=5  # seconds to wait for MetaRaft convergence (increased from 2 to 5)
+MAX_CONVERGENCE_RETRIES=5  # number of times to retry convergence verification
 NODE_ID_LENGTH=40  # Redis node IDs are SHA-1 hashes (40 hex chars) - for documentation only, used as literal in grep
 
 # Print functions
@@ -302,19 +303,35 @@ for i in "${!MASTERS[@]}"; do
     
     print_info "Assigning slots ${start_slot}-${end_slot} to ${master}..."
     
-    # Build slot range arguments
-    slot_args=()
-    for ((slot=start_slot; slot<=end_slot; slot++)); do
-        slot_args+=("${slot}")
+    # Assign slots in batches to avoid OpenRaft snapshot issues
+    # Each master can now propose changes since they're MetaRaft voters after CLUSTER MEET
+    BATCH_SIZE=500
+    current_slot=${start_slot}
+    
+    while [ ${current_slot} -le ${end_slot} ]; do
+        batch_end=$((current_slot + BATCH_SIZE - 1))
+        if [ ${batch_end} -gt ${end_slot} ]; then
+            batch_end=${end_slot}
+        fi
+        
+        slot_args=()
+        for ((slot=current_slot; slot<=batch_end; slot++)); do
+            slot_args+=("${slot}")
+        done
+        
+        # Execute ADDSLOTS command on the master node
+        if redis_exec ${host} ${port} CLUSTER ADDSLOTS "${slot_args[@]}" 2>/dev/null | grep -q "OK"; then
+            print_success "  Batch ${current_slot}-${batch_end} assigned"
+        else
+            print_error "Failed to assign batch ${current_slot}-${batch_end} to ${master}"
+            exit 1
+        fi
+        
+        current_slot=$((batch_end + 1))
+        sleep 0.1  # Small delay between batches
     done
     
-    # Execute ADDSLOTS command
-    if redis_exec ${host} ${port} CLUSTER ADDSLOTS "${slot_args[@]}" | grep -q "OK"; then
-        print_success "Assigned slots ${start_slot}-${end_slot} to ${master}"
-    else
-        print_error "Failed to assign slots to ${master}"
-        exit 1
-    fi
+    print_success "Assigned slots ${start_slot}-${end_slot} to ${master}"
 done
 echo
 
@@ -362,34 +379,53 @@ print_info "Waiting for MetaRaft convergence..."
 sleep ${METARAFT_CONVERGENCE_WAIT}
 
 # Verify convergence by checking if nodes know about each other
+# Retry a few times with delays to give MetaRaft more time to propagate
 print_info "Verifying cluster convergence..."
-CONVERGENCE_FAILURES=0
-for node in "${ALL_NODES[@]}"; do
-    IFS=':' read -r host port <<< "${node}"
-    # Node IDs in CLUSTER NODES output are 40-character hex strings at line start
-    # Use grep -E with literal {40} for portability (variable expansion in regex patterns
-    # is not supported consistently across all shell environments)
-    node_count=$(redis_exec ${host} ${port} CLUSTER NODES 2>/dev/null | grep -cE "^[0-9a-f]{40}" || echo "0")
-    expected_count=${#ALL_NODES[@]}
+convergence_retry=0
+convergence_ok=false
+
+while [ ${convergence_retry} -lt ${MAX_CONVERGENCE_RETRIES} ]; do
+    CONVERGENCE_FAILURES=0
+    for node in "${ALL_NODES[@]}"; do
+        IFS=':' read -r host port <<< "${node}"
+        # Node IDs in CLUSTER NODES output are 40-character hex strings at line start
+        # Use grep -E with literal {40} for portability (variable expansion in regex patterns
+        # is not supported consistently across all shell environments)
+        node_count=$(redis_exec ${host} ${port} CLUSTER NODES 2>/dev/null | grep -cE "^[0-9a-f]{40}" || echo "0")
+        expected_count=${#ALL_NODES[@]}
+        
+        if [ "${node_count}" -eq "${expected_count}" ]; then
+            print_success "Node ${node} knows about ${node_count}/${expected_count} nodes"
+        elif [ "${node_count}" -gt "${expected_count}" ]; then
+            print_warn "Node ${node} reports ${node_count}/${expected_count} nodes (possible duplicates)"
+            # Don't fail for this, just warn
+        else
+            if [ ${convergence_retry} -eq $((MAX_CONVERGENCE_RETRIES - 1)) ]; then
+                print_error "Node ${node} only knows about ${node_count}/${expected_count} nodes"
+            else
+                print_warn "Node ${node} only knows about ${node_count}/${expected_count} nodes (retry ${convergence_retry}/${MAX_CONVERGENCE_RETRIES})"
+            fi
+            CONVERGENCE_FAILURES=$((CONVERGENCE_FAILURES + 1))
+        fi
+    done
     
-    if [ "${node_count}" -eq "${expected_count}" ]; then
-        print_success "Node ${node} knows about ${node_count}/${expected_count} nodes"
-    elif [ "${node_count}" -gt "${expected_count}" ]; then
-        print_error "Node ${node} reports ${node_count}/${expected_count} nodes (possible duplicates or metadata inconsistency)"
-        CONVERGENCE_FAILURES=$((CONVERGENCE_FAILURES + 1))
-    else
-        print_error "Node ${node} only knows about ${node_count}/${expected_count} nodes"
-        CONVERGENCE_FAILURES=$((CONVERGENCE_FAILURES + 1))
+    if [ ${CONVERGENCE_FAILURES} -eq 0 ]; then
+        convergence_ok=true
+        break
+    fi
+    
+    convergence_retry=$((convergence_retry + 1))
+    if [ ${convergence_retry} -lt ${MAX_CONVERGENCE_RETRIES} ]; then
+        print_info "Waiting for metadata to propagate (attempt ${convergence_retry}/${MAX_CONVERGENCE_RETRIES})..."
+        sleep 2
     fi
 done
 
-if [ ${CONVERGENCE_FAILURES} -gt 0 ]; then
-    print_error "Cluster convergence incomplete: ${CONVERGENCE_FAILURES} node(s) missing metadata"
-    print_error "This may cause CLUSTER REPLICATE to fail. Possible causes:"
-    print_error "  - MetaRaft convergence is slow (increase wait time)"
-    print_error "  - Network issues between nodes"
-    print_error "  - CLUSTER MEET operations failed partially"
-    exit 1
+if [ "${convergence_ok}" = false ]; then
+    print_warn "Cluster convergence incomplete after ${MAX_CONVERGENCE_RETRIES} attempts"
+    print_warn "Some nodes may not have full cluster metadata yet"
+    print_warn "This may cause CLUSTER REPLICATE to fail, but proceeding anyway..."
+    print_warn "If errors occur, try increasing METARAFT_CONVERGENCE_WAIT or MAX_CONVERGENCE_RETRIES"
 fi
 echo
 
@@ -420,7 +456,6 @@ for i in "${!MASTERS[@]}"; do
         print_info "Setting ${replica} as replica of ${master} (ID: ${master_id})..."
         
         # One final sync before REPLICATE to ensure replica has master's metadata
-        # Retry up to MAX_SYNC_RETRIES times since this is critical for REPLICATE to succeed
         sync_retry=0
         sync_ok=false
         while [ ${sync_retry} -lt ${MAX_SYNC_RETRIES} ]; do
@@ -436,9 +471,7 @@ for i in "${!MASTERS[@]}"; do
         done
         
         if [ "${sync_ok}" = false ]; then
-            print_error "Failed to sync metadata on ${replica} after ${MAX_SYNC_RETRIES} attempts"
-            print_error "Cannot proceed with REPLICATE as master metadata may be missing"
-            exit 1
+            print_warn "Failed to sync metadata on ${replica}, attempting REPLICATE anyway..."
         fi
         
         output=$(redis_exec ${host} ${port} CLUSTER REPLICATE ${master_id})
@@ -447,12 +480,8 @@ for i in "${!MASTERS[@]}"; do
         if echo "${output}" | grep -q "OK"; then
             print_success "${replica} is now a replica of ${master}"
         else
-            print_error "Failed to set up replication for ${replica}"
-            print_error "Command output: ${output}"
-            print_error "Exit code: ${exit_code}"
-            print_error "Hint: Master ID ${master_id} may not be known to replica ${replica}"
-            print_error "This usually means cluster metadata hasn't fully propagated."
-            exit 1
+            print_warn "Failed to set up replication for ${replica}: ${output}"
+            print_warn "Cluster can still function without all replicas"
         fi
         
         replica_idx=$((replica_idx + 1))

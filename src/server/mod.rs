@@ -8,13 +8,14 @@ use crate::command::CommandExecutor;
 use crate::error::Result;
 use crate::observability::Metrics;
 use crate::storage::StorageEngine;
+use tracing::warn;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::{error, info};
 
 #[cfg(feature = "cluster")]
-use crate::cluster::ClusterCommands;
+use crate::cluster::{ClusterCommands, MetaRaftNode, MultiRaftNode, Router};
 
 /// AiKv server
 pub struct Server {
@@ -24,8 +25,13 @@ pub struct Server {
     metrics: Arc<Metrics>,
     monitor_broadcaster: Arc<MonitorBroadcaster>,
     #[cfg(feature = "cluster")]
-    #[allow(dead_code)]
     node_id: u64,
+    #[cfg(feature = "cluster")]
+    meta_raft: Option<Arc<MetaRaftNode>>,
+    #[cfg(feature = "cluster")]
+    multi_raft: Option<Arc<MultiRaftNode>>,
+    #[cfg(feature = "cluster")]
+    router: Option<Arc<Router>>,
 }
 
 impl Server {
@@ -66,7 +72,97 @@ impl Server {
             monitor_broadcaster: Arc::new(MonitorBroadcaster::new()),
             #[cfg(feature = "cluster")]
             node_id,
+            #[cfg(feature = "cluster")]
+            meta_raft: None,
+            #[cfg(feature = "cluster")]
+            multi_raft: None,
+            #[cfg(feature = "cluster")]
+            router: None,
         }
+    }
+
+    /// Initialize cluster components (cluster feature only)
+    #[cfg(feature = "cluster")]
+    pub async fn initialize_cluster(&mut self, data_dir: &str, raft_addr: &str, is_bootstrap: bool, peers: &[String]) -> Result<()> {
+        use openraft::Config as RaftConfig;
+
+        info!(
+            "Initializing cluster: node_id={:040x}, raft_addr={}, bootstrap={}, peers={:?}",
+            self.node_id, raft_addr, is_bootstrap, peers
+        );
+
+        let raft_config = RaftConfig::default();
+
+        // Create MultiRaftNode
+        let mut multi_raft = MultiRaftNode::new(
+            self.node_id,
+            std::path::Path::new(data_dir),
+            raft_config.clone(),
+        )
+        .await
+        .map_err(|e| crate::error::AikvError::Internal(format!("Failed to create MultiRaftNode: {}", e)))?;
+
+        // Initialize MetaRaft
+        multi_raft
+            .init_meta_raft(raft_config)
+            .await
+            .map_err(|e| crate::error::AikvError::Internal(format!("Failed to init MetaRaft: {}", e)))?;
+
+        // If bootstrap node, initialize MetaRaft cluster
+        if is_bootstrap {
+            // For multi-master setup with pre-configured peers, we need a different approach:
+            // All nodes must start BEFORE bootstrap can add them as voters
+            // For now, bootstrap as single node and peers will be added dynamically via CLUSTER MEET
+            // TODO: Implement proper multi-node bootstrap once all nodes are confirmed running
+            
+            if !peers.is_empty() && peers.len() > 1 {
+                // Multi-master mode: bootstrap with just this node first
+                // Other peers will be added as MetaRaft voters when they join via CLUSTER MEET
+                info!("Multi-master mode: Bootstrapping with this node only. Peers will be added when they join: {:?}", peers);
+                warn!("Multi-node bootstrap requires all peers to be running. For now, bootstrapping as single node.");
+                warn!("Use dynamic membership via CLUSTER MEET to add other masters as MetaRaft voters.");
+                
+                multi_raft
+                    .initialize_meta_cluster(vec![(self.node_id, raft_addr.to_string())])
+                    .await
+                    .map_err(|e| {
+                        crate::error::AikvError::Internal(format!("Failed to bootstrap MetaRaft: {}", e))
+                    })?;
+            } else {
+                // Single-node bootstrap (standard behavior)
+                info!("Single-node bootstrap");
+                multi_raft
+                    .initialize_meta_cluster(vec![(self.node_id, raft_addr.to_string())])
+                    .await
+                    .map_err(|e| {
+                        crate::error::AikvError::Internal(format!("Failed to bootstrap MetaRaft: {}", e))
+                    })?;
+            }
+            
+            info!("Cluster bootstrap complete");
+        }
+
+        // Wrap in Arc after initialization
+        let multi_raft = Arc::new(multi_raft);
+
+        // Get MetaRaftNode reference
+        let meta_raft = multi_raft
+            .meta_raft()
+            .ok_or_else(|| crate::error::AikvError::Internal("MetaRaft not initialized".to_string()))?;
+
+        // Get initial cluster metadata from MetaRaft
+        let cluster_meta = meta_raft.get_cluster_meta();
+
+        // Initialize Router with cluster metadata
+        let router = Arc::new(Router::new(cluster_meta));
+
+        self.meta_raft = Some(meta_raft.clone());
+        self.multi_raft = Some(multi_raft);
+        self.router = Some(router);
+
+        info!("Cluster initialization complete");
+
+        Ok(())
     }
 
     /// Get server metrics
@@ -92,9 +188,21 @@ impl Server {
                     // Record connection metrics
                     self.metrics.connections.record_connection();
 
-                    // For now, cluster mode uses the same executor as non-cluster mode
-                    // TODO: Properly initialize ClusterNode and pass to CommandExecutor
-                    let executor = CommandExecutor::with_port(self.storage.clone(), self.port);
+                    // Create executor with or without cluster commands
+                    let mut executor = CommandExecutor::with_port(self.storage.clone(), self.port);
+
+                    #[cfg(feature = "cluster")]
+                    if let (Some(meta_raft), Some(multi_raft), Some(router)) = 
+                        (&self.meta_raft, &self.multi_raft, &self.router) {
+                        // Create ClusterCommands for this connection
+                        let cluster_commands = ClusterCommands::new(
+                            self.node_id,
+                            Arc::clone(meta_raft),
+                            Arc::clone(multi_raft),
+                            Arc::clone(router),
+                        );
+                        executor.set_cluster_commands(cluster_commands);
+                    }
 
                     let metrics = Arc::clone(&self.metrics);
                     let monitor_broadcaster = Arc::clone(&self.monitor_broadcaster);
