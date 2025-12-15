@@ -677,6 +677,112 @@ impl ClusterCommands {
         // In a full implementation, this would clear the read-only flag
         Ok(RespValue::SimpleString("OK".to_string()))
     }
+    /// Handle CLUSTER METARAFT ADDLEARNER command.
+    ///
+    /// Adds a node as a learner to the MetaRaft cluster. This is the first step
+    /// in adding a new voting member to the MetaRaft cluster.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_id` - ID of the node to add
+    /// * `addr` - Raft address of the node (ip:port for gRPC)
+    ///
+    /// # Returns
+    ///
+    /// `OK` on success
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// CLUSTER METARAFT ADDLEARNER 2 127.0.0.1:50052
+    /// ```
+    pub async fn cluster_metaraft_addlearner(
+        &self,
+        node_id: NodeId,
+        addr: String,
+    ) -> Result<RespValue> {
+        use openraft::BasicNode;
+        let node = BasicNode { addr };
+
+        self.meta_raft
+            .add_learner(node_id, node)
+            .await
+            .map_err(|e| {
+                AikvError::Internal(format!("Failed to add MetaRaft learner: {}", e))
+            })?;
+
+        Ok(RespValue::SimpleString("OK".to_string()))
+    }
+
+    /// Handle CLUSTER METARAFT PROMOTE command.
+    ///
+    /// Promotes one or more learners to voting members in the MetaRaft cluster.
+    /// The voters list must include all desired voting members.
+    ///
+    /// # Arguments
+    ///
+    /// * `voters` - Complete list of node IDs that should be voters
+    ///
+    /// # Returns
+    ///
+    /// `OK` on success
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// CLUSTER METARAFT PROMOTE 1 2 3
+    /// ```
+    pub async fn cluster_metaraft_promote(&self, voters: Vec<NodeId>) -> Result<RespValue> {
+        use std::collections::BTreeSet;
+        let members: BTreeSet<NodeId> = voters.into_iter().collect();
+
+        self.meta_raft
+            .change_membership(members, true)
+            .await
+            .map_err(|e| AikvError::Internal(format!("Failed to promote voters: {}", e)))?;
+
+        Ok(RespValue::SimpleString("OK".to_string()))
+    }
+
+    /// Handle CLUSTER METARAFT MEMBERS command.
+    ///
+    /// Returns information about MetaRaft cluster members, including voters and learners.
+    ///
+    /// # Returns
+    ///
+    /// Array of member information
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// CLUSTER METARAFT MEMBERS
+    /// ```
+    pub async fn cluster_metaraft_members(&self) -> Result<RespValue> {
+        // Get Raft metrics to determine current voters and learners
+        let raft = self.meta_raft.raft();
+        let metrics = raft.metrics().borrow().clone();
+
+        let mut members = Vec::new();
+
+        // Add voters
+        let membership = metrics.membership_config.membership();
+        for node_id in membership.voter_ids() {
+            members.push(RespValue::Array(Some(vec![
+                RespValue::BulkString(Some(Bytes::from(format!("{}", node_id)))),
+                RespValue::SimpleString("voter".to_string()),
+            ])));
+        }
+
+        // Add learners
+        for node_id in membership.learner_ids() {
+            members.push(RespValue::Array(Some(vec![
+                RespValue::BulkString(Some(Bytes::from(format!("{}", node_id)))),
+                RespValue::SimpleString("learner".to_string()),
+            ])));
+        }
+
+        Ok(RespValue::Array(Some(members)))
+    }
 }
 
 #[cfg(feature = "cluster")]

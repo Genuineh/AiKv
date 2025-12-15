@@ -202,6 +202,119 @@ impl ClusterNode {
         }
         Ok(())
     }
+
+    /// Add a node as a learner to the MetaRaft cluster.
+    ///
+    /// This is the first step in adding a new node to the MetaRaft voting cluster.
+    /// The node will receive log updates but cannot vote in elections.
+    ///
+    /// # Arguments
+    ///
+    /// * `node_id` - ID of the node to add
+    /// * `addr` - Raft address of the node (ip:port for gRPC)
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Add node 2 as a learner
+    /// cluster_node.add_meta_learner(2, "127.0.0.1:50052".to_string()).await?;
+    /// ```
+    pub async fn add_meta_learner(&self, node_id: NodeId, addr: String) -> Result<()> {
+        let meta_raft = self.meta_raft.as_ref().ok_or_else(|| {
+            crate::error::AikvError::Internal("MetaRaft not initialized".to_string())
+        })?;
+
+        use openraft::BasicNode;
+        let node = BasicNode { addr };
+
+        meta_raft
+            .add_learner(node_id, node)
+            .await
+            .map_err(|e| {
+                crate::error::AikvError::Internal(format!("Failed to add MetaRaft learner: {}", e))
+            })?;
+
+        Ok(())
+    }
+
+    /// Promote a learner to a voting member in the MetaRaft cluster.
+    ///
+    /// After a learner has caught up with the log, this promotes it to a voter.
+    /// The new voters list must include all desired voting members (including the promoted one).
+    ///
+    /// # Arguments
+    ///
+    /// * `voters` - Complete list of node IDs that should be voters
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Promote node 2 to voter (assuming node 1 is already a voter)
+    /// cluster_node.promote_meta_voter(vec![1, 2]).await?;
+    /// ```
+    pub async fn promote_meta_voter(&self, voters: Vec<NodeId>) -> Result<()> {
+        let meta_raft = self.meta_raft.as_ref().ok_or_else(|| {
+            crate::error::AikvError::Internal("MetaRaft not initialized".to_string())
+        })?;
+
+        use std::collections::BTreeSet;
+        let members: BTreeSet<NodeId> = voters.into_iter().collect();
+
+        meta_raft
+            .change_membership(members, true)
+            .await
+            .map_err(|e| {
+                crate::error::AikvError::Internal(format!(
+                    "Failed to promote MetaRaft voter: {}",
+                    e
+                ))
+            })?;
+
+        Ok(())
+    }
+
+    /// Change the MetaRaft cluster membership.
+    ///
+    /// This is a low-level API that directly calls OpenRaft's change_membership.
+    /// Use add_meta_learner and promote_meta_voter for the recommended workflow.
+    ///
+    /// # Arguments
+    ///
+    /// * `voters` - Complete list of node IDs that should be voters
+    /// * `retain_learners` - Whether to keep existing learners
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success
+    pub async fn change_meta_membership(
+        &self,
+        voters: Vec<NodeId>,
+        retain_learners: bool,
+    ) -> Result<()> {
+        let meta_raft = self.meta_raft.as_ref().ok_or_else(|| {
+            crate::error::AikvError::Internal("MetaRaft not initialized".to_string())
+        })?;
+
+        use std::collections::BTreeSet;
+        let members: BTreeSet<NodeId> = voters.into_iter().collect();
+
+        meta_raft
+            .change_membership(members, retain_learners)
+            .await
+            .map_err(|e| {
+                crate::error::AikvError::Internal(format!("Failed to change membership: {}", e))
+            })?;
+
+        Ok(())
+    }
 }
 
 /// Placeholder struct when cluster feature is disabled

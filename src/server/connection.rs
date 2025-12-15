@@ -281,7 +281,7 @@ impl Connection {
                 if command_upper == "CLUSTER" && !args.is_empty() {
                     let subcommand = String::from_utf8_lossy(&args[0]).to_uppercase();
                     // These are async cluster management commands
-                    if matches!(subcommand.as_str(), "MEET" | "FORGET" | "ADDSLOTS" | "DELSLOTS" | "REPLICATE") {
+                    if matches!(subcommand.as_str(), "MEET" | "FORGET" | "ADDSLOTS" | "DELSLOTS" | "REPLICATE" | "METARAFT") {
                         if let Some(cluster_cmds) = self.executor.cluster_commands() {
                             let result = self.handle_async_cluster_command(cluster_cmds, &subcommand, &args[1..]).await;
                             
@@ -461,6 +461,57 @@ impl Connection {
                     .map_err(|_| AikvError::Invalid("Invalid node ID".to_string()))?;
                 
                 cluster_cmds.cluster_replicate(master_id).await
+            }
+            "METARAFT" => {
+                // CLUSTER METARAFT subcommand [args...]
+                if args.is_empty() {
+                    return Err(AikvError::WrongArgCount("CLUSTER METARAFT".to_string()));
+                }
+                
+                let metaraft_subcmd = String::from_utf8_lossy(&args[0]).to_uppercase();
+                match metaraft_subcmd.as_str() {
+                    "ADDLEARNER" => {
+                        // CLUSTER METARAFT ADDLEARNER node_id addr
+                        if args.len() != 3 {
+                            return Err(AikvError::WrongArgCount("CLUSTER METARAFT ADDLEARNER".to_string()));
+                        }
+                        
+                        let node_id = String::from_utf8_lossy(&args[1])
+                            .parse::<u64>()
+                            .map_err(|_| AikvError::Invalid("Invalid node ID".to_string()))?;
+                        let addr = String::from_utf8_lossy(&args[2]).to_string();
+                        
+                        cluster_cmds.cluster_metaraft_addlearner(node_id, addr).await
+                    }
+                    "PROMOTE" => {
+                        // CLUSTER METARAFT PROMOTE node_id [node_id ...]
+                        if args.len() < 2 {
+                            return Err(AikvError::WrongArgCount("CLUSTER METARAFT PROMOTE".to_string()));
+                        }
+                        
+                        let mut voters = Vec::new();
+                        for arg in &args[1..] {
+                            let node_id = String::from_utf8_lossy(arg)
+                                .parse::<u64>()
+                                .map_err(|_| AikvError::Invalid("Invalid node ID".to_string()))?;
+                            voters.push(node_id);
+                        }
+                        
+                        cluster_cmds.cluster_metaraft_promote(voters).await
+                    }
+                    "MEMBERS" => {
+                        // CLUSTER METARAFT MEMBERS
+                        if args.len() != 1 {
+                            return Err(AikvError::WrongArgCount("CLUSTER METARAFT MEMBERS".to_string()));
+                        }
+                        
+                        cluster_cmds.cluster_metaraft_members().await
+                    }
+                    _ => Err(AikvError::InvalidCommand(format!(
+                        "Unknown CLUSTER METARAFT subcommand: {}",
+                        metaraft_subcmd
+                    ))),
+                }
             }
             _ => Err(AikvError::InvalidCommand(format!(
                 "Unknown async CLUSTER subcommand: {}",
