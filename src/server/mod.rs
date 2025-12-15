@@ -109,31 +109,34 @@ impl Server {
 
         // If bootstrap node, initialize MetaRaft cluster
         if is_bootstrap {
-            // Build peer list for MetaRaft initialization
-            let meta_peers = if !peers.is_empty() {
-                // Use pre-configured peers for multi-master setup
-                // Parse peers to extract or generate node IDs
-                // For now, we use incremental node IDs based on port order
-                let mut peer_nodes = Vec::new();
-                for (_idx, peer_addr) in peers.iter().enumerate() {
-                    // Generate consistent node ID based on peer address hash
-                    let node_id = ClusterCommands::generate_node_id_from_addr(peer_addr);
-                    peer_nodes.push((node_id, peer_addr.clone()));
-                }
-                info!("Multi-master bootstrap with {} peers: {:?}", peer_nodes.len(), peer_nodes);
-                peer_nodes
+            // For multi-master setup with pre-configured peers, we need a different approach:
+            // All nodes must start BEFORE bootstrap can add them as voters
+            // For now, bootstrap as single node and peers will be added dynamically via CLUSTER MEET
+            // TODO: Implement proper multi-node bootstrap once all nodes are confirmed running
+            
+            if !peers.is_empty() && peers.len() > 1 {
+                // Multi-master mode: bootstrap with just this node first
+                // Other peers will be added as MetaRaft voters when they join via CLUSTER MEET
+                info!("Multi-master mode: Bootstrapping with this node only. Peers will be added when they join: {:?}", peers);
+                warn!("Multi-node bootstrap requires all peers to be running. For now, bootstrapping as single node.");
+                warn!("Use dynamic membership via CLUSTER MEET to add other masters as MetaRaft voters.");
+                
+                multi_raft
+                    .initialize_meta_cluster(vec![(self.node_id, raft_addr.to_string())])
+                    .await
+                    .map_err(|e| {
+                        crate::error::AikvError::Internal(format!("Failed to bootstrap MetaRaft: {}", e))
+                    })?;
             } else {
-                // Single-node bootstrap (legacy behavior)
-                info!("Single-node bootstrap (legacy mode)");
-                vec![(self.node_id, raft_addr.to_string())]
-            };
-
-            multi_raft
-                .initialize_meta_cluster(meta_peers)
-                .await
-                .map_err(|e| {
-                    crate::error::AikvError::Internal(format!("Failed to bootstrap MetaRaft: {}", e))
-                })?;
+                // Single-node bootstrap (standard behavior)
+                info!("Single-node bootstrap");
+                multi_raft
+                    .initialize_meta_cluster(vec![(self.node_id, raft_addr.to_string())])
+                    .await
+                    .map_err(|e| {
+                        crate::error::AikvError::Internal(format!("Failed to bootstrap MetaRaft: {}", e))
+                    })?;
+            }
             
             info!("Cluster bootstrap complete");
         }
