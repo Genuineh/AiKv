@@ -153,23 +153,28 @@ echo "Waiting for all nodes to be ready..."
 sleep 10
 
 # Check if all nodes are up
-if docker-compose ps | grep -c "Up" | grep -q "6"; then
+RUNNING_COUNT=$(docker-compose ps | grep -c "Up" || true)
+if [ "$RUNNING_COUNT" -eq 6 ]; then
     echo "✅ All 6 nodes are running!"
 else
-    echo "⚠️  Some nodes may not be ready yet. Checking..."
+    echo "⚠️  Some nodes may not be ready yet. Status:"
     docker-compose ps
 fi
 
 echo ""
-echo "To initialize the cluster, run:"
-echo "redis-cli --cluster create \\"
-echo "  127.0.0.1:6379 127.0.0.1:6380 127.0.0.1:6381 \\"
-echo "  127.0.0.1:6382 127.0.0.1:6383 127.0.0.1:6384 \\"
-echo "  --cluster-replicas 1"
+echo "================================"
+echo "Next Steps:"
+echo "================================"
+echo "1. Initialize the cluster with dynamic MetaRaft membership:"
+echo "   ./init-cluster.sh"
 echo ""
-echo "To check cluster status:"
-echo "  redis-cli -c -p 6379 CLUSTER INFO"
-echo "  redis-cli -c -p 6379 CLUSTER NODES"
+echo "2. After initialization, connect with:"
+echo "   redis-cli -c -h 127.0.0.1 -p 6379"
+echo ""
+echo "3. Check cluster status:"
+echo "   redis-cli -p 6379 CLUSTER INFO"
+echo "   redis-cli -p 6379 CLUSTER NODES"
+echo "   redis-cli -p 6379 CLUSTER METARAFT MEMBERS"
 "#;
     fs::write(output_dir.join("start.sh"), start_script)?;
 
@@ -183,22 +188,122 @@ echo "✅ AiKv cluster stopped"
 "#;
     fs::write(output_dir.join("stop.sh"), stop_script)?;
 
-    let init_script = r#"#!/bin/bash
-# Initialize AiKv cluster
-
-echo "Initializing AiKv cluster..."
-
-redis-cli --cluster create \
-  127.0.0.1:6379 127.0.0.1:6380 127.0.0.1:6381 \
-  127.0.0.1:6382 127.0.0.1:6383 127.0.0.1:6384 \
-  --cluster-replicas 1
-
-echo ""
-echo "Cluster initialization complete!"
-echo ""
-echo "Checking cluster status..."
-redis-cli -c -p 6379 CLUSTER INFO
-"#;
+    let init_script = concat!(
+        "#!/bin/bash\n",
+        "# Initialize AiKv cluster with dynamic MetaRaft membership\n",
+        "# Uses the new learner → voter promotion workflow\n",
+        "\n",
+        "set -e\n",
+        "\n",
+        "echo \"================================\"\n",
+        "echo \"AiKv Cluster Initialization\"\n",
+        "echo \"================================\"\n",
+        "echo \"\"\n",
+        "\n",
+        "# Wait for all nodes to be ready\n",
+        "echo \"Step 1: Waiting for all nodes to be ready...\"\n",
+        "for i in 1 2 3 4 5 6; do\n",
+        "    port=$((6378 + i))\n",
+        "    echo \"  Checking node $i (port $port)...\"\n",
+        "    for retry in {1..30}; do\n",
+        "        if redis-cli -h 127.0.0.1 -p $port PING >/dev/null 2>&1; then\n",
+        "            echo \"  ✓ Node $i is ready\"\n",
+        "            break\n",
+        "        fi\n",
+        "        if [ $retry -eq 30 ]; then\n",
+        "            echo \"  ✗ Node $i failed to start\"\n",
+        "            exit 1\n",
+        "        fi\n",
+        "        sleep 1\n",
+        "    done\n",
+        "done\n",
+        "\n",
+        "echo \"\"\n",
+        "echo \"Step 2: Bootstrap node 1 already initialized as single-node MetaRaft cluster\"\n",
+        "echo \"  Verifying bootstrap node...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6379 CLUSTER MYID\n",
+        "\n",
+        "echo \"\"\n",
+        "echo \"Step 3: Adding nodes 2 and 3 as MetaRaft learners...\"\n",
+        "echo \"  Adding node 2...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6379 CLUSTER METARAFT ADDLEARNER 2 aikv2:50052\n",
+        "\n",
+        "echo \"  Adding node 3...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6379 CLUSTER METARAFT ADDLEARNER 3 aikv3:50053\n",
+        "\n",
+        "echo \"  Waiting for learners to sync logs...\"\n",
+        "sleep 3\n",
+        "\n",
+        "echo \"\"\n",
+        "echo \"Step 4: Promoting learners to voters...\"\n",
+        "echo \"  Promoting nodes 2 and 3 to voters...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6379 CLUSTER METARAFT PROMOTE 1 2 3\n",
+        "\n",
+        "echo \"  Waiting for membership change to complete...\"\n",
+        "sleep 2\n",
+        "\n",
+        "echo \"\"\n",
+        "echo \"Step 5: Verifying MetaRaft membership...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6379 CLUSTER METARAFT MEMBERS\n",
+        "\n",
+        "echo \"\"\n",
+        "echo \"Step 6: Adding nodes to cluster metadata...\"\n",
+        "echo \"  Meeting node 2...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6379 CLUSTER MEET 127.0.0.1 6380 2\n",
+        "\n",
+        "echo \"  Meeting node 3...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6379 CLUSTER MEET 127.0.0.1 6381 3\n",
+        "\n",
+        "echo \"  Meeting node 4...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6379 CLUSTER MEET 127.0.0.1 6382 4\n",
+        "\n",
+        "echo \"  Meeting node 5...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6379 CLUSTER MEET 127.0.0.1 6383 5\n",
+        "\n",
+        "echo \"  Meeting node 6...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6379 CLUSTER MEET 127.0.0.1 6384 6\n",
+        "\n",
+        "echo \"  Waiting for cluster metadata to sync...\"\n",
+        "sleep 2\n",
+        "\n",
+        "echo \"\"\n",
+        "echo \"Step 7: Assigning slots to master nodes...\"\n",
+        "echo \"  Assigning slots 0-5460 to node 1...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6379 CLUSTER ADDSLOTS $(seq 0 5460)\n",
+        "\n",
+        "echo \"  Assigning slots 5461-10922 to node 2...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6380 CLUSTER ADDSLOTS $(seq 5461 10922)\n",
+        "\n",
+        "echo \"  Assigning slots 10923-16383 to node 3...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6381 CLUSTER ADDSLOTS $(seq 10923 16383)\n",
+        "\n",
+        "echo \"\"\n",
+        "echo \"Step 8: Setting up replication (nodes 4-6 as replicas)...\"\n",
+        "echo \"  Node 4 replicating node 1...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6382 CLUSTER REPLICATE $(redis-cli -h 127.0.0.1 -p 6379 CLUSTER MYID)\n",
+        "\n",
+        "echo \"  Node 5 replicating node 2...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6383 CLUSTER REPLICATE $(redis-cli -h 127.0.0.1 -p 6380 CLUSTER MYID)\n",
+        "\n",
+        "echo \"  Node 6 replicating node 3...\"\n",
+        "redis-cli -h 127.0.0.1 -p 6384 CLUSTER REPLICATE $(redis-cli -h 127.0.0.1 -p 6381 CLUSTER MYID)\n",
+        "\n",
+        "echo \"\"\n",
+        "echo \"================================\"\n",
+        "echo \"✅ Cluster initialization complete!\"\n",
+        "echo \"================================\"\n",
+        "echo \"\"\n",
+        "echo \"Cluster Status:\"\n",
+        "redis-cli -h 127.0.0.1 -p 6379 CLUSTER INFO\n",
+        "echo \"\"\n",
+        "echo \"Cluster Nodes:\"\n",
+        "redis-cli -h 127.0.0.1 -p 6379 CLUSTER NODES\n",
+        "echo \"\"\n",
+        "echo \"MetaRaft Members:\"\n",
+        "redis-cli -h 127.0.0.1 -p 6379 CLUSTER METARAFT MEMBERS\n",
+        "echo \"\"\n",
+        "echo \"You can now connect with: redis-cli -c -h 127.0.0.1 -p 6379\"\n",
+    );
     fs::write(output_dir.join("init-cluster.sh"), init_script)?;
 
     // Make scripts executable on Unix
@@ -296,14 +401,14 @@ max-len = 128
 }
 
 fn generate_single_readme() -> String {
-    r#"# AiKv Single Node Deployment
+    "# AiKv Single Node Deployment
 
 This directory contains the deployment files for a single-node AiKv instance.
 
 ## Prerequisites
 
 - Docker and Docker Compose installed
-- AiKv Docker image built (`docker build -t aikv:latest .` from AiKv project root)
+- AiKv Docker image built (docker build -t aikv:latest . from AiKv project root)
 
 ## Files
 
@@ -316,54 +421,36 @@ This directory contains the deployment files for a single-node AiKv instance.
 
 ## Quick Start
 
-```bash
-# Start AiKv
-./start.sh
-
-# Or manually
-docker-compose up -d
-```
+Start AiKv: ./start.sh
+Or manually: docker-compose up -d
 
 ## Connecting
 
-```bash
-# Using redis-cli
-redis-cli -h 127.0.0.1 -p 6379
+Using redis-cli:
+  redis-cli -h 127.0.0.1 -p 6379
 
-# Test connection
-redis-cli PING
-```
+Test connection:
+  redis-cli PING
 
 ## Configuration
 
-Edit `aikv.toml` to customize:
+Edit aikv.toml to customize:
 
-- **Storage Engine**: `memory` (fast) or `aidb` (persistent)
-- **Port**: Default 6379
-- **Log Level**: trace, debug, info, warn, error
+- Storage Engine: memory (fast) or aidb (persistent)
+- Port: Default 6379
+- Log Level: trace, debug, info, warn, error
 
 ## Monitoring
 
-```bash
-# View logs
-docker-compose logs -f
-
-# Check status
-docker-compose ps
-```
+View logs: docker-compose logs -f
+Check status: docker-compose ps
 
 ## Stopping
 
-```bash
-./stop.sh
-
-# Or manually
-docker-compose down
-
-# Remove data volumes
-docker-compose down -v
-```
-"#
+Stop: ./stop.sh
+Or manually: docker-compose down
+Remove data volumes: docker-compose down -v
+"
     .to_string()
 }
 
@@ -554,18 +641,6 @@ fn generate_cluster_node_config_with_engine(node_num: u8, storage_engine: &str) 
     // Use container hostname for Docker deployments
     let raft_address = format!("aikv{}:{}", node_num, raft_port);
     
-    // For bootstrap node (node 1), add pre-configured peers for multi-master setup
-    // List first 3 nodes as master peers
-    let peers_config = if node_num == 1 {
-        let peer_list = (1..=3)
-            .map(|n| format!("\"aikv{}:{}\"", n, 50050 + n as u16))
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!("peers = [{}]", peer_list)
-    } else {
-        "peers = []".to_string()
-    };
-    
     format!(
         r#"# AiKv Cluster Node {} Configuration
 # Generated by aikv-tool
@@ -578,7 +653,6 @@ port = {}
 enabled = true
 raft_address = "{}"
 is_bootstrap = {}
-{}
 
 [storage]
 engine = "{}"
@@ -592,22 +666,26 @@ level = "info"
 log-slower-than = 10000
 max-len = 128
 "#,
-        node_num, port, raft_address, is_bootstrap, peers_config, storage_engine
+        node_num, port, raft_address, is_bootstrap, storage_engine
     )
 }
 
 fn generate_cluster_readme() -> String {
-    r#"# AiKv Cluster Deployment
+    "# AiKv Cluster Deployment
 
 This directory contains deployment files for a 6-node AiKv cluster (3 masters, 3 replicas).
+
+## Architecture
+
+- **Node 1-3**: Master nodes with MetaRaft voters
+- **Node 4-6**: Replica nodes
+- **MetaRaft**: Distributed consensus for cluster metadata
+- **Slot Distribution**: 16384 slots evenly distributed across 3 masters
 
 ## Prerequisites
 
 - Docker and Docker Compose installed
-- AiKv cluster Docker image built:
-  ```bash
-  docker build -t aikv:cluster --build-arg FEATURES=cluster .
-  ```
+- AiKv cluster Docker image built
 
 ## Files
 
@@ -617,100 +695,81 @@ This directory contains deployment files for a 6-node AiKv cluster (3 masters, 3
 | aikv-node[1-6].toml | Per-node configuration files |
 | start.sh | Start cluster script |
 | stop.sh | Stop cluster script |
-| init-cluster.sh | Initialize cluster script |
+| init-cluster.sh | Initialize cluster with dynamic MetaRaft membership |
 
 ## Quick Start
 
-```bash
-# 1. Start all nodes
-./start.sh
+1. Start all nodes:
+   ./start.sh
 
-# 2. Wait for nodes to be ready, then initialize cluster
-./init-cluster.sh
-```
+2. Wait for nodes to be ready (~10 seconds)
 
-## Manual Steps
+3. Initialize cluster with dynamic MetaRaft membership:
+   ./init-cluster.sh
 
-```bash
-# Start cluster
-docker-compose up -d
+## Initialization Process
 
-# Initialize cluster (after all nodes are up)
-redis-cli --cluster create \
-  127.0.0.1:6379 127.0.0.1:6380 127.0.0.1:6381 \
-  127.0.0.1:6382 127.0.0.1:6383 127.0.0.1:6384 \
-  --cluster-replicas 1
+The init-cluster.sh script uses the new dynamic MetaRaft membership approach:
 
-# Check cluster status
-redis-cli -c -p 6379 CLUSTER INFO
-redis-cli -c -p 6379 CLUSTER NODES
-```
+1. **Wait for all nodes**: Ensures all 6 nodes are running and healthy
+2. **Bootstrap verification**: Confirms node 1 is initialized as single-node MetaRaft cluster
+3. **Add learners**: Adds nodes 2 and 3 as MetaRaft learners
+4. **Promote to voters**: Promotes learners to voting members using Joint Consensus
+5. **Cluster metadata**: Uses CLUSTER MEET to add all nodes to cluster metadata
+6. **Slot assignment**: Distributes 16384 slots evenly across 3 masters
+7. **Replication setup**: Configures nodes 4-6 as replicas
 
-## Connecting
+### Why Dynamic Membership?
 
-```bash
-# Connect with cluster mode
-redis-cli -c -p 6379
+This cluster uses **dynamic MetaRaft membership** instead of pre-configured peer lists:
 
-# Test with hash tags (ensures keys go to same slot)
-redis-cli -c -p 6379 SET {user:1000}:name "John"
-redis-cli -c -p 6379 SET {user:1000}:age "30"
-```
+- **No simultaneous startup required**: Nodes can join incrementally
+- **Zero-downtime changes**: Uses OpenRaft Joint Consensus
+- **Flexible scaling**: Easy to add/remove MetaRaft voters at runtime
 
-## Node Ports
-
-| Node | Data Port | Cluster Port | Role |
-|------|-----------|--------------|------|
-| aikv1 | 6379 | 16379 | Master |
-| aikv2 | 6380 | 16380 | Master |
-| aikv3 | 6381 | 16381 | Master |
-| aikv4 | 6382 | 16382 | Replica |
-| aikv5 | 6383 | 16383 | Replica |
-| aikv6 | 6384 | 16384 | Replica |
+See docs/METARAFT_DYNAMIC_MEMBERSHIP.md for details.
 
 ## Cluster Operations
 
-```bash
-# Check cluster info
-redis-cli -c -p 6379 CLUSTER INFO
+### Check cluster status
+redis-cli -c -h 127.0.0.1 -p 6379 CLUSTER INFO
+redis-cli -c -h 127.0.0.1 -p 6379 CLUSTER NODES
 
-# View nodes
-redis-cli -c -p 6379 CLUSTER NODES
+### Check MetaRaft membership
+redis-cli -c -h 127.0.0.1 -p 6379 CLUSTER METARAFT MEMBERS
 
-# View slot distribution
-redis-cli -c -p 6379 CLUSTER SLOTS
+### Connect to cluster
+redis-cli -c -h 127.0.0.1 -p 6379
 
-# Get key slot
-redis-cli -c -p 6379 CLUSTER KEYSLOT mykey
+## Port Mapping
 
-# Manual failover (on replica node)
-redis-cli -p 6382 CLUSTER FAILOVER
-```
+| Node | Redis Port | Raft Port |
+|------|------------|-----------|
+| aikv1 | 6379 | 50051 |
+| aikv2 | 6380 | 50052 |
+| aikv3 | 6381 | 50053 |
+| aikv4 | 6382 | 50054 |
+| aikv5 | 6383 | 50055 |
+| aikv6 | 6384 | 50056 |
 
-## Monitoring
+## Troubleshooting
 
-```bash
-# View all logs
-docker-compose logs -f
+If init-cluster.sh fails:
 
-# View specific node logs
-docker-compose logs -f aikv1
+1. Check all nodes are running: docker-compose ps
+2. Check node logs: docker-compose logs aikv1
+3. Reset and try again:
+   ./stop.sh
+   docker-compose down -v
+   ./start.sh
+   sleep 10
+   ./init-cluster.sh
 
-# Check node status
-docker-compose ps
-```
+## Additional Resources
 
-## Stopping
-
-```bash
-./stop.sh
-
-# Or manually
-docker-compose down
-
-# Remove all data
-docker-compose down -v
-```
-"#
-    .to_string()
+- AiKv Documentation: ../../README.md
+- Cluster Architecture: ../../docs/ARCHITECTURE.md
+- MetaRaft Dynamic Membership: ../../docs/METARAFT_DYNAMIC_MEMBERSHIP.md
+- Cluster API Reference: ../../docs/AIDB_CLUSTER_API_REFERENCE.md
+".to_string()
 }
