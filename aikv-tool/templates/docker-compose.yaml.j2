@@ -1,0 +1,28 @@
+services:
+{% for node in nodes %}
+  {{ node.name }}:
+    image: {{ image }}
+    user: root
+    container_name: {{ node.name }}
+    hostname: {{ node.name }}
+    command: ["--config", "/app/config/aikv.toml"]
+    ports:
+      - "{{ node.port }}:{{ node.port }}"
+      - "{{ node.raft_port }}:{{ node.raft_port }}"
+    volumes:
+      - {{ node.name }}-data:/app/data
+      - {{ node.name }}-logs:/app/logs
+      - ./config/{{ node.name }}.toml:/app/config/aikv.toml:ro
+    networks:
+      - aikv-cluster
+{% endfor %}
+
+volumes:
+{% for node in nodes %}
+  {{ node.name }}-data:
+  {{ node.name }}-logs:
+{% endfor %}
+
+networks:
+  aikv-cluster:
+    name: aikv-cluster-network
