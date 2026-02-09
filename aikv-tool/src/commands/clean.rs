@@ -9,9 +9,14 @@ use crate::paths;
 use crate::resources::config::AkConfig;
 use crate::runtime::docker;
 use crate::utils::helpers::{get_mode_name, get_state_subdir};
-use crate::CleanArgs;
+use crate::{CleanArgs, RunMode};
 
-pub async fn execute(args: CleanArgs, is_cluster: bool, _config: &AkConfig) -> anyhow::Result<()> {
+pub async fn execute(
+    args: CleanArgs,
+    mode: Option<RunMode>,
+    is_cluster: bool,
+    config: &AkConfig,
+) -> anyhow::Result<()> {
     if !args.force {
         // 检查是否有服务正在运行
         let run_dir = paths::run_dir()?;
@@ -72,6 +77,8 @@ pub async fn execute(args: CleanArgs, is_cluster: bool, _config: &AkConfig) -> a
     let run_dir = paths::run_dir()?;
     let log_dir = paths::log_dir()?;
 
+    let resolved_mode = mode.unwrap_or(config.defaults.mode);
+
     if args.all {
         // 重置: 除 config 外全部清理, 如同新安装
         if run_dir.exists() {
@@ -85,15 +92,24 @@ pub async fn execute(args: CleanArgs, is_cluster: bool, _config: &AkConfig) -> a
             println!("   Cleared cache and logs (~/.cache/ak/logs/)");
         }
     } else {
-        // 默认: 当前模式运行状态 + 日志
-        if run_dir.exists() {
-            let target_dir = run_dir.join(get_state_subdir(is_cluster));
-            if target_dir.exists() {
-                fs::remove_dir_all(&target_dir)?;
-                println!(
-                    "   Cleared run state for current mode ({})",
-                    get_mode_name(is_cluster)
-                );
+        // 按 -m/--mode 清理当前目标
+        match resolved_mode {
+            RunMode::Bin => {
+                let pid_path = run_dir.join(files::PID_FILE);
+                if pid_path.exists() {
+                    let _ = fs::remove_file(&pid_path);
+                    println!("   Cleared run state (local binary)");
+                }
+            }
+            RunMode::Docker => {
+                let target_dir = run_dir.join(get_state_subdir(is_cluster));
+                if target_dir.exists() {
+                    fs::remove_dir_all(&target_dir)?;
+                    println!(
+                        "   Cleared run state for {}",
+                        get_mode_name(is_cluster)
+                    );
+                }
             }
         }
         if log_dir.exists() {
@@ -103,7 +119,7 @@ pub async fn execute(args: CleanArgs, is_cluster: bool, _config: &AkConfig) -> a
         }
     }
 
-    // 清理 PID 文件(仅当前模式或 all 时 run_dir 已清空)
+    // 清理 PID 文件 (all 时 run_dir 已清空; 非 all 时 bin 分支已删或此处删残留)
     let pid_path = run_dir.join(files::PID_FILE);
     if pid_path.exists() {
         let _ = fs::remove_file(pid_path);

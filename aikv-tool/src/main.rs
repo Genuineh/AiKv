@@ -90,7 +90,15 @@ async fn main() -> anyhow::Result<()> {
 
         Commands::Clean(args) => {
             let is_cluster = args.topo.unwrap_or(config.defaults.topo).is_cluster();
-            commands::clean::execute(args, is_cluster, &config).await?;
+            let mode = args.mode.or(Some(config.defaults.mode));
+            commands::clean::execute(args, mode, is_cluster, &config).await?;
+        }
+
+        Commands::Quick(args) => {
+            let root = config.detect_project_root()?;
+            let mode = args.mode.unwrap_or(config.defaults.mode);
+            let is_cluster = args.topo.unwrap_or(config.defaults.topo).is_cluster();
+            commands::quick::execute(args, mode, is_cluster, &config, &root).await?;
         }
     }
 
@@ -123,6 +131,9 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Build and start in one shot (build then up)
+    Quick(QuickArgs),
+
     /// Build binary or Docker image
     #[command(visible_alias = "b")]
     Build(BuildArgs),
@@ -148,6 +159,43 @@ pub enum Commands {
 
     /// Clean temp data and logs
     Clean(CleanArgs),
+}
+
+// ─── Quick ────────────────────────────────────────────────
+
+#[derive(Args)]
+pub struct QuickArgs {
+    /// Run target (bin|docker)
+    #[arg(short = 'm', long, value_enum)]
+    pub mode: Option<RunMode>,
+
+    /// Topology (single|cluster)
+    #[arg(short = 't', long, value_enum)]
+    pub topo: Option<Topology>,
+
+    /// Total nodes (node-only mode, conflicts with shards/replicas)
+    #[arg(short = 'n', long, conflicts_with_all = ["shards", "replicas"])]
+    pub nodes: Option<u32>,
+
+    /// Number of shards (masters)
+    #[arg(short = 's', long, conflicts_with = "nodes")]
+    pub shards: Option<u32>,
+
+    /// Replicas per shard (requires shards)
+    #[arg(short = 'r', long, conflicts_with = "nodes", requires = "shards")]
+    pub replicas: Option<u32>,
+
+    /// Docker image (build + up)
+    #[arg(short = 'i', long)]
+    pub image: Option<String>,
+
+    /// Force rebuild before start (bin: cargo clean; docker: overwrite image)
+    #[arg(short = 'f', long)]
+    pub force: bool,
+
+    /// Build in Release mode (bin only)
+    #[arg(long)]
+    pub release: bool,
 }
 
 // ─── Build ────────────────────────────────────────────────
@@ -234,7 +282,7 @@ pub struct RestartArgs {
     pub topo: Option<Topology>,
 
     /// Full reset (clean data then start)
-    #[arg(long)]
+    #[arg(short = 'i', long)]
     pub init: bool,
 }
 
@@ -263,6 +311,10 @@ pub struct LogsArgs {
 
 #[derive(Args)]
 pub struct PsArgs {
+    /// Run target (bin|docker), omit to show both
+    #[arg(short = 'm', long, value_enum)]
+    pub mode: Option<RunMode>,
+
     /// Topology (single|cluster)
     #[arg(short = 't', long, value_enum)]
     pub topo: Option<Topology>,
@@ -324,6 +376,10 @@ pub struct ConfigSetArgs {
 
 #[derive(Args)]
 pub struct CleanArgs {
+    /// Run target (bin|docker), omit to use config default when cleaning current scope
+    #[arg(short = 'm', long, value_enum)]
+    pub mode: Option<RunMode>,
+
     /// Topology (single|cluster)
     #[arg(short = 't', long, value_enum)]
     pub topo: Option<Topology>,

@@ -8,5 +8,6 @@ pub mod config;
 pub mod down;
 pub mod logs;
 pub mod ps;
+pub mod quick;
 pub mod restart;
 pub mod up;

@@ -46,9 +46,15 @@ pub async fn execute(
         )
         .await?;
 
-        // 2. 清理配置(当前模式 + 日志)
+        // 2. 清理当前模式状态 + 日志
         clean::execute(
-            CleanArgs { topo: None, all: false, force: true },
+            CleanArgs {
+                mode: Some(mode),
+                topo: None,
+                all: false,
+                force: true,
+            },
+            Some(mode),
             is_cluster,
             config,
         )

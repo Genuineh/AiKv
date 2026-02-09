@@ -8,15 +8,16 @@ use crate::paths;
 use crate::resources::config::AkConfig;
 use crate::resources::services::ServicesStatus;
 use crate::utils::helpers::{get_mode_name, get_state_subdir};
-use crate::{OutputFormat, PsArgs};
+use crate::{OutputFormat, PsArgs, RunMode};
 
 pub async fn execute(
     args: PsArgs,
     is_cluster: bool,
     _config: &AkConfig,
 ) -> anyhow::Result<()> {
-    // YAML 格式: 直接输出 docker-compose.yaml 原文
-    if args.output == OutputFormat::Yaml {
+    // YAML 格式: 直接输出 docker-compose.yaml 原文（仅 docker 且未指定 mode 或 mode=docker 时）
+    let yaml_is_docker_only = args.mode.map(|m| m == RunMode::Docker).unwrap_or(true);
+    if args.output == OutputFormat::Yaml && yaml_is_docker_only {
         let run_dir = paths::run_dir()?;
         let state_subdir = get_state_subdir(is_cluster);
         let staged_compose = run_dir
@@ -30,7 +31,15 @@ pub async fn execute(
     }
 
     // 获取服务状态
-    let status = ServicesStatus::get(is_cluster).await?;
+    let mut status = ServicesStatus::get(is_cluster).await?;
+
+    // 按 -m/--mode 过滤
+    if let Some(mode) = args.mode {
+        match mode {
+            RunMode::Bin => status.docker.clear(),
+            RunMode::Docker => status.bin = None,
+        }
+    }
 
     match args.output {
         OutputFormat::Json => {

@@ -27,7 +27,8 @@ fn help_flag() {
         .stdout(predicate::str::contains("logs"))
         .stdout(predicate::str::contains("ps"))
         .stdout(predicate::str::contains("config"))
-        .stdout(predicate::str::contains("clean"));
+        .stdout(predicate::str::contains("clean"))
+        .stdout(predicate::str::contains("quick"));
 }
 
 #[test]
@@ -83,7 +84,8 @@ fn restart_help() {
         .assert()
         .success()
         .stdout(predicate::str::contains("--mode"))
-        .stdout(predicate::str::contains("--init"));
+        .stdout(predicate::str::contains("--init"))
+        .stdout(predicate::str::contains("-i")); // short for --init
 }
 
 #[test]
@@ -102,6 +104,7 @@ fn ps_help() {
         .args(["ps", "--help"])
         .assert()
         .success()
+        .stdout(predicate::str::contains("--mode"))
         .stdout(predicate::str::contains("--topo"))
         .stdout(predicate::str::contains("--output"));
 }
@@ -124,8 +127,25 @@ fn clean_help() {
         .args(["clean", "--help"])
         .assert()
         .success()
+        .stdout(predicate::str::contains("--mode"))
         .stdout(predicate::str::contains("--all"))
         .stdout(predicate::str::contains("--force"));
+}
+
+#[test]
+fn quick_help() {
+    ak_cmd()
+        .args(["quick", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--mode"))
+        .stdout(predicate::str::contains("--topo"))
+        .stdout(predicate::str::contains("--nodes"))
+        .stdout(predicate::str::contains("--shards"))
+        .stdout(predicate::str::contains("--replicas"))
+        .stdout(predicate::str::contains("--image"))
+        .stdout(predicate::str::contains("--force"))
+        .stdout(predicate::str::contains("--release"));
 }
 
 // ─── 错误处理 ──────────────────────────────────────────────
@@ -158,6 +178,33 @@ fn build_invalid_mode() {
 fn up_invalid_topo() {
     ak_cmd()
         .args(["up", "--topo", "distributed"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("distributed"));
+}
+
+#[test]
+fn quick_invalid_mode() {
+    ak_cmd()
+        .args(["quick", "--mode", "invalid"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid"));
+}
+
+#[test]
+fn quick_invalid_topo() {
+    ak_cmd()
+        .args(["quick", "--topo", "distributed"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("distributed"));
+}
+
+#[test]
+fn build_invalid_topo() {
+    ak_cmd()
+        .args(["build", "--topo", "distributed"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("distributed"));
@@ -248,6 +295,23 @@ fn up_nodes_conflicts_with_shards() {
 fn up_replicas_requires_shards() {
     ak_cmd()
         .args(["up", "--replicas", "1"])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn quick_nodes_conflicts_with_shards() {
+    ak_cmd()
+        .args(["quick", "--nodes", "3", "--shards", "3"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn quick_replicas_requires_shards() {
+    ak_cmd()
+        .args(["quick", "--replicas", "1"])
         .assert()
         .failure();
 }
