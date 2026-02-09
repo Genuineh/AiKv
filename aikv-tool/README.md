@@ -1,28 +1,54 @@
-# ak - AiKv 现代分布式 KV 存储管理工具
+## 现代分布式 AiKv 存储管理工具
 
-旨在提供类 Docker/Kubectl 的极致操作体验, 支持从本地开发, 集群部署到生产运维的全生命周期管理. 严格遵循 XDG 规范. 
+本仓库为 **aikv-tool**, 在不破坏 [aikv-toolchain](https://github.com/AiKv/aikv-toolchain) 原工具的前提下, 对工具链进行重构。当前以 **CLI 为主**, 等功能完善后再实现 TUI。
 
-## 特性
-
-- 类 Docker/Kubectl 的命令行体验
-- 全局 `-m/--mode` 选项, 类似 kubectl 的 `-n/--namespace`
-- 支持本地二进制和 Docker 容器两种运行模式
-- 支持单节点和集群部署
-- 配置驱动, 默认值来自配置文件
-- 严格遵循 XDG Base Directory 规范
-
-## 安装
-
-```bash
-# 从源码编译安装
-cd aikv-tool
-cargo build --release
-
-# 将二进制文件添加到 PATH
-cp target/release/ak ~/.local/bin/
-```
+旨在提供类 **Docker / kubectl** 的极致操作体验, 支持从本地开发、集群部署到生产运维的全生命周期管理, **严格遵循 XDG Base Directory 规范**。
 
 ## 快速开始
+
+```bash
+# 安装工具
+cargo install --path aikv-tool
+
+# 快速构建和部署服务
+ak quick
+```
+
+```bash  
+Usage:  ak quick [OPTIONS]
+
+Options: 
+  -m,  --mode <MODE>    运行目标: bin 或 docker
+  -t,  --topo <TOPO>    部署模式: single 或 cluster
+  -n,  --nodes <N>       节点总数(纯节点模式, 与 -s/-r 互斥)
+  -s,  --shards <N>     分片数
+  -r,  --replicas <N>   每分片副本数(需与 -s 同用)
+  -i,  --image <IMAGE>  Docker 镜像(build + up 共用)
+  -f,  --force          强制重新部署: down -v → clean → build(force) → up
+       --release        Release 模式构建(仅 bin)
+  -h,  --help           查看帮助
+```
+
+#### 示例
+
+```bash
+# 使用配置默认 mode/topo，构建并启动
+ak quick
+
+# 指定 docker 单节点
+ak quick -m docker -t single
+
+# 指定 docker 集群: 3 分片 1 副本
+ak quick -m docker -t cluster -s 3 -r 1
+
+# 纯节点模式 5 节点
+ak quick -m docker -t cluster -n 5
+
+# 强制重新部署(先停服务、清状态，再构建并启动)
+ak quick -f
+```
+
+## 常用命令
 
 ```bash
 # 构建 AiKv 二进制
@@ -32,7 +58,7 @@ ak build
 ak up
 
 # 查看服务状态
-ak get services
+ak ps
 
 # 查看日志
 ak logs -f
@@ -41,96 +67,70 @@ ak logs -f
 ak down
 ```
 
-## 全局选项
-
-| 选项 | 说明 |
-|------|------|
-| `-m, --mode <MODE>` | 运行模式: `bin` 或 `docker`(默认读取配置文件) |
-| `-v, --version` | 显示版本信息 |
-| `-h, --help` | 显示帮助信息 |
-
-### 模式选项说明
-
-`-m/--mode` 是全局选项, 类似 kubectl 的 `-n/--namespace`, 用于指定运行模式: 
-
-```bash
-# 使用配置文件默认模式
-ak up
-
-# 显式指定 docker 模式
-ak up -m docker
-
-# 显式指定 bin 模式
-ak logs -m bin -f
-```
-
-## XDG 目录规范
-
-ak 严格遵循 [XDG Base Directory](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html) 规范: 
-
-| 用途 | 路径 | 说明 |
-|------|------|------|
-| 配置文件 | `~/.config/ak/ak.toml` | 全局配置 |
-| 运行状态 | `~/.local/state/ak/run/` | PID 文件, 动态生成的 Compose 文件 |
-| 缓存/日志 | `~/.cache/ak/logs/` | 工具日志和服务日志 |
-
 ## 配置文件
+
+**为了方便使用和保持灵活，给命令提供了配置文件，用于设置一些默认值。**
+
+>大部分命令支持 -m/--mode 和 -t/--topo 参数，类似 kubectl 中的 -n/--namespace。
+>这两个参数主要用于选择 aikv 服务是以二进制程序还是容器运行，单机部署还是集群部署。
+>在配置文件中设定后 quick,build,up,down,restart 等相关命令默认使用该参数模式。
+
+ak 命令参数优先级说明:
+
+1. 明文执行
+2. 配置文件参数
+3. 命令默认值
 
 ak 按以下优先级加载配置: 
 
-1. 当前目录向上查找的 `ak.toml`(项目级配置)
-2. `~/.config/ak/ak.toml`(全局配置)
-
-### 配置文件示例
+4. 当前目录向上查找的 `ak.toml`(项目级配置)
+5. `~/.config/ak/ak.toml`(全局配置, XDG)
 
 ```toml
-# ak.toml([package]=配置元数据, [project]=AiKv 项目路径, [server]=端口与 aikv 对齐)
-
-[package]
-version = 1
+schema_version = 1 # 配置格式版本
 
 [project]
-root = "/path/to/aikv"
+root = ".." # aikv 项目路径
 
-[server]
-port = 6379
-
-[build]
-release = false
-cluster = false
-
-[docker]
-image = "aikv:latest"
-
-[run]
-mode = "bin"
-topo = "single"
+[defaults]
+mode = "docker" # 使用的服务模式
+topo = "single" # 服务的部署模式
+port = 6379     # 使用的默认端口
+docker_image = "aikv:latest" # 使用的默认镜像
 ```
 
 ---
 
 ## 命令参考
 
-### `ak build` - 编译源代码或构建 Docker 镜像
-
-**别名:** `ak b`
-
 ```bash
-ak build [OPTIONS]
+Usage:  ak <COMMAND>
+
+Commands: 
+  quick    构建并部署服务
+  build    构建程序或镜像
+  up       启动服务
+  down     删除服务
+  restart  重启服务
+  logs     查看服务日志
+  ps       查看服务
+  config   设置配置
+  clean    清除运行时状态和日志
 ```
 
-构建目标由全局 `-m/--mode` 或配置 `run.mode` 决定, 与 up/down 等命令一致. 
+### 编译源代码或构建镜像
 
-#### 选项
+```bash
+Usage:  ak build [OPTIONS]
 
-| 选项 | 说明 |
-|------|------|
-| `-r, --release` | Release 模式构建 |
-| `-c, --cluster` | 启用集群特性 |
-| `-s, --single` | 单节点模式 |
-| `-t, --tag <TAG>` | 镜像标签(仅 -m docker) | 默认 latest |
-| `-i, --image <IMAGE>` | 镜像完整名称(仅 -m docker) | aikv:\<tag\> |
-| `-f, --force` | 强制重建: bin 时先 clean 再 build; docker 时覆盖已存在镜像 | - |
+Options: 
+  -m,  --mode <MODE>    运行目标: bin 或 docker
+  -t,  --topo <TOPO>    部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
+  -i,  --image <IMAGE>  指定镜像名(仅 docker 模式下生效)
+  -f,  --force          强制构建, 会覆盖掉已有程序或镜像
+  -r,  --release        构建程序为 Release 模式(仅 bin 模式下生效)
+  -h,  --help           查看帮助
+```
 
 #### 示例
 
@@ -139,35 +139,31 @@ ak build [OPTIONS]
 ak build
 ak build -m bin -r
 
-# 构建 Docker 镜像(-m docker 或配置 run.mode=docker)
+# 构建 Docker 镜像
 ak build -m docker
-ak build -m docker -t dev -f
+ak build -m docker -f
 ak build -m docker -i myreg/aikv:v1.0.0
 
-# 集群构建
-ak build -m docker -c
+# 集群拓扑镜像
+ak build -m docker -t cluster
 ```
 
 ---
 
-### `ak up` - 启动 AiKv 服务
+### 启动服务
 
 ```bash
-ak up [OPTIONS]
+Usage:  ak up [OPTIONS]
+
+Options: 
+  -m,  --mode <MODE>          运行目标: bin 或 docker
+  -t,  --topo <TOPO>          部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
+  -n,  --nodes <NODES>        启动的节点数 (仅启动集群节点不初始化,  与 --shards/--replicas 互斥)
+  -s,  --shards <SHARDS>      集群分片数 (即 masters 数,  与 -n 互斥)
+  -r,  --replicas <REPLICAS>  分配副本数 (即 slaves 数,  需与 -s 同用)
+  -i,  --image <IMAGE>        执行使用的镜像 (默认为配置文件镜像 aikv: latest)
+  -h,  --help                 查看帮助
 ```
-
-#### 选项
-
-| 选项 | 说明 |
-|------|------|
-| `-m, --mode <MODE>` | 运行模式: `bin` 或 `docker` |
-| `-f, --foreground` | 前台模式运行 |
-| `-c, --cluster` | 集群模式(Docker) |
-| `-s, --single` | 单节点模式(Docker) |
-| `-n, --nodes <N>` | 节点总数(纯节点模式) |
-| `--shards <N>` | 集群分片数 |
-| `--replicas <N>` | 每分片副本数 |
-| `-i, --image <IMAGE>` | Docker 镜像 |
 
 #### 示例
 
@@ -178,17 +174,14 @@ ak up
 # 启动本地二进制(后台)
 ak up -m bin
 
-# 前台模式启动
-ak up -m bin -f
-
 # 启动单节点 Docker 容器
-ak up -m docker -s
+ak up -m docker -t single
 
-# 启动 3 分片 1 副本的集群(6 节点)
-ak up -m docker -c --shards 3 --replicas 1
+# 启动 3 分片 1 副本的集群
+ak up -m docker -t cluster -s 3 -r 1
 
-# 启动 5 节点的纯节点集群
-ak up -m docker -c -n 5
+# 启动 4 节点的纯节点集群
+ak up -m docker -t cluster -n 4
 
 # 使用指定镜像
 ak up -m docker -i myregistry/aikv:v2.0
@@ -196,20 +189,17 @@ ak up -m docker -i myregistry/aikv:v2.0
 
 ---
 
-### `ak down` - 停止并移除服务
+### 停止并移除服务
 
 ```bash
-ak down [OPTIONS]
+Usage:  ak down [OPTIONS]
+
+Options: 
+  -m,  --mode <MODE>     运行目标: bin 或 docker
+  -t,  --topo <TOPO>     部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
+  -v,  --remove-volumes  同时删除数据卷(Docker)
+  -h,  --help            查看帮助
 ```
-
-#### 选项
-
-| 选项 | 说明 |
-|------|------|
-| `-m, --mode <MODE>` | 运行模式 |
-| `-v, --remove-volumes` | 同时删除数据卷 |
-| `-c, --cluster` | 集群模式(Docker) |
-| `-s, --single` | 单节点模式(Docker) |
 
 #### 示例
 
@@ -220,26 +210,23 @@ ak down
 # 停止本地二进制
 ak down -m bin
 
-# 停止 Docker 集群并删除数据
-ak down -m docker -c -v
+# 停止 Docker 集群并删除数据卷
+ak down -m docker -t cluster -v
 ```
 
 ---
 
-### `ak restart` - 重启服务
+### 重启服务
 
 ```bash
-ak restart [OPTIONS]
+Usage:  ak restart [OPTIONS]
+
+Options: 
+  -m,  --mode <MODE>  运行目标: bin 或 docker
+  -t,  --topo <TOPO>  部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
+  -i,  --init         深度重置(清理数据后重新启动)
+  -h,  --help         查看帮助
 ```
-
-#### 选项
-
-| 选项 | 说明 |
-|------|------|
-| `-m, --mode <MODE>` | 运行模式 |
-| `-i, --init` | 深度重置(清理数据后重新启动) |
-| `-c, --cluster` | 集群模式(Docker) |
-| `-s, --single` | 单节点模式(Docker) |
 
 #### 示例
 
@@ -248,31 +235,26 @@ ak restart [OPTIONS]
 ak restart
 
 # 深度重置(清空数据重新初始化)
-ak restart -i
+ak restart --init
 
 # 重启 Docker 集群
-ak restart -m docker -c
+ak restart -m docker -t cluster
 ```
 
 ---
 
-### `ak logs` - 查看服务日志
-
-**别名:** `ak l`
+### 查看服务日志
 
 ```bash
-ak logs [OPTIONS]
+Usage:  ak logs [OPTIONS]
+
+Options: 
+  -m,  --mode <MODE>    运行目标: bin 或 docker
+  -t,  --topo <TOPO>    部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
+  -f,  --follow         持续跟踪日志
+  -n,  --lines <LINES>  显示最近 N 行
+  -h,  --help           查看帮助
 ```
-
-#### 选项
-
-| 选项 | 说明 | 默认值 |
-|------|------|--------|
-| `-m, --mode <MODE>` | 运行模式 | - |
-| `-f, --follow` | 持续跟踪日志 | - |
-| `-n, --lines <N>` | 显示最近 N 行 | `100` |
-| `-c, --cluster` | 集群模式(Docker) | - |
-| `-s, --single` | 单节点模式(Docker) | - |
 
 #### 示例
 
@@ -287,83 +269,89 @@ ak logs -f
 ak logs -n 50 -f
 
 # 查看 Docker 集群日志
-ak logs -m docker -c -f
+ak logs -m docker -t cluster -f
 ```
 
 ---
 
-### `ak get` - 获取资源状态
-
-**别名:** `ak g`
+### 查看服务运行状态
 
 ```bash
-ak get <RESOURCE> [OPTIONS]
+Usage:  ak ps [OPTIONS]
+
+Options: 
+  -m,  --mode <MODE>      运行目标: bin 或 docker
+  -t,  --topo <TOPO>      部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
+  -o,  --output <OUTPUT>  输出格式: `table`、`json`、`yaml`
+  -h,  --help             查看帮助
 ```
-
-#### 资源类型
-
-| 资源 | 说明 |
-|------|------|
-| `services` | 服务运行状态 |
-| `config` | 当前生效的配置 |
-
-#### 选项
-
-| 选项 | 说明 | 默认值 |
-|------|------|--------|
-| `-o, --output <FORMAT>` | 输出格式: `json`, `yaml`, `table` | `table` |
-| `-c, --cluster` | 集群范围 | - |
-| `-s, --single` | 单节点范围 | - |
 
 #### 示例
 
 ```bash
 # 查看服务状态
-ak get services
+ak ps
 
 # JSON 格式输出
-ak get services -o json
+ak ps -o json
 
-# 查看配置
-ak get config
-
-# YAML 格式输出配置
-ak get config -o yaml
+# 集群拓扑
+ak ps -t cluster -o yaml
 ```
 
 ---
 
-### `ak set` - 设置配置项
+### 管理工具配置
 
 ```bash
-ak set config <KEY>=<VALUE>
+Usage:  ak config <COMMAND>
+
+Commands: 
+  get   查看当前生效的配置
+  set   设置配置项(e.g. ak config set project.root=/path)
+  sync  将配置文件同步到当前 schema 版本
+  path  显示当前使用的配置文件路径
+
+Options: 
+  -h,  --help  查看帮助
 ```
 
-#### 支持的配置项
+```bash
+Usage:  ak config get [OPTIONS]
 
-| 配置项 | 说明 | 示例 |
-|--------|------|------|
-| `project.root` / `root` / `project_root` | AiKv 项目根目录 | `/home/user/aikv` |
-| `server.port` / `port` | 服务端口(与 aikv 对齐) | `6379` |
-| `build.release` | 默认 release 模式 | `true` |
-| `docker.image` / `image` | Docker 默认镜像(build/up -m docker 未指定 -i/--image 时使用) | `aikv:v2.0` |
-| `run.mode` | 默认运行目标 | `bin` / `docker` |
-| `run.topo` | 默认部署拓扑 | `cluster` / `single` |
+Options: 
+  -o,  --output <OUTPUT>  输出格式:  yaml, json, table,  默认为 yaml
+```
+
+```bash
+ak config set <KEY>=<VALUE>
+```
 
 #### 示例
 
 ```bash
+# 查看当前配置
+ak config get
+ak config get -o json
+
 # 设置 AiKv 项目根目录
-ak set config project.root=/home/user/aikv
+ak config set project.root=/home/user/aikv
 
 # 设置默认运行模式为 docker
-ak set config run.mode=docker
+ak config set defaults.mode=docker
 
 # 设置默认部署拓扑为集群
-ak set config run.topo=cluster
+ak config set defaults.topo=cluster
+ak config set topo=cluster
 
 # 设置 Docker 镜像
-ak set config image=aikv:v2.0
+ak config set image=aikv:v2.0
+
+# 配置文件升级后同步 schema
+ak config sync
+
+# 查看配置文件路径
+ak config path
 ```
 
 ---
@@ -371,94 +359,52 @@ ak set config image=aikv:v2.0
 ### `ak clean` - 清理环境
 
 ```bash
-ak clean [OPTIONS]
+Usage:  ak clean [OPTIONS]
+
+Options: 
+  -m,  --mode <MODE>  运行目标: bin 或 docker
+  -t,  --topo <TOPO>  部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
+  -a,  --all          清理所有拓扑的状态(相当于“恢复出厂”, 仅保留配置)
+  -f,  --force        强制清理,  跳过运行状态检查
+  -h,  --help         查看帮助
 ```
-
-#### 选项
-
-| 选项 | 说明 |
-|------|------|
-| `-a, --all` | 清理所有模式的状态 |
-| `-f, --force` | 强制清理, 忽略运行状态检查 |
-| `--logs` | 同时清理日志目录 |
 
 #### 示例
 
 ```bash
-# 清理当前模式的状态
+# 清理当前拓扑的状态
 ak clean
 
-# 强制清理所有
+# 强制清理所有状态
 ak clean -a -f
-
-# 清理所有状态和日志
-ak clean -a -f --logs
 ```
-
 ---
 
-## 典型工作流
+## 运行测试
 
-### 本地开发
-
-```bash
-# 编译
-ak build
-
-# 启动(前台调试)
-ak up -m bin -f
-
-# 停止
-ak down
-```
-
-### Docker 单节点
+在仓库根目录（aikv-tool 下）执行：
+CLI 测试主要验证子命令解析、帮助信息、非法参数与互斥选项等，无需启动 Docker 或 AiKv 服务。
 
 ```bash
-# 构建镜像
-ak build -m docker
+# 运行全部测试（单元测试 + CLI 集成测试）
+cargo test
 
-# 启动
-ak up -m docker -s
+# 仅运行 CLI 集成测试（不依赖 Docker/真实进程）
+cargo test --test cli
 
-# 查看状态和日志
-ak get services
-ak logs -f
+# 仅运行单元测试
+cargo test --lib
+``` 
 
-# 停止
-ak down -v
-```
+## XDG 规范
 
-### Docker 集群
+ak 严格遵循 [XDG Base Directory](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html) 规范:  
 
-```bash
-# 构建集群镜像
-ak build -m docker -c
-
-# 启动 3 分片 1 副本集群
-ak up -m docker -c --shards 3 --replicas 1
-
-# 查看状态
-ak get services -c
-
-# 深度重置
-ak restart -i
-
-# 停止
-ak down -c -v
-```
-
-### 设置默认模式(避免每次输入 -m)
-
-```bash
-# 设置默认为 docker 模式
-ak set config target=docker
-
-# 之后直接使用, 无需 -m
-ak up -c --shards 3
-ak logs -f
-ak down -v
-```
+| 用途 | 路径 | 说明 |
+|------|------|------|
+| 配置文件 | `~/.config/ak/ak.toml` | 全局配置 |
+| 运行状态 | `~/.local/state/ak/run/` | PID 文件,  动态生成的 Compose 文件 |
+| 缓存/日志 | `~/.cache/ak/logs/` | 工具日志和服务日志 |
 
 ## License
 
