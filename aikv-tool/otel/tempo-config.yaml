@@ -1,0 +1,60 @@
+# ============================================================
+# Grafana Tempo - 单机本地存储配置
+# ============================================================
+#
+# OTLP 接收: 4317 (gRPC), 4318 (HTTP)
+# Grafana 查询 API: 3200
+#
+
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  max_block_duration: 5m
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/blocks
+    wal:
+      path: /var/tempo/wal
+    pool:
+      max_workers: 100
+
+query_frontend:
+  search:
+    duration_slo: 5s
+    throughput_bytes_slo: 1073741824
+
+querier:
+  frontend_worker:
+    frontend_address: 127.0.0.1:9095
+
+# TraceQL 指标 (如 {} | rate()) 依赖 local-blocks；需配置 storage.path 否则 generator 被禁用
+metrics_generator:
+  storage:
+    path: /var/tempo/generator
+  registry:
+    external_labels:
+      source: tempo
+      cluster: aikv-otel
+  processor:
+    local_blocks:
+      filter_server_spans: false
+
+# 单租户默认：启用 local-blocks，Trace Exploration 的 rate() 等面板才可用
+overrides:
+  defaults:
+    metrics_generator:
+      processors: [local-blocks]

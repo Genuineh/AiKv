@@ -1,6 +1,7 @@
 //! Docker 运行时操作
 
 use anyhow::{Context, Result};
+use colored::Colorize;
 use serde::Serialize;
 use std::path::Path;
 use std::process::Stdio;
@@ -88,6 +89,123 @@ pub async fn image_exists(image_name: &str) -> bool {
     }
 }
 
+/// 检查 Docker 网络是否存在
+pub async fn network_exists(network_name: &str) -> Result<bool> {
+    let check_output = Command::new("docker")
+        .arg("network")
+        .arg("ls")
+        .arg("--format")
+        .arg("{{.Name}}")
+        .arg("--filter")
+        .arg(format!("name={}", network_name))
+        .output()
+        .await
+        .context("Failed to check network existence")?;
+
+    let output_str = String::from_utf8_lossy(&check_output.stdout);
+    Ok(output_str.lines().any(|line| line == network_name))
+}
+
+/// 创建 Docker 网络（如果不存在）
+#[allow(dead_code)]
+pub async fn ensure_network_exists(network_name: &str, create_if_missing: bool) -> Result<bool> {
+    if network_exists(network_name).await? {
+        println!("   {} Network '{}' already exists (using as external)", "Info:".cyan(), network_name);
+        return Ok(true);
+    }
+
+    if create_if_missing {
+        println!("   {} Creating network '{}'...", "Info:".cyan(), network_name);
+
+        let create_output = Command::new("docker")
+            .arg("network")
+            .arg("create")
+            .arg("--driver")
+            .arg("bridge")
+            .arg(network_name)
+            .output()
+            .await
+            .context("Failed to create network")?;
+
+        if !create_output.status.success() {
+            let error_msg = String::from_utf8_lossy(&create_output.stderr);
+            anyhow::bail!("Failed to create network '{}': {}", network_name, error_msg);
+        }
+
+        println!("   {} Network '{}' created successfully", "Success:".green(), network_name);
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+#[allow(dead_code)]
+/// 创建 Docker 网络（如果不存在），失败时给出警告但不退出
+pub async fn create_network_if_missing(network_name: &str) -> Result<bool> {
+    if network_exists(network_name).await? {
+        return Ok(true);
+    }
+
+    println!("   {} Creating network '{}'...", "Info:".cyan(), network_name);
+
+    let create_output = Command::new("docker")
+        .arg("network")
+        .arg("create")
+        .arg("--driver")
+        .arg("bridge")
+        .arg(network_name)
+        .output()
+        .await
+        .context("Failed to create network")?;
+
+    if !create_output.status.success() {
+        let error_msg = String::from_utf8_lossy(&create_output.stderr);
+        // 输出警告但不退出，让 Docker Compose 尝试创建
+        println!(
+            "{} Failed to create network '{}': {}. Docker Compose will try to create it.",
+            "Warning:".yellow().bold(),
+            network_name,
+            error_msg
+        );
+        return Ok(false);
+    }
+
+    println!("   {} Network '{}' created successfully", "Success:".green(), network_name);
+    Ok(true)
+}
+
+#[allow(dead_code)]
+/// 删除 Docker 网络（如果存在）
+pub async fn remove_network(network_name: &str) -> Result<bool> {
+    if !network_exists(network_name).await? {
+        return Ok(false);
+    }
+
+    println!("   {} Removing network '{}'...", "Info:".cyan(), network_name);
+
+    let remove_output = Command::new("docker")
+        .arg("network")
+        .arg("rm")
+        .arg(network_name)
+        .output()
+        .await
+        .context("Failed to remove network")?;
+
+    if !remove_output.status.success() {
+        let error_msg = String::from_utf8_lossy(&remove_output.stderr);
+        println!(
+            "{} Failed to remove network '{}': {}",
+            "Warning:".yellow().bold(),
+            network_name,
+            error_msg
+        );
+        return Ok(false);
+    }
+
+    println!("   {} Network '{}' removed successfully", "Success:".green(), network_name);
+    Ok(true)
+}
+
 #[derive(Serialize)]
 struct ClusterNode {
     id: u32,
@@ -105,6 +223,7 @@ pub fn generate_dynamic_configs(
     nodes_count: Option<u32>,
     shards: Option<u32>,
     replicas: Option<u32>,
+    network_external: bool,
 ) -> Result<()> {
     let mut nodes = Vec::new();
 
@@ -161,6 +280,7 @@ pub fn generate_dynamic_configs(
     let mut context = TeraContext::new();
     context.insert("nodes", &nodes);
     context.insert("image", image);
+    context.insert("network_external", &network_external);
 
     // 生成 docker-compose.yaml
     let compose_content = tera
@@ -193,7 +313,7 @@ mod tests {
     #[test]
     fn generate_single_node() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(1), None, None).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(1), None, None, false).unwrap();
 
         // 验证 docker-compose.yaml 生成
         let compose_path = tmp_dir
@@ -221,7 +341,7 @@ mod tests {
     #[test]
     fn generate_pure_nodes_mode() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        generate_dynamic_configs(tmp_dir.path(), "aikv:dev", Some(3), None, None).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:dev", Some(3), None, None, false).unwrap();
 
         let compose_content = std::fs::read_to_string(
             tmp_dir
@@ -249,7 +369,7 @@ mod tests {
     fn generate_cluster_shards_no_replicas() {
         let tmp_dir = tempfile::tempdir().unwrap();
         // 3 分片, 0 副本 → 3 个 master 节点
-        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", None, Some(3), Some(0)).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", None, Some(3), Some(0), false).unwrap();
 
         let config_dir = tmp_dir.path().join(crate::constants::dirs::CONFIG);
         assert!(config_dir.join("aikv1.toml").exists());
@@ -269,7 +389,7 @@ mod tests {
     fn generate_cluster_with_replicas() {
         let tmp_dir = tempfile::tempdir().unwrap();
         // 2 分片, 1 副本 → 4 个节点 (2 master + 2 slave)
-        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", None, Some(2), Some(1)).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", None, Some(2), Some(1), false).unwrap();
 
         let config_dir = tmp_dir.path().join(crate::constants::dirs::CONFIG);
         assert!(config_dir.join("aikv1.toml").exists()); // master 1
@@ -298,7 +418,7 @@ mod tests {
     fn generate_cluster_3_shards_2_replicas() {
         let tmp_dir = tempfile::tempdir().unwrap();
         // 3 分片, 2 副本 → 9 个节点
-        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", None, Some(3), Some(2)).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", None, Some(3), Some(2), false).unwrap();
 
         let config_dir = tmp_dir.path().join(crate::constants::dirs::CONFIG);
         for i in 1..=9 {
@@ -314,7 +434,7 @@ mod tests {
     #[test]
     fn compose_yaml_has_required_sections() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(2), None, None).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(2), None, None, false).unwrap();
 
         let content = std::fs::read_to_string(
             tmp_dir
@@ -327,13 +447,49 @@ mod tests {
         assert!(content.contains("services:"));
         assert!(content.contains("volumes:"));
         assert!(content.contains("networks:"));
-        assert!(content.contains("aikv-cluster"));
+        assert!(content.contains("aikv"));
+    }
+
+    #[test]
+    fn compose_yaml_network_external_true() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(1), None, None, true).unwrap();
+
+        let content = std::fs::read_to_string(
+            tmp_dir
+                .path()
+                .join(crate::constants::files::DOCKER_COMPOSE),
+        )
+        .unwrap();
+
+        // external: true 时应包含 external: true
+        assert!(content.contains("external: true"));
+        // 不应包含 driver 或 name（创建模式的字段）
+        assert!(!content.contains("driver: bridge"));
+    }
+
+    #[test]
+    fn compose_yaml_network_external_false() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(1), None, None, false).unwrap();
+
+        let content = std::fs::read_to_string(
+            tmp_dir
+                .path()
+                .join(crate::constants::files::DOCKER_COMPOSE),
+        )
+        .unwrap();
+
+        // 非 external 时应包含网络定义
+        assert!(content.contains("aikv"));
+        assert!(content.contains("driver: bridge"));
+        assert!(content.contains("name: aikv"));
     }
 
     #[test]
     fn node_config_has_required_sections() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(1), None, None).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(1), None, None, false).unwrap();
 
         let content = std::fs::read_to_string(
             tmp_dir
@@ -354,7 +510,7 @@ mod tests {
     #[test]
     fn compose_volumes_match_nodes() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", Some(3), None, None).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", Some(3), None, None, false).unwrap();
 
         let content = std::fs::read_to_string(
             tmp_dir
@@ -381,7 +537,7 @@ mod tests {
     #[test]
     fn raft_ports_are_set() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", Some(2), None, None).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", Some(2), None, None, false).unwrap();
 
         let node1 = std::fs::read_to_string(
             tmp_dir

@@ -13,3 +13,9 @@ data_dir = "./data"
 
 [logging]
 level = "info"
+
+[tracing]
+enabled = true
+service_name = "{{ node.name }}"
+otlp_endpoint = "http://otel-collector:4317"
+sampling_ratio = 1.0

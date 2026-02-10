@@ -1,0 +1,14 @@
+# Dashboard 自动加载：新环境 up 后即可在 Grafana 中看到以下面板，无需手动导入
+apiVersion: 1
+
+providers:
+  - name: "AiKv Observability"
+    orgId: 1
+    folder: ""
+    folderUid: ""
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/json

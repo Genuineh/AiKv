@@ -1,7 +1,7 @@
 //! # ak - AiKv management CLI
 //!
 //! Entry binary: parses subcommands and delegates to command modules.
-//! Config and paths follow XDG specification. 
+//! Config and paths follow XDG specification.
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::fs::OpenOptions;
@@ -100,6 +100,11 @@ async fn main() -> anyhow::Result<()> {
             let is_cluster = args.topo.unwrap_or(config.defaults.topo).is_cluster();
             commands::quick::execute(args, mode, is_cluster, &config, &root).await?;
         }
+
+        Commands::Otels(args) => {
+            let root = config.detect_project_root()?;
+            commands::otel::execute(args, &config, &root).await?;
+        }
     }
 
     Ok(())
@@ -159,6 +164,10 @@ pub enum Commands {
 
     /// Clean temp data and logs
     Clean(CleanArgs),
+
+    /// Manage OTel observability stack (Grafana, Prometheus, Jaeger, Loki, Tempo, Pyroscope)
+    #[command(visible_alias = "otel")]
+    Otels(OtelsArgs),
 }
 
 // ─── Quick ────────────────────────────────────────────────
@@ -391,4 +400,45 @@ pub struct CleanArgs {
     /// Force clean, skip run-state check
     #[arg(short = 'f', long)]
     pub force: bool,
+}
+
+// ─── OTel Stack ───────────────────────────────────────────
+
+/// OTel stack action
+#[derive(Subcommand, Debug, Clone)]
+pub enum OtelAction {
+    /// Start OTel stack
+    Up,
+
+    /// Stop OTel stack
+    Down,
+
+    /// Restart OTel stack
+    Restart,
+
+    /// View OTel logs
+    Logs,
+
+    /// Show OTel status
+    Status,
+}
+
+/// Arguments for otel subcommand
+#[derive(Args, Debug, Clone)]
+pub struct OtelsArgs {
+    /// OTel action (up|down|restart|logs|status)
+    #[command(subcommand)]
+    pub action: OtelAction,
+
+    /// Follow logs (for logs action)
+    #[arg(short = 'f', long, global = true)]
+    pub follow: bool,
+
+    /// Number of log lines to show (for logs action)
+    #[arg(short = 'n', long, default_value = "100", global = true)]
+    pub lines: u32,
+
+    /// Remove volumes (for down action)
+    #[arg(short = 'v', long, global = true)]
+    pub remove_volumes: bool,
 }

@@ -6,7 +6,7 @@ use std::path::Path;
 use std::process::Stdio;
 use tokio::process::Command;
 
-use crate::constants::{files, DOCKER_PROJECT_NAME, DEFAULT_SHARDS, DEFAULT_REPLICAS};
+use crate::constants::{files, DOCKER_PROJECT_NAME, DEFAULT_SHARDS, DEFAULT_REPLICAS, NETWORK_NAME};
 use crate::paths;
 use crate::resources::config::AkConfig;
 use crate::runtime::{docker, process};
@@ -138,6 +138,17 @@ async fn execute_docker(args: UpArgs, is_cluster: bool, config: &AkConfig) -> an
     fs::create_dir_all(&run_dir)?;
     let staged_compose = run_dir.join(files::DOCKER_COMPOSE);
 
+    // 检查网络状态并确定网络配置模式
+    // 如果网络存在，使用 external: true；如果不存在，让 Docker Compose 创建网络
+    let network_exists = docker::network_exists(NETWORK_NAME).await?;
+    let network_external = network_exists;
+
+    if network_exists {
+        println!("   {} Network '{}' exists (using as external)", "Info:".cyan(), NETWORK_NAME);
+    } else {
+        println!("   {} Network '{}' does not exist (Docker Compose will create it)", "Info:".cyan(), NETWORK_NAME);
+    }
+
     // 生成配置
     if is_cluster {
         if let Some(n) = args.nodes {
@@ -146,7 +157,7 @@ async fn execute_docker(args: UpArgs, is_cluster: bool, config: &AkConfig) -> an
                 mode_name,
                 n
             );
-            docker::generate_dynamic_configs(&run_dir, &docker_image, Some(n), None, None)?;
+            docker::generate_dynamic_configs(&run_dir, &docker_image, Some(n), None, None, network_external)?;
         } else {
             let s = args.shards.unwrap_or(DEFAULT_SHARDS);
             let r = args.replicas.unwrap_or(DEFAULT_REPLICAS);
@@ -156,11 +167,11 @@ async fn execute_docker(args: UpArgs, is_cluster: bool, config: &AkConfig) -> an
                 s,
                 r
             );
-            docker::generate_dynamic_configs(&run_dir, &docker_image, None, Some(s), Some(r))?;
+            docker::generate_dynamic_configs(&run_dir, &docker_image, None, Some(s), Some(r), network_external)?;
         }
     } else {
         println!("Generating {} config...", mode_name);
-        docker::generate_dynamic_configs(&run_dir, &docker_image, Some(1), None, None)?;
+        docker::generate_dynamic_configs(&run_dir, &docker_image, Some(1), None, None, network_external)?;
     }
 
     println!("Starting AiKv {} containers (background)...", mode_name);

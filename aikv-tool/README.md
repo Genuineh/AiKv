@@ -14,10 +14,10 @@ cargo install --path aikv-tool
 ak quick
 ```
 
-```bash  
+```bash
 Usage:  ak quick [OPTIONS]
 
-Options: 
+Options:
   -m,  --mode <MODE>    运行目标: bin 或 docker
   -t,  --topo <TOPO>    部署模式: single 或 cluster
   -n,  --nodes <N>       节点总数(纯节点模式, 与 -s/-r 互斥)
@@ -65,6 +65,9 @@ ak logs -f
 
 # 停止服务
 ak down
+
+# 启动 OTel 观测栈
+ak otels up
 ```
 
 ## 配置文件
@@ -81,7 +84,7 @@ ak 命令参数优先级说明:
 2. 配置文件参数
 3. 命令默认值
 
-ak 按以下优先级加载配置: 
+ak 按以下优先级加载配置:
 
 4. 当前目录向上查找的 `ak.toml`(项目级配置)
 5. `~/.config/ak/ak.toml`(全局配置, XDG)
@@ -106,7 +109,7 @@ docker_image = "aikv:latest" # 使用的默认镜像
 ```bash
 Usage:  ak <COMMAND>
 
-Commands: 
+Commands:
   quick    构建并部署服务
   build    构建程序或镜像
   up       启动服务
@@ -115,6 +118,7 @@ Commands:
   logs     查看服务日志
   ps       查看服务
   config   设置配置
+  otels    管理 OTel 可观测性栈
   clean    清除运行时状态和日志
 ```
 
@@ -123,7 +127,7 @@ Commands:
 ```bash
 Usage:  ak build [OPTIONS]
 
-Options: 
+Options:
   -m,  --mode <MODE>    运行目标: bin 或 docker
   -t,  --topo <TOPO>    部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
   -i,  --image <IMAGE>  指定镜像名(仅 docker 模式下生效)
@@ -155,7 +159,7 @@ ak build -m docker -t cluster
 ```bash
 Usage:  ak up [OPTIONS]
 
-Options: 
+Options:
   -m,  --mode <MODE>          运行目标: bin 或 docker
   -t,  --topo <TOPO>          部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
   -n,  --nodes <NODES>        启动的节点数 (仅启动集群节点不初始化,  与 --shards/--replicas 互斥)
@@ -194,7 +198,7 @@ ak up -m docker -i myregistry/aikv:v2.0
 ```bash
 Usage:  ak down [OPTIONS]
 
-Options: 
+Options:
   -m,  --mode <MODE>     运行目标: bin 或 docker
   -t,  --topo <TOPO>     部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
   -v,  --remove-volumes  同时删除数据卷(Docker)
@@ -221,9 +225,9 @@ ak down -m docker -t cluster -v
 ```bash
 Usage:  ak restart [OPTIONS]
 
-Options: 
+Options:
   -m,  --mode <MODE>  运行目标: bin 或 docker
-  -t,  --topo <TOPO>  部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
+  -t,  --topo <TOPO> 部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
   -i,  --init         深度重置(清理数据后重新启动)
   -h,  --help         查看帮助
 ```
@@ -248,7 +252,7 @@ ak restart -m docker -t cluster
 ```bash
 Usage:  ak logs [OPTIONS]
 
-Options: 
+Options:
   -m,  --mode <MODE>    运行目标: bin 或 docker
   -t,  --topo <TOPO>    部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
   -f,  --follow         持续跟踪日志
@@ -279,7 +283,7 @@ ak logs -m docker -t cluster -f
 ```bash
 Usage:  ak ps [OPTIONS]
 
-Options: 
+Options:
   -m,  --mode <MODE>      运行目标: bin 或 docker
   -t,  --topo <TOPO>      部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
   -o,  --output <OUTPUT>  输出格式: `table`、`json`、`yaml`
@@ -306,20 +310,20 @@ ak ps -t cluster -o yaml
 ```bash
 Usage:  ak config <COMMAND>
 
-Commands: 
+Commands:
   get   查看当前生效的配置
   set   设置配置项(e.g. ak config set project.root=/path)
   sync  将配置文件同步到当前 schema 版本
   path  显示当前使用的配置文件路径
 
-Options: 
+Options:
   -h,  --help  查看帮助
 ```
 
 ```bash
 Usage:  ak config get [OPTIONS]
 
-Options: 
+Options:
   -o,  --output <OUTPUT>  输出格式:  yaml, json, table,  默认为 yaml
 ```
 
@@ -356,15 +360,15 @@ ak config path
 
 ---
 
-### `ak clean` - 清理环境
+### 清理环境
 
 ```bash
 Usage:  ak clean [OPTIONS]
 
-Options: 
+Options:
   -m,  --mode <MODE>  运行目标: bin 或 docker
-  -t,  --topo <TOPO>  部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
-  -a,  --all          清理所有拓扑的状态(相当于“恢复出厂”, 仅保留配置)
+  -t,  --topo <TOPO> 部署模式: single 或 cluster (cluster 仅 docker 模式下生效)
+  -a,  --all          清理所有拓扑的状态(相当于"恢复出厂", 仅保留配置)
   -f,  --force        强制清理,  跳过运行状态检查
   -h,  --help         查看帮助
 ```
@@ -378,11 +382,59 @@ ak clean
 # 强制清理所有状态
 ak clean -a -f
 ```
+
+---
+
+### 管理 OTel 可观测性栈
+
+管理 OTel 观测栈(Prometheus、Grafana、Jaeger、Loki、Tempo、Pyroscope 等).
+
+```bash
+Usage:  ak otels [OPTIONS] <COMMAND>
+
+Commands:
+  up       启动 OTel 观测栈
+  down     停止 OTel 观测栈
+  restart  重启 OTel 观测栈
+  logs     查看 OTel 日志
+  status   查看 OTel 状态
+
+Options:
+  -f, --follow          持续跟踪日志
+  -n, --lines <LINES>   显示最近 N 行日志
+  -v, --remove-volumes  删除数据卷(Down 时使用)
+  -h, --help            查看帮助
+```
+
+#### 示例
+
+```bash
+# 启动 OTel 观测栈
+ak otels up
+
+# 查看 OTel 状态
+ak otels status
+
+# 查看 OTel 日志
+ak otels logs -f
+
+# 停止 OTel 栈（保留数据卷）
+ak otels down
+
+# 停止 OTel 栈并删除数据卷
+ak otels down -v
+```
+
+> **注意**: OTel 观测栈与 AiKv 服务共享 `aikv` 网络，支持以下场景：
+> - 先启动 OTel, 再启动 AiKv
+> - 先启动 AiKv, 再启动 OTel
+> - 网络不存在时会自动创建
+
 ---
 
 ## 运行测试
 
-在仓库根目录（aikv-tool 下）执行：
+在仓库根目录(aikv-tool 下)执行：
 CLI 测试主要验证子命令解析、帮助信息、非法参数与互斥选项等，无需启动 Docker 或 AiKv 服务。
 
 ```bash
@@ -394,11 +446,11 @@ cargo test --test cli
 
 # 仅运行单元测试
 cargo test --lib
-``` 
+```
 
 ## XDG 规范
 
-ak 严格遵循 [XDG Base Directory](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html) 规范:  
+ak 严格遵循 [XDG Base Directory](https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html) 规范:
 
 | 用途 | 路径 | 说明 |
 |------|------|------|

@@ -25,6 +25,9 @@ pub const DOCKER_PORT_BASE: u16 = 6378;
 /// Raft 端口基数
 pub const RAFT_PORT_BASE: u16 = 50050;
 
+/// Docker 网络名称 (用于连接 AiKv 和 OTel 观测栈)
+pub const NETWORK_NAME: &str = "aikv";
+
 // === Docker 配置 ===
 
 /// 默认 Docker 镜像
