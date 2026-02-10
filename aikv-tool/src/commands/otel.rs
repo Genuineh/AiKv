@@ -21,9 +21,9 @@ pub async fn execute(
 ) -> anyhow::Result<()> {
     match args.action {
         OtelAction::Up => execute_up(args, config, project_root).await,
-        OtelAction::Down => execute_down(args, config).await,
-        OtelAction::Restart => execute_restart(args, config).await,
-        OtelAction::Logs => execute_logs(args, config).await,
+        OtelAction::Down => execute_down(args, config, project_root).await,
+        OtelAction::Restart => execute_restart(args, config, project_root).await,
+        OtelAction::Logs => execute_logs(args, config, project_root).await,
         OtelAction::Status => execute_status(args, config).await,
     }
 }
@@ -44,125 +44,90 @@ async fn execute_up(
         println!("   {} Network '{}' does not exist (Docker Compose will create it)", "Info:".cyan(), NETWORK_NAME);
     }
 
-    // 确定 OTel compose 文件路径（按优先级查找）
-    let compose_paths = [
-        // 1. aikv-tool 目录下的 otel 配置（打包时使用）
-        project_root.join("otel").join("docker-compose.yaml"),
-        // 2. aikv-tool 目录下的根目录配置
-        project_root.join("docker-compose.otel.yaml"),
-        // 3. 原始 AiKv 项目根目录（兼容旧路径）
-        project_root.parent().unwrap_or(project_root).join("docker-compose.otel.yaml"),
-        // 4. 原始 AiKv 项目 otel 目录
-        project_root.parent().unwrap_or(project_root).join("otel").join("docker-compose.yaml"),
-    ];
+    // 确定 OTel compose 文件路径（从项目根目录查找 aikv-tool/otel/docker-compose.yaml）
+    let compose_path = project_root.join("aikv-tool").join("otel").join("docker-compose.yaml");
 
-    let mut compose_path = None;
-    let mut compose_dir = project_root;
+    if compose_path.exists() {
+        println!("Found OTel config at: {}", compose_path.display().to_string().cyan());
+        let compose_dir = compose_path.parent().unwrap_or(project_root);
+        println!("Starting OTel stack...");
 
-    for path in &compose_paths {
-        if path.exists() {
-            compose_path = Some(path.clone());
-            compose_dir = path.parent().unwrap_or(compose_dir);
-            println!("Found OTel config at: {}", path.display().to_string().cyan());
-            break;
+        let mut cmd = docker::compose_command("aikv-otel", &compose_path).await?;
+        cmd.current_dir(compose_dir);
+        cmd.arg("up").arg("-d");
+
+        let status = cmd
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .await?;
+
+        if status.success() {
+            println!("\n{} OTel stack started successfully!", "Success".green().bold());
+            print_access_info();
+        } else {
+            anyhow::bail!("Failed to start OTel stack");
         }
-    }
-
-    match compose_path {
-        Some(path) => {
-            println!("Starting OTel stack...");
-
-            let mut cmd = docker::compose_command("aikv-otel", &path).await?;
-            cmd.current_dir(&compose_dir);
-            cmd.arg("up").arg("-d");
-
-            let status = cmd
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .status()
-                .await?;
-
-            if status.success() {
-                println!("\n{} OTel stack started successfully!", "Success".green().bold());
-                print_access_info();
-            } else {
-                anyhow::bail!("Failed to start OTel stack");
-            }
-        }
-        None => {
-            anyhow::bail!(
-                "OTel compose file not found. Searched in: {:?}",
-                compose_paths.iter().map(|p| p.display()).collect::<Vec<_>>()
-            );
-        }
+    } else {
+        anyhow::bail!(
+            "OTel compose file not found: {}",
+            compose_path.display()
+        );
     }
 
     Ok(())
 }
 
-async fn execute_down(args: OtelsArgs, _config: &AkConfig) -> anyhow::Result<()> {
+async fn execute_down(args: OtelsArgs, _config: &AkConfig, project_root: &Path) -> anyhow::Result<()> {
     // 预检 Docker 引擎
     docker::check_docker_alive().await?;
 
-    println!("Stopping OTel stack...");
+    // 查找 OTel compose 文件
+    let compose_path = project_root.join("aikv-tool").join("otel").join("docker-compose.yaml");
 
-    // 尝试查找并停止 OTel compose
-    let project_root = std::env::current_dir()?;
-    let compose_paths = [
-        project_root.join("otel").join("docker-compose.yaml"),
-        project_root.join("docker-compose.otel.yaml"),
-        project_root.parent().unwrap_or(&project_root).join("docker-compose.otel.yaml"),
-        project_root.parent().unwrap_or(&project_root).join("otel").join("docker-compose.yaml"),
-    ];
-
-    let mut found = false;
-    for compose_path in &compose_paths {
-        if compose_path.exists() {
-            found = true;
-            let mut cmd = docker::compose_command("aikv-otel", compose_path).await?;
-            cmd.current_dir(compose_path.parent().unwrap_or(&project_root));
-            cmd.arg("down").arg("--remove-orphans");
-
-            // 如果指定了 -v 选项，删除卷
-            if args.remove_volumes {
-                cmd.arg("-v");
-            }
-
-            let status = cmd
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .status()
-                .await?;
-
-            if status.success() {
-                println!("{} OTel stack stopped", "Success".green().bold());
-                if args.remove_volumes {
-                    println!("{} Volumes removed", "Info".cyan());
-                }
-            } else {
-                anyhow::bail!("Failed to stop OTel stack");
-            }
-            break;
-        }
+    if !compose_path.exists() {
+        println!("{} OTel compose file not found: {}", "Info".cyan(), compose_path.display());
+        return Ok(());
     }
 
-    if !found {
-        println!("{} No OTel compose file found", "Info".cyan());
+    println!("Stopping OTel stack...");
+
+    let compose_dir = compose_path.parent().unwrap_or(project_root);
+    let mut cmd = docker::compose_command("aikv-otel", &compose_path).await?;
+    cmd.current_dir(compose_dir);
+    cmd.arg("down").arg("--remove-orphans");
+
+    // 如果指定了 -v 选项，删除卷
+    if args.remove_volumes {
+        cmd.arg("-v");
+    }
+
+    let status = cmd
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .await?;
+
+    if status.success() {
+        println!("{} OTel stack stopped", "Success".green().bold());
+        if args.remove_volumes {
+            println!("{} Volumes removed", "Info".cyan());
+        }
+    } else {
+        anyhow::bail!("Failed to stop OTel stack");
     }
 
     Ok(())
 }
 
-async fn execute_restart(_args: OtelsArgs, config: &AkConfig) -> anyhow::Result<()> {
-    let project_root = std::env::current_dir()?;
-
+async fn execute_restart(_args: OtelsArgs, config: &AkConfig, project_root: &Path) -> anyhow::Result<()> {
     // 先停止
     execute_down(OtelsArgs {
         action: OtelAction::Down,
         follow: false,
         lines: 100,
         remove_volumes: false,
-    }, config).await?;
+    }, config, project_root).await?;
 
     // 等待一下
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -173,52 +138,42 @@ async fn execute_restart(_args: OtelsArgs, config: &AkConfig) -> anyhow::Result<
         follow: false,
         lines: 100,
         remove_volumes: false,
-    }, config, &project_root).await
+    }, config, project_root).await
 }
 
-async fn execute_logs(args: OtelsArgs, _config: &AkConfig) -> anyhow::Result<()> {
+async fn execute_logs(args: OtelsArgs, _config: &AkConfig, project_root: &Path) -> anyhow::Result<()> {
     // 预检 Docker 引擎
     docker::check_docker_alive().await?;
 
-    let project_root = std::env::current_dir()?;
-    let compose_paths = [
-        project_root.join("otel").join("docker-compose.yaml"),
-        project_root.join("docker-compose.otel.yaml"),
-        project_root.parent().unwrap_or(&project_root).join("docker-compose.otel.yaml"),
-        project_root.parent().unwrap_or(&project_root).join("otel").join("docker-compose.yaml"),
-    ];
+    // 查找 OTel compose 文件
+    let compose_path = project_root.join("aikv-tool").join("otel").join("docker-compose.yaml");
 
-    let mut found = false;
-    for compose_path in &compose_paths {
-        if compose_path.exists() {
-            found = true;
-            let mut cmd = docker::compose_command("aikv-otel", compose_path).await?;
-            cmd.current_dir(compose_path.parent().unwrap_or(&project_root));
-            cmd.arg("logs");
-
-            if args.follow {
-                cmd.arg("-f");
-            }
-
-            if args.lines > 0 {
-                cmd.arg("--tail").arg(args.lines.to_string());
-            }
-
-            let status = cmd
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .status()
-                .await?;
-
-            if !status.success() {
-                anyhow::bail!("Failed to show logs");
-            }
-            break;
-        }
+    if !compose_path.exists() {
+        println!("{} OTel compose file not found: {}", "Info".cyan(), compose_path.display());
+        return Ok(());
     }
 
-    if !found {
-        println!("{} No OTel compose file found", "Info".cyan());
+    let compose_dir = compose_path.parent().unwrap_or(project_root);
+    let mut cmd = docker::compose_command("aikv-otel", &compose_path).await?;
+    cmd.current_dir(compose_dir);
+    cmd.arg("logs");
+
+    if args.follow {
+        cmd.arg("-f");
+    }
+
+    if args.lines > 0 {
+        cmd.arg("--tail").arg(args.lines.to_string());
+    }
+
+    let status = cmd
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .await?;
+
+    if !status.success() {
+        anyhow::bail!("Failed to show logs");
     }
 
     Ok(())

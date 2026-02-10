@@ -1,6 +1,6 @@
 # AiKv 观测栈 (Observability Stack)
 
-本目录包含与 `docker-compose.otel.yaml` 配套的配置，用于指标、日志、链路追踪与持续剖析的一键部署。
+本目录包含与 `docker-compose.yaml` 配套的配置，用于指标、日志、链路追踪与持续剖析的一键部署。
 
 ## 架构概览
 
@@ -17,11 +17,11 @@
 
 ```bash
 # 仅启动观测栈（推荐配合 ak 使用）
-docker compose -f docker-compose.otel.yaml up -d
+docker compose up -d
 ak quick
 
 # 启动观测栈 + 本 compose 的 AiKv 实例
-docker compose -f docker-compose.otel.yaml --profile app up -d
+docker compose --profile app up -d
 ```
 
 | 服务 | 地址 | 用途 |
