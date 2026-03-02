@@ -830,6 +830,13 @@ impl AiDbStorageAdapter {
         Ok(self.get_all_keys_in_db(db_index)?.len())
     }
 
+    /// Get keyspace stats for INFO keyspace: (keys, expires, avg_ttl_ms)
+    /// AiDb: 暂只返回 keys，expires/avg_ttl 需遍历 key 计算，后续可完善
+    pub fn keyspace_stats_in_db(&self, db_index: usize) -> Result<(usize, usize, u64)> {
+        let keys = self.dbsize_in_db(db_index)?;
+        Ok((keys, 0, 0))
+    }
+
     /// Clear a specific database
     pub fn flush_db(&self, db_index: usize) -> Result<()> {
         if db_index >= self.databases.len() {

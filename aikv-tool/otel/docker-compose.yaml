@@ -4,7 +4,7 @@
 #
 # 架构概览 / Architecture:
 #
-#   AiKv (Redis Protocol)  ──> redis-exporter  ──> Prometheus ──> Grafana
+#   AiKv (Redis Protocol)  ──> aikv-exporter  ──> Prometheus ──> Grafana
 #   Host System            ──> node-exporter   ──> Prometheus ──> Grafana
 #   AiKv (OTLP Traces)     ──> OTel Collector  ──> Jaeger     ──> Grafana (Explore / Jaeger UI)
 #                                  └─────────────> Tempo      ──> Grafana (Drilldown / TraceQL)
@@ -17,7 +17,7 @@
 #   停止:  docker compose -f docker-compose.otel.yaml down
 #   日志:  docker compose -f docker-compose.otel.yaml logs -f [service]
 #
-# 与 ak 配合: 先 up 观测栈，再用 ak quick / ak up 起 AiKv。redis-exporter 连 host:6379，
+# 与 ak 配合: 先 up 观测栈，再用 ak quick / ak up 起 AiKv。aikv-exporter 连 host:6379，
 # 可监测本机 6379（含 ak 起的实例）；本 compose 内 AiKv 使用 profile app，默认不启动。
 # 若需链路追踪，ak 使用的 aikv 配置里 OTLP 端点请指向宿主机，如 http://host.docker.internal:4317
 #
@@ -83,9 +83,9 @@ services:
   # Redis Exporter - 采集 AiKv Redis 协议指标
   # 使用 aikv1 容器名连接（同一 compose 网络内）
   # 若需监控宿主机上的 ak 实例，需手动配置 REDIS_ADDR 为 host.docker.internal
-  redis-exporter:
+  aikv-exporter:
     image: oliver006/redis_exporter:v1.80.1
-    container_name: redis-exporter
+    container_name: aikv-exporter
     restart: unless-stopped
     environment:
       - REDIS_ADDR=redis://aikv1:6379
@@ -141,7 +141,7 @@ services:
       - "--web.enable-lifecycle"
       - "--web.enable-remote-write-receiver"
     depends_on:
-      - redis-exporter
+      - aikv-exporter
       - node-exporter
     networks:
       - aikv

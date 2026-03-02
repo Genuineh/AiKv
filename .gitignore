@@ -28,7 +28,6 @@ logs/
 # Configuration files with secrets (if any)
 config.local.toml
 
-
 # Added by cargo
 
 /target
@@ -36,3 +35,13 @@ config.local.toml
 src/cluster/*.old
 src/cluster/*.backup
 
+# Docs
+docs/temp/
+
+# Editor-specific AI skills directories
+.cursor/
+.claude/
+.vscode/
+
+# Workflow execution artifacts
+.workflow/

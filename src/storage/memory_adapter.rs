@@ -861,6 +861,45 @@ impl StorageAdapter {
         Ok(self.get_all_keys_in_db(db_index)?.len())
     }
 
+    /// Get keyspace stats for INFO keyspace: (keys, expires, avg_ttl_ms)
+    pub fn keyspace_stats_in_db(&self, db_index: usize) -> Result<(usize, usize, u64)> {
+        let databases = self
+            .databases
+            .read()
+            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+
+        let db = match databases.get(db_index) {
+            Some(d) => d,
+            None => return Ok((0, 0, 0)),
+        };
+
+        let now = Self::current_time_ms();
+        let mut keys = 0usize;
+        let mut expires = 0usize;
+        let mut ttl_sum = 0u64;
+
+        for (_, v) in db.iter() {
+            if v.is_expired() {
+                continue;
+            }
+            keys += 1;
+            if let Some(expire_at) = v.expires_at() {
+                if expire_at > now {
+                    expires += 1;
+                    ttl_sum += expire_at - now;
+                }
+            }
+        }
+
+        let avg_ttl = if expires > 0 {
+            ttl_sum / expires as u64
+        } else {
+            0
+        };
+
+        Ok((keys, expires, avg_ttl))
+    }
+
     /// Export all databases as StoredValue format for RDB persistence
     /// This is used by RDB save functionality to persist all data types
     pub fn export_all_databases(&self) -> Result<Vec<HashMap<String, StoredValue>>> {
@@ -1173,5 +1212,50 @@ mod tests {
         assert!(value2.is_some());
         assert_eq!(value2.unwrap().as_string().unwrap(), &Bytes::from("value2"));
         assert!(value3.is_none());
+    }
+
+    #[test]
+    fn test_keyspace_stats_in_db() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let storage = StorageAdapter::new();
+
+        // Empty db
+        let (keys, expires, avg_ttl) = storage.keyspace_stats_in_db(0).unwrap();
+        assert_eq!(keys, 0);
+        assert_eq!(expires, 0);
+        assert_eq!(avg_ttl, 0);
+
+        // Add keys without expiry
+        storage
+            .set_value(0, "key1".to_string(), StoredValue::new_string("v1".into()))
+            .unwrap();
+        storage
+            .set_value(0, "key2".to_string(), StoredValue::new_string("v2".into()))
+            .unwrap();
+
+        let (keys, expires, avg_ttl) = storage.keyspace_stats_in_db(0).unwrap();
+        assert_eq!(keys, 2);
+        assert_eq!(expires, 0);
+        assert_eq!(avg_ttl, 0);
+
+        // Add key with expiry (10 seconds from now)
+        let expires_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+            + 10000;
+        storage
+            .set_value(
+                0,
+                "key3".to_string(),
+                StoredValue::with_expiration(ValueType::String("v3".into()), expires_at),
+            )
+            .unwrap();
+
+        let (keys, expires, avg_ttl) = storage.keyspace_stats_in_db(0).unwrap();
+        assert_eq!(keys, 3);
+        assert_eq!(expires, 1);
+        assert!(avg_ttl > 0 && avg_ttl <= 10000);
     }
 }

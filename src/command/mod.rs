@@ -20,9 +20,11 @@ use self::set::SetCommands;
 use self::string::StringCommands;
 use self::zset::ZSetCommands;
 use crate::error::{AikvError, Result};
+use crate::observability::Metrics;
 use crate::protocol::RespValue;
 use crate::storage::StorageEngine;
 use bytes::Bytes;
+use std::sync::Arc;
 
 /// Command executor with database context
 pub struct CommandExecutor {
@@ -42,10 +44,10 @@ pub struct CommandExecutor {
 
 impl CommandExecutor {
     pub fn new(storage: StorageEngine) -> Self {
-        Self::with_port(storage, 6379)
+        Self::with_port(storage, 6379, Arc::new(Metrics::new()))
     }
 
-    pub fn with_port(storage: StorageEngine, port: u16) -> Self {
+    pub fn with_port(storage: StorageEngine, port: u16, metrics: Arc<Metrics>) -> Self {
         // Check if cluster feature is enabled at compile time
         #[cfg(feature = "cluster")]
         let cluster_enabled = true;
@@ -61,6 +63,7 @@ impl CommandExecutor {
                 storage.clone(),
                 port,
                 cluster_enabled,
+                metrics,
             ),
             script_commands: ScriptCommands::new(storage.clone()),
             list_commands: ListCommands::new(storage.clone()),

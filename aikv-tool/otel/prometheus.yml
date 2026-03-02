@@ -19,9 +19,9 @@ scrape_configs:
           instance: "prometheus"
 
   # AiKv Redis 协议指标 (通过 redis-exporter 采集)
-  - job_name: "aikv-redis"
+  - job_name: "aikv-exporter"
     static_configs:
-      - targets: ["redis-exporter:9121"]
+      - targets: ["aikv-exporter:9121"]
         labels:
           instance: "aikv"
           service: "aikv"

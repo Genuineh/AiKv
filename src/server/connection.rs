@@ -340,8 +340,16 @@ impl Connection {
                 if let Some(ref metrics) = self.metrics {
                     let duration = start.elapsed();
                     match &result {
-                        Ok(_) => {
+                        Ok(resp) => {
                             metrics.commands.record_command(&command, duration);
+                            // Keyspace hit/miss for GET
+                            if command.eq_ignore_ascii_case("GET") {
+                                match resp {
+                                    RespValue::BulkString(Some(_)) => metrics.memory.record_hit(),
+                                    RespValue::BulkString(None) => metrics.memory.record_miss(),
+                                    _ => {}
+                                }
+                            }
                             debug!(
                                 command = %command,
                                 duration_us = duration.as_micros(),

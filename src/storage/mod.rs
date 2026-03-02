@@ -236,6 +236,14 @@ impl StorageEngine {
         }
     }
 
+    /// Get keyspace stats for INFO keyspace: (keys, expires, avg_ttl_ms)
+    pub fn keyspace_stats_in_db(&self, db_index: usize) -> Result<(usize, usize, u64)> {
+        match self {
+            StorageEngine::Memory(adapter) => adapter.keyspace_stats_in_db(db_index),
+            StorageEngine::AiDb(adapter) => adapter.keyspace_stats_in_db(db_index),
+        }
+    }
+
     /// Clear a specific database
     pub fn flush_db(&self, db_index: usize) -> Result<()> {
         match self {

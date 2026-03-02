@@ -88,6 +88,8 @@ pub struct CommandMetrics {
     pub total_commands: Counter,
     /// Commands per command type
     pub commands_by_type: RwLock<HashMap<String, Counter>>,
+    /// Total command execution time per command type (microseconds)
+    duration_by_type: RwLock<HashMap<String, Counter>>,
     /// Total command errors
     pub total_errors: Counter,
     /// Errors per command type
@@ -114,6 +116,7 @@ impl CommandMetrics {
         Self {
             total_commands: Counter::new(),
             commands_by_type: RwLock::new(HashMap::new()),
+            duration_by_type: RwLock::new(HashMap::new()),
             total_errors: Counter::new(),
             errors_by_type: RwLock::new(HashMap::new()),
             total_duration_us: AtomicU64::new(0),
@@ -126,15 +129,21 @@ impl CommandMetrics {
     /// Record a successful command execution
     pub fn record_command(&self, command: &str, duration: Duration) {
         self.total_commands.inc();
-        self.total_duration_us
-            .fetch_add(duration.as_micros() as u64, Ordering::Relaxed);
+        let usec = duration.as_micros() as u64;
+        self.total_duration_us.fetch_add(usec, Ordering::Relaxed);
 
         let command_upper = command.to_uppercase();
         if let Ok(mut commands) = self.commands_by_type.write() {
             commands
-                .entry(command_upper)
+                .entry(command_upper.clone())
                 .or_insert_with(Counter::new)
                 .inc();
+        }
+        if let Ok(mut durations) = self.duration_by_type.write() {
+            durations
+                .entry(command_upper)
+                .or_insert_with(Counter::new)
+                .inc_by(usec);
         }
     }
 
@@ -179,6 +188,44 @@ impl CommandMetrics {
         }
     }
 
+    /// Get errors by type for INFO errorstats section.
+    pub fn errors_by_type(&self) -> HashMap<String, u64> {
+        if let Ok(errors) = self.errors_by_type.read() {
+            errors.iter().map(|(k, v)| (k.clone(), v.get())).collect()
+        } else {
+            HashMap::new()
+        }
+    }
+
+    /// Get command stats for INFO commandstats section.
+    /// Returns (cmd, calls, usec) for each command type.
+    pub fn commandstats(&self) -> Vec<(String, u64, u64)> {
+        let commands = if let Ok(c) = self.commands_by_type.read() {
+            c.iter()
+                .map(|(k, v)| (k.clone(), v.get()))
+                .collect::<HashMap<_, _>>()
+        } else {
+            return Vec::new();
+        };
+        let durations = if let Ok(d) = self.duration_by_type.read() {
+            d.iter()
+                .map(|(k, v)| (k.clone(), v.get()))
+                .collect::<HashMap<_, _>>()
+        } else {
+            HashMap::new()
+        };
+
+        let mut result: Vec<(String, u64, u64)> = commands
+            .into_iter()
+            .map(|(cmd, calls)| {
+                let usec = durations.get(&cmd).copied().unwrap_or(0);
+                (cmd, calls, usec)
+            })
+            .collect();
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+        result
+    }
+
     /// Calculate and get operations per second
     pub fn ops_per_sec(&self) -> f64 {
         let now = Instant::now();
@@ -207,6 +254,9 @@ impl CommandMetrics {
         self.total_duration_us.store(0, Ordering::Relaxed);
         if let Ok(mut commands) = self.commands_by_type.write() {
             commands.clear();
+        }
+        if let Ok(mut durations) = self.duration_by_type.write() {
+            durations.clear();
         }
         if let Ok(mut errors) = self.errors_by_type.write() {
             errors.clear();
@@ -656,6 +706,39 @@ mod tests {
         let by_type = metrics.commands_by_type();
         assert_eq!(by_type.get("GET"), Some(&1));
         assert_eq!(by_type.get("SET"), Some(&1));
+    }
+
+    #[test]
+    fn test_commandstats_output() {
+        let metrics = CommandMetrics::new();
+
+        metrics.record_command("GET", Duration::from_micros(100));
+        metrics.record_command("GET", Duration::from_micros(200));
+        metrics.record_command("SET", Duration::from_micros(300));
+
+        let stats = metrics.commandstats();
+        assert_eq!(stats.len(), 2);
+
+        let get_stats = stats.iter().find(|(cmd, _, _)| cmd == "GET").unwrap();
+        assert_eq!(get_stats.1, 2); // calls
+        assert_eq!(get_stats.2, 300); // usec (100+200)
+
+        let set_stats = stats.iter().find(|(cmd, _, _)| cmd == "SET").unwrap();
+        assert_eq!(set_stats.1, 1);
+        assert_eq!(set_stats.2, 300);
+    }
+
+    #[test]
+    fn test_errors_by_type() {
+        let metrics = CommandMetrics::new();
+
+        metrics.record_error("GET");
+        metrics.record_error("GET");
+        metrics.record_error("SET");
+
+        let errors = metrics.errors_by_type();
+        assert_eq!(errors.get("GET"), Some(&2));
+        assert_eq!(errors.get("SET"), Some(&1));
     }
 
     #[test]
