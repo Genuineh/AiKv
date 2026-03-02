@@ -443,6 +443,7 @@ impl CommandExecutor {
                 }
             }
             "SLOWLOG" => self.server_commands.slowlog(args),
+            "LATENCY" => self.server_commands.latency(args),
             "TIME" => self.server_commands.time(args),
             "COMMAND" => self.server_commands.command(args),
             "SAVE" => self.server_commands.save(args),

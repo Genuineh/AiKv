@@ -1800,6 +1800,117 @@ impl ServerCommands {
         }
     }
 
+    /// LATENCY subcommand - Latency monitoring (Redis 7.0+ compatible)
+    pub fn latency(&self, args: &[Bytes]) -> Result<RespValue> {
+        if args.is_empty() {
+            return Err(AikvError::WrongArgCount("LATENCY".to_string()));
+        }
+
+        let subcommand = String::from_utf8_lossy(&args[0]).to_uppercase();
+
+        match subcommand.as_str() {
+            "HISTOGRAM" => {
+                // LATENCY HISTOGRAM [command [command ...]]
+                // Returns per-command latency histograms in Redis RESP2 flat-array format.
+                // redis-exporter calls this to generate redis_commands_latencies_usec_bucket metrics.
+                let filter: Option<Vec<&str>> = if args.len() > 1 {
+                    Some(
+                        args[1..]
+                            .iter()
+                            .map(|b| std::str::from_utf8(b).unwrap_or(""))
+                            .collect(),
+                    )
+                } else {
+                    None
+                };
+
+                let snapshots = self
+                    .metrics
+                    .commands
+                    .get_latency_histogram_snapshot(filter.as_deref());
+
+                // Build flat top-level array: [cmd1, details1, cmd2, details2, ...]
+                let mut result_items: Vec<RespValue> = Vec::with_capacity(snapshots.len() * 2);
+
+                for (cmd, total_calls, _total_usec, buckets) in snapshots {
+                    // Build flat bucket array: [bound1, count1, bound2, count2, ...]
+                    let mut bucket_items: Vec<RespValue> = Vec::with_capacity(buckets.len() * 2);
+                    for (bound, count) in &buckets {
+                        bucket_items.push(RespValue::integer(*bound as i64));
+                        bucket_items.push(RespValue::integer(*count as i64));
+                    }
+
+                    // Detail array: ["calls", N, "histogram_usec", [bucket_flat_array]]
+                    let detail = RespValue::array(vec![
+                        RespValue::bulk_string("calls"),
+                        RespValue::integer(total_calls as i64),
+                        RespValue::bulk_string("histogram_usec"),
+                        RespValue::array(bucket_items),
+                    ]);
+
+                    result_items.push(RespValue::bulk_string(cmd));
+                    result_items.push(detail);
+                }
+
+                Ok(RespValue::array(result_items))
+            }
+
+            "LATEST" => {
+                // LATENCY LATEST
+                // Returns latest latency spikes per event. AiKv does not track spike events,
+                // so return an empty array. redis-exporter handles this gracefully.
+                Ok(RespValue::array(vec![]))
+            }
+
+            "RESET" => {
+                // LATENCY RESET [event [event ...]]
+                let filter: Option<Vec<&str>> = if args.len() > 1 {
+                    Some(
+                        args[1..]
+                            .iter()
+                            .map(|b| std::str::from_utf8(b).unwrap_or(""))
+                            .collect(),
+                    )
+                } else {
+                    None
+                };
+
+                let count = self
+                    .metrics
+                    .commands
+                    .reset_latency_histograms(filter.as_deref());
+
+                Ok(RespValue::integer(count as i64))
+            }
+
+            "HISTORY" => {
+                // LATENCY HISTORY event
+                // AiKv does not keep per-event time-series, return empty array.
+                Ok(RespValue::array(vec![]))
+            }
+
+            "HELP" => Ok(RespValue::array(vec![
+                RespValue::bulk_string(
+                    "LATENCY HISTOGRAM [command ...] - Show latency histogram per command",
+                ),
+                RespValue::bulk_string(
+                    "LATENCY LATEST - Show latest latency spike events",
+                ),
+                RespValue::bulk_string(
+                    "LATENCY HISTORY event - Show latency time series for an event",
+                ),
+                RespValue::bulk_string(
+                    "LATENCY RESET [event ...] - Reset latency data (all or specific commands)",
+                ),
+            ])),
+
+            _ => Err(AikvError::InvalidCommand(format!(
+                "Unknown LATENCY subcommand: {}",
+                subcommand
+            ))),
+        }
+    }
+
     /// TIME - Return the current server time
     pub fn time(&self, _args: &[Bytes]) -> Result<RespValue> {
         let now = SystemTime::now()

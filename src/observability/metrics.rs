@@ -81,6 +81,84 @@ impl Gauge {
     }
 }
 
+/// Bucket upper-bounds (μs) for per-command latency histograms.
+/// Power-of-2 boundaries from 1 μs up to ~1 s, matching Redis's latency-tracking buckets.
+pub const LATENCY_BUCKET_BOUNDS: &[u64] = &[
+    1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1_024, 2_048, 4_096, 8_192, 16_384, 32_768, 65_536,
+    131_072, 262_144, 524_288, 1_048_576,
+];
+
+/// Per-command latency histogram with cumulative power-of-2 buckets (μs).
+///
+/// Compatible with the Redis `LATENCY HISTOGRAM` command response format so that
+/// redis-exporter can automatically pick up P50/P99/P999 data.
+#[derive(Debug)]
+pub struct LatencyHistogram {
+    /// Cumulative count per bucket; index i corresponds to LATENCY_BUCKET_BOUNDS[i].
+    /// bucket[i] = number of observations with latency <= LATENCY_BUCKET_BOUNDS[i].
+    buckets: Vec<AtomicU64>,
+    /// Total number of recorded observations.
+    pub total_calls: AtomicU64,
+    /// Sum of all observed latencies in microseconds.
+    pub total_usec: AtomicU64,
+}
+
+impl LatencyHistogram {
+    pub fn new() -> Self {
+        Self {
+            buckets: LATENCY_BUCKET_BOUNDS
+                .iter()
+                .map(|_| AtomicU64::new(0))
+                .collect(),
+            total_calls: AtomicU64::new(0),
+            total_usec: AtomicU64::new(0),
+        }
+    }
+
+    /// Record a single observation (`usec` microseconds).
+    pub fn record(&self, usec: u64) {
+        self.total_calls.fetch_add(1, Ordering::Relaxed);
+        self.total_usec.fetch_add(usec, Ordering::Relaxed);
+        // Increment every bucket whose upper-bound >= usec (cumulative semantics).
+        for (i, &bound) in LATENCY_BUCKET_BOUNDS.iter().enumerate() {
+            if usec <= bound {
+                self.buckets[i].fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// Return non-zero buckets as `(upper_bound_usec, cumulative_count)` pairs.
+    pub fn snapshot(&self) -> Vec<(u64, u64)> {
+        LATENCY_BUCKET_BOUNDS
+            .iter()
+            .zip(self.buckets.iter())
+            .filter_map(|(&bound, counter)| {
+                let count = counter.load(Ordering::Relaxed);
+                if count > 0 {
+                    Some((bound, count))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Reset all counters to zero.
+    pub fn reset(&self) {
+        self.total_calls.store(0, Ordering::Relaxed);
+        self.total_usec.store(0, Ordering::Relaxed);
+        for bucket in &self.buckets {
+            bucket.store(0, Ordering::Relaxed);
+        }
+    }
+}
+
+impl Default for LatencyHistogram {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Command execution metrics
 #[derive(Debug)]
 pub struct CommandMetrics {
@@ -102,6 +180,8 @@ pub struct CommandMetrics {
     last_ops_calc: RwLock<Instant>,
     /// Commands at last calculation
     last_ops_count: AtomicU64,
+    /// Per-command latency histograms for LATENCY HISTOGRAM command.
+    pub latency_histograms: RwLock<HashMap<String, LatencyHistogram>>,
 }
 
 impl Default for CommandMetrics {
@@ -123,6 +203,7 @@ impl CommandMetrics {
             ops_per_sec: RwLock::new(0.0),
             last_ops_calc: RwLock::new(Instant::now()),
             last_ops_count: AtomicU64::new(0),
+            latency_histograms: RwLock::new(HashMap::new()),
         }
     }
 
@@ -141,9 +222,15 @@ impl CommandMetrics {
         }
         if let Ok(mut durations) = self.duration_by_type.write() {
             durations
-                .entry(command_upper)
+                .entry(command_upper.clone())
                 .or_insert_with(Counter::new)
                 .inc_by(usec);
+        }
+        if let Ok(mut hists) = self.latency_histograms.write() {
+            hists
+                .entry(command_upper)
+                .or_insert_with(LatencyHistogram::new)
+                .record(usec);
         }
     }
 
@@ -261,6 +348,73 @@ impl CommandMetrics {
         if let Ok(mut errors) = self.errors_by_type.write() {
             errors.clear();
         }
+        if let Ok(mut hists) = self.latency_histograms.write() {
+            hists.clear();
+        }
+    }
+
+    /// Reset latency histograms.
+    ///
+    /// If `cmds` is `Some`, only the named commands are reset; otherwise all are reset.
+    /// Returns the number of histograms that were reset.
+    pub fn reset_latency_histograms(&self, cmds: Option<&[&str]>) -> u64 {
+        let Ok(mut hists) = self.latency_histograms.write() else {
+            return 0;
+        };
+        match cmds {
+            None => {
+                let count = hists.len() as u64;
+                hists.clear();
+                count
+            }
+            Some(names) => {
+                let mut count = 0u64;
+                for name in names {
+                    let key = name.to_uppercase();
+                    if let Some(h) = hists.get(&key) {
+                        h.reset();
+                        count += 1;
+                    }
+                }
+                count
+            }
+        }
+    }
+
+    /// Snapshot latency histograms for the LATENCY HISTOGRAM command.
+    ///
+    /// If `cmds` is `Some`, only the named commands are included; otherwise all
+    /// commands with at least one observation are returned.
+    /// Returns `(cmd_lowercase, total_calls, total_usec, buckets)` per command.
+    pub fn get_latency_histogram_snapshot(
+        &self,
+        cmds: Option<&[&str]>,
+    ) -> Vec<(String, u64, u64, Vec<(u64, u64)>)> {
+        let Ok(hists) = self.latency_histograms.read() else {
+            return Vec::new();
+        };
+        let mut result = Vec::new();
+
+        let filter: Option<Vec<String>> =
+            cmds.map(|names| names.iter().map(|n| n.to_uppercase()).collect());
+
+        for (cmd, hist) in hists.iter() {
+            if let Some(ref names) = filter {
+                if !names.contains(cmd) {
+                    continue;
+                }
+            }
+            let total_calls = hist.total_calls.load(Ordering::Relaxed);
+            if total_calls == 0 {
+                continue;
+            }
+            let total_usec = hist.total_usec.load(Ordering::Relaxed);
+            let buckets = hist.snapshot();
+            result.push((cmd.to_lowercase(), total_calls, total_usec, buckets));
+        }
+
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+        result
     }
 }
 
