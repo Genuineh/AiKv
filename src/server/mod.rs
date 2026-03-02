@@ -4,14 +4,16 @@ pub mod monitor;
 pub use monitor::{MonitorBroadcaster, MonitorMessage};
 
 use self::connection::Connection;
+use crate::command::server::{ClientInfo, ServerCommands};
 use crate::command::CommandExecutor;
 use crate::error::Result;
-use crate::observability::Metrics;
+use crate::observability::{Metrics, SlowQueryLog};
 use crate::storage::StorageEngine;
+use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use tokio::net::TcpListener;
-use tracing::{error, info};
+use tracing::{error, info, Level};
 
 #[cfg(feature = "cluster")]
 use crate::cluster::{ClusterCommands, MetaRaftNode, MultiRaftNode, Router};
@@ -23,6 +25,14 @@ pub struct Server {
     storage: StorageEngine,
     metrics: Arc<Metrics>,
     monitor_broadcaster: Arc<MonitorBroadcaster>,
+    /// Shared server config — persists CONFIG SET changes across connections.
+    shared_config: Arc<RwLock<HashMap<String, String>>>,
+    /// Shared slow query log — persists threshold changes across connections.
+    slow_query_log: Arc<SlowQueryLog>,
+    /// Shared client registry — CLIENT LIST reflects all active connections.
+    clients: Arc<RwLock<HashMap<usize, ClientInfo>>>,
+    /// Shared log level — CONFIG SET loglevel takes effect server-wide.
+    current_log_level: Arc<RwLock<Level>>,
     #[cfg(feature = "cluster")]
     node_id: u64,
     #[cfg(feature = "cluster")]
@@ -63,6 +73,10 @@ impl Server {
             storage,
             metrics: Arc::new(Metrics::new()),
             monitor_broadcaster: Arc::new(MonitorBroadcaster::new()),
+            shared_config: Arc::new(RwLock::new(ServerCommands::default_config(port))),
+            slow_query_log: Arc::new(SlowQueryLog::new()),
+            clients: Arc::new(RwLock::new(HashMap::new())),
+            current_log_level: Arc::new(RwLock::new(Level::INFO)),
             #[cfg(feature = "cluster")]
             node_id,
             #[cfg(feature = "cluster")]
@@ -272,11 +286,17 @@ impl Server {
                     // Record connection metrics
                     self.metrics.connections.record_connection();
 
-                    // Create executor with or without cluster commands
-                    let executor = CommandExecutor::with_port(
+                    // Create executor with shared server state so that CONFIG SET,
+                    // SLOWLOG config, CLIENT LIST, and loglevel changes persist
+                    // across connections.
+                    let executor = CommandExecutor::with_shared(
                         self.storage.clone(),
                         self.port,
                         Arc::clone(&self.metrics),
+                        Arc::clone(&self.shared_config),
+                        Arc::clone(&self.slow_query_log),
+                        Arc::clone(&self.clients),
+                        Arc::clone(&self.current_log_level),
                     );
 
                     #[cfg(feature = "cluster")]

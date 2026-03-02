@@ -15,16 +15,18 @@ use self::json::JsonCommands;
 use self::key::KeyCommands;
 use self::list::ListCommands;
 use self::script::ScriptCommands;
-use self::server::ServerCommands;
+use self::server::{ClientInfo, ServerCommands};
 use self::set::SetCommands;
 use self::string::StringCommands;
 use self::zset::ZSetCommands;
 use crate::error::{AikvError, Result};
-use crate::observability::Metrics;
+use crate::observability::{Metrics, SlowQueryLog};
 use crate::protocol::RespValue;
 use crate::storage::StorageEngine;
 use bytes::Bytes;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use tracing::Level;
 
 /// Command executor with database context
 pub struct CommandExecutor {
@@ -72,6 +74,51 @@ impl CommandExecutor {
             zset_commands: ZSetCommands::new(storage),
             #[cfg(feature = "cluster")]
             cluster_commands: None, // Will be set later when cluster is initialized
+        }
+    }
+
+    /// Create a `CommandExecutor` that shares server-level state across all connections.
+    ///
+    /// Use this constructor in production so that CONFIG SET, SLOWLOG, CLIENT LIST, etc.
+    /// are consistent across connections.  The four `Arc` arguments are created once in
+    /// `Server::new()` and cloned for each accepted connection.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_shared(
+        storage: StorageEngine,
+        port: u16,
+        metrics: Arc<Metrics>,
+        config: Arc<RwLock<HashMap<String, String>>>,
+        slow_query_log: Arc<SlowQueryLog>,
+        clients: Arc<RwLock<HashMap<usize, ClientInfo>>>,
+        current_log_level: Arc<RwLock<Level>>,
+    ) -> Self {
+        #[cfg(feature = "cluster")]
+        let cluster_enabled = true;
+        #[cfg(not(feature = "cluster"))]
+        let cluster_enabled = false;
+
+        Self {
+            string_commands: StringCommands::new(storage.clone()),
+            json_commands: JsonCommands::new(storage.clone()),
+            database_commands: DatabaseCommands::new(storage.clone()),
+            key_commands: KeyCommands::new(storage.clone()),
+            server_commands: ServerCommands::with_shared_state(
+                storage.clone(),
+                port,
+                cluster_enabled,
+                metrics,
+                config,
+                slow_query_log,
+                clients,
+                current_log_level,
+            ),
+            script_commands: ScriptCommands::new(storage.clone()),
+            list_commands: ListCommands::new(storage.clone()),
+            hash_commands: HashCommands::new(storage.clone()),
+            set_commands: SetCommands::new(storage.clone()),
+            zset_commands: ZSetCommands::new(storage),
+            #[cfg(feature = "cluster")]
+            cluster_commands: None,
         }
     }
 

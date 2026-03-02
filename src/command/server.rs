@@ -985,23 +985,26 @@ impl ServerCommands {
         )
     }
 
+    /// Build the default server configuration map for the given port.
+    pub fn default_config(port: u16) -> HashMap<String, String> {
+        let mut cfg = HashMap::new();
+        cfg.insert("server".to_string(), "aikv".to_string());
+        cfg.insert("version".to_string(), AIKV_VERSION.to_string());
+        cfg.insert("port".to_string(), port.to_string());
+        cfg.insert("databases".to_string(), "16".to_string());
+        cfg.insert("loglevel".to_string(), "info".to_string());
+        cfg.insert("slowlog-log-slower-than".to_string(), "10000".to_string());
+        cfg.insert("slowlog-max-len".to_string(), "128".to_string());
+        cfg.insert("maxclients".to_string(), "10000".to_string());
+        cfg
+    }
+
     pub fn with_storage_port_and_cluster(
         storage: StorageEngine,
         port: u16,
         cluster_enabled: bool,
         metrics: Arc<Metrics>,
     ) -> Self {
-        let mut default_config = HashMap::new();
-        default_config.insert("server".to_string(), "aikv".to_string());
-        default_config.insert("version".to_string(), AIKV_VERSION.to_string());
-        default_config.insert("port".to_string(), port.to_string());
-        default_config.insert("databases".to_string(), "16".to_string());
-        default_config.insert("loglevel".to_string(), "info".to_string());
-        default_config.insert("slowlog-log-slower-than".to_string(), "10000".to_string());
-        default_config.insert("slowlog-max-len".to_string(), "128".to_string());
-        default_config.insert("maxclients".to_string(), "10000".to_string());
-
-        // Initialize last_save_time and start_time to current time
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -1010,12 +1013,48 @@ impl ServerCommands {
         Self {
             storage,
             clients: Arc::new(RwLock::new(HashMap::new())),
-            config: Arc::new(RwLock::new(default_config)),
+            config: Arc::new(RwLock::new(Self::default_config(port))),
             start_time_secs: now,
             run_id: generate_run_id(),
             tcp_port: port,
             current_log_level: Arc::new(RwLock::new(Level::INFO)),
             slow_query_log: Arc::new(SlowQueryLog::new()),
+            last_save_time: Arc::new(AtomicU64::new(now)),
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
+            cluster_enabled,
+            metrics,
+        }
+    }
+
+    /// Create a `ServerCommands` that uses pre-existing shared state `Arc`s.
+    ///
+    /// This is the constructor used in production: all connections share the same
+    /// `config`, `slow_query_log`, `clients`, and `current_log_level` so that
+    /// changes made by one connection (e.g. CONFIG SET) are visible to others.
+    pub fn with_shared_state(
+        storage: StorageEngine,
+        port: u16,
+        cluster_enabled: bool,
+        metrics: Arc<Metrics>,
+        config: Arc<RwLock<HashMap<String, String>>>,
+        slow_query_log: Arc<SlowQueryLog>,
+        clients: Arc<RwLock<HashMap<usize, ClientInfo>>>,
+        current_log_level: Arc<RwLock<Level>>,
+    ) -> Self {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        Self {
+            storage,
+            clients,
+            config,
+            slow_query_log,
+            current_log_level,
+            start_time_secs: now,
+            run_id: generate_run_id(),
+            tcp_port: port,
             last_save_time: Arc::new(AtomicU64::new(now)),
             shutdown_requested: Arc::new(AtomicBool::new(false)),
             cluster_enabled,
