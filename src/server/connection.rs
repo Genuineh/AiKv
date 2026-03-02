@@ -336,9 +336,10 @@ impl Connection {
                     self.executor
                         .execute(&command, &args, &mut self.current_db, self.client_id);
 
+                let duration = start.elapsed();
+
                 // Record metrics
                 if let Some(ref metrics) = self.metrics {
-                    let duration = start.elapsed();
                     match &result {
                         Ok(resp) => {
                             metrics.commands.record_command(&command, duration);
@@ -362,6 +363,18 @@ impl Connection {
                             metrics.commands.record_error(&command);
                         }
                     }
+                }
+
+                // Record slow query if over threshold (Redis SLOWLOG semantics)
+                {
+                    let args_str: Vec<String> = args
+                        .iter()
+                        .map(|b| String::from_utf8_lossy(b).into_owned())
+                        .collect();
+                    self.executor
+                        .server_commands()
+                        .slow_query_log()
+                        .record(&command, &args_str, duration, Some(self.client_addr.clone()));
                 }
 
                 match result {
