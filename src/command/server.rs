@@ -1347,6 +1347,27 @@ impl ServerCommands {
         info_lines.push("instantaneous_eventloop_cycles_per_sec:0".to_string());
         info_lines.push("instantaneous_eventloop_duration_usec:0".to_string());
 
+        // AiKv-specific lock contention metrics (aikv_ prefix avoids collision with Redis fields).
+        // redis-exporter converts every "key:value" line in INFO stats to a Prometheus metric,
+        // so these automatically appear as redis_aikv_* gauges without any exporter changes.
+        let locks = &self.metrics.locks;
+        info_lines.push(format!(
+            "aikv_storage_write_contentions:{}",
+            locks.storage_write_contentions.get()
+        ));
+        info_lines.push(format!(
+            "aikv_storage_write_wait_us_total:{}",
+            locks.storage_write_wait_us.load(Ordering::Relaxed)
+        ));
+        info_lines.push(format!(
+            "aikv_script_lock_wait_us_total:{}",
+            locks.script_lock_wait_us.load(Ordering::Relaxed)
+        ));
+        info_lines.push(format!(
+            "aikv_script_lock_timeouts:{}",
+            locks.script_lock_timeouts.get()
+        ));
+
         info_lines
     }
 

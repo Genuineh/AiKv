@@ -12,8 +12,10 @@ pub use aidb_adapter::AiDbStorageAdapter;
 pub use memory_adapter::{BatchOp, SerializableStoredValue, StoredValue, ValueType};
 
 use crate::error::Result;
+use crate::observability::LockMetrics;
 use bytes::Bytes;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Unified storage engine that wraps both memory and AiDb adapters.
 /// This enum allows seamless switching between storage backends via configuration.
@@ -29,6 +31,14 @@ impl StorageEngine {
     /// Create a new memory storage engine
     pub fn new_memory(db_count: usize) -> Self {
         StorageEngine::Memory(StorageAdapter::with_db_count(db_count))
+    }
+
+    /// Attach lock contention metrics to the underlying storage adapter.
+    /// No-op for the AiDb backend (which manages its own locking).
+    pub fn set_lock_metrics(&mut self, metrics: Arc<LockMetrics>) {
+        if let StorageEngine::Memory(adapter) = self {
+            adapter.set_lock_metrics(metrics);
+        }
     }
 
     /// Create a new AiDb storage engine

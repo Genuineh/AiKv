@@ -36,11 +36,13 @@
 //! ```
 
 use crate::error::{AikvError, Result};
+use crate::observability::LockMetrics;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, RwLock, RwLockWriteGuard};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// Batch operation for atomic writes
 #[derive(Debug, Clone)]
@@ -335,6 +337,8 @@ type Database = HashMap<String, StoredValue>;
 pub struct StorageAdapter {
     /// Multiple databases (default: 16 databases like Redis)
     databases: Arc<RwLock<Vec<Database>>>,
+    /// Optional lock contention metrics; set via `set_lock_metrics()` after construction.
+    lock_metrics: Option<Arc<LockMetrics>>,
 }
 
 impl StorageAdapter {
@@ -349,6 +353,40 @@ impl StorageAdapter {
         }
         Self {
             databases: Arc::new(RwLock::new(databases)),
+            lock_metrics: None,
+        }
+    }
+
+    /// Attach lock contention metrics.  Call once after construction.
+    pub fn set_lock_metrics(&mut self, metrics: Arc<LockMetrics>) {
+        self.lock_metrics = Some(metrics);
+    }
+
+    /// Acquire a write lock on `databases`, recording contention and wait time.
+    ///
+    /// Uses `try_write()` first: if that fails (lock already held), increments
+    /// the contention counter, times the blocking `write()`, and records the
+    /// wait duration.
+    fn acquire_write(&self) -> Result<RwLockWriteGuard<'_, Vec<Database>>> {
+        match self.databases.try_write() {
+            Ok(guard) => Ok(guard),
+            Err(_) => {
+                if let Some(m) = &self.lock_metrics {
+                    m.storage_write_contentions.inc();
+                }
+                let wait_start = Instant::now();
+                let guard = self
+                    .databases
+                    .write()
+                    .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+                if let Some(m) = &self.lock_metrics {
+                    m.storage_write_wait_us.fetch_add(
+                        wait_start.elapsed().as_micros() as u64,
+                        Ordering::Relaxed,
+                    );
+                }
+                Ok(guard)
+            }
         }
     }
 
@@ -364,10 +402,7 @@ impl StorageAdapter {
     /// Reserved for future background cleanup task
     #[allow(dead_code)]
     fn cleanup_expired(&self, db_index: usize) -> Result<()> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if let Some(db) = databases.get_mut(db_index) {
             db.retain(|_, v| !v.is_expired());
@@ -444,10 +479,7 @@ impl StorageAdapter {
     /// storage.set_value(0, "myhash".to_string(), value)?;
     /// ```
     pub fn set_value(&self, db_index: usize, key: String, value: StoredValue) -> Result<()> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if let Some(db) = databases.get_mut(db_index) {
             db.insert(key, value);
@@ -486,10 +518,7 @@ impl StorageAdapter {
     /// }
     /// ```
     pub fn delete_and_get(&self, db_index: usize, key: &str) -> Result<Option<StoredValue>> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if let Some(db) = databases.get_mut(db_index) {
             if let Some(stored) = db.remove(key) {
@@ -530,10 +559,7 @@ impl StorageAdapter {
     where
         F: FnOnce(&mut StoredValue) -> Result<()>,
     {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if let Some(db) = databases.get_mut(db_index) {
             if let Some(stored) = db.get_mut(key) {
@@ -577,10 +603,7 @@ impl StorageAdapter {
             return Ok(());
         }
 
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if let Some(db) = databases.get_mut(db_index) {
             for (key, op) in operations {
@@ -634,10 +657,7 @@ impl StorageAdapter {
 
     /// Set a value for a key in a specific database
     pub fn set_in_db(&self, db_index: usize, key: String, value: Bytes) -> Result<()> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if let Some(db) = databases.get_mut(db_index) {
             db.insert(key, StoredValue::new_string(value));
@@ -663,10 +683,7 @@ impl StorageAdapter {
         value: Bytes,
         expires_at: u64,
     ) -> Result<()> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if let Some(db) = databases.get_mut(db_index) {
             db.insert(
@@ -684,10 +701,7 @@ impl StorageAdapter {
 
     /// Set expiration for a key in milliseconds
     pub fn set_expire_in_db(&self, db_index: usize, key: &str, expire_ms: u64) -> Result<bool> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if let Some(db) = databases.get_mut(db_index) {
             if let Some(stored) = db.get_mut(key) {
@@ -709,10 +723,7 @@ impl StorageAdapter {
         key: &str,
         timestamp_ms: u64,
     ) -> Result<bool> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if let Some(db) = databases.get_mut(db_index) {
             if let Some(stored) = db.get_mut(key) {
@@ -778,10 +789,7 @@ impl StorageAdapter {
 
     /// Remove expiration from a key
     pub fn persist_in_db(&self, db_index: usize, key: &str) -> Result<bool> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if let Some(db) = databases.get_mut(db_index) {
             if let Some(stored) = db.get_mut(key) {
@@ -800,10 +808,7 @@ impl StorageAdapter {
 
     /// Delete a key from a specific database
     pub fn delete_from_db(&self, db_index: usize, key: &str) -> Result<bool> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if let Some(db) = databases.get_mut(db_index) {
             Ok(db.remove(key).is_some())
@@ -923,10 +928,7 @@ impl StorageAdapter {
 
     /// Clear a specific database
     pub fn flush_db(&self, db_index: usize) -> Result<()> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if let Some(db) = databases.get_mut(db_index) {
             db.clear();
@@ -936,10 +938,7 @@ impl StorageAdapter {
 
     /// Clear all databases
     pub fn flush_all(&self) -> Result<()> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         for db in databases.iter_mut() {
             db.clear();
@@ -949,10 +948,7 @@ impl StorageAdapter {
 
     /// Swap two databases
     pub fn swap_db(&self, db1: usize, db2: usize) -> Result<()> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if db1 >= databases.len() || db2 >= databases.len() {
             return Err(AikvError::Storage(format!(
@@ -967,10 +963,7 @@ impl StorageAdapter {
 
     /// Move a key from one database to another
     pub fn move_key(&self, src_db: usize, dst_db: usize, key: &str) -> Result<bool> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if src_db >= databases.len() || dst_db >= databases.len() {
             return Err(AikvError::Storage(format!(
@@ -1016,10 +1009,7 @@ impl StorageAdapter {
 
     /// Rename a key
     pub fn rename_in_db(&self, db_index: usize, old_key: &str, new_key: &str) -> Result<bool> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if let Some(db) = databases.get_mut(db_index) {
             if let Some(value) = db.remove(old_key) {
@@ -1035,10 +1025,7 @@ impl StorageAdapter {
 
     /// Rename a key only if new key doesn't exist
     pub fn rename_nx_in_db(&self, db_index: usize, old_key: &str, new_key: &str) -> Result<bool> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if let Some(db) = databases.get_mut(db_index) {
             if db.contains_key(new_key) {
@@ -1064,10 +1051,7 @@ impl StorageAdapter {
         dst_key: &str,
         replace: bool,
     ) -> Result<bool> {
-        let mut databases = self
-            .databases
-            .write()
-            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+        let mut databases = self.acquire_write()?;
 
         if src_db >= databases.len() || dst_db >= databases.len() {
             return Err(AikvError::Storage(format!(

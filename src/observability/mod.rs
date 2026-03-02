@@ -12,5 +12,5 @@ pub mod metrics;
 pub mod tracing_setup;
 
 pub use logging::{LogConfig, LogFormat, LoggingManager, SlowQueryLog};
-pub use metrics::{CommandMetrics, ConnectionMetrics, MemoryMetrics, Metrics};
+pub use metrics::{CommandMetrics, ConnectionMetrics, LockMetrics, MemoryMetrics, Metrics};
 pub use tracing_setup::TracingConfig;

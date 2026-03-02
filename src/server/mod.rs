@@ -45,7 +45,7 @@ pub struct Server {
 
 impl Server {
     /// Create a new server with the specified address and storage engine
-    pub fn new(addr: String, storage: StorageEngine) -> Self {
+    pub fn new(addr: String, mut storage: StorageEngine) -> Self {
         // Extract port from address string using proper SocketAddr parsing
         // This handles both IPv4 (127.0.0.1:6379) and IPv6 ([::1]:6379) formats
         let port = addr
@@ -67,11 +67,14 @@ impl Server {
             0
         };
 
+        let metrics = Arc::new(Metrics::new());
+        storage.set_lock_metrics(Arc::clone(&metrics.locks));
+
         Self {
             addr,
             port,
             storage,
-            metrics: Arc::new(Metrics::new()),
+            metrics,
             monitor_broadcaster: Arc::new(MonitorBroadcaster::new()),
             shared_config: Arc::new(RwLock::new(ServerCommands::default_config(port))),
             slow_query_log: Arc::new(SlowQueryLog::new()),

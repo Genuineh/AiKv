@@ -618,6 +618,32 @@ impl MemoryMetrics {
     }
 }
 
+/// Lock contention metrics — AiKv-specific, no Redis equivalent.
+///
+/// Exposed via `INFO stats` as `aikv_*` fields so that redis-exporter
+/// automatically converts them to Prometheus gauges/counters.
+#[derive(Debug, Default)]
+pub struct LockMetrics {
+    /// Number of times a storage write lock had to wait (contention detected
+    /// via `try_write()` failure before blocking `write()`).
+    pub storage_write_contentions: Counter,
+    /// Total microseconds spent waiting for the storage write lock.
+    pub storage_write_wait_us: AtomicU64,
+    /// Number of times a script key lock wait timed out (30 s default).
+    /// This is the closest AiKv equivalent to "deadlock count": the key
+    /// ordering in `KeyLockManager` prevents true deadlocks, but a very slow
+    /// script holding a key lock can cause other scripts to time out.
+    pub script_lock_timeouts: Counter,
+    /// Total microseconds scripts spent waiting for key locks.
+    pub script_lock_wait_us: AtomicU64,
+}
+
+impl LockMetrics {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 /// Combined metrics for the entire server
 #[derive(Debug)]
 pub struct Metrics {
@@ -627,6 +653,8 @@ pub struct Metrics {
     pub connections: Arc<ConnectionMetrics>,
     /// Memory metrics
     pub memory: Arc<MemoryMetrics>,
+    /// Lock contention metrics (AiKv-specific)
+    pub locks: Arc<LockMetrics>,
     /// Server start time
     pub start_time: Instant,
 }
@@ -644,6 +672,7 @@ impl Metrics {
             commands: Arc::new(CommandMetrics::new()),
             connections: Arc::new(ConnectionMetrics::new()),
             memory: Arc::new(MemoryMetrics::new()),
+            locks: Arc::new(LockMetrics::new()),
             start_time: Instant::now(),
         }
     }

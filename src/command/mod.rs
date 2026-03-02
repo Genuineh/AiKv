@@ -102,6 +102,10 @@ impl CommandExecutor {
             json_commands: JsonCommands::new(storage.clone()),
             database_commands: DatabaseCommands::new(storage.clone()),
             key_commands: KeyCommands::new(storage.clone()),
+            script_commands: ScriptCommands::with_metrics(
+                storage.clone(),
+                Arc::clone(&metrics.locks),
+            ),
             server_commands: ServerCommands::with_shared_state(
                 storage.clone(),
                 port,
@@ -112,7 +116,6 @@ impl CommandExecutor {
                 clients,
                 current_log_level,
             ),
-            script_commands: ScriptCommands::new(storage.clone()),
             list_commands: ListCommands::new(storage.clone()),
             hash_commands: HashCommands::new(storage.clone()),
             set_commands: SetCommands::new(storage.clone()),
