@@ -6,6 +6,7 @@
 #
 #   AiKv (Redis Protocol)  ──> aikv-exporter  ──> Prometheus ──> Grafana
 #   Host System            ──> node-exporter   ──> Prometheus ──> Grafana
+#   Docker Containers      ──> cAdvisor        ──> Prometheus ──> Grafana (容器级 CPU/内存/网络/磁盘)
 #   AiKv (OTLP Traces)     ──> OTel Collector  ──> Jaeger     ──> Grafana (Explore / Jaeger UI)
 #                                  └─────────────> Tempo      ──> Grafana (Drilldown / TraceQL)
 #   Docker Containers      ──> Promtail        ──> Loki       ──> Grafana
@@ -24,6 +25,7 @@
 # 访问地址 / Access URLs:
 #   Grafana:      http://localhost:3000  (admin / admin)
 #   Prometheus:   http://localhost:9090
+#   cAdvisor:     http://localhost:8080  (容器指标 /metrics)
 #   Jaeger UI:    http://localhost:16686
 #   Tempo API:    http://localhost:3200 (Grafana 内通过数据源查询)
 #   Loki:         http://localhost:3100
@@ -117,6 +119,24 @@ services:
     networks:
       - aikv
 
+  # cAdvisor - 采集容器级指标 (CPU/内存/网络/块设备 I/O)，与 Docker limits 一致，WSL 下更准确
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    # devices: /dev/kmsg 在部分 WSL 上不存在，若需更完整指标可在 Linux 宿主机上取消注释
+    networks:
+      - aikv
+
   # ============================================================
   # Metrics Storage - 指标存储与查询
   # ============================================================
@@ -143,6 +163,7 @@ services:
     depends_on:
       - aikv-exporter
       - node-exporter
+      - cadvisor
     networks:
       - aikv
 
