@@ -216,7 +216,16 @@ struct ClusterNode {
     master_id: Option<u32>,
 }
 
+/// Docker 资源限制 (用于模板，标准化测试时可复现 CPU/内存)
+#[derive(Serialize)]
+struct DockerResourceLimits {
+    cpus: String,
+    memory: String,
+}
+
 /// 生成动态配置文件(docker-compose.yaml 和节点配置)
+///
+/// 当 `resource_limits` 为 `Some((cpus, memory))` 时，生成的 compose 会包含 deploy.resources.limits，用于可复现的标准化测试。
 pub fn generate_dynamic_configs(
     run_dir: &Path,
     image: &str,
@@ -224,6 +233,7 @@ pub fn generate_dynamic_configs(
     shards: Option<u32>,
     replicas: Option<u32>,
     network_external: bool,
+    resource_limits: Option<(String, String)>,
 ) -> Result<()> {
     let mut nodes = Vec::new();
 
@@ -281,6 +291,12 @@ pub fn generate_dynamic_configs(
     context.insert("nodes", &nodes);
     context.insert("image", image);
     context.insert("network_external", &network_external);
+    if let Some((cpus, memory)) = resource_limits {
+        context.insert(
+            "resource_limits",
+            &DockerResourceLimits { cpus, memory },
+        );
+    }
 
     // 生成 docker-compose.yaml
     let compose_content = tera
@@ -313,7 +329,7 @@ mod tests {
     #[test]
     fn generate_single_node() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(1), None, None, false).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(1), None, None, false, None).unwrap();
 
         // 验证 docker-compose.yaml 生成
         let compose_path = tmp_dir
@@ -341,7 +357,7 @@ mod tests {
     #[test]
     fn generate_pure_nodes_mode() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        generate_dynamic_configs(tmp_dir.path(), "aikv:dev", Some(3), None, None, false).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:dev", Some(3), None, None, false, None).unwrap();
 
         let compose_content = std::fs::read_to_string(
             tmp_dir
@@ -369,7 +385,7 @@ mod tests {
     fn generate_cluster_shards_no_replicas() {
         let tmp_dir = tempfile::tempdir().unwrap();
         // 3 分片, 0 副本 → 3 个 master 节点
-        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", None, Some(3), Some(0), false).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", None, Some(3), Some(0), false, None).unwrap();
 
         let config_dir = tmp_dir.path().join(crate::constants::dirs::CONFIG);
         assert!(config_dir.join("aikv1.toml").exists());
@@ -389,7 +405,7 @@ mod tests {
     fn generate_cluster_with_replicas() {
         let tmp_dir = tempfile::tempdir().unwrap();
         // 2 分片, 1 副本 → 4 个节点 (2 master + 2 slave)
-        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", None, Some(2), Some(1), false).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", None, Some(2), Some(1), false, None).unwrap();
 
         let config_dir = tmp_dir.path().join(crate::constants::dirs::CONFIG);
         assert!(config_dir.join("aikv1.toml").exists()); // master 1
@@ -418,7 +434,7 @@ mod tests {
     fn generate_cluster_3_shards_2_replicas() {
         let tmp_dir = tempfile::tempdir().unwrap();
         // 3 分片, 2 副本 → 9 个节点
-        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", None, Some(3), Some(2), false).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", None, Some(3), Some(2), false, None).unwrap();
 
         let config_dir = tmp_dir.path().join(crate::constants::dirs::CONFIG);
         for i in 1..=9 {
@@ -434,7 +450,7 @@ mod tests {
     #[test]
     fn compose_yaml_has_required_sections() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(2), None, None, false).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(2), None, None, false, None).unwrap();
 
         let content = std::fs::read_to_string(
             tmp_dir
@@ -451,9 +467,36 @@ mod tests {
     }
 
     #[test]
+    fn compose_yaml_includes_resource_limits_when_provided() {
+        let tmp_dir = tempfile::tempdir().unwrap();
+        generate_dynamic_configs(
+            tmp_dir.path(),
+            "aikv:test",
+            Some(1),
+            None,
+            None,
+            false,
+            Some(("2".to_string(), "1G".to_string())),
+        )
+        .unwrap();
+
+        let content = std::fs::read_to_string(
+            tmp_dir
+                .path()
+                .join(crate::constants::files::DOCKER_COMPOSE),
+        )
+        .unwrap();
+
+        assert!(content.contains("deploy:"));
+        assert!(content.contains("resources:"));
+        assert!(content.contains("cpus: \"2\""));
+        assert!(content.contains("memory: \"1G\""));
+    }
+
+    #[test]
     fn compose_yaml_network_external_true() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(1), None, None, true).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(1), None, None, true, None).unwrap();
 
         let content = std::fs::read_to_string(
             tmp_dir
@@ -471,7 +514,7 @@ mod tests {
     #[test]
     fn compose_yaml_network_external_false() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(1), None, None, false).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(1), None, None, false, None).unwrap();
 
         let content = std::fs::read_to_string(
             tmp_dir
@@ -489,7 +532,7 @@ mod tests {
     #[test]
     fn node_config_has_required_sections() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(1), None, None, false).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:test", Some(1), None, None, false, None).unwrap();
 
         let content = std::fs::read_to_string(
             tmp_dir
@@ -510,7 +553,7 @@ mod tests {
     #[test]
     fn compose_volumes_match_nodes() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", Some(3), None, None, false).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", Some(3), None, None, false, None).unwrap();
 
         let content = std::fs::read_to_string(
             tmp_dir
@@ -537,7 +580,7 @@ mod tests {
     #[test]
     fn raft_ports_are_set() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", Some(2), None, None, false).unwrap();
+        generate_dynamic_configs(tmp_dir.path(), "aikv:latest", Some(2), None, None, false, None).unwrap();
 
         let node1 = std::fs::read_to_string(
             tmp_dir

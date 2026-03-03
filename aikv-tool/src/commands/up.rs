@@ -91,6 +91,11 @@ async fn execute_docker(args: UpArgs, is_cluster: bool, config: &AkConfig) -> an
         .unwrap_or_else(|| config.defaults.docker_image.clone());
     let mode_name = get_mode_name(is_cluster);
     let state_subdir = get_state_subdir(is_cluster);
+    // 标准化测试: 从配置读取 Docker 资源限制 (需同时配置 cpus 与 memory 才生效)
+    let resource_limits = match (&config.defaults.docker_cpus, &config.defaults.docker_memory) {
+        (Some(cpus), Some(memory)) => Some((cpus.clone(), memory.clone())),
+        _ => None,
+    };
 
     // 参数校验
     if is_cluster {
@@ -157,7 +162,7 @@ async fn execute_docker(args: UpArgs, is_cluster: bool, config: &AkConfig) -> an
                 mode_name,
                 n
             );
-            docker::generate_dynamic_configs(&run_dir, &docker_image, Some(n), None, None, network_external)?;
+            docker::generate_dynamic_configs(&run_dir, &docker_image, Some(n), None, None, network_external, resource_limits.clone())?;
         } else {
             let s = args.shards.unwrap_or(DEFAULT_SHARDS);
             let r = args.replicas.unwrap_or(DEFAULT_REPLICAS);
@@ -167,11 +172,11 @@ async fn execute_docker(args: UpArgs, is_cluster: bool, config: &AkConfig) -> an
                 s,
                 r
             );
-            docker::generate_dynamic_configs(&run_dir, &docker_image, None, Some(s), Some(r), network_external)?;
+            docker::generate_dynamic_configs(&run_dir, &docker_image, None, Some(s), Some(r), network_external, resource_limits.clone())?;
         }
     } else {
         println!("Generating {} config...", mode_name);
-        docker::generate_dynamic_configs(&run_dir, &docker_image, Some(1), None, None, network_external)?;
+        docker::generate_dynamic_configs(&run_dir, &docker_image, Some(1), None, None, network_external, resource_limits)?;
     }
 
     println!("Starting AiKv {} containers (background)...", mode_name);

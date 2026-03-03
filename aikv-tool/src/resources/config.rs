@@ -154,6 +154,14 @@ pub struct DefaultsConfig {
     /// Docker 镜像
     #[serde(default = "default_docker_image")]
     pub docker_image: String,
+
+    /// Docker 容器 CPU 上限 (用于标准化/可复现测试，如 "2" 表示 2 核)
+    #[serde(default)]
+    pub docker_cpus: Option<String>,
+
+    /// Docker 容器内存上限 (如 "1G", "512M"，用于标准化/可复现测试)
+    #[serde(default)]
+    pub docker_memory: Option<String>,
 }
 
 impl Default for DefaultsConfig {
@@ -163,6 +171,8 @@ impl Default for DefaultsConfig {
             topo: Topology::default(),
             port: default_port(),
             docker_image: default_docker_image(),
+            docker_cpus: None,
+            docker_memory: None,
         }
     }
 }
@@ -329,6 +339,14 @@ impl AkConfig {
                 self.defaults.docker_image = value.to_string();
                 Ok(format!("defaults.docker_image = {}", value))
             }
+            "defaults.docker_cpus" | "docker_cpus" => {
+                self.defaults.docker_cpus = Some(value.to_string());
+                Ok(format!("defaults.docker_cpus = {}", value))
+            }
+            "defaults.docker_memory" | "docker_memory" => {
+                self.defaults.docker_memory = Some(value.to_string());
+                Ok(format!("defaults.docker_memory = {}", value))
+            }
             _ => bail!(
                 "unknown config key: '{}'\n\nAvailable keys:\n  {}",
                 key,
@@ -345,6 +363,8 @@ impl AkConfig {
             "defaults.topo",
             "defaults.port",
             "defaults.docker_image",
+            "defaults.docker_cpus",
+            "defaults.docker_memory",
         ]
     }
 }
