@@ -42,7 +42,7 @@ tracing-opentelemetry = "0.22"
 toml = "0.8"
 
 # Storage engine
-aidb = { git = "https://github.com/wiqun/AiDb", tag = "v0.6.3" }
+aidb = { git = "https://github.com/wiqun/AiDb", tag = "v0.7.0" }
 
 # Raft consensus (optional, for cluster mode)
 openraft = { version = "0.9", features = ["serde"], optional = true }
