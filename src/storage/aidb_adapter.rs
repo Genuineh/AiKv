@@ -101,7 +101,7 @@ impl AiDbStorageAdapter {
             let options = Options::default().sync_wal(false);
             let db = DB::open(&db_path, options)
                 .map_err(|e| AikvError::Storage(format!("Failed to open database {}: {}", i, e)))?;
-            databases.push(Arc::new(db));
+            databases.push(db);
         }
 
         Ok(Self {
@@ -798,7 +798,9 @@ impl AiDbStorageAdapter {
 
         // Create an iterator to scan all keys
         // Note: AiDb v0.6.2+ iterator automatically skips tombstones (deleted keys)
-        let mut iter = db.iter();
+        let mut iter = db
+            .iter()
+            .map_err(|e| AikvError::Storage(format!("AiDb iterator: {}", e)))?;
 
         while iter.valid() {
             let key = iter.key();
@@ -849,7 +851,9 @@ impl AiDbStorageAdapter {
         let db = &self.databases[db_index];
 
         // Get all keys and delete them
-        let mut iter = db.iter();
+        let mut iter = db
+            .iter()
+            .map_err(|e| AikvError::Storage(format!("AiDb iterator: {}", e)))?;
 
         while iter.valid() {
             let key = iter.key().to_vec();
@@ -1082,7 +1086,9 @@ impl AiDbStorageAdapter {
         let db = &self.databases[db_index];
 
         // Create an iterator and get the first valid key
-        let mut iter = db.iter();
+        let mut iter = db
+            .iter()
+            .map_err(|e| AikvError::Storage(format!("AiDb iterator: {}", e)))?;
 
         while iter.valid() {
             let key = iter.key();
@@ -1115,7 +1121,9 @@ impl AiDbStorageAdapter {
         }
 
         // If we didn't find a key through random selection, return the first valid key
-        let mut iter = db.iter();
+        let mut iter = db
+            .iter()
+            .map_err(|e| AikvError::Storage(format!("AiDb iterator: {}", e)))?;
 
         while iter.valid() {
             let key = iter.key();
@@ -1148,7 +1156,9 @@ impl AiDbStorageAdapter {
             let mut db_map = HashMap::new();
             let db = &self.databases[db_index];
 
-            let mut iter = db.iter();
+            let mut iter = db
+                .iter()
+                .map_err(|e| AikvError::Storage(format!("AiDb iterator: {}", e)))?;
             while iter.valid() {
                 let key = iter.key();
 
@@ -1164,41 +1174,38 @@ impl AiDbStorageAdapter {
                     continue;
                 }
 
-                // Get the value
-                if let Some(serialized) = db
-                    .get(key)
-                    .map_err(|e| AikvError::Storage(format!("Failed to get value: {}", e)))?
-                {
-                    // Deserialize using bincode
-                    let serializable: SerializableStoredValue = bincode::deserialize(&serialized)
-                        .map_err(|e| {
+                // Iterator already has the serialized value; avoid an extra db.get()
+                let serialized = iter.value();
+
+                // Deserialize using bincode
+                let serializable: SerializableStoredValue = bincode::deserialize(serialized)
+                    .map_err(|e| {
                         AikvError::Storage(format!("Failed to deserialize value: {}", e))
                     })?;
-                    let mut stored_value = StoredValue::from_serializable(serializable);
+                let mut stored_value = StoredValue::from_serializable(serializable);
 
-                    // Get expiration if exists
-                    let expire_key = Self::expiration_key(key);
-                    if let Some(expire_bytes) = db.get(&expire_key).map_err(|e| {
-                        AikvError::Storage(format!("Failed to get expiration: {}", e))
-                    })? {
-                        if expire_bytes.len() == 8 {
-                            let expire_at = u64::from_le_bytes([
-                                expire_bytes[0],
-                                expire_bytes[1],
-                                expire_bytes[2],
-                                expire_bytes[3],
-                                expire_bytes[4],
-                                expire_bytes[5],
-                                expire_bytes[6],
-                                expire_bytes[7],
-                            ]);
-                            stored_value.set_expiration(Some(expire_at));
-                        }
+                // Get expiration if exists
+                let expire_key = Self::expiration_key(key);
+                if let Some(expire_bytes) = db.get(&expire_key).map_err(|e| {
+                    AikvError::Storage(format!("Failed to get expiration: {}", e))
+                })? {
+                    if expire_bytes.len() == 8 {
+                        let expire_at = u64::from_le_bytes([
+                            expire_bytes[0],
+                            expire_bytes[1],
+                            expire_bytes[2],
+                            expire_bytes[3],
+                            expire_bytes[4],
+                            expire_bytes[5],
+                            expire_bytes[6],
+                            expire_bytes[7],
+                        ]);
+                        stored_value.set_expiration(Some(expire_at));
                     }
+                }
 
-                    if let Ok(key_str) = String::from_utf8(key.to_vec()) {
-                        db_map.insert(key_str, stored_value);
-                    }
+                if let Ok(key_str) = String::from_utf8(key.to_vec()) {
+                    db_map.insert(key_str, stored_value);
                 }
 
                 iter.next();
