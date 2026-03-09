@@ -386,6 +386,7 @@ impl CommandMetrics {
     /// If `cmds` is `Some`, only the named commands are included; otherwise all
     /// commands with at least one observation are returned.
     /// Returns `(cmd_lowercase, total_calls, total_usec, buckets)` per command.
+    #[allow(clippy::type_complexity)]
     pub fn get_latency_histogram_snapshot(
         &self,
         cmds: Option<&[&str]>,

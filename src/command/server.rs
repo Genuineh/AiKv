@@ -1031,6 +1031,7 @@ impl ServerCommands {
     /// This is the constructor used in production: all connections share the same
     /// `config`, `slow_query_log`, `clients`, and `current_log_level` so that
     /// changes made by one connection (e.g. CONFIG SET) are visible to others.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_shared_state(
         storage: StorageEngine,
         port: u16,
