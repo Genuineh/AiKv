@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 /// Atomic counter for metrics
@@ -646,6 +646,13 @@ impl LockMetrics {
 
 /// Combined metrics for the entire server
 #[derive(Debug)]
+/// Cached keyspace stats snapshot to avoid expensive full-scan on every INFO call.
+/// Format: Vec of (keys, expires, avg_ttl_ms) indexed by DB number (up to 16).
+pub struct KeyspaceCache {
+    pub stats: Vec<(usize, usize, u64)>,
+    pub updated_at: Instant,
+}
+
 pub struct Metrics {
     /// Command execution metrics
     pub commands: Arc<CommandMetrics>,
@@ -657,7 +664,13 @@ pub struct Metrics {
     pub locks: Arc<LockMetrics>,
     /// Server start time
     pub start_time: Instant,
+    /// Cached keyspace stats — avoids repeated full MemTable scan on INFO.
+    /// Refreshed at most once every KEYSPACE_CACHE_TTL seconds.
+    pub keyspace_cache: Mutex<Option<KeyspaceCache>>,
 }
+
+/// How long a keyspace stats snapshot remains valid (seconds).
+pub const KEYSPACE_CACHE_TTL_SECS: u64 = 5;
 
 impl Default for Metrics {
     fn default() -> Self {
@@ -674,6 +687,7 @@ impl Metrics {
             memory: Arc::new(MemoryMetrics::new()),
             locks: Arc::new(LockMetrics::new()),
             start_time: Instant::now(),
+            keyspace_cache: Mutex::new(None),
         }
     }
 

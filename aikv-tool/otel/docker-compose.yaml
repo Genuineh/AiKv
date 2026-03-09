@@ -343,6 +343,13 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
+      # 匿名查看：启动即可用，Renderer 无 cookie 访问 panel 时以 Viewer 身份看到面板（需指定 org_name）
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_NAME=Main Org.
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      # Image Renderer：按时间范围导出 panel 为 PNG（见 scripts/grafana_export_panel.sh）
+      - GF_RENDERING_SERVER_URL=http://grafana-image-renderer:8081/render
+      - GF_RENDERING_CALLBACK_URL=http://grafana:3000/
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana
@@ -352,6 +359,21 @@ services:
       - jaeger
       - tempo-proxy
       - pyroscope
+    networks:
+      - aikv
+
+  # Grafana Image Renderer - 将 Panel/Dashboard 渲染为 PNG/PDF（供程序化导出，如 scripts/grafana_export_panel.sh）
+  # 与 Grafana 同网，通过 http://grafana:3000 访问（Docker 内用服务名解析）。默认依赖 Grafana 匿名查看，无需 Token。
+  # 若导出仍是登录页：在 .env 中设置 GRAFANA_API_KEY=<Service Account Token>，并取消下一行注释后重启本服务。
+  grafana-image-renderer:
+    image: grafana/grafana-image-renderer:v5.6.0
+    container_name: grafana-image-renderer
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - AUTH_TOKEN=${RENDERER_AUTH_TOKEN:--}
+      # - BROWSER_HEADER=Authorization=Bearer ${GRAFANA_API_KEY}
     networks:
       - aikv
 

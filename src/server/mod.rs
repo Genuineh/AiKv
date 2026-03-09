@@ -7,13 +7,14 @@ use self::connection::Connection;
 use crate::command::server::{ClientInfo, ServerCommands};
 use crate::command::CommandExecutor;
 use crate::error::Result;
-use crate::observability::{Metrics, SlowQueryLog};
+use crate::observability::{KeyspaceCache, Metrics, SlowQueryLog};
 use crate::storage::StorageEngine;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 use tokio::net::TcpListener;
-use tracing::{error, info, Level};
+use tracing::{error, info, warn, Level};
 
 #[cfg(feature = "cluster")]
 use crate::cluster::{ClusterCommands, MetaRaftNode, MultiRaftNode, Router};
@@ -276,10 +277,81 @@ impl Server {
         Arc::clone(&self.monitor_broadcaster)
     }
 
+    /// Spawn background task that refreshes keyspace stats every ~10 seconds.
+    ///
+    /// The scan uses AiDb's iterator which must merge ALL immutable MemTables.
+    /// Under heavy write load this can take tens of seconds — far too slow to
+    /// run inline inside an INFO request handler.  Running it here in a
+    /// dedicated spawn_blocking loop keeps the request path instant (cache hit)
+    /// while still providing reasonably fresh keyspace data.
+    fn spawn_keyspace_refresh_task(&self) {
+        let storage = self.storage.clone();
+        let metrics = Arc::clone(&self.metrics);
+
+        tokio::spawn(async move {
+            // Brief initial delay so the first scan happens after the server is
+            // fully ready rather than during startup.
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+            loop {
+                let storage_c = storage.clone();
+                let metrics_c = Arc::clone(&metrics);
+
+                let scan_result = tokio::task::spawn_blocking(move || {
+                    let t = Instant::now();
+                    let mut all_stats: Vec<(usize, usize, u64)> = Vec::with_capacity(16);
+                    for db_index in 0..16 {
+                        match storage_c.keyspace_stats_in_db(db_index) {
+                            Ok(s) => all_stats.push(s),
+                            Err(_) => break,
+                        }
+                    }
+                    (all_stats, t.elapsed())
+                })
+                .await;
+
+                match scan_result {
+                    Ok((stats, elapsed)) => {
+                        if elapsed.as_secs() >= 5 {
+                            warn!(
+                                elapsed_ms = elapsed.as_millis(),
+                                "background keyspace scan is slow (many unflushed MemTables)"
+                            );
+                        } else {
+                            info!(
+                                elapsed_ms = elapsed.as_millis(),
+                                "background keyspace scan complete"
+                            );
+                        }
+                        let mut cache = metrics_c
+                            .keyspace_cache
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        *cache = Some(KeyspaceCache {
+                            stats,
+                            updated_at: Instant::now(),
+                        });
+                    }
+                    Err(e) => {
+                        error!("background keyspace scan task panicked: {}", e);
+                    }
+                }
+
+                // Wait before the next scan so we don't pile up concurrent
+                // scans when each one takes longer than the interval.
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+            }
+        });
+    }
+
     /// Run the server
     pub async fn run(&self) -> Result<()> {
         let listener = TcpListener::bind(&self.addr).await?;
         info!("AiKv server listening on {}", self.addr);
+
+        // Kick off background tasks before accepting connections.
+        // Refresh keyspace stats cache — keeps INFO fast under heavy load.
+        self.spawn_keyspace_refresh_task();
 
         loop {
             match listener.accept().await {
@@ -328,7 +400,7 @@ impl Server {
                         );
 
                         if let Err(e) = conn.handle().await {
-                            error!("Connection error: {}", e);
+                            error!(addr = %addr, error = %e, "connection error (read/write or protocol)");
                         }
 
                         // Record disconnection

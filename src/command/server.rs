@@ -1495,13 +1495,23 @@ impl ServerCommands {
     /// Build the Keyspace section info lines
     /// Format: dbN:keys=X,expires=Y,avg_ttl=Z (Redis compatible)
     fn build_keyspace_info(&self) -> Vec<String> {
-        let mut lines = vec!["# Keyspace".to_string()];
+        // The keyspace scan (db.iter() across all AiDb MemTables) is too slow to
+        // run inline — under heavy write load it takes 30-90+ seconds because it
+        // must merge every unflushed MemTable.  The background task in
+        // server::Server::spawn_keyspace_refresh_task() keeps the cache warm; we
+        // just return whatever is there.  If the cache is empty (server just
+        // started) we return an empty section — the exporter will get real data
+        // after the first background scan completes (~3 s after startup).
+        let cache = self.metrics.keyspace_cache.lock().unwrap_or_else(|e| e.into_inner());
+        match &*cache {
+            Some(snap) => Self::format_keyspace_stats(&snap.stats),
+            None => vec!["# Keyspace".to_string()],
+        }
+    }
 
-        for db_index in 0..16 {
-            let (keys, expires, avg_ttl) = match self.storage.keyspace_stats_in_db(db_index) {
-                Ok(s) => s,
-                Err(_) => break, // Exceeded db count (e.g. aidb with fewer dbs)
-            };
+    fn format_keyspace_stats(stats: &[(usize, usize, u64)]) -> Vec<String> {
+        let mut lines = vec!["# Keyspace".to_string()];
+        for (db_index, &(keys, expires, avg_ttl)) in stats.iter().enumerate() {
             if keys > 0 {
                 lines.push(format!(
                     "db{}:keys={},expires={},avg_ttl={}",
@@ -1509,7 +1519,6 @@ impl ServerCommands {
                 ));
             }
         }
-
         lines
     }
 
