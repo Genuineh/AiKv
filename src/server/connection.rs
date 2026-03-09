@@ -10,7 +10,7 @@ use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::select;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 static CLIENT_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -44,6 +44,8 @@ pub struct Connection {
     client_addr: String,
     monitor_broadcaster: Option<Arc<MonitorBroadcaster>>,
     mode: ConnectionMode,
+    /// Last executed command name (for diagnostics when connection drops)
+    last_command: Option<String>,
 }
 
 impl Connection {
@@ -87,6 +89,7 @@ impl Connection {
             client_addr: peer_addr,
             monitor_broadcaster,
             mode: ConnectionMode::Normal,
+            last_command: None,
         }
     }
 
@@ -114,10 +117,27 @@ impl Connection {
     /// Handle normal command mode. Returns false if connection should close.
     async fn handle_normal_mode(&mut self) -> Result<bool> {
         // Read data from the client
-        let n = self.stream.read_buf(self.parser.buffer_mut()).await?;
+        let n = self
+            .stream
+            .read_buf(self.parser.buffer_mut())
+            .await
+            .map_err(|e: std::io::Error| {
+                warn!(
+                    client_id = self.client_id,
+                    addr = %self.client_addr,
+                    last_command = ?self.last_command.as_deref(),
+                    error = %e,
+                    "connection read error (client likely closed or network issue)"
+                );
+                crate::error::AikvError::from(e)
+            })?;
 
         if n == 0 {
-            // Connection closed
+            info!(
+                client_id = self.client_id,
+                addr = %self.client_addr,
+                "client closed connection (EOF)"
+            );
             return Ok(false);
         }
 
@@ -129,7 +149,18 @@ impl Connection {
         // Parse and process commands
         while let Some(value) = self.parser.parse()? {
             let response = self.process_command(value).await;
-            self.write_response(response).await?;
+            self.write_response(response)
+                .await
+                .map_err(|e: crate::error::AikvError| {
+                    warn!(
+                        client_id = self.client_id,
+                        addr = %self.client_addr,
+                        last_command = ?self.last_command.as_deref(),
+                        error = %e,
+                        "connection write error (client may have closed or timeout)"
+                    );
+                    e
+                })?;
 
             // Check if mode changed to monitor
             if self.mode == ConnectionMode::Monitor {
@@ -252,6 +283,7 @@ impl Connection {
                 };
 
                 let command_upper = command.to_uppercase();
+                self.last_command = Some(command_upper.clone());
 
                 // Handle HELLO command for protocol version negotiation
                 if command_upper == "HELLO" {
@@ -332,16 +364,31 @@ impl Connection {
                     }
                 }
 
-                let result =
+                // executor.execute() is synchronous and may block for an extended period
+                // (e.g. INFO keyspace scans all MemTables; writes stall when AiDb immutable
+                // MemTable count is high).  block_in_place signals to Tokio that this thread
+                // is about to block so the scheduler can keep other async tasks running on a
+                // different thread instead of starving the entire runtime.
+                let result = tokio::task::block_in_place(|| {
                     self.executor
-                        .execute(&command, &args, &mut self.current_db, self.client_id);
+                        .execute(&command, &args, &mut self.current_db, self.client_id)
+                });
+
+                let duration = start.elapsed();
 
                 // Record metrics
                 if let Some(ref metrics) = self.metrics {
-                    let duration = start.elapsed();
                     match &result {
-                        Ok(_) => {
+                        Ok(resp) => {
                             metrics.commands.record_command(&command, duration);
+                            // Keyspace hit/miss for GET
+                            if command.eq_ignore_ascii_case("GET") {
+                                match resp {
+                                    RespValue::BulkString(Some(_)) => metrics.memory.record_hit(),
+                                    RespValue::BulkString(None) => metrics.memory.record_miss(),
+                                    _ => {}
+                                }
+                            }
                             debug!(
                                 command = %command,
                                 duration_us = duration.as_micros(),
@@ -354,6 +401,20 @@ impl Connection {
                             metrics.commands.record_error(&command);
                         }
                     }
+                }
+
+                // Record slow query if over threshold (Redis SLOWLOG semantics)
+                {
+                    let args_str: Vec<String> = args
+                        .iter()
+                        .map(|b| String::from_utf8_lossy(b).into_owned())
+                        .collect();
+                    self.executor.server_commands().slow_query_log().record(
+                        &command,
+                        &args_str,
+                        duration,
+                        Some(self.client_addr.clone()),
+                    );
                 }
 
                 match result {

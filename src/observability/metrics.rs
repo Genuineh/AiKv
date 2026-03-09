@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 /// Atomic counter for metrics
@@ -81,6 +81,84 @@ impl Gauge {
     }
 }
 
+/// Bucket upper-bounds (μs) for per-command latency histograms.
+/// Power-of-2 boundaries from 1 μs up to ~1 s, matching Redis's latency-tracking buckets.
+pub const LATENCY_BUCKET_BOUNDS: &[u64] = &[
+    1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1_024, 2_048, 4_096, 8_192, 16_384, 32_768, 65_536,
+    131_072, 262_144, 524_288, 1_048_576,
+];
+
+/// Per-command latency histogram with cumulative power-of-2 buckets (μs).
+///
+/// Compatible with the Redis `LATENCY HISTOGRAM` command response format so that
+/// redis-exporter can automatically pick up P50/P99/P999 data.
+#[derive(Debug)]
+pub struct LatencyHistogram {
+    /// Cumulative count per bucket; index i corresponds to LATENCY_BUCKET_BOUNDS[i].
+    /// bucket[i] = number of observations with latency <= LATENCY_BUCKET_BOUNDS[i].
+    buckets: Vec<AtomicU64>,
+    /// Total number of recorded observations.
+    pub total_calls: AtomicU64,
+    /// Sum of all observed latencies in microseconds.
+    pub total_usec: AtomicU64,
+}
+
+impl LatencyHistogram {
+    pub fn new() -> Self {
+        Self {
+            buckets: LATENCY_BUCKET_BOUNDS
+                .iter()
+                .map(|_| AtomicU64::new(0))
+                .collect(),
+            total_calls: AtomicU64::new(0),
+            total_usec: AtomicU64::new(0),
+        }
+    }
+
+    /// Record a single observation (`usec` microseconds).
+    pub fn record(&self, usec: u64) {
+        self.total_calls.fetch_add(1, Ordering::Relaxed);
+        self.total_usec.fetch_add(usec, Ordering::Relaxed);
+        // Increment every bucket whose upper-bound >= usec (cumulative semantics).
+        for (i, &bound) in LATENCY_BUCKET_BOUNDS.iter().enumerate() {
+            if usec <= bound {
+                self.buckets[i].fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// Return non-zero buckets as `(upper_bound_usec, cumulative_count)` pairs.
+    pub fn snapshot(&self) -> Vec<(u64, u64)> {
+        LATENCY_BUCKET_BOUNDS
+            .iter()
+            .zip(self.buckets.iter())
+            .filter_map(|(&bound, counter)| {
+                let count = counter.load(Ordering::Relaxed);
+                if count > 0 {
+                    Some((bound, count))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Reset all counters to zero.
+    pub fn reset(&self) {
+        self.total_calls.store(0, Ordering::Relaxed);
+        self.total_usec.store(0, Ordering::Relaxed);
+        for bucket in &self.buckets {
+            bucket.store(0, Ordering::Relaxed);
+        }
+    }
+}
+
+impl Default for LatencyHistogram {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Command execution metrics
 #[derive(Debug)]
 pub struct CommandMetrics {
@@ -88,6 +166,8 @@ pub struct CommandMetrics {
     pub total_commands: Counter,
     /// Commands per command type
     pub commands_by_type: RwLock<HashMap<String, Counter>>,
+    /// Total command execution time per command type (microseconds)
+    duration_by_type: RwLock<HashMap<String, Counter>>,
     /// Total command errors
     pub total_errors: Counter,
     /// Errors per command type
@@ -100,6 +180,8 @@ pub struct CommandMetrics {
     last_ops_calc: RwLock<Instant>,
     /// Commands at last calculation
     last_ops_count: AtomicU64,
+    /// Per-command latency histograms for LATENCY HISTOGRAM command.
+    pub latency_histograms: RwLock<HashMap<String, LatencyHistogram>>,
 }
 
 impl Default for CommandMetrics {
@@ -114,27 +196,41 @@ impl CommandMetrics {
         Self {
             total_commands: Counter::new(),
             commands_by_type: RwLock::new(HashMap::new()),
+            duration_by_type: RwLock::new(HashMap::new()),
             total_errors: Counter::new(),
             errors_by_type: RwLock::new(HashMap::new()),
             total_duration_us: AtomicU64::new(0),
             ops_per_sec: RwLock::new(0.0),
             last_ops_calc: RwLock::new(Instant::now()),
             last_ops_count: AtomicU64::new(0),
+            latency_histograms: RwLock::new(HashMap::new()),
         }
     }
 
     /// Record a successful command execution
     pub fn record_command(&self, command: &str, duration: Duration) {
         self.total_commands.inc();
-        self.total_duration_us
-            .fetch_add(duration.as_micros() as u64, Ordering::Relaxed);
+        let usec = duration.as_micros() as u64;
+        self.total_duration_us.fetch_add(usec, Ordering::Relaxed);
 
         let command_upper = command.to_uppercase();
         if let Ok(mut commands) = self.commands_by_type.write() {
             commands
-                .entry(command_upper)
+                .entry(command_upper.clone())
                 .or_insert_with(Counter::new)
                 .inc();
+        }
+        if let Ok(mut durations) = self.duration_by_type.write() {
+            durations
+                .entry(command_upper.clone())
+                .or_insert_with(Counter::new)
+                .inc_by(usec);
+        }
+        if let Ok(mut hists) = self.latency_histograms.write() {
+            hists
+                .entry(command_upper)
+                .or_insert_with(LatencyHistogram::new)
+                .record(usec);
         }
     }
 
@@ -179,6 +275,44 @@ impl CommandMetrics {
         }
     }
 
+    /// Get errors by type for INFO errorstats section.
+    pub fn errors_by_type(&self) -> HashMap<String, u64> {
+        if let Ok(errors) = self.errors_by_type.read() {
+            errors.iter().map(|(k, v)| (k.clone(), v.get())).collect()
+        } else {
+            HashMap::new()
+        }
+    }
+
+    /// Get command stats for INFO commandstats section.
+    /// Returns (cmd, calls, usec) for each command type.
+    pub fn commandstats(&self) -> Vec<(String, u64, u64)> {
+        let commands = if let Ok(c) = self.commands_by_type.read() {
+            c.iter()
+                .map(|(k, v)| (k.clone(), v.get()))
+                .collect::<HashMap<_, _>>()
+        } else {
+            return Vec::new();
+        };
+        let durations = if let Ok(d) = self.duration_by_type.read() {
+            d.iter()
+                .map(|(k, v)| (k.clone(), v.get()))
+                .collect::<HashMap<_, _>>()
+        } else {
+            HashMap::new()
+        };
+
+        let mut result: Vec<(String, u64, u64)> = commands
+            .into_iter()
+            .map(|(cmd, calls)| {
+                let usec = durations.get(&cmd).copied().unwrap_or(0);
+                (cmd, calls, usec)
+            })
+            .collect();
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+        result
+    }
+
     /// Calculate and get operations per second
     pub fn ops_per_sec(&self) -> f64 {
         let now = Instant::now();
@@ -208,9 +342,80 @@ impl CommandMetrics {
         if let Ok(mut commands) = self.commands_by_type.write() {
             commands.clear();
         }
+        if let Ok(mut durations) = self.duration_by_type.write() {
+            durations.clear();
+        }
         if let Ok(mut errors) = self.errors_by_type.write() {
             errors.clear();
         }
+        if let Ok(mut hists) = self.latency_histograms.write() {
+            hists.clear();
+        }
+    }
+
+    /// Reset latency histograms.
+    ///
+    /// If `cmds` is `Some`, only the named commands are reset; otherwise all are reset.
+    /// Returns the number of histograms that were reset.
+    pub fn reset_latency_histograms(&self, cmds: Option<&[&str]>) -> u64 {
+        let Ok(mut hists) = self.latency_histograms.write() else {
+            return 0;
+        };
+        match cmds {
+            None => {
+                let count = hists.len() as u64;
+                hists.clear();
+                count
+            }
+            Some(names) => {
+                let mut count = 0u64;
+                for name in names {
+                    let key = name.to_uppercase();
+                    if let Some(h) = hists.get(&key) {
+                        h.reset();
+                        count += 1;
+                    }
+                }
+                count
+            }
+        }
+    }
+
+    /// Snapshot latency histograms for the LATENCY HISTOGRAM command.
+    ///
+    /// If `cmds` is `Some`, only the named commands are included; otherwise all
+    /// commands with at least one observation are returned.
+    /// Returns `(cmd_lowercase, total_calls, total_usec, buckets)` per command.
+    #[allow(clippy::type_complexity)]
+    pub fn get_latency_histogram_snapshot(
+        &self,
+        cmds: Option<&[&str]>,
+    ) -> Vec<(String, u64, u64, Vec<(u64, u64)>)> {
+        let Ok(hists) = self.latency_histograms.read() else {
+            return Vec::new();
+        };
+        let mut result = Vec::new();
+
+        let filter: Option<Vec<String>> =
+            cmds.map(|names| names.iter().map(|n| n.to_uppercase()).collect());
+
+        for (cmd, hist) in hists.iter() {
+            if let Some(ref names) = filter {
+                if !names.contains(cmd) {
+                    continue;
+                }
+            }
+            let total_calls = hist.total_calls.load(Ordering::Relaxed);
+            if total_calls == 0 {
+                continue;
+            }
+            let total_usec = hist.total_usec.load(Ordering::Relaxed);
+            let buckets = hist.snapshot();
+            result.push((cmd.to_lowercase(), total_calls, total_usec, buckets));
+        }
+
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+        result
     }
 }
 
@@ -414,8 +619,41 @@ impl MemoryMetrics {
     }
 }
 
+/// Lock contention metrics — AiKv-specific, no Redis equivalent.
+///
+/// Exposed via `INFO stats` as `aikv_*` fields so that redis-exporter
+/// automatically converts them to Prometheus gauges/counters.
+#[derive(Debug, Default)]
+pub struct LockMetrics {
+    /// Number of times a storage write lock had to wait (contention detected
+    /// via `try_write()` failure before blocking `write()`).
+    pub storage_write_contentions: Counter,
+    /// Total microseconds spent waiting for the storage write lock.
+    pub storage_write_wait_us: AtomicU64,
+    /// Number of times a script key lock wait timed out (30 s default).
+    /// This is the closest AiKv equivalent to "deadlock count": the key
+    /// ordering in `KeyLockManager` prevents true deadlocks, but a very slow
+    /// script holding a key lock can cause other scripts to time out.
+    pub script_lock_timeouts: Counter,
+    /// Total microseconds scripts spent waiting for key locks.
+    pub script_lock_wait_us: AtomicU64,
+}
+
+impl LockMetrics {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
 /// Combined metrics for the entire server
 #[derive(Debug)]
+/// Cached keyspace stats snapshot to avoid expensive full-scan on every INFO call.
+/// Format: Vec of (keys, expires, avg_ttl_ms) indexed by DB number (up to 16).
+pub struct KeyspaceCache {
+    pub stats: Vec<(usize, usize, u64)>,
+    pub updated_at: Instant,
+}
+
 pub struct Metrics {
     /// Command execution metrics
     pub commands: Arc<CommandMetrics>,
@@ -423,9 +661,17 @@ pub struct Metrics {
     pub connections: Arc<ConnectionMetrics>,
     /// Memory metrics
     pub memory: Arc<MemoryMetrics>,
+    /// Lock contention metrics (AiKv-specific)
+    pub locks: Arc<LockMetrics>,
     /// Server start time
     pub start_time: Instant,
+    /// Cached keyspace stats — avoids repeated full MemTable scan on INFO.
+    /// Refreshed at most once every KEYSPACE_CACHE_TTL seconds.
+    pub keyspace_cache: Mutex<Option<KeyspaceCache>>,
 }
+
+/// How long a keyspace stats snapshot remains valid (seconds).
+pub const KEYSPACE_CACHE_TTL_SECS: u64 = 5;
 
 impl Default for Metrics {
     fn default() -> Self {
@@ -440,7 +686,9 @@ impl Metrics {
             commands: Arc::new(CommandMetrics::new()),
             connections: Arc::new(ConnectionMetrics::new()),
             memory: Arc::new(MemoryMetrics::new()),
+            locks: Arc::new(LockMetrics::new()),
             start_time: Instant::now(),
+            keyspace_cache: Mutex::new(None),
         }
     }
 
@@ -656,6 +904,39 @@ mod tests {
         let by_type = metrics.commands_by_type();
         assert_eq!(by_type.get("GET"), Some(&1));
         assert_eq!(by_type.get("SET"), Some(&1));
+    }
+
+    #[test]
+    fn test_commandstats_output() {
+        let metrics = CommandMetrics::new();
+
+        metrics.record_command("GET", Duration::from_micros(100));
+        metrics.record_command("GET", Duration::from_micros(200));
+        metrics.record_command("SET", Duration::from_micros(300));
+
+        let stats = metrics.commandstats();
+        assert_eq!(stats.len(), 2);
+
+        let get_stats = stats.iter().find(|(cmd, _, _)| cmd == "GET").unwrap();
+        assert_eq!(get_stats.1, 2); // calls
+        assert_eq!(get_stats.2, 300); // usec (100+200)
+
+        let set_stats = stats.iter().find(|(cmd, _, _)| cmd == "SET").unwrap();
+        assert_eq!(set_stats.1, 1);
+        assert_eq!(set_stats.2, 300);
+    }
+
+    #[test]
+    fn test_errors_by_type() {
+        let metrics = CommandMetrics::new();
+
+        metrics.record_error("GET");
+        metrics.record_error("GET");
+        metrics.record_error("SET");
+
+        let errors = metrics.errors_by_type();
+        assert_eq!(errors.get("GET"), Some(&2));
+        assert_eq!(errors.get("SET"), Some(&1));
     }
 
     #[test]

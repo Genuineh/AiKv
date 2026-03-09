@@ -1,0 +1,409 @@
+# ============================================================
+# AiKv Observability Stack - Docker Compose
+# ============================================================
+#
+# 架构概览 / Architecture:
+#
+#   AiKv (Redis Protocol)  ──> aikv-exporter  ──> Prometheus ──> Grafana
+#   Host System            ──> node-exporter   ──> Prometheus ──> Grafana
+#   Docker Containers      ──> cAdvisor        ──> Prometheus ──> Grafana (容器级 CPU/内存/网络/磁盘)
+#   AiKv (OTLP Traces)     ──> OTel Collector  ──> Jaeger     ──> Grafana (Explore / Jaeger UI)
+#                                  └─────────────> Tempo      ──> Grafana (Drilldown / TraceQL)
+#   Docker Containers      ──> Promtail        ──> Loki       ──> Grafana
+#   AiKv (eBPF Profile)   ──> Alloy (eBPF)    ──> Pyroscope  ──> Grafana (Profiles Drilldown / 火焰图)
+#
+# 使用方法 / Usage:
+#   仅观测栈 (推荐配合 ak 使用):  docker compose -f docker-compose.otel.yaml up -d
+#   观测栈 + 本 compose 的 AiKv:  docker compose -f docker-compose.otel.yaml --profile app up -d
+#   停止:  docker compose -f docker-compose.otel.yaml down
+#   日志:  docker compose -f docker-compose.otel.yaml logs -f [service]
+#
+# 与 ak 配合: 先 up 观测栈，再用 ak quick / ak up 起 AiKv。aikv-exporter 连 host:6379，
+# 可监测本机 6379（含 ak 起的实例）；本 compose 内 AiKv 使用 profile app，默认不启动。
+# 若需链路追踪，ak 使用的 aikv 配置里 OTLP 端点请指向宿主机，如 http://host.docker.internal:4317
+#
+# 访问地址 / Access URLs:
+#   Grafana:      http://localhost:3000  (admin / admin)
+#   Prometheus:   http://localhost:9090
+#   cAdvisor:     http://localhost:8080  (容器指标 /metrics)
+#   Jaeger UI:    http://localhost:16686
+#   Tempo API:    http://localhost:3200 (Grafana 内通过数据源查询)
+#   Loki:         http://localhost:3100
+#   Pyroscope:    http://localhost:4040 (Grafana Profiles 数据源)
+#   Alloy UI:     http://localhost:12345 (eBPF 采集状态)
+#
+# ============================================================
+
+services:
+  # ============================================================
+  # AiKv - 被监控目标 (profile app：默认不启动，避免与 ak 管理的实例冲突)
+  # ============================================================
+  aikv:
+    profiles:
+      - app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aikv:latest
+    container_name: aikv
+    ports:
+      - "6379:6379"
+    volumes:
+      - aikv-data:/app/data
+      - aikv-logs:/app/logs
+      # Docker 专用配置: host=0.0.0.0 (允许容器间通信)
+      - ../../aikv.toml:/app/aikv.toml:ro
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    networks:
+      - aikv
+
+  # ============================================================
+  # Metrics Collection - 指标采集层
+  # ============================================================
+
+  # Redis Exporter - 采集 AiKv Redis 协议指标
+  # 使用 aikv1 容器名连接（同一 compose 网络内）
+  # 若需监控宿主机上的 ak 实例，需手动配置 REDIS_ADDR 为 host.docker.internal
+  aikv-exporter:
+    image: oliver006/redis_exporter:v1.80.1
+    container_name: aikv-exporter
+    restart: unless-stopped
+    environment:
+      - REDIS_ADDR=redis://aikv1:6379
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "9121:9121"
+    networks:
+      - aikv
+
+  # Node Exporter - 采集宿主机系统指标
+  # Metrics: CPU, 内存, 磁盘 I/O, 网络, 文件系统等
+  node-exporter:
+    image: prom/node-exporter:v1.10.2
+    container_name: node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      # 排除易重复的挂载点 (WSL2/Docker 下 /run/user 等会重复采集导致 ERROR)
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|run)($$|/)"
+    networks:
+      - aikv
+
+  # cAdvisor - 采集容器级指标 (CPU/内存/网络/块设备 I/O)，与 Docker limits 一致，WSL 下更准确
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    # devices: /dev/kmsg 在部分 WSL 上不存在，若需更完整指标可在 Linux 宿主机上取消注释
+    networks:
+      - aikv
+
+  # ============================================================
+  # Metrics Storage - 指标存储与查询
+  # ============================================================
+
+  # Prometheus - 时序指标存储引擎
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    container_name: prometheus
+    restart: unless-stopped
+    user: root
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      # 存储保留策略
+      - "--storage.tsdb.retention.time=15d"
+      - "--storage.tsdb.retention.size=10GB"
+      # 热加载: curl -X POST http://localhost:9090/-/reload
+      - "--web.enable-lifecycle"
+      - "--web.enable-remote-write-receiver"
+    depends_on:
+      - aikv-exporter
+      - node-exporter
+      - cadvisor
+    networks:
+      - aikv
+
+  # ============================================================
+  # Distributed Tracing - 分布式链路追踪
+  # ============================================================
+
+  # Jaeger All-in-One - 链路追踪存储与查询
+  # 使用 Badger 本地持久化, 替代 Elasticsearch 以简化部署
+  jaeger:
+    image: jaegertracing/all-in-one:1.76.0
+    container_name: jaeger
+    restart: unless-stopped
+    user: root
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      # Badger 持久化存储 (替代 Elasticsearch)
+      - SPAN_STORAGE_TYPE=badger
+      - BADGER_EPHEMERAL=false
+      - BADGER_DIRECTORY_VALUE=/badger/data
+      - BADGER_DIRECTORY_KEY=/badger/key
+    ports:
+      - "16686:16686"    # Jaeger UI
+    volumes:
+      - jaeger-data:/badger
+    networks:
+      - aikv
+
+  # Grafana Tempo - 链路追踪存储 (TraceQL / Drilldown Traces)
+  # 与 Jaeger 同时接收同一份 trace, 便于在 Grafana 中对比
+  tempo:
+    image: grafana/tempo:2.7.0
+    container_name: tempo
+    restart: unless-stopped
+    user: root
+    command: ["-config.file=/etc/tempo/config.yaml"]
+    ports:
+      - "3200:3200"    # Tempo HTTP API (直连时用; Grafana 建议走 tempo-proxy)
+    # 4317/4318 仅容器内监听, 由 OTel Collector 转发, 不映射到宿主机
+    volumes:
+      - ./tempo-config.yaml:/etc/tempo/config.yaml:ro
+      - tempo-data:/var/tempo
+    networks:
+      - aikv
+
+  # Tempo 查询代理 - 重写 TraceQL 中的 nestedSetParent，避免 Grafana Trace Exploration 报 400/500
+  # Grafana Tempo 数据源指向本代理 (tempo-proxy:3201)，其它组件仍直连 tempo:3200
+  tempo-proxy:
+    image: node:22-alpine
+    container_name: tempo-proxy
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./tempo-query-proxy.js:/app/tempo-query-proxy.js:ro
+    environment:
+      - TEMPO_UPSTREAM=http://tempo:3200
+      - PORT=3201
+    command: ["node", "tempo-query-proxy.js"]
+    ports:
+      - "3201:3201"
+    depends_on:
+      - tempo
+    networks:
+      - aikv
+
+  # ============================================================
+  # Continuous Profiling - 持续剖析 (CPU/内存 火焰图, 供 AiKv 调优)
+  # ============================================================
+
+  # Pyroscope - 剖析数据存储与查询 (Grafana Profiles 数据源)
+  pyroscope:
+    image: grafana/pyroscope:latest
+    container_name: pyroscope
+    restart: unless-stopped
+    user: root
+    ports:
+      - "4040:4040"
+    volumes:
+      - pyroscope-data:/var/lib/pyroscope
+    command: ["-pyroscopedb.data-path=/var/lib/pyroscope"]
+    networks:
+      - aikv
+
+  # Grafana Alloy - eBPF 剖析采集 (无需改 AiKv 代码, 对 Rust 进程做 CPU/内存采样)
+  # 需 pid=host + privileged 以访问宿主机/容器进程; 仅采集容器名为 aikv 的容器
+  alloy:
+    image: grafana/alloy:latest
+    container_name: alloy
+    restart: unless-stopped
+    pid: "host"
+    privileged: true
+    volumes:
+      - ./aikv.alloy:/etc/alloy/aikv.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-symb-cache:/tmp/symb-cache
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "/etc/alloy/aikv.alloy"]
+    ports:
+      - "12345:12345"
+    depends_on:
+      - pyroscope
+    networks:
+      - aikv
+
+  # OpenTelemetry Collector - OTLP 遥测数据中转
+  # 接收 AiKv 的 OTLP traces/metrics, 分别转发到 Jaeger、Tempo 和 Prometheus
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.138.0
+    container_name: otel-collector
+    restart: unless-stopped
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"    # OTLP gRPC (AiKv 连接此端口发送 traces)
+      - "4318:4318"    # OTLP HTTP
+      - "8889:8889"    # Prometheus metrics (被 Prometheus 抓取)
+    depends_on:
+      - jaeger
+      - tempo
+    networks:
+      - aikv
+
+  # ============================================================
+  # Log Aggregation - 日志聚合
+  # ============================================================
+
+  # Loki - 轻量级日志存储引擎 (类 Prometheus 的日志系统)
+  loki:
+    image: grafana/loki:3.6.5
+    container_name: loki
+    restart: unless-stopped
+    user: root
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    # 注意: Loki 3.6+ 使用 distroless 镜像, 无 shell/wget, 不支持 CMD-SHELL 健康检查
+    # Promtail 内置重连机制, 无需严格依赖 Loki 就绪状态
+    networks:
+      - aikv
+
+  # Promtail - Docker 容器日志采集与转发
+  # 自动发现所有容器日志, 添加 service/container 标签后推送到 Loki
+  promtail:
+    image: grafana/promtail:3.6.5
+    container_name: promtail
+    restart: unless-stopped
+    volumes:
+      - ./promtail-config.yaml:/etc/promtail/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: -config.file=/etc/promtail/config.yaml
+    depends_on:
+      loki:
+        condition: service_started
+    networks:
+      - aikv
+
+  # ============================================================
+  # Visualization - 统一可视化面板
+  # ============================================================
+
+  # Grafana - 监控数据统一可视化
+  # 使用自定义镜像（已预装 Drilldown 等插件），新环境一键 up 无需再下载插件
+  grafana:
+    build:
+      context: .
+      dockerfile: otel/grafana/Dockerfile
+    image: aikv-grafana:12.3.0
+    container_name: grafana
+    restart: unless-stopped
+    user: root
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      # 匿名查看：启动即可用，Renderer 无 cookie 访问 panel 时以 Viewer 身份看到面板（需指定 org_name）
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_NAME=Main Org.
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      # Image Renderer：按时间范围导出 panel 为 PNG（见 scripts/grafana_export_panel.sh）
+      - GF_RENDERING_SERVER_URL=http://grafana-image-renderer:8081/render
+      - GF_RENDERING_CALLBACK_URL=http://grafana:3000/
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+      - jaeger
+      - tempo-proxy
+      - pyroscope
+    networks:
+      - aikv
+
+  # Grafana Image Renderer - 将 Panel/Dashboard 渲染为 PNG/PDF（供程序化导出，如 scripts/grafana_export_panel.sh）
+  # 与 Grafana 同网，通过 http://grafana:3000 访问（Docker 内用服务名解析）。默认依赖 Grafana 匿名查看，无需 Token。
+  # 若导出仍是登录页：在 .env 中设置 GRAFANA_API_KEY=<Service Account Token>，并取消下一行注释后重启本服务。
+  grafana-image-renderer:
+    image: grafana/grafana-image-renderer:v5.6.0
+    container_name: grafana-image-renderer
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - AUTH_TOKEN=${RENDERER_AUTH_TOKEN:--}
+      # - BROWSER_HEADER=Authorization=Bearer ${GRAFANA_API_KEY}
+    networks:
+      - aikv
+
+# ============================================================
+# Persistent Volumes - 数据持久化
+# ============================================================
+volumes:
+  aikv-data:
+    name: aikv-data
+  aikv-logs:
+    name: aikv-logs
+  prometheus-data:
+    name: aikv-prometheus-data
+  jaeger-data:
+    name: aikv-jaeger-data
+  tempo-data:
+    name: aikv-tempo-data
+  loki-data:
+    name: aikv-loki-data
+  pyroscope-data:
+    name: aikv-pyroscope-data
+  alloy-symb-cache:
+    name: aikv-alloy-symb-cache
+  grafana-data:
+    name: aikv-grafana-data
+
+# ============================================================
+# Network - 统一网络
+# ============================================================
+networks:
+  aikv:
+    name: aikv
+    driver: bridge

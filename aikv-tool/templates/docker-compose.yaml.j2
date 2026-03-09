@@ -1,0 +1,40 @@
+services:
+{% for node in nodes %}
+  {{ node.name }}:
+    image: {{ image }}
+    user: root
+    container_name: {{ node.name }}
+    hostname: {{ node.name }}
+    command: ["--config", "/app/config/aikv.toml"]
+    ports:
+      - "{{ node.port }}:{{ node.port }}"
+      - "{{ node.raft_port }}:{{ node.raft_port }}"
+    volumes:
+      - {{ node.name }}-data:/app/data
+      - {{ node.name }}-logs:/app/logs
+      - ./config/{{ node.name }}.toml:/app/config/aikv.toml:ro
+{% if resource_limits %}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ resource_limits.cpus }}"
+          memory: "{{ resource_limits.memory }}"
+{% endif %}
+    networks:
+      - aikv
+{% endfor %}
+
+volumes:
+{% for node in nodes %}
+  {{ node.name }}-data:
+  {{ node.name }}-logs:
+{% endfor %}
+
+networks:
+  aikv:
+{% if network_external %}
+    external: true
+{% else %}
+    name: aikv
+    driver: bridge
+{% endif %}

@@ -1,12 +1,12 @@
 use crate::error::{AikvError, Result};
-use crate::observability::{LogConfig, SlowQueryLog};
+use crate::observability::{LogConfig, MemoryMetrics, Metrics, SlowQueryLog};
 use crate::protocol::RespValue;
 use crate::storage::StorageEngine;
 use bytes::Bytes;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::Level;
 
 /// AiKv version - the actual version of this server
@@ -46,7 +46,8 @@ pub struct ServerCommands {
     storage: StorageEngine,
     clients: Arc<RwLock<HashMap<usize, ClientInfo>>>,
     config: Arc<RwLock<HashMap<String, String>>>,
-    start_time: Instant,
+    /// Server start time (Unix epoch seconds) for uptime calculation
+    start_time_secs: u64,
     run_id: String,
     tcp_port: u16,
     current_log_level: Arc<RwLock<Level>>,
@@ -57,6 +58,8 @@ pub struct ServerCommands {
     shutdown_requested: Arc<AtomicBool>,
     /// Whether cluster mode is enabled
     cluster_enabled: bool,
+    /// Server metrics for INFO command
+    metrics: Arc<Metrics>,
 }
 
 /// All supported commands with their metadata
@@ -974,24 +977,34 @@ impl ServerCommands {
     }
 
     pub fn with_port_and_cluster(port: u16, cluster_enabled: bool) -> Self {
-        Self::with_storage_port_and_cluster(StorageEngine::new_memory(16), port, cluster_enabled)
+        Self::with_storage_port_and_cluster(
+            StorageEngine::new_memory(16),
+            port,
+            cluster_enabled,
+            Arc::new(Metrics::new()),
+        )
+    }
+
+    /// Build the default server configuration map for the given port.
+    pub fn default_config(port: u16) -> HashMap<String, String> {
+        let mut cfg = HashMap::new();
+        cfg.insert("server".to_string(), "aikv".to_string());
+        cfg.insert("version".to_string(), AIKV_VERSION.to_string());
+        cfg.insert("port".to_string(), port.to_string());
+        cfg.insert("databases".to_string(), "16".to_string());
+        cfg.insert("loglevel".to_string(), "info".to_string());
+        cfg.insert("slowlog-log-slower-than".to_string(), "10000".to_string());
+        cfg.insert("slowlog-max-len".to_string(), "128".to_string());
+        cfg.insert("maxclients".to_string(), "10000".to_string());
+        cfg
     }
 
     pub fn with_storage_port_and_cluster(
         storage: StorageEngine,
         port: u16,
         cluster_enabled: bool,
+        metrics: Arc<Metrics>,
     ) -> Self {
-        let mut default_config = HashMap::new();
-        default_config.insert("server".to_string(), "aikv".to_string());
-        default_config.insert("version".to_string(), AIKV_VERSION.to_string());
-        default_config.insert("port".to_string(), port.to_string());
-        default_config.insert("databases".to_string(), "16".to_string());
-        default_config.insert("loglevel".to_string(), "info".to_string());
-        default_config.insert("slowlog-log-slower-than".to_string(), "10000".to_string());
-        default_config.insert("slowlog-max-len".to_string(), "128".to_string());
-
-        // Initialize last_save_time to current time
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -1000,8 +1013,8 @@ impl ServerCommands {
         Self {
             storage,
             clients: Arc::new(RwLock::new(HashMap::new())),
-            config: Arc::new(RwLock::new(default_config)),
-            start_time: Instant::now(),
+            config: Arc::new(RwLock::new(Self::default_config(port))),
+            start_time_secs: now,
             run_id: generate_run_id(),
             tcp_port: port,
             current_log_level: Arc::new(RwLock::new(Level::INFO)),
@@ -1009,12 +1022,55 @@ impl ServerCommands {
             last_save_time: Arc::new(AtomicU64::new(now)),
             shutdown_requested: Arc::new(AtomicBool::new(false)),
             cluster_enabled,
+            metrics,
+        }
+    }
+
+    /// Create a `ServerCommands` that uses pre-existing shared state `Arc`s.
+    ///
+    /// This is the constructor used in production: all connections share the same
+    /// `config`, `slow_query_log`, `clients`, and `current_log_level` so that
+    /// changes made by one connection (e.g. CONFIG SET) are visible to others.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_shared_state(
+        storage: StorageEngine,
+        port: u16,
+        cluster_enabled: bool,
+        metrics: Arc<Metrics>,
+        config: Arc<RwLock<HashMap<String, String>>>,
+        slow_query_log: Arc<SlowQueryLog>,
+        clients: Arc<RwLock<HashMap<usize, ClientInfo>>>,
+        current_log_level: Arc<RwLock<Level>>,
+    ) -> Self {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        Self {
+            storage,
+            clients,
+            config,
+            slow_query_log,
+            current_log_level,
+            start_time_secs: now,
+            run_id: generate_run_id(),
+            tcp_port: port,
+            last_save_time: Arc::new(AtomicU64::new(now)),
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
+            cluster_enabled,
+            metrics,
         }
     }
 
     /// Get the slow query log
     pub fn slow_query_log(&self) -> Arc<SlowQueryLog> {
         Arc::clone(&self.slow_query_log)
+    }
+
+    /// Get server metrics
+    pub fn metrics(&self) -> Arc<Metrics> {
+        Arc::clone(&self.metrics)
     }
 
     /// Get current log level
@@ -1025,9 +1081,13 @@ impl ServerCommands {
             .unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Get server uptime in seconds
+    /// Get server uptime in seconds (uses SystemTime for Docker/container compatibility)
     fn uptime_seconds(&self) -> u64 {
-        self.start_time.elapsed().as_secs()
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        now.saturating_sub(self.start_time_secs)
     }
 
     /// Build the Server section info lines
@@ -1087,54 +1147,102 @@ impl ServerCommands {
             .read()
             .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
 
+        let maxclients = self
+            .config
+            .read()
+            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?
+            .get("maxclients")
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(10000);
+
         Ok(vec![
             "# Clients".to_string(),
             format!("connected_clients:{}", clients.len()),
             "cluster_connections:0".to_string(),
-            "maxclients:10000".to_string(),
+            format!("maxclients:{}", maxclients),
             "client_recent_max_input_buffer:0".to_string(),
             "client_recent_max_output_buffer:0".to_string(),
             "blocked_clients:0".to_string(),
             "tracking_clients:0".to_string(),
             "clients_in_timeout_table:0".to_string(),
+            "pubsub_clients:0".to_string(),
+            "watching_clients:0".to_string(),
         ])
     }
 
     /// Build the Memory section info lines
     fn build_memory_info(&self) -> Vec<String> {
+        let memory = &self.metrics.memory;
+        let rss = Self::get_process_rss();
+
+        // used_memory: 若 storage 未调用 set_used_memory，则用 RSS 作为 fallback
+        let used = memory.used_memory();
+        let effective_used = if used > 0 { used } else { rss.unwrap_or(0) };
+
+        // used_memory_peak: 同上，未设置时用 effective_used
+        let used_peak = memory.used_memory_peak();
+        let effective_peak = if used_peak > 0 {
+            used_peak
+        } else {
+            effective_used
+        };
+
+        let format_bytes = MemoryMetrics::format_bytes(effective_used);
+        let format_peak = MemoryMetrics::format_bytes(effective_peak);
+
+        // 计算内存碎片率
+        let fragmentation = if effective_used > 0 {
+            rss.map(|r| r as f64 / effective_used as f64).unwrap_or(1.0)
+        } else {
+            0.0
+        };
+
+        let rss = rss.unwrap_or_else(|| effective_used.saturating_mul(2));
+        let rss_human = MemoryMetrics::format_bytes(rss);
+
+        let total_sys_bytes = Self::get_system_total_memory().unwrap_or(0);
+        let total_sys_human = MemoryMetrics::format_bytes(total_sys_bytes);
+
         vec![
             "# Memory".to_string(),
-            "used_memory:1024000".to_string(),
-            "used_memory_human:1000.00K".to_string(),
-            "used_memory_rss:2048000".to_string(),
-            "used_memory_rss_human:2.00M".to_string(),
-            "used_memory_peak:1024000".to_string(),
-            "used_memory_peak_human:1000.00K".to_string(),
-            "used_memory_peak_perc:100.00%".to_string(),
-            "used_memory_overhead:1000000".to_string(),
-            "used_memory_startup:1000000".to_string(),
-            "used_memory_dataset:24000".to_string(),
+            format!("used_memory:{}", effective_used),
+            format!("used_memory_human:{}", format_bytes),
+            format!("used_memory_rss:{}", rss),
+            format!("used_memory_rss_human:{}", rss_human),
+            format!("used_memory_peak:{}", effective_peak),
+            format!("used_memory_peak_human:{}", format_peak),
+            format!(
+                "used_memory_peak_perc:{:.2}%",
+                if effective_peak > 0 {
+                    (effective_used as f64 / effective_peak as f64) * 100.0
+                } else {
+                    0.0
+                }
+            ),
+            format!("used_memory_overhead:{}", effective_used),
+            format!("used_memory_startup:{}", effective_used),
+            "used_memory_dataset:0".to_string(),
             "used_memory_dataset_perc:0.00%".to_string(),
-            "allocator_allocated:1024000".to_string(),
-            "allocator_active:2048000".to_string(),
-            "allocator_resident:2048000".to_string(),
-            "total_system_memory:8589934592".to_string(),
-            "total_system_memory_human:8.00G".to_string(),
-            "used_memory_lua:31744".to_string(),
-            "used_memory_lua_human:31.00K".to_string(),
+            format!("allocator_allocated:{}", effective_used),
+            format!("allocator_active:{}", rss),
+            format!("allocator_resident:{}", rss),
+            format!("total_system_memory:{}", total_sys_bytes),
+            format!("total_system_memory_human:{}", total_sys_human),
+            "used_memory_lua:0".to_string(),
+            "used_memory_lua_human:0B".to_string(),
             "used_memory_scripts:0".to_string(),
             "used_memory_scripts_human:0B".to_string(),
             "maxmemory:0".to_string(),
             "maxmemory_human:0B".to_string(),
             "maxmemory_policy:noeviction".to_string(),
-            "allocator_frag_ratio:1.00".to_string(),
+            format!("allocator_frag_ratio:{:.2}", fragmentation),
             "allocator_frag_bytes:0".to_string(),
-            "allocator_rss_ratio:1.00".to_string(),
+            format!("allocator_rss_ratio:{:.2}", fragmentation),
             "allocator_rss_bytes:0".to_string(),
-            "rss_overhead_ratio:1.00".to_string(),
+            format!("rss_overhead_ratio:{:.2}", fragmentation),
             "rss_overhead_bytes:0".to_string(),
-            "mem_fragmentation_ratio:2.00".to_string(),
-            "mem_fragmentation_bytes:1024000".to_string(),
+            format!("mem_fragmentation_ratio:{:.2}", fragmentation),
+            "mem_fragmentation_bytes:0".to_string(),
             "mem_not_counted_for_evict:0".to_string(),
             "mem_replication_backlog:0".to_string(),
             "mem_clients_slaves:0".to_string(),
@@ -1147,49 +1255,121 @@ impl ServerCommands {
         ]
     }
 
+    /// 获取当前进程的 RSS（Resident Set Size）内存
+    fn get_process_rss() -> Option<u64> {
+        std::fs::read_to_string("/proc/self/status")
+            .ok()?
+            .lines()
+            .find(|line| line.starts_with("VmRSS:"))
+            .and_then(|line| {
+                line.split_whitespace()
+                    .nth(1)?
+                    .parse::<u64>()
+                    .ok()
+                    .map(|kb| kb * 1024)
+            })
+    }
+
+    /// 获取系统总内存（字节），从 /proc/meminfo MemTotal 读取，非 Linux 或解析失败返回 None
+    fn get_system_total_memory() -> Option<u64> {
+        std::fs::read_to_string("/proc/meminfo")
+            .ok()?
+            .lines()
+            .find(|line| line.starts_with("MemTotal:"))
+            .and_then(|line| {
+                line.split_whitespace()
+                    .nth(1)?
+                    .parse::<u64>()
+                    .ok()
+                    .map(|kb| kb * 1024)
+            })
+    }
+
     /// Build the Stats section info lines
     fn build_stats_info(&self) -> Vec<String> {
-        vec![
-            "# Stats".to_string(),
-            "total_connections_received:1".to_string(),
-            "total_commands_processed:1".to_string(),
-            "instantaneous_ops_per_sec:0".to_string(),
-            "total_net_input_bytes:0".to_string(),
-            "total_net_output_bytes:0".to_string(),
-            "instantaneous_input_kbps:0.00".to_string(),
-            "instantaneous_output_kbps:0.00".to_string(),
-            "rejected_connections:0".to_string(),
-            "sync_full:0".to_string(),
-            "sync_partial_ok:0".to_string(),
-            "sync_partial_err:0".to_string(),
-            "expired_keys:0".to_string(),
-            "expired_stale_perc:0.00".to_string(),
-            "expired_time_cap_reached_count:0".to_string(),
-            "expire_cycle_cpu_milliseconds:0".to_string(),
-            "evicted_keys:0".to_string(),
-            "keyspace_hits:0".to_string(),
-            "keyspace_misses:0".to_string(),
-            "pubsub_channels:0".to_string(),
-            "pubsub_patterns:0".to_string(),
-            "latest_fork_usec:0".to_string(),
-            "total_forks:0".to_string(),
-            "migrate_cached_sockets:0".to_string(),
-            "slave_expires_tracked_keys:0".to_string(),
-            "active_defrag_hits:0".to_string(),
-            "active_defrag_misses:0".to_string(),
-            "active_defrag_key_hits:0".to_string(),
-            "active_defrag_key_misses:0".to_string(),
-            "tracking_total_keys:0".to_string(),
-            "tracking_total_items:0".to_string(),
-            "tracking_total_prefixes:0".to_string(),
-            "unexpected_error_replies:0".to_string(),
-            "total_error_replies:0".to_string(),
-            "dump_payload_sanitizations:0".to_string(),
-            "total_reads_processed:1".to_string(),
-            "total_writes_processed:1".to_string(),
-            "io_threaded_reads_processed:0".to_string(),
-            "io_threaded_writes_processed:0".to_string(),
-        ]
+        let mut info_lines = vec!["# Stats".to_string()];
+
+        // Get stats from Metrics
+        let stats = self.metrics.get_stats_info();
+        for (key, value) in stats {
+            info_lines.push(format!("{}:{}", key, value));
+        }
+
+        // Add other stats that are not in Metrics yet
+        info_lines.push("sync_full:0".to_string());
+        info_lines.push("sync_partial_ok:0".to_string());
+        info_lines.push("sync_partial_err:0".to_string());
+        info_lines.push("expired_stale_perc:0.00".to_string());
+        info_lines.push("expired_time_cap_reached_count:0".to_string());
+        info_lines.push("expire_cycle_cpu_milliseconds:0".to_string());
+        info_lines.push("pubsub_channels:0".to_string());
+        info_lines.push("pubsub_patterns:0".to_string());
+        info_lines.push("latest_fork_usec:0".to_string());
+        info_lines.push("total_forks:0".to_string());
+        info_lines.push("migrate_cached_sockets:0".to_string());
+        info_lines.push("slave_expires_tracked_keys:0".to_string());
+        info_lines.push("active_defrag_hits:0".to_string());
+        info_lines.push("active_defrag_misses:0".to_string());
+        info_lines.push("active_defrag_key_hits:0".to_string());
+        info_lines.push("active_defrag_key_misses:0".to_string());
+        info_lines.push("tracking_total_keys:0".to_string());
+        info_lines.push("tracking_total_items:0".to_string());
+        info_lines.push("tracking_total_prefixes:0".to_string());
+        info_lines.push(format!(
+            "unexpected_error_replies:{}",
+            self.metrics.commands.total_errors()
+        ));
+        info_lines.push(format!(
+            "total_error_replies:{}",
+            self.metrics.commands.total_errors()
+        ));
+        info_lines.push("dump_payload_sanitizations:0".to_string());
+        // 无 read/write 拆分时，按 1:1 近似（reads + writes = total_commands）
+        let total_cmds = self.metrics.commands.total_commands();
+        let half = total_cmds / 2;
+        info_lines.push(format!("total_reads_processed:{}", half));
+        info_lines.push(format!("total_writes_processed:{}", total_cmds - half));
+        info_lines.push("io_threaded_reads_processed:0".to_string());
+        info_lines.push("io_threaded_writes_processed:0".to_string());
+        // Redis 7.0+ eventloop (redis_exporter metricMapCounters)
+        info_lines.push("eventloop_cycles:0".to_string());
+        info_lines.push("eventloop_duration_sum:0".to_string());
+        info_lines.push("eventloop_duration_cmd_sum:0".to_string());
+        info_lines.push("reply_buffer_shrinks:0".to_string());
+        info_lines.push("reply_buffer_expands:0".to_string());
+        info_lines.push("client_query_buffer_limit_disconnections:0".to_string());
+        info_lines.push("client_output_buffer_limit_disconnections:0".to_string());
+        info_lines.push("acl_access_denied_auth:0".to_string());
+        info_lines.push("acl_access_denied_cmd:0".to_string());
+        info_lines.push("acl_access_denied_key:0".to_string());
+        info_lines.push("acl_access_denied_channel:0".to_string());
+        // Gauges (Redis 7.0+)
+        info_lines.push("current_eviction_exceeded_time:0".to_string());
+        info_lines.push("instantaneous_eventloop_cycles_per_sec:0".to_string());
+        info_lines.push("instantaneous_eventloop_duration_usec:0".to_string());
+
+        // AiKv-specific lock contention metrics (aikv_ prefix avoids collision with Redis fields).
+        // redis-exporter converts every "key:value" line in INFO stats to a Prometheus metric,
+        // so these automatically appear as redis_aikv_* gauges without any exporter changes.
+        let locks = &self.metrics.locks;
+        info_lines.push(format!(
+            "aikv_storage_write_contentions:{}",
+            locks.storage_write_contentions.get()
+        ));
+        info_lines.push(format!(
+            "aikv_storage_write_wait_us_total:{}",
+            locks.storage_write_wait_us.load(Ordering::Relaxed)
+        ));
+        info_lines.push(format!(
+            "aikv_script_lock_wait_us_total:{}",
+            locks.script_lock_wait_us.load(Ordering::Relaxed)
+        ));
+        info_lines.push(format!(
+            "aikv_script_lock_timeouts:{}",
+            locks.script_lock_timeouts.get()
+        ));
+
+        info_lines
     }
 
     /// Build the Replication section info lines
@@ -1212,15 +1392,59 @@ impl ServerCommands {
 
     /// Build the CPU section info lines
     fn build_cpu_info(&self) -> Vec<String> {
+        let (utime, stime) = Self::get_process_cpu_time().unwrap_or((0.0, 0.0));
+
         vec![
             "# CPU".to_string(),
-            "used_cpu_sys:0.000000".to_string(),
-            "used_cpu_user:0.000000".to_string(),
+            format!("used_cpu_sys:{:.6}", stime),
+            format!("used_cpu_user:{:.6}", utime),
             "used_cpu_sys_children:0.000000".to_string(),
             "used_cpu_user_children:0.000000".to_string(),
-            "used_cpu_sys_main_thread:0.000000".to_string(),
-            "used_cpu_user_main_thread:0.000000".to_string(),
+            format!("used_cpu_sys_main_thread:{:.6}", stime),
+            format!("used_cpu_user_main_thread:{:.6}", utime),
         ]
+    }
+
+    /// 获取进程 CPU 时间（用户态 + 系统态），单位秒
+    fn get_process_cpu_time() -> Option<(f64, f64)> {
+        // 读取 /proc/self/stat 获取进程的 CPU 时间
+        // 字段 14 是 utime (用户态), 字段 15 是 stime (系统态)
+        let stat = std::fs::read_to_string("/proc/self/stat").ok()?;
+        let parts: Vec<&str> = stat.split(' ').collect();
+
+        if parts.len() < 15 {
+            return None;
+        }
+
+        let utime: u64 = parts[13].parse().ok()?;
+        let stime: u64 = parts[14].parse().ok()?;
+
+        // 转换为秒 (Linux 通常 100 ticks/秒，可用 sysconf(_SC_CLK_TCK) 获取)
+        const CLK_TCK: f64 = 100.0;
+        Some((utime as f64 / CLK_TCK, stime as f64 / CLK_TCK))
+    }
+
+    /// Build the Commandstats section info lines (Redis compatible)
+    /// Format: cmdstat_xxx:calls=N,usec=M,usec_per_call=X.XX
+    fn build_commandstats_info(&self) -> Vec<String> {
+        let mut lines = vec!["# Commandstats".to_string()];
+
+        for (cmd, calls, usec) in self.metrics.commands.commandstats() {
+            let usec_per_call = if calls > 0 {
+                usec as f64 / calls as f64
+            } else {
+                0.0
+            };
+            lines.push(format!(
+                "cmdstat_{}:calls={},usec={},usec_per_call={:.2}",
+                cmd.to_lowercase(),
+                calls,
+                usec,
+                usec_per_call
+            ));
+        }
+
+        lines
     }
 
     /// Build the Modules section info lines
@@ -1228,26 +1452,79 @@ impl ServerCommands {
         vec!["# Modules".to_string()]
     }
 
-    /// Build the Errorstats section info lines
+    /// Build the Errorstats section info lines (Redis compatible)
+    /// Format: errorstat_<type>:count=N (redis_exporter parseMetricsErrorStats expects this)
+    /// AiKv keys by command name (GET, SET, etc.); Redis keys by error type (ERR, WRONGTYPE)
     fn build_errorstats_info(&self) -> Vec<String> {
-        vec!["# Errorstats".to_string()]
+        let mut lines = vec!["# Errorstats".to_string()];
+
+        let mut errors: Vec<_> = self.metrics.commands.errors_by_type().into_iter().collect();
+        errors.sort_by(|a, b| a.0.cmp(&b.0));
+
+        for (key, count) in errors {
+            if count > 0 {
+                let key_normalized = key.to_lowercase().replace(' ', "_");
+                lines.push(format!("errorstat_{}:count={}", key_normalized, count));
+            }
+        }
+
+        lines
     }
 
     /// Build the Cluster section info lines
     fn build_cluster_info(&self) -> Vec<String> {
         #[cfg(feature = "cluster")]
         {
-            vec!["# Cluster".to_string(), "cluster_enabled:1".to_string()]
+            vec![
+                "# Cluster".to_string(),
+                "cluster_enabled:1".to_string(),
+                "cluster_stats_messages_sent:0".to_string(),
+                "cluster_stats_messages_received:0".to_string(),
+            ]
         }
         #[cfg(not(feature = "cluster"))]
         {
-            vec!["# Cluster".to_string(), "cluster_enabled:0".to_string()]
+            vec![
+                "# Cluster".to_string(),
+                "cluster_enabled:0".to_string(),
+                "cluster_stats_messages_sent:0".to_string(),
+                "cluster_stats_messages_received:0".to_string(),
+            ]
         }
     }
 
     /// Build the Keyspace section info lines
+    /// Format: dbN:keys=X,expires=Y,avg_ttl=Z (Redis compatible)
     fn build_keyspace_info(&self) -> Vec<String> {
-        vec!["# Keyspace".to_string()]
+        // The keyspace scan (db.iter() across all AiDb MemTables) is too slow to
+        // run inline — under heavy write load it takes 30-90+ seconds because it
+        // must merge every unflushed MemTable.  The background task in
+        // server::Server::spawn_keyspace_refresh_task() keeps the cache warm; we
+        // just return whatever is there.  If the cache is empty (server just
+        // started) we return an empty section — the exporter will get real data
+        // after the first background scan completes (~3 s after startup).
+        let cache = self
+            .metrics
+            .keyspace_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        match &*cache {
+            Some(snap) => Self::format_keyspace_stats(&snap.stats),
+            None => vec!["# Keyspace".to_string()],
+        }
+    }
+
+    fn format_keyspace_stats(stats: &[(usize, usize, u64)]) -> Vec<String> {
+        let mut lines = vec!["# Keyspace".to_string()];
+        for (db_index, &(keys, expires, avg_ttl)) in stats.iter().enumerate() {
+            if keys > 0 {
+                lines.push(format!(
+                    "db{}:keys={},expires={},avg_ttl={}",
+                    db_index, keys, expires, avg_ttl
+                ));
+            }
+        }
+        lines
     }
 
     /// Build the Persistence section info lines
@@ -1331,6 +1608,9 @@ impl ServerCommands {
             "cpu" => {
                 info_lines.extend(self.build_cpu_info());
             }
+            "commandstats" => {
+                info_lines.extend(self.build_commandstats_info());
+            }
             "modules" => {
                 info_lines.extend(self.build_modules_info());
             }
@@ -1361,6 +1641,8 @@ impl ServerCommands {
                 info_lines.extend(self.build_replication_info());
                 info_lines.push(String::new());
                 info_lines.extend(self.build_cpu_info());
+                info_lines.push(String::new());
+                info_lines.extend(self.build_commandstats_info());
                 info_lines.push(String::new());
                 info_lines.extend(self.build_modules_info());
                 info_lines.push(String::new());
@@ -1587,6 +1869,115 @@ impl ServerCommands {
             }
             _ => Err(AikvError::InvalidCommand(format!(
                 "Unknown SLOWLOG subcommand: {}",
+                subcommand
+            ))),
+        }
+    }
+
+    /// LATENCY subcommand - Latency monitoring (Redis 7.0+ compatible)
+    pub fn latency(&self, args: &[Bytes]) -> Result<RespValue> {
+        if args.is_empty() {
+            return Err(AikvError::WrongArgCount("LATENCY".to_string()));
+        }
+
+        let subcommand = String::from_utf8_lossy(&args[0]).to_uppercase();
+
+        match subcommand.as_str() {
+            "HISTOGRAM" => {
+                // LATENCY HISTOGRAM [command [command ...]]
+                // Returns per-command latency histograms in Redis RESP2 flat-array format.
+                // redis-exporter calls this to generate redis_commands_latencies_usec_bucket metrics.
+                let filter: Option<Vec<&str>> = if args.len() > 1 {
+                    Some(
+                        args[1..]
+                            .iter()
+                            .map(|b| std::str::from_utf8(b).unwrap_or(""))
+                            .collect(),
+                    )
+                } else {
+                    None
+                };
+
+                let snapshots = self
+                    .metrics
+                    .commands
+                    .get_latency_histogram_snapshot(filter.as_deref());
+
+                // Build flat top-level array: [cmd1, details1, cmd2, details2, ...]
+                let mut result_items: Vec<RespValue> = Vec::with_capacity(snapshots.len() * 2);
+
+                for (cmd, total_calls, _total_usec, buckets) in snapshots {
+                    // Build flat bucket array: [bound1, count1, bound2, count2, ...]
+                    let mut bucket_items: Vec<RespValue> = Vec::with_capacity(buckets.len() * 2);
+                    for (bound, count) in &buckets {
+                        bucket_items.push(RespValue::integer(*bound as i64));
+                        bucket_items.push(RespValue::integer(*count as i64));
+                    }
+
+                    // Detail array: ["calls", N, "histogram_usec", [bucket_flat_array]]
+                    let detail = RespValue::array(vec![
+                        RespValue::bulk_string("calls"),
+                        RespValue::integer(total_calls as i64),
+                        RespValue::bulk_string("histogram_usec"),
+                        RespValue::array(bucket_items),
+                    ]);
+
+                    result_items.push(RespValue::bulk_string(cmd));
+                    result_items.push(detail);
+                }
+
+                Ok(RespValue::array(result_items))
+            }
+
+            "LATEST" => {
+                // LATENCY LATEST
+                // Returns latest latency spikes per event. AiKv does not track spike events,
+                // so return an empty array. redis-exporter handles this gracefully.
+                Ok(RespValue::array(vec![]))
+            }
+
+            "RESET" => {
+                // LATENCY RESET [event [event ...]]
+                let filter: Option<Vec<&str>> = if args.len() > 1 {
+                    Some(
+                        args[1..]
+                            .iter()
+                            .map(|b| std::str::from_utf8(b).unwrap_or(""))
+                            .collect(),
+                    )
+                } else {
+                    None
+                };
+
+                let count = self
+                    .metrics
+                    .commands
+                    .reset_latency_histograms(filter.as_deref());
+
+                Ok(RespValue::integer(count as i64))
+            }
+
+            "HISTORY" => {
+                // LATENCY HISTORY event
+                // AiKv does not keep per-event time-series, return empty array.
+                Ok(RespValue::array(vec![]))
+            }
+
+            "HELP" => Ok(RespValue::array(vec![
+                RespValue::bulk_string(
+                    "LATENCY HISTOGRAM [command ...] - Show latency histogram per command",
+                ),
+                RespValue::bulk_string("LATENCY LATEST - Show latest latency spike events"),
+                RespValue::bulk_string(
+                    "LATENCY HISTORY event - Show latency time series for an event",
+                ),
+                RespValue::bulk_string(
+                    "LATENCY RESET [event ...] - Reset latency data (all or specific commands)",
+                ),
+            ])),
+
+            _ => Err(AikvError::InvalidCommand(format!(
+                "Unknown LATENCY subcommand: {}",
                 subcommand
             ))),
         }

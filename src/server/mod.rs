@@ -4,15 +4,17 @@ pub mod monitor;
 pub use monitor::{MonitorBroadcaster, MonitorMessage};
 
 use self::connection::Connection;
+use crate::command::server::{ClientInfo, ServerCommands};
 use crate::command::CommandExecutor;
 use crate::error::Result;
-use crate::observability::Metrics;
+use crate::observability::{KeyspaceCache, Metrics, SlowQueryLog};
 use crate::storage::StorageEngine;
+use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
+use std::time::Instant;
 use tokio::net::TcpListener;
-use tracing::warn;
-use tracing::{error, info};
+use tracing::{error, info, warn, Level};
 
 #[cfg(feature = "cluster")]
 use crate::cluster::{ClusterCommands, MetaRaftNode, MultiRaftNode, Router};
@@ -24,6 +26,14 @@ pub struct Server {
     storage: StorageEngine,
     metrics: Arc<Metrics>,
     monitor_broadcaster: Arc<MonitorBroadcaster>,
+    /// Shared server config — persists CONFIG SET changes across connections.
+    shared_config: Arc<RwLock<HashMap<String, String>>>,
+    /// Shared slow query log — persists threshold changes across connections.
+    slow_query_log: Arc<SlowQueryLog>,
+    /// Shared client registry — CLIENT LIST reflects all active connections.
+    clients: Arc<RwLock<HashMap<usize, ClientInfo>>>,
+    /// Shared log level — CONFIG SET loglevel takes effect server-wide.
+    current_log_level: Arc<RwLock<Level>>,
     #[cfg(feature = "cluster")]
     node_id: u64,
     #[cfg(feature = "cluster")]
@@ -36,7 +46,7 @@ pub struct Server {
 
 impl Server {
     /// Create a new server with the specified address and storage engine
-    pub fn new(addr: String, storage: StorageEngine) -> Self {
+    pub fn new(addr: String, mut storage: StorageEngine) -> Self {
         // Extract port from address string using proper SocketAddr parsing
         // This handles both IPv4 (127.0.0.1:6379) and IPv6 ([::1]:6379) formats
         let port = addr
@@ -58,12 +68,19 @@ impl Server {
             0
         };
 
+        let metrics = Arc::new(Metrics::new());
+        storage.set_lock_metrics(Arc::clone(&metrics.locks));
+
         Self {
             addr,
             port,
             storage,
-            metrics: Arc::new(Metrics::new()),
+            metrics,
             monitor_broadcaster: Arc::new(MonitorBroadcaster::new()),
+            shared_config: Arc::new(RwLock::new(ServerCommands::default_config(port))),
+            slow_query_log: Arc::new(SlowQueryLog::new()),
+            clients: Arc::new(RwLock::new(HashMap::new())),
+            current_log_level: Arc::new(RwLock::new(Level::INFO)),
             #[cfg(feature = "cluster")]
             node_id,
             #[cfg(feature = "cluster")]
@@ -260,10 +277,81 @@ impl Server {
         Arc::clone(&self.monitor_broadcaster)
     }
 
+    /// Spawn background task that refreshes keyspace stats every ~10 seconds.
+    ///
+    /// The scan uses AiDb's iterator which must merge ALL immutable MemTables.
+    /// Under heavy write load this can take tens of seconds — far too slow to
+    /// run inline inside an INFO request handler.  Running it here in a
+    /// dedicated spawn_blocking loop keeps the request path instant (cache hit)
+    /// while still providing reasonably fresh keyspace data.
+    fn spawn_keyspace_refresh_task(&self) {
+        let storage = self.storage.clone();
+        let metrics = Arc::clone(&self.metrics);
+
+        tokio::spawn(async move {
+            // Brief initial delay so the first scan happens after the server is
+            // fully ready rather than during startup.
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+            loop {
+                let storage_c = storage.clone();
+                let metrics_c = Arc::clone(&metrics);
+
+                let scan_result = tokio::task::spawn_blocking(move || {
+                    let t = Instant::now();
+                    let mut all_stats: Vec<(usize, usize, u64)> = Vec::with_capacity(16);
+                    for db_index in 0..16 {
+                        match storage_c.keyspace_stats_in_db(db_index) {
+                            Ok(s) => all_stats.push(s),
+                            Err(_) => break,
+                        }
+                    }
+                    (all_stats, t.elapsed())
+                })
+                .await;
+
+                match scan_result {
+                    Ok((stats, elapsed)) => {
+                        if elapsed.as_secs() >= 5 {
+                            warn!(
+                                elapsed_ms = elapsed.as_millis(),
+                                "background keyspace scan is slow (many unflushed MemTables)"
+                            );
+                        } else {
+                            info!(
+                                elapsed_ms = elapsed.as_millis(),
+                                "background keyspace scan complete"
+                            );
+                        }
+                        let mut cache = metrics_c
+                            .keyspace_cache
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        *cache = Some(KeyspaceCache {
+                            stats,
+                            updated_at: Instant::now(),
+                        });
+                    }
+                    Err(e) => {
+                        error!("background keyspace scan task panicked: {}", e);
+                    }
+                }
+
+                // Wait before the next scan so we don't pile up concurrent
+                // scans when each one takes longer than the interval.
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+            }
+        });
+    }
+
     /// Run the server
     pub async fn run(&self) -> Result<()> {
         let listener = TcpListener::bind(&self.addr).await?;
         info!("AiKv server listening on {}", self.addr);
+
+        // Kick off background tasks before accepting connections.
+        // Refresh keyspace stats cache — keeps INFO fast under heavy load.
+        self.spawn_keyspace_refresh_task();
 
         loop {
             match listener.accept().await {
@@ -273,8 +361,19 @@ impl Server {
                     // Record connection metrics
                     self.metrics.connections.record_connection();
 
-                    // Create executor with or without cluster commands
-                    let mut executor = CommandExecutor::with_port(self.storage.clone(), self.port);
+                    // Create executor with shared server state so that CONFIG SET,
+                    // SLOWLOG config, CLIENT LIST, and loglevel changes persist
+                    // across connections.
+                    #[allow(unused_mut)]
+                    let mut executor = CommandExecutor::with_shared(
+                        self.storage.clone(),
+                        self.port,
+                        Arc::clone(&self.metrics),
+                        Arc::clone(&self.shared_config),
+                        Arc::clone(&self.slow_query_log),
+                        Arc::clone(&self.clients),
+                        Arc::clone(&self.current_log_level),
+                    );
 
                     #[cfg(feature = "cluster")]
                     if let (Some(meta_raft), Some(multi_raft), Some(router)) =
@@ -302,7 +401,7 @@ impl Server {
                         );
 
                         if let Err(e) = conn.handle().await {
-                            error!("Connection error: {}", e);
+                            error!(addr = %addr, error = %e, "connection error (read/write or protocol)");
                         }
 
                         // Record disconnection

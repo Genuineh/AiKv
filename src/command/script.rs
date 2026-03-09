@@ -1,10 +1,12 @@
 use crate::error::{AikvError, Result};
+use crate::observability::LockMetrics;
 use crate::protocol::RespValue;
 use crate::storage::{BatchOp, StorageEngine, StoredValue};
 use bytes::Bytes;
 use mlua::{Lua, LuaOptions, StdLib, Value as LuaValue};
 use sha1::{Digest, Sha1};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -53,6 +55,8 @@ pub struct KeyLockManager {
     condvar: Condvar,
     /// Lock acquisition timeout
     timeout: Duration,
+    /// Optional lock contention metrics
+    lock_metrics: Option<Arc<LockMetrics>>,
 }
 
 impl KeyLockManager {
@@ -62,6 +66,17 @@ impl KeyLockManager {
             locks: Mutex::new(HashMap::new()),
             condvar: Condvar::new(),
             timeout,
+            lock_metrics: None,
+        }
+    }
+
+    /// Create a new key lock manager with metrics instrumentation.
+    pub fn with_metrics(timeout: Duration, lock_metrics: Arc<LockMetrics>) -> Self {
+        Self {
+            locks: Mutex::new(HashMap::new()),
+            condvar: Condvar::new(),
+            timeout,
+            lock_metrics: Some(lock_metrics),
         }
     }
 
@@ -84,6 +99,7 @@ impl KeyLockManager {
         sorted_keys.dedup();
 
         let start_time = Instant::now();
+        let mut waited = false; // tracks whether we entered a wait at least once
 
         loop {
             let mut locks = self
@@ -106,19 +122,34 @@ impl KeyLockManager {
                     entry.holders += 1;
                 }
 
+                // Record cumulative wait time when there was actual contention
+                if waited {
+                    if let Some(m) = &self.lock_metrics {
+                        m.script_lock_wait_us
+                            .fetch_add(start_time.elapsed().as_micros() as u64, Ordering::Relaxed);
+                    }
+                }
+
                 return Ok(KeyLockGuard {
                     manager: self,
                     keys: sorted_keys,
                 });
             }
 
-            // Check timeout
+            // Check timeout before waiting
             if start_time.elapsed() >= self.timeout {
+                if let Some(m) = &self.lock_metrics {
+                    m.script_lock_timeouts.inc();
+                    m.script_lock_wait_us
+                        .fetch_add(start_time.elapsed().as_micros() as u64, Ordering::Relaxed);
+                }
                 return Err(AikvError::Script(format!(
                     "Lock acquisition timeout after {:?}",
                     self.timeout
                 )));
             }
+
+            waited = true;
 
             // Register as waiter and wait
             for key in &sorted_keys {
@@ -147,8 +178,13 @@ impl KeyLockManager {
                 }
             }
 
-            // Check if we timed out
+            // Check if we timed out inside wait_timeout
             if result.1.timed_out() {
+                if let Some(m) = &self.lock_metrics {
+                    m.script_lock_timeouts.inc();
+                    m.script_lock_wait_us
+                        .fetch_add(start_time.elapsed().as_micros() as u64, Ordering::Relaxed);
+                }
                 return Err(AikvError::Script(format!(
                     "Lock acquisition timeout after {:?}",
                     self.timeout
@@ -450,6 +486,16 @@ impl ScriptCommands {
             storage,
             script_cache: Arc::new(RwLock::new(HashMap::new())),
             key_lock_manager: Arc::new(KeyLockManager::new(lock_timeout)),
+        }
+    }
+
+    /// Create a new ScriptCommands with lock metrics instrumentation.
+    pub fn with_metrics(storage: StorageEngine, lock_metrics: Arc<LockMetrics>) -> Self {
+        let lock_timeout = Duration::from_secs(30);
+        Self {
+            storage,
+            script_cache: Arc::new(RwLock::new(HashMap::new())),
+            key_lock_manager: Arc::new(KeyLockManager::with_metrics(lock_timeout, lock_metrics)),
         }
     }
 

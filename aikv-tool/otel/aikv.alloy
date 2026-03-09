@@ -1,0 +1,28 @@
+// Grafana Alloy - eBPF 持续剖析配置
+// 发现名为 aikv 的 Docker 容器, 对其做 CPU/内存采样并写入 Pyroscope (无需改 AiKv 代码, 支持 Rust)
+
+discovery.docker "aikv" {
+  host = "unix:///var/run/docker.sock"
+  refresh_interval = "30s"
+  filter {
+    name   = "name"
+    values = ["aikv", "aikv1"]
+  }
+}
+
+pyroscope.ebpf "aikv" {
+  forward_to = [pyroscope.write.pyroscope.receiver]
+  targets    = discovery.docker.aikv.targets
+  // 采样率 (次/秒), 默认 19; 调优时可适当提高
+  sample_rate = 19
+}
+
+pyroscope.write "pyroscope" {
+  endpoint {
+    url = "http://pyroscope:4040"
+  }
+  external_labels = {
+    env      = "aikv-otel",
+    instance = env("HOSTNAME"),
+  }
+}

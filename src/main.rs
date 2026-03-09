@@ -418,6 +418,7 @@ async fn main() {
     let storage = create_storage_engine(&storage_config);
 
     // Create and run server
+    #[allow(unused_mut)]
     let mut server = Server::new(addr, storage);
 
     // Initialize cluster if enabled
