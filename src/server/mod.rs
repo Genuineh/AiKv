@@ -364,7 +364,8 @@ impl Server {
                     // Create executor with shared server state so that CONFIG SET,
                     // SLOWLOG config, CLIENT LIST, and loglevel changes persist
                     // across connections.
-                    let executor = CommandExecutor::with_shared(
+                    #[allow(unused_mut)]
+                    let mut executor = CommandExecutor::with_shared(
                         self.storage.clone(),
                         self.port,
                         Arc::clone(&self.metrics),
