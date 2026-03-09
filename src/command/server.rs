@@ -1164,7 +1164,7 @@ impl ServerCommands {
             "blocked_clients:0".to_string(),
             "tracking_clients:0".to_string(),
             "clients_in_timeout_table:0".to_string(),
-        "pubsub_clients:0".to_string(),
+            "pubsub_clients:0".to_string(),
             "watching_clients:0".to_string(),
         ])
     }
@@ -1502,7 +1502,11 @@ impl ServerCommands {
         // just return whatever is there.  If the cache is empty (server just
         // started) we return an empty section — the exporter will get real data
         // after the first background scan completes (~3 s after startup).
-        let cache = self.metrics.keyspace_cache.lock().unwrap_or_else(|e| e.into_inner());
+        let cache = self
+            .metrics
+            .keyspace_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         match &*cache {
             Some(snap) => Self::format_keyspace_stats(&snap.stats),
             None => vec!["# Keyspace".to_string()],
@@ -1962,9 +1966,7 @@ impl ServerCommands {
                 RespValue::bulk_string(
                     "LATENCY HISTOGRAM [command ...] - Show latency histogram per command",
                 ),
-                RespValue::bulk_string(
-                    "LATENCY LATEST - Show latest latency spike events",
-                ),
+                RespValue::bulk_string("LATENCY LATEST - Show latest latency spike events"),
                 RespValue::bulk_string(
                     "LATENCY HISTORY event - Show latency time series for an event",
                 ),

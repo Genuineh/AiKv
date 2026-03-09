@@ -1186,9 +1186,10 @@ impl AiDbStorageAdapter {
 
                 // Get expiration if exists
                 let expire_key = Self::expiration_key(key);
-                if let Some(expire_bytes) = db.get(&expire_key).map_err(|e| {
-                    AikvError::Storage(format!("Failed to get expiration: {}", e))
-                })? {
+                if let Some(expire_bytes) = db
+                    .get(&expire_key)
+                    .map_err(|e| AikvError::Storage(format!("Failed to get expiration: {}", e)))?
+                {
                     if expire_bytes.len() == 8 {
                         let expire_at = u64::from_le_bytes([
                             expire_bytes[0],

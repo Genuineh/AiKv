@@ -125,10 +125,8 @@ impl KeyLockManager {
                 // Record cumulative wait time when there was actual contention
                 if waited {
                     if let Some(m) = &self.lock_metrics {
-                        m.script_lock_wait_us.fetch_add(
-                            start_time.elapsed().as_micros() as u64,
-                            Ordering::Relaxed,
-                        );
+                        m.script_lock_wait_us
+                            .fetch_add(start_time.elapsed().as_micros() as u64, Ordering::Relaxed);
                     }
                 }
 
@@ -142,10 +140,8 @@ impl KeyLockManager {
             if start_time.elapsed() >= self.timeout {
                 if let Some(m) = &self.lock_metrics {
                     m.script_lock_timeouts.inc();
-                    m.script_lock_wait_us.fetch_add(
-                        start_time.elapsed().as_micros() as u64,
-                        Ordering::Relaxed,
-                    );
+                    m.script_lock_wait_us
+                        .fetch_add(start_time.elapsed().as_micros() as u64, Ordering::Relaxed);
                 }
                 return Err(AikvError::Script(format!(
                     "Lock acquisition timeout after {:?}",
@@ -186,10 +182,8 @@ impl KeyLockManager {
             if result.1.timed_out() {
                 if let Some(m) = &self.lock_metrics {
                     m.script_lock_timeouts.inc();
-                    m.script_lock_wait_us.fetch_add(
-                        start_time.elapsed().as_micros() as u64,
-                        Ordering::Relaxed,
-                    );
+                    m.script_lock_wait_us
+                        .fetch_add(start_time.elapsed().as_micros() as u64, Ordering::Relaxed);
                 }
                 return Err(AikvError::Script(format!(
                     "Lock acquisition timeout after {:?}",

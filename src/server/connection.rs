@@ -149,16 +149,18 @@ impl Connection {
         // Parse and process commands
         while let Some(value) = self.parser.parse()? {
             let response = self.process_command(value).await;
-            self.write_response(response).await.map_err(|e: crate::error::AikvError| {
-                warn!(
-                    client_id = self.client_id,
-                    addr = %self.client_addr,
-                    last_command = ?self.last_command.as_deref(),
-                    error = %e,
-                    "connection write error (client may have closed or timeout)"
-                );
-                e
-            })?;
+            self.write_response(response)
+                .await
+                .map_err(|e: crate::error::AikvError| {
+                    warn!(
+                        client_id = self.client_id,
+                        addr = %self.client_addr,
+                        last_command = ?self.last_command.as_deref(),
+                        error = %e,
+                        "connection write error (client may have closed or timeout)"
+                    );
+                    e
+                })?;
 
             // Check if mode changed to monitor
             if self.mode == ConnectionMode::Monitor {
@@ -407,10 +409,12 @@ impl Connection {
                         .iter()
                         .map(|b| String::from_utf8_lossy(b).into_owned())
                         .collect();
-                    self.executor
-                        .server_commands()
-                        .slow_query_log()
-                        .record(&command, &args_str, duration, Some(self.client_addr.clone()));
+                    self.executor.server_commands().slow_query_log().record(
+                        &command,
+                        &args_str,
+                        duration,
+                        Some(self.client_addr.clone()),
+                    );
                 }
 
                 match result {

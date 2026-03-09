@@ -380,10 +380,8 @@ impl StorageAdapter {
                     .write()
                     .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
                 if let Some(m) = &self.lock_metrics {
-                    m.storage_write_wait_us.fetch_add(
-                        wait_start.elapsed().as_micros() as u64,
-                        Ordering::Relaxed,
-                    );
+                    m.storage_write_wait_us
+                        .fetch_add(wait_start.elapsed().as_micros() as u64, Ordering::Relaxed);
                 }
                 Ok(guard)
             }
