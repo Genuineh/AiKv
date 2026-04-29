@@ -555,6 +555,7 @@ Use hash tags to ensure related keys go to same slot:
 Slot Migration
 --------------
 # Get keys in slot
+# NOTE: first arg must be numeric slot (use CLUSTER KEYSLOT key)
 CLUSTER GETKEYSINSLOT 5000 10
 
 # Start migration
@@ -563,6 +564,9 @@ CLUSTER SETSLOT 5000 IMPORTING source-id
 
 # Finish migration
 CLUSTER SETSLOT 5000 NODE target-id
+
+# Optional rollback
+CLUSTER SETSLOT 5000 STABLE
 
 Failover
 --------

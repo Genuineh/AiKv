@@ -1,7 +1,11 @@
+mod common;
+
 use aikv::command::CommandExecutor;
 use aikv::protocol::RespValue;
 use aikv::StorageEngine;
 use bytes::Bytes;
+
+use common::exec_cmd;
 
 #[test]
 fn test_list_commands() {
@@ -12,17 +16,17 @@ fn test_list_commands() {
 
     // RPUSH
     let args = vec![Bytes::from("mylist"), Bytes::from("world")];
-    let result = executor.execute("RPUSH", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "RPUSH", &args, &mut current_db, client_id);
     assert!(result.is_ok());
 
     // LPUSH
     let args = vec![Bytes::from("mylist"), Bytes::from("hello")];
-    let result = executor.execute("LPUSH", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "LPUSH", &args, &mut current_db, client_id);
     assert!(result.is_ok());
 
     // LRANGE
     let args = vec![Bytes::from("mylist"), Bytes::from("0"), Bytes::from("-1")];
-    let result = executor.execute("LRANGE", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "LRANGE", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     if let Ok(RespValue::Array(Some(items))) = result {
         assert_eq!(items.len(), 2);
@@ -32,7 +36,7 @@ fn test_list_commands() {
 
     // LLEN
     let args = vec![Bytes::from("mylist")];
-    let result = executor.execute("LLEN", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "LLEN", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(2));
 }
@@ -46,8 +50,8 @@ fn test_linsert_command() {
 
     // Create a list
     let args = vec![Bytes::from("mylist"), Bytes::from("a"), Bytes::from("c")];
-    executor
-        .execute("RPUSH", &args, &mut current_db, client_id)
+    exec_cmd(
+        &executor, "RPUSH", &args, &mut current_db, client_id)
         .unwrap();
 
     // LINSERT BEFORE
@@ -57,13 +61,13 @@ fn test_linsert_command() {
         Bytes::from("c"),
         Bytes::from("b"),
     ];
-    let result = executor.execute("LINSERT", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "LINSERT", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(3));
 
     // Verify list order: a, b, c
     let args = vec![Bytes::from("mylist"), Bytes::from("0"), Bytes::from("-1")];
-    let result = executor.execute("LRANGE", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "LRANGE", &args, &mut current_db, client_id);
     if let Ok(RespValue::Array(Some(items))) = result {
         assert_eq!(items.len(), 3);
     } else {
@@ -77,7 +81,7 @@ fn test_linsert_command() {
         Bytes::from("c"),
         Bytes::from("d"),
     ];
-    let result = executor.execute("LINSERT", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "LINSERT", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(4));
 
@@ -88,7 +92,7 @@ fn test_linsert_command() {
         Bytes::from("notexist"),
         Bytes::from("x"),
     ];
-    let result = executor.execute("LINSERT", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "LINSERT", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(-1));
 
@@ -99,7 +103,7 @@ fn test_linsert_command() {
         Bytes::from("a"),
         Bytes::from("x"),
     ];
-    let result = executor.execute("LINSERT", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "LINSERT", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(0));
 }
@@ -118,8 +122,8 @@ fn test_lmove_command() {
         Bytes::from("b"),
         Bytes::from("c"),
     ];
-    executor
-        .execute("RPUSH", &args, &mut current_db, client_id)
+    exec_cmd(
+        &executor, "RPUSH", &args, &mut current_db, client_id)
         .unwrap();
 
     // LMOVE LEFT RIGHT (pop from left of src, push to right of dst)
@@ -129,7 +133,7 @@ fn test_lmove_command() {
         Bytes::from("LEFT"),
         Bytes::from("RIGHT"),
     ];
-    let result = executor.execute("LMOVE", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "LMOVE", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     if let RespValue::BulkString(Some(value)) = result.unwrap() {
         assert_eq!(value.as_ref(), b"a");
@@ -139,12 +143,12 @@ fn test_lmove_command() {
 
     // Verify src has 2 elements
     let args = vec![Bytes::from("src")];
-    let result = executor.execute("LLEN", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "LLEN", &args, &mut current_db, client_id);
     assert_eq!(result.unwrap(), RespValue::Integer(2));
 
     // Verify dst has 1 element
     let args = vec![Bytes::from("dst")];
-    let result = executor.execute("LLEN", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "LLEN", &args, &mut current_db, client_id);
     assert_eq!(result.unwrap(), RespValue::Integer(1));
 
     // LMOVE RIGHT LEFT (pop from right of src, push to left of dst)
@@ -154,7 +158,7 @@ fn test_lmove_command() {
         Bytes::from("RIGHT"),
         Bytes::from("LEFT"),
     ];
-    let result = executor.execute("LMOVE", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "LMOVE", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     if let RespValue::BulkString(Some(value)) = result.unwrap() {
         assert_eq!(value.as_ref(), b"c");
@@ -169,7 +173,7 @@ fn test_lmove_command() {
         Bytes::from("LEFT"),
         Bytes::from("RIGHT"),
     ];
-    let result = executor.execute("LMOVE", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "LMOVE", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Null);
 }
@@ -189,23 +193,23 @@ fn test_hash_commands() {
         Bytes::from("field2"),
         Bytes::from("value2"),
     ];
-    let result = executor.execute("HSET", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "HSET", &args, &mut current_db, client_id);
     assert!(result.is_ok());
 
     // HGET
     let args = vec![Bytes::from("myhash"), Bytes::from("field1")];
-    let result = executor.execute("HGET", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "HGET", &args, &mut current_db, client_id);
     assert!(result.is_ok());
 
     // HLEN
     let args = vec![Bytes::from("myhash")];
-    let result = executor.execute("HLEN", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "HLEN", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(2));
 
     // HGETALL
     let args = vec![Bytes::from("myhash")];
-    let result = executor.execute("HGETALL", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "HGETALL", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     if let Ok(RespValue::Array(Some(items))) = result {
         assert_eq!(items.len(), 4); // 2 fields * 2 (field + value)
@@ -231,7 +235,7 @@ fn test_hmset_command() {
         Bytes::from("field3"),
         Bytes::from("value3"),
     ];
-    let result = executor.execute("HMSET", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "HMSET", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     // HMSET should return OK
     if let RespValue::SimpleString(s) = result.unwrap() {
@@ -242,13 +246,13 @@ fn test_hmset_command() {
 
     // Verify with HLEN
     let args = vec![Bytes::from("testhash")];
-    let result = executor.execute("HLEN", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "HLEN", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(3));
 
     // Verify individual fields with HGET
     let args = vec![Bytes::from("testhash"), Bytes::from("field1")];
-    let result = executor.execute("HGET", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "HGET", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     if let RespValue::BulkString(Some(value)) = result.unwrap() {
         assert_eq!(value.as_ref(), b"value1");
@@ -264,12 +268,12 @@ fn test_hmset_command() {
         Bytes::from("field4"),
         Bytes::from("value4"),
     ];
-    let result = executor.execute("HMSET", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "HMSET", &args, &mut current_db, client_id);
     assert!(result.is_ok());
 
     // Verify updated field
     let args = vec![Bytes::from("testhash"), Bytes::from("field1")];
-    let result = executor.execute("HGET", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "HGET", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     if let RespValue::BulkString(Some(value)) = result.unwrap() {
         assert_eq!(value.as_ref(), b"newvalue1");
@@ -279,7 +283,7 @@ fn test_hmset_command() {
 
     // Verify total fields count
     let args = vec![Bytes::from("testhash")];
-    let result = executor.execute("HLEN", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "HLEN", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(4));
 }
@@ -303,13 +307,13 @@ fn test_hscan_command() {
         Bytes::from("anotherfield"),
         Bytes::from("anothervalue"),
     ];
-    executor
-        .execute("HSET", &args, &mut current_db, client_id)
+    exec_cmd(
+        &executor, "HSET", &args, &mut current_db, client_id)
         .unwrap();
 
     // HSCAN with cursor 0 (start of iteration)
     let args = vec![Bytes::from("scanhash"), Bytes::from("0")];
-    let result = executor.execute("HSCAN", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "HSCAN", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     if let RespValue::Array(Some(items)) = result.unwrap() {
         assert_eq!(items.len(), 2); // [cursor, [fields]]
@@ -330,7 +334,7 @@ fn test_hscan_command() {
         Bytes::from("COUNT"),
         Bytes::from("2"),
     ];
-    let result = executor.execute("HSCAN", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "HSCAN", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     if let RespValue::Array(Some(items)) = result.unwrap() {
         assert_eq!(items.len(), 2);
@@ -356,7 +360,7 @@ fn test_hscan_command() {
         Bytes::from("MATCH"),
         Bytes::from("field*"),
     ];
-    let result = executor.execute("HSCAN", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "HSCAN", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     if let RespValue::Array(Some(items)) = result.unwrap() {
         // Check fields array - should only have field1, field2, field3
@@ -371,7 +375,7 @@ fn test_hscan_command() {
 
     // HSCAN on non-existent key should return empty result
     let args = vec![Bytes::from("nonexistent"), Bytes::from("0")];
-    let result = executor.execute("HSCAN", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "HSCAN", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     if let RespValue::Array(Some(items)) = result.unwrap() {
         assert_eq!(items.len(), 2);
@@ -400,31 +404,31 @@ fn test_set_commands() {
         Bytes::from("member2"),
         Bytes::from("member3"),
     ];
-    let result = executor.execute("SADD", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "SADD", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(3));
 
     // SCARD
     let args = vec![Bytes::from("myset")];
-    let result = executor.execute("SCARD", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "SCARD", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(3));
 
     // SISMEMBER
     let args = vec![Bytes::from("myset"), Bytes::from("member1")];
-    let result = executor.execute("SISMEMBER", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "SISMEMBER", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(1));
 
     // SREM
     let args = vec![Bytes::from("myset"), Bytes::from("member2")];
-    let result = executor.execute("SREM", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "SREM", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(1));
 
     // SCARD after removal
     let args = vec![Bytes::from("myset")];
-    let result = executor.execute("SCARD", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "SCARD", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(2));
 }
@@ -446,30 +450,30 @@ fn test_zset_commands() {
         Bytes::from("3"),
         Bytes::from("three"),
     ];
-    let result = executor.execute("ZADD", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "ZADD", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(3));
 
     // ZCARD
     let args = vec![Bytes::from("myzset")];
-    let result = executor.execute("ZCARD", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "ZCARD", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(3));
 
     // ZSCORE
     let args = vec![Bytes::from("myzset"), Bytes::from("two")];
-    let result = executor.execute("ZSCORE", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "ZSCORE", &args, &mut current_db, client_id);
     assert!(result.is_ok());
 
     // ZRANK
     let args = vec![Bytes::from("myzset"), Bytes::from("two")];
-    let result = executor.execute("ZRANK", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "ZRANK", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(1)); // 0-indexed
 
     // ZRANGE
     let args = vec![Bytes::from("myzset"), Bytes::from("0"), Bytes::from("-1")];
-    let result = executor.execute("ZRANGE", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "ZRANGE", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     if let Ok(RespValue::Array(Some(items))) = result {
         assert_eq!(items.len(), 3);
@@ -492,8 +496,8 @@ fn test_set_operations() {
         Bytes::from("b"),
         Bytes::from("c"),
     ];
-    executor
-        .execute("SADD", &args, &mut current_db, client_id)
+    exec_cmd(
+        &executor, "SADD", &args, &mut current_db, client_id)
         .unwrap();
 
     // Create set2
@@ -503,13 +507,13 @@ fn test_set_operations() {
         Bytes::from("c"),
         Bytes::from("d"),
     ];
-    executor
-        .execute("SADD", &args, &mut current_db, client_id)
+    exec_cmd(
+        &executor, "SADD", &args, &mut current_db, client_id)
         .unwrap();
 
     // SUNION
     let args = vec![Bytes::from("set1"), Bytes::from("set2")];
-    let result = executor.execute("SUNION", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "SUNION", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     if let Ok(RespValue::Array(Some(items))) = result {
         assert_eq!(items.len(), 4); // a, b, c, d
@@ -519,7 +523,7 @@ fn test_set_operations() {
 
     // SINTER
     let args = vec![Bytes::from("set1"), Bytes::from("set2")];
-    let result = executor.execute("SINTER", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "SINTER", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     if let Ok(RespValue::Array(Some(items))) = result {
         assert_eq!(items.len(), 2); // b, c
@@ -529,7 +533,7 @@ fn test_set_operations() {
 
     // SDIFF
     let args = vec![Bytes::from("set1"), Bytes::from("set2")];
-    let result = executor.execute("SDIFF", &args, &mut current_db, client_id);
+    let result = exec_cmd(&executor, "SDIFF", &args, &mut current_db, client_id);
     assert!(result.is_ok());
     if let Ok(RespValue::Array(Some(items))) = result {
         assert_eq!(items.len(), 1); // a
@@ -548,7 +552,7 @@ fn test_incr_decr_commands() {
     let client_id = 1;
 
     // INCR on non-existent key (starts from 0)
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "INCR",
         &[Bytes::from("counter")],
         &mut current_db,
@@ -558,7 +562,7 @@ fn test_incr_decr_commands() {
     assert_eq!(result.unwrap(), RespValue::Integer(1));
 
     // INCR again
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "INCR",
         &[Bytes::from("counter")],
         &mut current_db,
@@ -568,7 +572,7 @@ fn test_incr_decr_commands() {
     assert_eq!(result.unwrap(), RespValue::Integer(2));
 
     // DECR
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "DECR",
         &[Bytes::from("counter")],
         &mut current_db,
@@ -578,7 +582,7 @@ fn test_incr_decr_commands() {
     assert_eq!(result.unwrap(), RespValue::Integer(1));
 
     // DECR below 0
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "DECR",
         &[Bytes::from("counter")],
         &mut current_db,
@@ -587,7 +591,7 @@ fn test_incr_decr_commands() {
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), RespValue::Integer(0));
 
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "DECR",
         &[Bytes::from("counter")],
         &mut current_db,
@@ -605,7 +609,7 @@ fn test_incrby_decrby_commands() {
     let client_id = 1;
 
     // INCRBY
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "INCRBY",
         &[Bytes::from("counter"), Bytes::from("10")],
         &mut current_db,
@@ -615,7 +619,7 @@ fn test_incrby_decrby_commands() {
     assert_eq!(result.unwrap(), RespValue::Integer(10));
 
     // INCRBY again
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "INCRBY",
         &[Bytes::from("counter"), Bytes::from("5")],
         &mut current_db,
@@ -625,7 +629,7 @@ fn test_incrby_decrby_commands() {
     assert_eq!(result.unwrap(), RespValue::Integer(15));
 
     // DECRBY
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "DECRBY",
         &[Bytes::from("counter"), Bytes::from("3")],
         &mut current_db,
@@ -643,7 +647,7 @@ fn test_incrbyfloat_command() {
     let client_id = 1;
 
     // INCRBYFLOAT on non-existent key
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "INCRBYFLOAT",
         &[Bytes::from("floatkey"), Bytes::from("10.5")],
         &mut current_db,
@@ -652,7 +656,7 @@ fn test_incrbyfloat_command() {
     assert!(result.is_ok());
 
     // INCRBYFLOAT again
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "INCRBYFLOAT",
         &[Bytes::from("floatkey"), Bytes::from("0.1")],
         &mut current_db,
@@ -661,7 +665,7 @@ fn test_incrbyfloat_command() {
     assert!(result.is_ok());
 
     // INCRBYFLOAT with negative
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "INCRBYFLOAT",
         &[Bytes::from("floatkey"), Bytes::from("-5.2")],
         &mut current_db,
@@ -678,8 +682,8 @@ fn test_getrange_setrange_commands() {
     let client_id = 1;
 
     // SET a string
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "SET",
             &[Bytes::from("mykey"), Bytes::from("Hello World")],
             &mut current_db,
@@ -688,7 +692,7 @@ fn test_getrange_setrange_commands() {
         .unwrap();
 
     // GETRANGE
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "GETRANGE",
         &[Bytes::from("mykey"), Bytes::from("0"), Bytes::from("4")],
         &mut current_db,
@@ -702,7 +706,7 @@ fn test_getrange_setrange_commands() {
     }
 
     // GETRANGE with negative indices
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "GETRANGE",
         &[Bytes::from("mykey"), Bytes::from("-5"), Bytes::from("-1")],
         &mut current_db,
@@ -716,7 +720,7 @@ fn test_getrange_setrange_commands() {
     }
 
     // SETRANGE
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "SETRANGE",
         &[Bytes::from("mykey"), Bytes::from("6"), Bytes::from("Redis")],
         &mut current_db,
@@ -726,7 +730,7 @@ fn test_getrange_setrange_commands() {
     assert_eq!(result.unwrap(), RespValue::Integer(11));
 
     // Verify
-    let result = executor.execute("GET", &[Bytes::from("mykey")], &mut current_db, client_id);
+    let result = exec_cmd(&executor, "GET", &[Bytes::from("mykey")], &mut current_db, client_id);
     if let Ok(RespValue::BulkString(Some(value))) = result {
         assert_eq!(value.as_ref(), b"Hello Redis");
     } else {
@@ -742,8 +746,8 @@ fn test_getex_getdel_commands() {
     let client_id = 1;
 
     // SET a value
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "SET",
             &[Bytes::from("mykey"), Bytes::from("Hello")],
             &mut current_db,
@@ -752,7 +756,7 @@ fn test_getex_getdel_commands() {
         .unwrap();
 
     // GETEX with EX option
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "GETEX",
         &[Bytes::from("mykey"), Bytes::from("EX"), Bytes::from("100")],
         &mut current_db,
@@ -766,7 +770,7 @@ fn test_getex_getdel_commands() {
     }
 
     // GETDEL
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "GETDEL",
         &[Bytes::from("mykey")],
         &mut current_db,
@@ -780,7 +784,7 @@ fn test_getex_getdel_commands() {
     }
 
     // Key should be deleted
-    let result = executor.execute("GET", &[Bytes::from("mykey")], &mut current_db, client_id);
+    let result = exec_cmd(&executor, "GET", &[Bytes::from("mykey")], &mut current_db, client_id);
     assert!(result.is_ok());
     match result.unwrap() {
         RespValue::BulkString(None) | RespValue::Null => {}
@@ -796,7 +800,7 @@ fn test_setnx_setex_psetex_commands() {
     let client_id = 1;
 
     // SETNX on non-existent key
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "SETNX",
         &[Bytes::from("mykey"), Bytes::from("Hello")],
         &mut current_db,
@@ -806,7 +810,7 @@ fn test_setnx_setex_psetex_commands() {
     assert_eq!(result.unwrap(), RespValue::Integer(1));
 
     // SETNX on existing key
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "SETNX",
         &[Bytes::from("mykey"), Bytes::from("World")],
         &mut current_db,
@@ -816,7 +820,7 @@ fn test_setnx_setex_psetex_commands() {
     assert_eq!(result.unwrap(), RespValue::Integer(0));
 
     // Verify value unchanged
-    let result = executor.execute("GET", &[Bytes::from("mykey")], &mut current_db, client_id);
+    let result = exec_cmd(&executor, "GET", &[Bytes::from("mykey")], &mut current_db, client_id);
     if let Ok(RespValue::BulkString(Some(value))) = result {
         assert_eq!(value.as_ref(), b"Hello");
     } else {
@@ -824,7 +828,7 @@ fn test_setnx_setex_psetex_commands() {
     }
 
     // SETEX
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "SETEX",
         &[
             Bytes::from("exkey"),
@@ -842,7 +846,7 @@ fn test_setnx_setex_psetex_commands() {
     }
 
     // PSETEX
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "PSETEX",
         &[
             Bytes::from("pexkey"),
@@ -870,8 +874,8 @@ fn test_lpos_command() {
     let client_id = 1;
 
     // Create a list
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "RPUSH",
             &[
                 Bytes::from("mylist"),
@@ -888,7 +892,7 @@ fn test_lpos_command() {
         .unwrap();
 
     // LPOS - find first occurrence
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "LPOS",
         &[Bytes::from("mylist"), Bytes::from("b")],
         &mut current_db,
@@ -898,7 +902,7 @@ fn test_lpos_command() {
     assert_eq!(result.unwrap(), RespValue::Integer(1));
 
     // LPOS with RANK 2 - find second occurrence
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "LPOS",
         &[
             Bytes::from("mylist"),
@@ -913,7 +917,7 @@ fn test_lpos_command() {
     assert_eq!(result.unwrap(), RespValue::Integer(3));
 
     // LPOS with COUNT - find all occurrences
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "LPOS",
         &[
             Bytes::from("mylist"),
@@ -932,7 +936,7 @@ fn test_lpos_command() {
     }
 
     // LPOS - element not found
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "LPOS",
         &[Bytes::from("mylist"), Bytes::from("x")],
         &mut current_db,
@@ -952,8 +956,8 @@ fn test_sscan_command() {
     let client_id = 1;
 
     // Create a set
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "SADD",
             &[
                 Bytes::from("myset"),
@@ -968,7 +972,7 @@ fn test_sscan_command() {
         .unwrap();
 
     // SSCAN
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "SSCAN",
         &[Bytes::from("myset"), Bytes::from("0")],
         &mut current_db,
@@ -985,7 +989,7 @@ fn test_sscan_command() {
     }
 
     // SSCAN with MATCH
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "SSCAN",
         &[
             Bytes::from("myset"),
@@ -1014,8 +1018,8 @@ fn test_smove_command() {
     let client_id = 1;
 
     // Create source set
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "SADD",
             &[
                 Bytes::from("src"),
@@ -1029,8 +1033,8 @@ fn test_smove_command() {
         .unwrap();
 
     // Create destination set
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "SADD",
             &[Bytes::from("dst"), Bytes::from("x"), Bytes::from("y")],
             &mut current_db,
@@ -1039,7 +1043,7 @@ fn test_smove_command() {
         .unwrap();
 
     // SMOVE
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "SMOVE",
         &[Bytes::from("src"), Bytes::from("dst"), Bytes::from("b")],
         &mut current_db,
@@ -1049,15 +1053,15 @@ fn test_smove_command() {
     assert_eq!(result.unwrap(), RespValue::Integer(1));
 
     // Verify source
-    let result = executor.execute("SCARD", &[Bytes::from("src")], &mut current_db, client_id);
+    let result = exec_cmd(&executor, "SCARD", &[Bytes::from("src")], &mut current_db, client_id);
     assert_eq!(result.unwrap(), RespValue::Integer(2));
 
     // Verify destination
-    let result = executor.execute("SCARD", &[Bytes::from("dst")], &mut current_db, client_id);
+    let result = exec_cmd(&executor, "SCARD", &[Bytes::from("dst")], &mut current_db, client_id);
     assert_eq!(result.unwrap(), RespValue::Integer(3));
 
     // SMOVE non-existent member
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "SMOVE",
         &[Bytes::from("src"), Bytes::from("dst"), Bytes::from("z")],
         &mut current_db,
@@ -1077,8 +1081,8 @@ fn test_zscan_command() {
     let client_id = 1;
 
     // Create a sorted set
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "ZADD",
             &[
                 Bytes::from("myzset"),
@@ -1095,7 +1099,7 @@ fn test_zscan_command() {
         .unwrap();
 
     // ZSCAN
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "ZSCAN",
         &[Bytes::from("myzset"), Bytes::from("0")],
         &mut current_db,
@@ -1120,8 +1124,8 @@ fn test_zpopmin_zpopmax_commands() {
     let client_id = 1;
 
     // Create a sorted set
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "ZADD",
             &[
                 Bytes::from("myzset"),
@@ -1138,7 +1142,7 @@ fn test_zpopmin_zpopmax_commands() {
         .unwrap();
 
     // ZPOPMIN
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "ZPOPMIN",
         &[Bytes::from("myzset")],
         &mut current_db,
@@ -1155,7 +1159,7 @@ fn test_zpopmin_zpopmax_commands() {
     }
 
     // ZPOPMAX
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "ZPOPMAX",
         &[Bytes::from("myzset")],
         &mut current_db,
@@ -1172,7 +1176,7 @@ fn test_zpopmin_zpopmax_commands() {
     }
 
     // Verify only "two" remains
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "ZCARD",
         &[Bytes::from("myzset")],
         &mut current_db,
@@ -1189,8 +1193,8 @@ fn test_zrangebylex_zrevrangebylex_zlexcount_commands() {
     let client_id = 1;
 
     // Create a sorted set with same score for lex ordering
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "ZADD",
             &[
                 Bytes::from("myzset"),
@@ -1211,7 +1215,7 @@ fn test_zrangebylex_zrevrangebylex_zlexcount_commands() {
         .unwrap();
 
     // ZRANGEBYLEX
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "ZRANGEBYLEX",
         &[Bytes::from("myzset"), Bytes::from("[b"), Bytes::from("[d")],
         &mut current_db,
@@ -1225,7 +1229,7 @@ fn test_zrangebylex_zrevrangebylex_zlexcount_commands() {
     }
 
     // ZRANGEBYLEX with exclusive range
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "ZRANGEBYLEX",
         &[Bytes::from("myzset"), Bytes::from("(a"), Bytes::from("(e")],
         &mut current_db,
@@ -1239,7 +1243,7 @@ fn test_zrangebylex_zrevrangebylex_zlexcount_commands() {
     }
 
     // ZREVRANGEBYLEX
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "ZREVRANGEBYLEX",
         &[Bytes::from("myzset"), Bytes::from("[d"), Bytes::from("[b")],
         &mut current_db,
@@ -1253,7 +1257,7 @@ fn test_zrangebylex_zrevrangebylex_zlexcount_commands() {
     }
 
     // ZLEXCOUNT
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "ZLEXCOUNT",
         &[Bytes::from("myzset"), Bytes::from("-"), Bytes::from("+")],
         &mut current_db,
@@ -1263,7 +1267,7 @@ fn test_zrangebylex_zrevrangebylex_zlexcount_commands() {
     assert_eq!(result.unwrap(), RespValue::Integer(5));
 
     // ZLEXCOUNT with range
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "ZLEXCOUNT",
         &[Bytes::from("myzset"), Bytes::from("[b"), Bytes::from("[d")],
         &mut current_db,

@@ -1,7 +1,11 @@
+mod common;
+
 use aikv::command::CommandExecutor;
 use aikv::protocol::RespValue;
 use aikv::StorageEngine;
 use bytes::Bytes;
+
+use common::exec_cmd;
 
 // 命令验证结果
 #[derive(Debug)]
@@ -39,10 +43,13 @@ impl CommandValidator {
     }
 
     fn test_ping(&mut self) -> CommandValidation {
-        match self
-            .executor
-            .execute("PING", &[], &mut self.current_db, self.client_id)
-        {
+        match exec_cmd(
+            &self.executor,
+            "PING",
+            &[],
+            &mut self.current_db,
+            self.client_id,
+        ) {
             Ok(resp) => {
                 if matches!(resp, RespValue::SimpleString(_)) {
                     CommandValidation {
@@ -71,7 +78,8 @@ impl CommandValidator {
 
     fn test_echo(&mut self) -> CommandValidation {
         let test_message = "Hello AiKv!";
-        match self.executor.execute(
+        match exec_cmd(
+            &self.executor,
             "ECHO",
             &[Bytes::from(test_message)],
             &mut self.current_db,
@@ -108,7 +116,8 @@ impl CommandValidator {
         let value = "test_value";
 
         // Test SET
-        match self.executor.execute(
+        match exec_cmd(
+            &self.executor,
             "SET",
             &[Bytes::from(key), Bytes::from(value)],
             &mut self.current_db,
@@ -135,7 +144,8 @@ impl CommandValidator {
         }
 
         // Test GET
-        match self.executor.execute(
+        match exec_cmd(
+            &self.executor,
             "GET",
             &[Bytes::from(key)],
             &mut self.current_db,

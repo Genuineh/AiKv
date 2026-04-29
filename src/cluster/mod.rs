@@ -42,7 +42,8 @@ pub mod raft_service;
 
 // Export our implementations
 pub use commands::{
-    key_to_slot_with_hash_tag, ClusterCommands, FailoverMode, NodeInfo, RedirectType,
+    key_to_slot_with_hash_tag, physical_raft_storage_key, ClusterCommands, FailoverMode, NodeInfo,
+    RedirectType,
 };
 pub use node::{ClusterConfig, ClusterNode, GroupId, NodeId};
 

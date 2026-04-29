@@ -54,6 +54,8 @@ pub struct ServerCommands {
     slow_query_log: Arc<SlowQueryLog>,
     /// Last save timestamp (Unix epoch in seconds)
     last_save_time: Arc<AtomicU64>,
+    /// Whether a background save is in progress
+    bgsave_in_progress: Arc<AtomicBool>,
     /// Shutdown flag
     shutdown_requested: Arc<AtomicBool>,
     /// Whether cluster mode is enabled
@@ -996,6 +998,7 @@ impl ServerCommands {
         cfg.insert("slowlog-log-slower-than".to_string(), "10000".to_string());
         cfg.insert("slowlog-max-len".to_string(), "128".to_string());
         cfg.insert("maxclients".to_string(), "10000".to_string());
+        cfg.insert("backup-dir".to_string(), "./backups".to_string());
         cfg
     }
 
@@ -1020,6 +1023,7 @@ impl ServerCommands {
             current_log_level: Arc::new(RwLock::new(Level::INFO)),
             slow_query_log: Arc::new(SlowQueryLog::new()),
             last_save_time: Arc::new(AtomicU64::new(now)),
+            bgsave_in_progress: Arc::new(AtomicBool::new(false)),
             shutdown_requested: Arc::new(AtomicBool::new(false)),
             cluster_enabled,
             metrics,
@@ -1057,6 +1061,7 @@ impl ServerCommands {
             run_id: generate_run_id(),
             tcp_port: port,
             last_save_time: Arc::new(AtomicU64::new(now)),
+            bgsave_in_progress: Arc::new(AtomicBool::new(false)),
             shutdown_requested: Arc::new(AtomicBool::new(false)),
             cluster_enabled,
             metrics,
@@ -1252,6 +1257,11 @@ impl ServerCommands {
             "active_defrag_running:0".to_string(),
             "lazyfree_pending_objects:0".to_string(),
             "lazyfreed_objects:0".to_string(),
+            // AiDb storage engine statistics
+            format!("aidb_memtable_bytes:{}", self.storage.get_aidb_stats().0),
+            format!("aidb_wal_bytes:{}", self.storage.get_aidb_stats().1),
+            format!("aidb_block_cache_bytes:{}", self.storage.get_aidb_stats().2),
+            format!("aidb_block_cache_capacity_bytes:{}", self.storage.get_aidb_stats().3),
         ]
     }
 
@@ -2297,44 +2307,75 @@ impl ServerCommands {
         Ok(RespValue::ok())
     }
 
-    /// SAVE - Synchronously save the dataset to disk
-    pub fn save(&self, args: &[Bytes]) -> Result<RespValue> {
-        if !args.is_empty() {
-            return Err(AikvError::WrongArgCount("SAVE".to_string()));
-        }
+    /// Resolve the backup directory from config, falling back to `./backups`.
+    fn backup_dir(&self) -> std::path::PathBuf {
+        let config = self.config.read().unwrap_or_else(|e| e.into_inner());
+        let dir = config
+            .get("backup-dir")
+            .cloned()
+            .unwrap_or_else(|| "./backups".to_string());
+        std::path::PathBuf::from(dir)
+    }
 
-        // Export all databases from storage
-        let databases = self.storage.export_all_databases()?;
-
-        // Create a temporary file for the RDB dump
-        let temp_file = tempfile::NamedTempFile::new()
-            .map_err(|e| AikvError::Persistence(format!("Failed to create temp file: {}", e)))?;
-        let temp_path = temp_file.path();
-
-        // Save to RDB format
-        crate::persistence::save_stored_value_rdb(temp_path, &databases)?;
-
-        // Update last save time
+    /// Perform the actual backup via AiDb BackupManager and update last_save_time.
+    fn do_save(&self) -> Result<()> {
+        let backup_dir = self.backup_dir();
+        self.storage.create_backup(&backup_dir)?;
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
         self.last_save_time.store(now, Ordering::SeqCst);
+        Ok(())
+    }
 
-        // For now, we save to a temporary file and don't persist it permanently
-        // In a real implementation, this would save to a configured RDB file path
+    /// SAVE - Synchronously save the dataset to disk
+    ///
+    /// Uses AiDb's BackupManager: flushes MemTables and copies SSTable + WAL files.
+    pub fn save(&self, args: &[Bytes]) -> Result<RespValue> {
+        if !args.is_empty() {
+            return Err(AikvError::WrongArgCount("SAVE".to_string()));
+        }
+        self.do_save()?;
         Ok(RespValue::ok())
     }
 
     /// BGSAVE - Asynchronously save the dataset to disk
+    ///
+    /// Spawns a background thread to perform the backup. Returns immediately.
     pub fn bgsave(&self, args: &[Bytes]) -> Result<RespValue> {
         if !args.is_empty() {
             return Err(AikvError::WrongArgCount("BGSAVE".to_string()));
         }
 
-        // For now, perform synchronous save (background save would require threading)
-        // In a real implementation, this would spawn a background thread
-        self.save(args)?;
+        if self.bgsave_in_progress.load(Ordering::SeqCst) {
+            return Ok(RespValue::simple_string(
+                "Background saving already in progress",
+            ));
+        }
+
+        let storage = self.storage.clone();
+        let backup_dir = self.backup_dir();
+        let last_save_time = Arc::clone(&self.last_save_time);
+        let in_progress = Arc::clone(&self.bgsave_in_progress);
+        in_progress.store(true, Ordering::SeqCst);
+
+        std::thread::spawn(move || {
+            match storage.create_backup(&backup_dir) {
+                Ok(_) => {
+                    let now = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    last_save_time.store(now, Ordering::SeqCst);
+                    tracing::info!("Background saving completed successfully");
+                }
+                Err(e) => {
+                    tracing::error!("Background saving failed: {}", e);
+                }
+            }
+            in_progress.store(false, Ordering::SeqCst);
+        });
 
         Ok(RespValue::simple_string("Background saving started"))
     }

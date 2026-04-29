@@ -1,3 +1,4 @@
+pub mod atom;
 pub mod database;
 pub mod hash;
 pub mod json;
@@ -9,6 +10,7 @@ pub mod set;
 pub mod string;
 pub mod zset;
 
+use self::atom::AtomCommands;
 use self::database::DatabaseCommands;
 use self::hash::HashCommands;
 use self::json::JsonCommands;
@@ -32,6 +34,7 @@ use tracing::Level;
 pub struct CommandExecutor {
     string_commands: StringCommands,
     json_commands: JsonCommands,
+    atom_commands: AtomCommands,
     database_commands: DatabaseCommands,
     key_commands: KeyCommands,
     server_commands: ServerCommands,
@@ -59,6 +62,7 @@ impl CommandExecutor {
         Self {
             string_commands: StringCommands::new(storage.clone()),
             json_commands: JsonCommands::new(storage.clone()),
+            atom_commands: AtomCommands::new(storage.clone()),
             database_commands: DatabaseCommands::new(storage.clone()),
             key_commands: KeyCommands::new(storage.clone()),
             server_commands: ServerCommands::with_storage_port_and_cluster(
@@ -100,6 +104,7 @@ impl CommandExecutor {
         Self {
             string_commands: StringCommands::new(storage.clone()),
             json_commands: JsonCommands::new(storage.clone()),
+            atom_commands: AtomCommands::new(storage.clone()),
             database_commands: DatabaseCommands::new(storage.clone()),
             key_commands: KeyCommands::new(storage.clone()),
             script_commands: ScriptCommands::with_metrics(
@@ -144,8 +149,13 @@ impl CommandExecutor {
     /// Returns `Err(AikvError::Moved(slot, addr))` if the key belongs to another node.
     #[cfg(feature = "cluster")]
     fn check_key_routing(&self, key: &[u8]) -> Result<()> {
+        self.check_key_routing_with_asking(key, false)
+    }
+
+    #[cfg(feature = "cluster")]
+    fn check_key_routing_with_asking(&self, key: &[u8], allow_importing: bool) -> Result<()> {
         if let Some(ref cluster_commands) = self.cluster_commands {
-            cluster_commands.check_key_slot(key)
+            cluster_commands.check_key_slot_with_asking(key, allow_importing)
         } else {
             // Cluster not initialized, allow all operations locally
             Ok(())
@@ -157,8 +167,13 @@ impl CommandExecutor {
     /// For multi-key commands (like MGET, MSET), all keys must be in the same slot.
     #[cfg(feature = "cluster")]
     fn check_keys_routing(&self, keys: &[&[u8]]) -> Result<()> {
+        self.check_keys_routing_with_asking(keys, false)
+    }
+
+    #[cfg(feature = "cluster")]
+    fn check_keys_routing_with_asking(&self, keys: &[&[u8]], allow_importing: bool) -> Result<()> {
         if let Some(ref cluster_commands) = self.cluster_commands {
-            cluster_commands.check_keys_slot(keys)
+            cluster_commands.check_keys_slot_with_asking(keys, allow_importing)
         } else {
             Ok(())
         }
@@ -182,6 +197,7 @@ impl CommandExecutor {
         args: &[Bytes],
         current_db: &mut usize,
         client_id: usize,
+        #[cfg(feature = "cluster")] allow_importing_slot_once: bool,
     ) -> Result<RespValue> {
         match command.to_uppercase().as_str() {
             // String commands - single key operations
@@ -363,6 +379,57 @@ impl CommandExecutor {
                 }
                 self.json_commands.json_objlen(args, *current_db)
             }
+            "JSON.NUMINCRBY" => {
+                if !args.is_empty() {
+                    self.check_key_routing(&args[0])?;
+                }
+                self.json_commands.json_numincrby(args, *current_db)
+            }
+            "JSON.ARRAPPEND" => {
+                if !args.is_empty() {
+                    self.check_key_routing(&args[0])?;
+                }
+                self.json_commands.json_arrappend(args, *current_db)
+            }
+            "JSON.UPDATE" => {
+                if !args.is_empty() {
+                    self.check_key_routing(&args[0])?;
+                }
+                self.json_commands.json_update(args, *current_db)
+            }
+            "JSON.MSET" => {
+                // JSON.MSET key path value [key path value ...]
+                // All keys must be in the same slot
+                if args.len() >= 3 {
+                    let keys: Vec<&[u8]> = (0..args.len())
+                        .step_by(3)
+                        .map(|i| args[i].as_ref())
+                        .collect();
+                    self.check_keys_routing(&keys)?;
+                }
+                self.json_commands.json_mset(args, *current_db)
+            }
+            "ATOM.EXEC" => {
+                // Route based on the first command's key in the batch
+                if !args.is_empty() {
+                    if let Ok(json_str) = serde_json::from_str::<serde_json::Value>(
+                        &String::from_utf8_lossy(&args[0])
+                    ) {
+                        if let Some(commands) = json_str.as_array() {
+                            if let Some(first_cmd) = commands.first() {
+                                if let Some(cmd_arr) = first_cmd.as_array() {
+                                    if cmd_arr.len() >= 2 {
+                                        if let Some(first_key) = cmd_arr[1].as_str() {
+                                            self.check_key_routing(first_key.as_bytes())?;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                self.atom_commands.atom_exec(args, *current_db)
+            }
 
             // Database commands - these are node-local, no routing needed
             "SELECT" => self.database_commands.select(args, current_db),
@@ -413,9 +480,20 @@ impl CommandExecutor {
             }
             "RESTORE" => {
                 if !args.is_empty() {
+                    #[cfg(feature = "cluster")]
+                    self.check_key_routing_with_asking(&args[0], allow_importing_slot_once)?;
+                    #[cfg(not(feature = "cluster"))]
                     self.check_key_routing(&args[0])?;
                 }
-                self.key_commands.restore(args, *current_db)
+                #[cfg(feature = "cluster")]
+                {
+                    self.key_commands
+                        .restore(args, *current_db, allow_importing_slot_once)
+                }
+                #[cfg(not(feature = "cluster"))]
+                {
+                    self.key_commands.restore(args, *current_db, false)
+                }
             }
             "MIGRATE" => self.key_commands.migrate(args, *current_db), // MIGRATE handles routing internally
 

@@ -1,7 +1,11 @@
+mod common;
+
 use aikv::command::CommandExecutor;
 use aikv::protocol::RespValue;
 use aikv::StorageEngine;
 use bytes::Bytes;
+
+use common::exec_cmd;
 
 #[test]
 fn test_script_load_and_exists() {
@@ -12,8 +16,8 @@ fn test_script_load_and_exists() {
 
     // Test SCRIPT LOAD
     let script = "return 'hello world'";
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "SCRIPT",
             &[Bytes::from("LOAD"), Bytes::from(script)],
             &mut current_db,
@@ -29,8 +33,8 @@ fn test_script_load_and_exists() {
     };
 
     // Test SCRIPT EXISTS with the returned SHA1
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "SCRIPT",
             &[Bytes::from("EXISTS"), sha1.clone()],
             &mut current_db,
@@ -46,8 +50,8 @@ fn test_script_load_and_exists() {
     }
 
     // Test SCRIPT EXISTS with non-existent SHA1
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "SCRIPT",
             &[
                 Bytes::from("EXISTS"),
@@ -72,8 +76,8 @@ fn test_eval_simple_script() {
 
     // Test EVAL with simple return value
     let script = "return 42";
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "EVAL",
             &[Bytes::from(script), Bytes::from("0")],
             &mut current_db,
@@ -85,8 +89,8 @@ fn test_eval_simple_script() {
 
     // Test EVAL with string return
     let script = "return 'hello'";
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "EVAL",
             &[Bytes::from(script), Bytes::from("0")],
             &mut current_db,
@@ -110,8 +114,8 @@ fn test_eval_with_keys_and_argv() {
 
     // Test EVAL with KEYS
     let script = "return KEYS[1]";
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "EVAL",
             &[
                 Bytes::from(script),
@@ -131,8 +135,8 @@ fn test_eval_with_keys_and_argv() {
 
     // Test EVAL with ARGV
     let script = "return ARGV[1]";
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "EVAL",
             &[
                 Bytes::from(script),
@@ -164,8 +168,8 @@ fn test_eval_redis_call() {
         return redis.call('GET', KEYS[1])
     "#;
 
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "EVAL",
             &[
                 Bytes::from(script),
@@ -185,8 +189,8 @@ fn test_eval_redis_call() {
     }
 
     // Verify the value was actually stored
-    let result = executor
-        .execute("GET", &[Bytes::from("mykey")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "GET", &[Bytes::from("mykey")], &mut current_db, client_id)
         .unwrap();
 
     if let RespValue::BulkString(Some(value)) = result {
@@ -203,8 +207,8 @@ fn test_evalsha() {
 
     // Load a script
     let script = "return 'cached script result'";
-    let load_result = executor
-        .execute(
+    let load_result = exec_cmd(
+        &executor, 
             "SCRIPT",
             &[Bytes::from("LOAD"), Bytes::from(script)],
             &mut current_db,
@@ -219,8 +223,8 @@ fn test_evalsha() {
     };
 
     // Execute the cached script using EVALSHA
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "EVALSHA",
             &[sha1, Bytes::from("0")],
             &mut current_db,
@@ -243,7 +247,7 @@ fn test_evalsha_not_found() {
     let client_id = 1;
 
     // Try to execute a non-existent script
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "EVALSHA",
         &[
             Bytes::from("0000000000000000000000000000000000000000"),
@@ -265,8 +269,8 @@ fn test_script_flush() {
 
     // Load a script
     let script = "return 1";
-    let load_result = executor
-        .execute(
+    let load_result = exec_cmd(
+        &executor, 
             "SCRIPT",
             &[Bytes::from("LOAD"), Bytes::from(script)],
             &mut current_db,
@@ -281,8 +285,8 @@ fn test_script_flush() {
     };
 
     // Verify script exists
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "SCRIPT",
             &[Bytes::from("EXISTS"), sha1.clone()],
             &mut current_db,
@@ -295,8 +299,8 @@ fn test_script_flush() {
     }
 
     // Flush all scripts
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "SCRIPT",
             &[Bytes::from("FLUSH")],
             &mut current_db,
@@ -307,8 +311,8 @@ fn test_script_flush() {
     assert_eq!(result, RespValue::simple_string("OK"));
 
     // Verify script no longer exists
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "SCRIPT",
             &[Bytes::from("EXISTS"), sha1],
             &mut current_db,
@@ -329,7 +333,7 @@ fn test_script_kill() {
     let client_id = 1;
 
     // Test SCRIPT KILL (should return NOTBUSY since no script is running)
-    let result = executor.execute("SCRIPT", &[Bytes::from("KILL")], &mut current_db, client_id);
+    let result = exec_cmd(&executor, "SCRIPT", &[Bytes::from("KILL")], &mut current_db, client_id);
 
     assert!(result.is_err());
 }

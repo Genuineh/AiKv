@@ -46,6 +46,9 @@ pub struct Connection {
     mode: ConnectionMode,
     /// Last executed command name (for diagnostics when connection drops)
     last_command: Option<String>,
+    #[cfg(feature = "cluster")]
+    /// Redis ASKING one-shot flag for next command.
+    allow_importing_slot_once: bool,
 }
 
 impl Connection {
@@ -90,6 +93,8 @@ impl Connection {
             monitor_broadcaster,
             mode: ConnectionMode::Normal,
             last_command: None,
+            #[cfg(feature = "cluster")]
+            allow_importing_slot_once: false,
         }
     }
 
@@ -295,6 +300,17 @@ impl Connection {
                     return self.handle_monitor().await;
                 }
 
+                #[cfg(feature = "cluster")]
+                if command_upper == "ASKING" {
+                    self.allow_importing_slot_once = true;
+                    debug!(
+                        diag_event = "cluster_client_asking_marked",
+                        client = %self.client_addr,
+                        "ASKING accepted; next command may access importing slot"
+                    );
+                    return RespValue::ok();
+                }
+
                 let args: Vec<Bytes> = arr[1..]
                     .iter()
                     .filter_map(|v| match v {
@@ -320,8 +336,10 @@ impl Connection {
                             | "ADDSLOTS"
                             | "ADDSLOTSRANGE"
                             | "DELSLOTS"
+                            | "SETSLOT"
                             | "REPLICATE"
                             | "ADDREPLICATION"
+                            | "FAILOVER"
                             | "METARAFT"
                     ) {
                         if let Some(cluster_cmds) = self.executor.cluster_commands() {
@@ -356,7 +374,11 @@ impl Connection {
 
                             return match result {
                                 Ok(resp) => resp,
-                                Err(e) => Self::format_error_response(e),
+                                Err(e) => {
+                                    let cmd = format!("CLUSTER {}", subcommand);
+                                    Self::log_command_error(&cmd, &self.client_addr, &e);
+                                    Self::format_error_response(e)
+                                }
                             };
                         } else {
                             return RespValue::error("ERR Cluster not initialized. Please initialize cluster node first.");
@@ -365,14 +387,23 @@ impl Connection {
                 }
 
                 // executor.execute() is synchronous and may block for an extended period
-                // (e.g. INFO keyspace scans all MemTables; writes stall when AiDb immutable
-                // MemTable count is high).  block_in_place signals to Tokio that this thread
-                // is about to block so the scheduler can keep other async tasks running on a
-                // different thread instead of starving the entire runtime.
+                // (e.g. INFO keyspace scans all MemTables). block_in_place allows the Tokio
+                // runtime to continue scheduling other tasks on this worker thread while we wait.
                 let result = tokio::task::block_in_place(|| {
                     self.executor
-                        .execute(&command, &args, &mut self.current_db, self.client_id)
+                        .execute(
+                            &command,
+                            &args,
+                            &mut self.current_db,
+                            self.client_id,
+                            #[cfg(feature = "cluster")]
+                            self.allow_importing_slot_once,
+                        )
                 });
+                #[cfg(feature = "cluster")]
+                {
+                    self.allow_importing_slot_once = false;
+                }
 
                 let duration = start.elapsed();
 
@@ -419,10 +450,76 @@ impl Connection {
 
                 match result {
                     Ok(resp) => resp,
-                    Err(e) => Self::format_error_response(e),
+                    Err(e) => {
+                        Self::log_command_error(&command, &self.client_addr, &e);
+                        Self::format_error_response(e)
+                    }
                 }
             }
             _ => RespValue::error("ERR invalid command format"),
+        }
+    }
+
+    /// 可观测性：带固定 `diag_event` 字段，便于 Loki / export_logs.sh 过滤。
+    fn log_command_error(command: &str, client_addr: &str, err: &crate::error::AikvError) {
+        use crate::error::AikvError;
+        match err {
+            AikvError::Moved(slot, addr) => {
+                debug!(
+                    diag_event = "cluster_client_moved",
+                    command = %command,
+                    client = %client_addr,
+                    slot = *slot,
+                    target = %addr,
+                    "returning MOVED to client"
+                );
+            }
+            AikvError::Ask(slot, addr) => {
+                debug!(
+                    diag_event = "cluster_client_ask",
+                    command = %command,
+                    client = %client_addr,
+                    slot = *slot,
+                    target = %addr,
+                    "returning ASK to client"
+                );
+            }
+            AikvError::Storage(msg) => {
+                warn!(
+                    diag_event = "cluster_command_storage_err",
+                    command = %command,
+                    client = %client_addr,
+                    error = %msg,
+                    "command failed: storage"
+                );
+            }
+            AikvError::Internal(msg) => {
+                warn!(
+                    diag_event = "cluster_command_internal_err",
+                    command = %command,
+                    client = %client_addr,
+                    error = %msg,
+                    "command failed: internal"
+                );
+            }
+            AikvError::Persistence(msg) | AikvError::Protocol(msg) => {
+                warn!(
+                    diag_event = "cluster_command_io_protocol_err",
+                    command = %command,
+                    client = %client_addr,
+                    error = %msg,
+                    "command failed: persistence/protocol"
+                );
+            }
+            _ => {
+                debug!(
+                    diag_event = "cluster_command_err_other",
+                    command = %command,
+                    client = %client_addr,
+                    error = %err,
+                    "command failed"
+                );
+            }
         }
     }
 
@@ -586,6 +683,46 @@ impl Connection {
 
                 cluster_cmds.cluster_delslots(slots).await
             }
+            "SETSLOT" => {
+                // CLUSTER SETSLOT slot MIGRATING|IMPORTING|STABLE|NODE [node-id] [requester-node-id-internal]
+                if args.len() < 2 || args.len() > 4 {
+                    return Err(AikvError::WrongArgCount("CLUSTER SETSLOT".to_string()));
+                }
+                let slot = String::from_utf8_lossy(&args[0])
+                    .parse::<u16>()
+                    .map_err(|_| AikvError::Invalid("Invalid slot".to_string()))?;
+                if slot >= 16384 {
+                    return Err(AikvError::Invalid(format!("Slot out of range: {}", slot)));
+                }
+                let mode = String::from_utf8_lossy(&args[1]).to_uppercase();
+                let node_id = if args.len() >= 3 {
+                    let id_str = String::from_utf8_lossy(&args[2]);
+                    Some(
+                        id_str
+                            .parse::<u64>()
+                            .or_else(|_| u64::from_str_radix(&id_str, 16))
+                            .map_err(|_| AikvError::Invalid("Invalid node ID".to_string()))?,
+                    )
+                } else {
+                    None
+                };
+                let requester_node_id = if args.len() == 4 {
+                    let id_str = String::from_utf8_lossy(&args[3]);
+                    Some(
+                        id_str
+                            .parse::<u64>()
+                            .or_else(|_| u64::from_str_radix(&id_str, 16))
+                            .map_err(|_| {
+                                AikvError::Invalid("Invalid requester node ID".to_string())
+                            })?,
+                    )
+                } else {
+                    None
+                };
+                cluster_cmds
+                    .cluster_setslot(slot, &mode, node_id, requester_node_id)
+                    .await
+            }
             "REPLICATE" => {
                 // CLUSTER REPLICATE node-id
                 if args.len() != 1 {
@@ -622,6 +759,49 @@ impl Connection {
                 cluster_cmds
                     .cluster_add_replication(replica_id, master_id)
                     .await
+            }
+            "FAILOVER" => {
+                // CLUSTER FAILOVER [FORCE|TAKEOVER] [target-node-id]
+                let mut mode = crate::cluster::FailoverMode::Default;
+                let mut target_node_id = None;
+
+                if !args.is_empty() {
+                    let first = String::from_utf8_lossy(&args[0]).to_uppercase();
+                    match first.as_str() {
+                        "FORCE" => mode = crate::cluster::FailoverMode::Force,
+                        "TAKEOVER" => mode = crate::cluster::FailoverMode::Takeover,
+                        _ => {
+                            // Backward-compatible extension: allow target node as first arg.
+                            let node_id = first
+                                .parse::<u64>()
+                                .or_else(|_| u64::from_str_radix(&first, 16))
+                                .map_err(|_| {
+                                    AikvError::Invalid(format!(
+                                        "Unknown CLUSTER FAILOVER option or target node ID: {}",
+                                        first
+                                    ))
+                                })?;
+                            target_node_id = Some(node_id);
+                        }
+                    }
+                }
+
+                if args.len() >= 2 {
+                    let node_id_str = String::from_utf8_lossy(&args[1]);
+                    let node_id = node_id_str
+                        .parse::<u64>()
+                        .or_else(|_| u64::from_str_radix(&node_id_str, 16))
+                        .map_err(|_| {
+                            AikvError::Invalid("Invalid CLUSTER FAILOVER target node ID".to_string())
+                        })?;
+                    target_node_id = Some(node_id);
+                }
+
+                if args.len() > 2 {
+                    return Err(AikvError::WrongArgCount("CLUSTER FAILOVER".to_string()));
+                }
+
+                cluster_cmds.cluster_failover(mode, target_node_id).await
             }
             "METARAFT" => {
                 // CLUSTER METARAFT subcommand [args...]
@@ -699,6 +879,53 @@ impl Connection {
                         }
 
                         cluster_cmds.cluster_metaraft_status().await
+                    }
+                    "SETSTATUS" => {
+                        // CLUSTER METARAFT SETSTATUS node_id status
+                        if args.len() != 3 && args.len() != 4 {
+                            return Err(AikvError::WrongArgCount(
+                                "CLUSTER METARAFT SETSTATUS".to_string(),
+                            ));
+                        }
+
+                        let node_id_str = String::from_utf8_lossy(&args[1]);
+                        let node_id = node_id_str
+                            .parse::<u64>()
+                            .or_else(|_| u64::from_str_radix(&node_id_str, 16))
+                            .map_err(|_| {
+                                AikvError::Invalid(
+                                    "Invalid node ID: must be a positive integer or hex string"
+                                        .to_string(),
+                                )
+                            })?;
+
+                        let status = match String::from_utf8_lossy(&args[2]).to_uppercase().as_str() {
+                            "ONLINE" => aidb::cluster::NodeStatus::Online,
+                            "OFFLINE" => aidb::cluster::NodeStatus::Offline,
+                            "JOINING" => aidb::cluster::NodeStatus::Joining,
+                            "LEAVING" => aidb::cluster::NodeStatus::Leaving,
+                            _ => {
+                                return Err(AikvError::Invalid(
+                                    "Invalid node status: expected ONLINE/OFFLINE/JOINING/LEAVING"
+                                        .to_string(),
+                                ))
+                            }
+                        };
+
+                        let is_forwarded = if args.len() == 4 {
+                            String::from_utf8_lossy(&args[3]).eq_ignore_ascii_case("__FORWARDED__")
+                        } else {
+                            false
+                        };
+                        if args.len() == 4 && !is_forwarded {
+                            return Err(AikvError::Invalid(
+                                "Invalid forwarding flag for CLUSTER METARAFT SETSTATUS".to_string(),
+                            ));
+                        }
+
+                        cluster_cmds
+                            .cluster_metaraft_setstatus(node_id, status, is_forwarded)
+                            .await
                     }
                     _ => Err(AikvError::InvalidCommand(format!(
                         "Unknown CLUSTER METARAFT subcommand: {}",

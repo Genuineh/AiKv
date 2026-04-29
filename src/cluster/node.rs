@@ -96,9 +96,13 @@ impl ClusterNode {
     pub async fn initialize(&mut self) -> Result<()> {
         use aidb::cluster::MultiRaftNode;
         use openraft::Config as RaftConfig;
+        use openraft::SnapshotPolicy;
 
         // Create Raft configuration
-        let raft_config = RaftConfig::default();
+        let raft_config = RaftConfig {
+            snapshot_policy: SnapshotPolicy::Never,
+            ..RaftConfig::default()
+        };
 
         // Create MultiRaftNode
         let mut multi_raft = MultiRaftNode::new(

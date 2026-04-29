@@ -1,7 +1,11 @@
+mod common;
+
 use aikv::command::CommandExecutor;
 use aikv::protocol::RespValue;
 use aikv::StorageEngine;
 use bytes::Bytes;
+
+use common::exec_cmd;
 
 #[test]
 fn test_database_commands() {
@@ -11,15 +15,15 @@ fn test_database_commands() {
     let client_id = 1;
 
     // Test SELECT
-    let result = executor
-        .execute("SELECT", &[Bytes::from("1")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "SELECT", &[Bytes::from("1")], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::ok());
     assert_eq!(current_db, 1);
 
     // Test SET in database 1
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "SET",
             &[Bytes::from("key1"), Bytes::from("value1")],
             &mut current_db,
@@ -28,29 +32,29 @@ fn test_database_commands() {
         .unwrap();
 
     // Test DBSIZE
-    let result = executor
-        .execute("DBSIZE", &[], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "DBSIZE", &[], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::integer(1));
 
     // Test SELECT back to database 0
-    executor
-        .execute("SELECT", &[Bytes::from("0")], &mut current_db, client_id)
+    exec_cmd(
+        &executor, "SELECT", &[Bytes::from("0")], &mut current_db, client_id)
         .unwrap();
     assert_eq!(current_db, 0);
 
     // Database 0 should be empty
-    let result = executor
-        .execute("DBSIZE", &[], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "DBSIZE", &[], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::integer(0));
 
     // Test MOVE command
-    executor
-        .execute("SELECT", &[Bytes::from("1")], &mut current_db, client_id)
+    exec_cmd(
+        &executor, "SELECT", &[Bytes::from("1")], &mut current_db, client_id)
         .unwrap();
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "MOVE",
             &[Bytes::from("key1"), Bytes::from("0")],
             &mut current_db,
@@ -60,27 +64,27 @@ fn test_database_commands() {
     assert_eq!(result, RespValue::integer(1));
 
     // Now database 1 should be empty
-    let result = executor
-        .execute("DBSIZE", &[], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "DBSIZE", &[], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::integer(0));
 
     // And database 0 should have one key
-    executor
-        .execute("SELECT", &[Bytes::from("0")], &mut current_db, client_id)
+    exec_cmd(
+        &executor, "SELECT", &[Bytes::from("0")], &mut current_db, client_id)
         .unwrap();
-    let result = executor
-        .execute("DBSIZE", &[], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "DBSIZE", &[], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::integer(1));
 
     // Test FLUSHDB
-    let result = executor
-        .execute("FLUSHDB", &[], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "FLUSHDB", &[], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::ok());
-    let result = executor
-        .execute("DBSIZE", &[], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "DBSIZE", &[], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::integer(0));
 }
@@ -93,8 +97,8 @@ fn test_key_commands() {
     let client_id = 1;
 
     // Set up test data
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "MSET",
             &[
                 Bytes::from("user:1"),
@@ -110,8 +114,8 @@ fn test_key_commands() {
         .unwrap();
 
     // Test KEYS
-    let result = executor
-        .execute("KEYS", &[Bytes::from("*")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "KEYS", &[Bytes::from("*")], &mut current_db, client_id)
         .unwrap();
     if let RespValue::Array(Some(keys)) = result {
         assert_eq!(keys.len(), 3);
@@ -120,8 +124,8 @@ fn test_key_commands() {
     }
 
     // Test KEYS with pattern
-    let result = executor
-        .execute("KEYS", &[Bytes::from("user:*")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "KEYS", &[Bytes::from("user:*")], &mut current_db, client_id)
         .unwrap();
     if let RespValue::Array(Some(keys)) = result {
         assert_eq!(keys.len(), 2);
@@ -130,8 +134,8 @@ fn test_key_commands() {
     }
 
     // Test SCAN - basic iteration
-    let result = executor
-        .execute("SCAN", &[Bytes::from("0")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "SCAN", &[Bytes::from("0")], &mut current_db, client_id)
         .unwrap();
     if let RespValue::Array(Some(scan_result)) = result {
         assert_eq!(scan_result.len(), 2); // [cursor, keys]
@@ -144,8 +148,8 @@ fn test_key_commands() {
     }
 
     // Test SCAN with MATCH pattern
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "SCAN",
             &[
                 Bytes::from("0"),
@@ -168,8 +172,8 @@ fn test_key_commands() {
     }
 
     // Test SCAN with COUNT
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "SCAN",
             &[Bytes::from("0"), Bytes::from("COUNT"), Bytes::from("1")],
             &mut current_db,
@@ -188,14 +192,14 @@ fn test_key_commands() {
     }
 
     // Test RANDOMKEY
-    let result = executor
-        .execute("RANDOMKEY", &[], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "RANDOMKEY", &[], &mut current_db, client_id)
         .unwrap();
     assert!(matches!(result, RespValue::BulkString(Some(_))));
 
     // Test RENAME
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "RENAME",
             &[Bytes::from("user:1"), Bytes::from("user:100")],
             &mut current_db,
@@ -205,8 +209,8 @@ fn test_key_commands() {
     assert_eq!(result, RespValue::ok());
 
     // Verify old key doesn't exist
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "EXISTS",
             &[Bytes::from("user:1")],
             &mut current_db,
@@ -216,8 +220,8 @@ fn test_key_commands() {
     assert_eq!(result, RespValue::integer(0));
 
     // Verify new key exists
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "EXISTS",
             &[Bytes::from("user:100")],
             &mut current_db,
@@ -227,8 +231,8 @@ fn test_key_commands() {
     assert_eq!(result, RespValue::integer(1));
 
     // Test RENAMENX
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "RENAMENX",
             &[Bytes::from("user:100"), Bytes::from("user:2")],
             &mut current_db,
@@ -238,14 +242,14 @@ fn test_key_commands() {
     assert_eq!(result, RespValue::integer(0)); // user:2 already exists
 
     // Test TYPE
-    let result = executor
-        .execute("TYPE", &[Bytes::from("user:2")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "TYPE", &[Bytes::from("user:2")], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::simple_string("string"));
 
     // Test COPY
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "COPY",
             &[Bytes::from("user:2"), Bytes::from("user:2:backup")],
             &mut current_db,
@@ -255,8 +259,8 @@ fn test_key_commands() {
     assert_eq!(result, RespValue::integer(1));
 
     // Verify copy exists
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "GET",
             &[Bytes::from("user:2:backup")],
             &mut current_db,
@@ -274,8 +278,8 @@ fn test_expiration_commands() {
     let client_id = 1;
 
     // Set up test data
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "SET",
             &[Bytes::from("key1"), Bytes::from("value1")],
             &mut current_db,
@@ -284,8 +288,8 @@ fn test_expiration_commands() {
         .unwrap();
 
     // Test EXPIRE
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "EXPIRE",
             &[Bytes::from("key1"), Bytes::from("100")],
             &mut current_db,
@@ -295,8 +299,8 @@ fn test_expiration_commands() {
     assert_eq!(result, RespValue::integer(1));
 
     // Test TTL
-    let result = executor
-        .execute("TTL", &[Bytes::from("key1")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "TTL", &[Bytes::from("key1")], &mut current_db, client_id)
         .unwrap();
     if let RespValue::Integer(ttl) = result {
         assert!(ttl > 0 && ttl <= 100);
@@ -305,8 +309,8 @@ fn test_expiration_commands() {
     }
 
     // Test PTTL
-    let result = executor
-        .execute("PTTL", &[Bytes::from("key1")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "PTTL", &[Bytes::from("key1")], &mut current_db, client_id)
         .unwrap();
     if let RespValue::Integer(pttl) = result {
         assert!(pttl > 0 && pttl <= 100000);
@@ -315,8 +319,8 @@ fn test_expiration_commands() {
     }
 
     // Test PERSIST
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "PERSIST",
             &[Bytes::from("key1")],
             &mut current_db,
@@ -326,14 +330,14 @@ fn test_expiration_commands() {
     assert_eq!(result, RespValue::integer(1));
 
     // TTL should now be -1
-    let result = executor
-        .execute("TTL", &[Bytes::from("key1")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "TTL", &[Bytes::from("key1")], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::integer(-1));
 
     // Test PEXPIRE
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "PEXPIRE",
             &[Bytes::from("key1"), Bytes::from("50000")],
             &mut current_db,
@@ -343,8 +347,8 @@ fn test_expiration_commands() {
     assert_eq!(result, RespValue::integer(1));
 
     // Test EXPIRETIME
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "EXPIRETIME",
             &[Bytes::from("key1")],
             &mut current_db,
@@ -358,8 +362,8 @@ fn test_expiration_commands() {
     }
 
     // Test PEXPIRETIME
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "PEXPIRETIME",
             &[Bytes::from("key1")],
             &mut current_db,
@@ -373,8 +377,8 @@ fn test_expiration_commands() {
     }
 
     // Test TTL on non-existent key
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "TTL",
             &[Bytes::from("nonexistent")],
             &mut current_db,
@@ -392,26 +396,26 @@ fn test_ping_command() {
     let client_id = 1;
 
     // Test PING without argument - should return simple string "PONG"
-    let result = executor
-        .execute("PING", &[], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "PING", &[], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::simple_string("PONG"));
 
     // Test PING with message argument - should return bulk string with the message
-    let result = executor
-        .execute("PING", &[Bytes::from("hello")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "PING", &[Bytes::from("hello")], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::bulk_string("hello"));
 
     // Test PING with empty string argument
-    let result = executor
-        .execute("PING", &[Bytes::from("")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "PING", &[Bytes::from("")], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::bulk_string(""));
 
     // Test PING with special characters
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "PING",
             &[Bytes::from("hello world!")],
             &mut current_db,
@@ -421,7 +425,7 @@ fn test_ping_command() {
     assert_eq!(result, RespValue::bulk_string("hello world!"));
 
     // Test PING with too many arguments - should return error
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "PING",
         &[Bytes::from("hello"), Bytes::from("world")],
         &mut current_db,
@@ -444,14 +448,14 @@ fn test_server_commands() {
         .unwrap();
 
     // Test INFO
-    let result = executor
-        .execute("INFO", &[], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "INFO", &[], &mut current_db, client_id)
         .unwrap();
     assert!(matches!(result, RespValue::BulkString(Some(_))));
 
     // Test CONFIG GET
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "CONFIG",
             &[Bytes::from("GET"), Bytes::from("server")],
             &mut current_db,
@@ -467,8 +471,8 @@ fn test_server_commands() {
     }
 
     // Test TIME
-    let result = executor
-        .execute("TIME", &[], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "TIME", &[], &mut current_db, client_id)
         .unwrap();
     if let RespValue::Array(Some(arr)) = result {
         assert_eq!(arr.len(), 2);
@@ -479,8 +483,8 @@ fn test_server_commands() {
     }
 
     // Test CLIENT SETNAME
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "CLIENT",
             &[Bytes::from("SETNAME"), Bytes::from("test-client")],
             &mut current_db,
@@ -490,8 +494,8 @@ fn test_server_commands() {
     assert_eq!(result, RespValue::ok());
 
     // Test CLIENT GETNAME
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "CLIENT",
             &[Bytes::from("GETNAME")],
             &mut current_db,
@@ -501,8 +505,8 @@ fn test_server_commands() {
     assert_eq!(result, RespValue::bulk_string("test-client"));
 
     // Test CLIENT LIST
-    let result = executor
-        .execute("CLIENT", &[Bytes::from("LIST")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "CLIENT", &[Bytes::from("LIST")], &mut current_db, client_id)
         .unwrap();
     assert!(matches!(result, RespValue::BulkString(Some(_))));
 }
@@ -516,8 +520,8 @@ fn test_scan_iteration() {
 
     // Set up test data with many keys
     for i in 0..25 {
-        executor
-            .execute(
+        exec_cmd(
+            &executor, 
                 "SET",
                 &[
                     Bytes::from(format!("key:{}", i)),
@@ -535,8 +539,8 @@ fn test_scan_iteration() {
     let mut iterations = 0;
 
     loop {
-        let result = executor
-            .execute(
+        let result = exec_cmd(
+            &executor, 
                 "SCAN",
                 &[
                     Bytes::from(cursor.to_string()),
@@ -578,8 +582,8 @@ fn test_scan_iteration() {
     assert_eq!(cursor, 0);
 
     // Test SCAN with MATCH
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "SCAN",
             &[
                 Bytes::from("0"),
@@ -616,8 +620,8 @@ fn test_set_with_expire_options() {
     let client_id = 1;
 
     // Test SET with EX option
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "SET",
             &[
                 Bytes::from("key1"),
@@ -632,8 +636,8 @@ fn test_set_with_expire_options() {
     assert_eq!(result, RespValue::ok());
 
     // Verify TTL was set
-    let result = executor
-        .execute("TTL", &[Bytes::from("key1")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "TTL", &[Bytes::from("key1")], &mut current_db, client_id)
         .unwrap();
     if let RespValue::Integer(ttl) = result {
         assert!(ttl > 0 && ttl <= 100);
@@ -642,8 +646,8 @@ fn test_set_with_expire_options() {
     }
 
     // Test SET with PX option
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "SET",
             &[
                 Bytes::from("key2"),
@@ -658,8 +662,8 @@ fn test_set_with_expire_options() {
     assert_eq!(result, RespValue::ok());
 
     // Verify PTTL was set
-    let result = executor
-        .execute("PTTL", &[Bytes::from("key2")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "PTTL", &[Bytes::from("key2")], &mut current_db, client_id)
         .unwrap();
     if let RespValue::Integer(pttl) = result {
         assert!(pttl > 0 && pttl <= 50000);
@@ -676,8 +680,8 @@ fn test_dump_and_restore_commands() {
     let client_id = 1;
 
     // Set up test data
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "SET",
             &[Bytes::from("mykey"), Bytes::from("hello world")],
             &mut current_db,
@@ -686,8 +690,8 @@ fn test_dump_and_restore_commands() {
         .unwrap();
 
     // Test DUMP
-    let result = executor
-        .execute("DUMP", &[Bytes::from("mykey")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "DUMP", &[Bytes::from("mykey")], &mut current_db, client_id)
         .unwrap();
     let dump_data = match result {
         RespValue::BulkString(Some(data)) => data,
@@ -695,13 +699,13 @@ fn test_dump_and_restore_commands() {
     };
 
     // Delete the key
-    executor
-        .execute("DEL", &[Bytes::from("mykey")], &mut current_db, client_id)
+    exec_cmd(
+        &executor, "DEL", &[Bytes::from("mykey")], &mut current_db, client_id)
         .unwrap();
 
     // Verify key is gone
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "EXISTS",
             &[Bytes::from("mykey")],
             &mut current_db,
@@ -711,8 +715,8 @@ fn test_dump_and_restore_commands() {
     assert_eq!(result, RespValue::integer(0));
 
     // Test RESTORE
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "RESTORE",
             &[Bytes::from("mykey"), Bytes::from("0"), dump_data.clone()],
             &mut current_db,
@@ -722,14 +726,14 @@ fn test_dump_and_restore_commands() {
     assert_eq!(result, RespValue::ok());
 
     // Verify key is restored
-    let result = executor
-        .execute("GET", &[Bytes::from("mykey")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "GET", &[Bytes::from("mykey")], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::bulk_string("hello world"));
 
     // Test RESTORE with REPLACE on existing key
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "SET",
             &[Bytes::from("otherkey"), Bytes::from("other value")],
             &mut current_db,
@@ -737,8 +741,8 @@ fn test_dump_and_restore_commands() {
         )
         .unwrap();
 
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "RESTORE",
             &[
                 Bytes::from("otherkey"),
@@ -753,8 +757,8 @@ fn test_dump_and_restore_commands() {
     assert_eq!(result, RespValue::ok());
 
     // Verify it was replaced
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "GET",
             &[Bytes::from("otherkey")],
             &mut current_db,
@@ -764,7 +768,7 @@ fn test_dump_and_restore_commands() {
     assert_eq!(result, RespValue::bulk_string("hello world"));
 
     // Test RESTORE without REPLACE should fail
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "RESTORE",
         &[Bytes::from("otherkey"), Bytes::from("0"), dump_data.clone()],
         &mut current_db,
@@ -773,8 +777,8 @@ fn test_dump_and_restore_commands() {
     assert!(result.is_err());
 
     // Test RESTORE with TTL
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "RESTORE",
             &[
                 Bytes::from("ttlkey"),
@@ -788,8 +792,8 @@ fn test_dump_and_restore_commands() {
     assert_eq!(result, RespValue::ok());
 
     // Verify TTL was set
-    let result = executor
-        .execute("PTTL", &[Bytes::from("ttlkey")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "PTTL", &[Bytes::from("ttlkey")], &mut current_db, client_id)
         .unwrap();
     if let RespValue::Integer(pttl) = result {
         assert!(pttl > 0 && pttl <= 5000);
@@ -798,8 +802,8 @@ fn test_dump_and_restore_commands() {
     }
 
     // Test DUMP on non-existent key
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "DUMP",
             &[Bytes::from("nonexistent")],
             &mut current_db,
@@ -817,8 +821,8 @@ fn test_dump_restore_with_complex_types() {
     let client_id = 1;
 
     // Test with List
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "RPUSH",
             &[
                 Bytes::from("mylist"),
@@ -831,8 +835,8 @@ fn test_dump_restore_with_complex_types() {
         )
         .unwrap();
 
-    let result = executor
-        .execute("DUMP", &[Bytes::from("mylist")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "DUMP", &[Bytes::from("mylist")], &mut current_db, client_id)
         .unwrap();
     let list_dump = match result {
         RespValue::BulkString(Some(data)) => data,
@@ -840,8 +844,8 @@ fn test_dump_restore_with_complex_types() {
     };
 
     // Restore to new key
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "RESTORE",
             &[Bytes::from("restoredlist"), Bytes::from("0"), list_dump],
             &mut current_db,
@@ -851,8 +855,8 @@ fn test_dump_restore_with_complex_types() {
     assert_eq!(result, RespValue::ok());
 
     // Verify list content
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "LRANGE",
             &[
                 Bytes::from("restoredlist"),
@@ -873,8 +877,8 @@ fn test_dump_restore_with_complex_types() {
     }
 
     // Test with Hash
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "HSET",
             &[
                 Bytes::from("myhash"),
@@ -888,8 +892,8 @@ fn test_dump_restore_with_complex_types() {
         )
         .unwrap();
 
-    let result = executor
-        .execute("DUMP", &[Bytes::from("myhash")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "DUMP", &[Bytes::from("myhash")], &mut current_db, client_id)
         .unwrap();
     let hash_dump = match result {
         RespValue::BulkString(Some(data)) => data,
@@ -897,8 +901,8 @@ fn test_dump_restore_with_complex_types() {
     };
 
     // Restore to new key
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "RESTORE",
             &[Bytes::from("restoredhash"), Bytes::from("0"), hash_dump],
             &mut current_db,
@@ -908,8 +912,8 @@ fn test_dump_restore_with_complex_types() {
     assert_eq!(result, RespValue::ok());
 
     // Verify hash content
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "HGET",
             &[Bytes::from("restoredhash"), Bytes::from("field1")],
             &mut current_db,
@@ -921,14 +925,15 @@ fn test_dump_restore_with_complex_types() {
 
 #[test]
 fn test_migrate_command() {
+    let migrate_port = common::migrate_target_port();
     let storage = StorageEngine::new_memory(16);
     let executor = CommandExecutor::new(storage);
     let mut current_db = 0;
     let client_id = 1;
 
     // Set up test data in database 0
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "SET",
             &[Bytes::from("migratekey"), Bytes::from("migrate value")],
             &mut current_db,
@@ -937,12 +942,12 @@ fn test_migrate_command() {
         .unwrap();
 
     // Test basic MIGRATE to database 1
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "MIGRATE",
             &[
-                Bytes::from("localhost"),
-                Bytes::from("6379"),
+                Bytes::from("127.0.0.1"),
+                Bytes::from(migrate_port.to_string()),
                 Bytes::from("migratekey"),
                 Bytes::from("1"),
                 Bytes::from("1000"),
@@ -954,8 +959,8 @@ fn test_migrate_command() {
     assert_eq!(result, RespValue::ok());
 
     // Verify key is gone from database 0
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "EXISTS",
             &[Bytes::from("migratekey")],
             &mut current_db,
@@ -964,23 +969,14 @@ fn test_migrate_command() {
         .unwrap();
     assert_eq!(result, RespValue::integer(0));
 
-    // Switch to database 1 and verify key exists
-    executor
-        .execute("SELECT", &[Bytes::from("1")], &mut current_db, client_id)
-        .unwrap();
-    let result = executor
-        .execute(
-            "GET",
-            &[Bytes::from("migratekey")],
-            &mut current_db,
-            client_id,
-        )
-        .unwrap();
-    assert_eq!(result, RespValue::bulk_string("migrate value"));
+    // 键由 MIGRATE 经 TCP 发到对端；本 `CommandExecutor` 的其他 DB 不会出现该键（除非对端是共享存储的另一实例）。
 
-    // Test MIGRATE with COPY option
-    executor
-        .execute(
+    // Test MIGRATE with COPY option（键在源库 db0）
+    exec_cmd(
+        &executor, "SELECT", &[Bytes::from("0")], &mut current_db, client_id)
+        .unwrap();
+    exec_cmd(
+        &executor, 
             "SET",
             &[Bytes::from("copykey"), Bytes::from("copy value")],
             &mut current_db,
@@ -988,12 +984,12 @@ fn test_migrate_command() {
         )
         .unwrap();
 
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "MIGRATE",
             &[
-                Bytes::from("localhost"),
-                Bytes::from("6379"),
+                Bytes::from("127.0.0.1"),
+                Bytes::from(migrate_port.to_string()),
                 Bytes::from("copykey"),
                 Bytes::from("2"),
                 Bytes::from("1000"),
@@ -1005,9 +1001,9 @@ fn test_migrate_command() {
         .unwrap();
     assert_eq!(result, RespValue::ok());
 
-    // Verify key still exists in database 1
-    let result = executor
-        .execute(
+    // COPY：源库仍保留
+    let result = exec_cmd(
+        &executor, 
             "EXISTS",
             &[Bytes::from("copykey")],
             &mut current_db,
@@ -1016,22 +1012,13 @@ fn test_migrate_command() {
         .unwrap();
     assert_eq!(result, RespValue::integer(1));
 
-    // Verify key also exists in database 2
-    executor
-        .execute("SELECT", &[Bytes::from("2")], &mut current_db, client_id)
-        .unwrap();
-    let result = executor
-        .execute("GET", &[Bytes::from("copykey")], &mut current_db, client_id)
-        .unwrap();
-    assert_eq!(result, RespValue::bulk_string("copy value"));
-
     // Test MIGRATE non-existent key
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "MIGRATE",
             &[
-                Bytes::from("localhost"),
-                Bytes::from("6379"),
+                Bytes::from("127.0.0.1"),
+                Bytes::from(migrate_port.to_string()),
                 Bytes::from("nonexistent"),
                 Bytes::from("3"),
                 Bytes::from("1000"),
@@ -1042,13 +1029,17 @@ fn test_migrate_command() {
         .unwrap();
     assert_eq!(result, RespValue::simple_string("NOKEY"));
 
+    exec_cmd(
+        &executor, "SELECT", &[Bytes::from("0")], &mut current_db, client_id)
+        .unwrap();
+
     // Test MIGRATE with REPLACE option
     // Set a key in database 3
-    executor
-        .execute("SELECT", &[Bytes::from("3")], &mut current_db, client_id)
+    exec_cmd(
+        &executor, "SELECT", &[Bytes::from("3")], &mut current_db, client_id)
         .unwrap();
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "SET",
             &[Bytes::from("replacekey"), Bytes::from("original")],
             &mut current_db,
@@ -1057,11 +1048,11 @@ fn test_migrate_command() {
         .unwrap();
 
     // Set a key in database 0
-    executor
-        .execute("SELECT", &[Bytes::from("0")], &mut current_db, client_id)
+    exec_cmd(
+        &executor, "SELECT", &[Bytes::from("0")], &mut current_db, client_id)
         .unwrap();
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "SET",
             &[Bytes::from("replacekey"), Bytes::from("new value")],
             &mut current_db,
@@ -1070,12 +1061,12 @@ fn test_migrate_command() {
         .unwrap();
 
     // Migrate with REPLACE
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "MIGRATE",
             &[
-                Bytes::from("localhost"),
-                Bytes::from("6379"),
+                Bytes::from("127.0.0.1"),
+                Bytes::from(migrate_port.to_string()),
                 Bytes::from("replacekey"),
                 Bytes::from("3"),
                 Bytes::from("1000"),
@@ -1087,47 +1078,62 @@ fn test_migrate_command() {
         .unwrap();
     assert_eq!(result, RespValue::ok());
 
-    // Verify value was replaced in database 3
-    executor
-        .execute("SELECT", &[Bytes::from("3")], &mut current_db, client_id)
+    // 源 db0 上的键已删除
+    exec_cmd(
+        &executor, "SELECT", &[Bytes::from("0")], &mut current_db, client_id)
         .unwrap();
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
+            "EXISTS",
+            &[Bytes::from("replacekey")],
+            &mut current_db,
+            client_id,
+        )
+        .unwrap();
+    assert_eq!(result, RespValue::integer(0));
+
+    // 本实例 db3 未被 MIGRATE 写入，仍为迁移前的值
+    exec_cmd(
+        &executor, "SELECT", &[Bytes::from("3")], &mut current_db, client_id)
+        .unwrap();
+    let result = exec_cmd(
+        &executor, 
             "GET",
             &[Bytes::from("replacekey")],
             &mut current_db,
             client_id,
         )
         .unwrap();
-    assert_eq!(result, RespValue::bulk_string("new value"));
+    assert_eq!(result, RespValue::bulk_string("original"));
 }
 
 #[test]
 fn test_migrate_with_keys_option() {
+    let migrate_port = common::migrate_target_port();
     let storage = StorageEngine::new_memory(16);
     let executor = CommandExecutor::new(storage);
     let mut current_db = 0;
     let client_id = 1;
 
     // Set up multiple keys in database 0
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "SET",
             &[Bytes::from("key1"), Bytes::from("value1")],
             &mut current_db,
             client_id,
         )
         .unwrap();
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "SET",
             &[Bytes::from("key2"), Bytes::from("value2")],
             &mut current_db,
             client_id,
         )
         .unwrap();
-    executor
-        .execute(
+    exec_cmd(
+        &executor, 
             "SET",
             &[Bytes::from("key3"), Bytes::from("value3")],
             &mut current_db,
@@ -1136,12 +1142,12 @@ fn test_migrate_with_keys_option() {
         .unwrap();
 
     // Migrate multiple keys with KEYS option
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "MIGRATE",
             &[
-                Bytes::from("localhost"),
-                Bytes::from("6379"),
+                Bytes::from("127.0.0.1"),
+                Bytes::from(migrate_port.to_string()),
                 Bytes::from(""),
                 Bytes::from("4"),
                 Bytes::from("1000"),
@@ -1156,32 +1162,32 @@ fn test_migrate_with_keys_option() {
     assert_eq!(result, RespValue::ok());
 
     // Verify keys are gone from database 0
-    let result = executor
-        .execute("EXISTS", &[Bytes::from("key1")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "EXISTS", &[Bytes::from("key1")], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::integer(0));
-    let result = executor
-        .execute("EXISTS", &[Bytes::from("key2")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "EXISTS", &[Bytes::from("key2")], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::integer(0));
     // key3 should still exist
-    let result = executor
-        .execute("EXISTS", &[Bytes::from("key3")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "EXISTS", &[Bytes::from("key3")], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::integer(1));
 
-    // Verify keys exist in database 4
-    executor
-        .execute("SELECT", &[Bytes::from("4")], &mut current_db, client_id)
+    // 键已发往 TCP 对端；本实例 db4 无此数据（对端为 mock 时亦不校验远端内容）。
+    exec_cmd(
+        &executor, "SELECT", &[Bytes::from("4")], &mut current_db, client_id)
         .unwrap();
-    let result = executor
-        .execute("GET", &[Bytes::from("key1")], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "EXISTS", &[Bytes::from("key1")], &mut current_db, client_id)
         .unwrap();
-    assert_eq!(result, RespValue::bulk_string("value1"));
-    let result = executor
-        .execute("GET", &[Bytes::from("key2")], &mut current_db, client_id)
+    assert_eq!(result, RespValue::integer(0));
+    let result = exec_cmd(
+        &executor, "EXISTS", &[Bytes::from("key2")], &mut current_db, client_id)
         .unwrap();
-    assert_eq!(result, RespValue::bulk_string("value2"));
+    assert_eq!(result, RespValue::integer(0));
 }
 
 #[test]
@@ -1192,8 +1198,8 @@ fn test_command_commands() {
     let client_id = 1;
 
     // Test COMMAND (returns all commands)
-    let result = executor
-        .execute("COMMAND", &[], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "COMMAND", &[], &mut current_db, client_id)
         .unwrap();
     if let RespValue::Array(Some(arr)) = result {
         // Should have a reasonable number of commands
@@ -1203,8 +1209,8 @@ fn test_command_commands() {
     }
 
     // Test COMMAND COUNT
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "COMMAND",
             &[Bytes::from("COUNT")],
             &mut current_db,
@@ -1218,8 +1224,8 @@ fn test_command_commands() {
     }
 
     // Test COMMAND INFO for a specific command
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "COMMAND",
             &[Bytes::from("INFO"), Bytes::from("GET")],
             &mut current_db,
@@ -1241,8 +1247,8 @@ fn test_command_commands() {
     }
 
     // Test COMMAND INFO for non-existent command
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "COMMAND",
             &[Bytes::from("INFO"), Bytes::from("NONEXISTENT")],
             &mut current_db,
@@ -1257,8 +1263,8 @@ fn test_command_commands() {
     }
 
     // Test COMMAND HELP
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "COMMAND",
             &[Bytes::from("HELP")],
             &mut current_db,
@@ -1276,8 +1282,8 @@ fn test_save_lastsave_commands() {
     let client_id = 1;
 
     // Test LASTSAVE - should return a timestamp
-    let result = executor
-        .execute("LASTSAVE", &[], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "LASTSAVE", &[], &mut current_db, client_id)
         .unwrap();
     if let RespValue::Integer(timestamp) = result {
         // Should be a reasonable Unix timestamp
@@ -1287,14 +1293,14 @@ fn test_save_lastsave_commands() {
     }
 
     // Test SAVE
-    let result = executor
-        .execute("SAVE", &[], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "SAVE", &[], &mut current_db, client_id)
         .unwrap();
     assert_eq!(result, RespValue::ok());
 
     // Test BGSAVE
-    let result = executor
-        .execute("BGSAVE", &[], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "BGSAVE", &[], &mut current_db, client_id)
         .unwrap();
     assert_eq!(
         result,
@@ -1302,8 +1308,8 @@ fn test_save_lastsave_commands() {
     );
 
     // Test LASTSAVE after save - should have updated timestamp
-    let result = executor
-        .execute("LASTSAVE", &[], &mut current_db, client_id)
+    let result = exec_cmd(
+        &executor, "LASTSAVE", &[], &mut current_db, client_id)
         .unwrap();
     if let RespValue::Integer(timestamp) = result {
         assert!(timestamp > 0);
@@ -1320,8 +1326,8 @@ fn test_config_rewrite_command() {
     let client_id = 1;
 
     // Test CONFIG REWRITE - should return OK (stub implementation)
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "CONFIG",
             &[Bytes::from("REWRITE")],
             &mut current_db,
@@ -1339,8 +1345,8 @@ fn test_shutdown_command() {
     let client_id = 1;
 
     // Test SHUTDOWN with ABORT (should not actually shutdown)
-    let result = executor
-        .execute(
+    let result = exec_cmd(
+        &executor, 
             "SHUTDOWN",
             &[Bytes::from("ABORT")],
             &mut current_db,
@@ -1353,7 +1359,7 @@ fn test_shutdown_command() {
     assert!(!executor.server_commands().is_shutdown_requested());
 
     // Test SHUTDOWN with invalid option
-    let result = executor.execute(
+    let result = exec_cmd(&executor, 
         "SHUTDOWN",
         &[Bytes::from("INVALID")],
         &mut current_db,
@@ -1362,7 +1368,7 @@ fn test_shutdown_command() {
     assert!(result.is_err());
 
     // Test basic SHUTDOWN (returns error because server is shutting down)
-    let result = executor.execute("SHUTDOWN", &[], &mut current_db, client_id);
+    let result = exec_cmd(&executor, "SHUTDOWN", &[], &mut current_db, client_id);
     assert!(result.is_err());
 
     // Verify shutdown was requested

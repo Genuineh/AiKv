@@ -1,6 +1,10 @@
+mod common;
+
 use aikv::command::CommandExecutor;
 use aikv::protocol::RespValue;
 use aikv::StorageEngine;
+
+use common::exec_cmd;
 
 // 命令验证结果
 #[derive(Debug)]
@@ -80,10 +84,13 @@ impl CommandValidator {
     }
 
     fn test_ping(&mut self) -> CommandValidation {
-        match self
-            .executor
-            .execute("PING", &[], &mut self.current_db, self.client_id)
-        {
+        match exec_cmd(
+            &self.executor,
+            "PING",
+            &[],
+            &mut self.current_db,
+            self.client_id,
+        ) {
             Ok(resp) => {
                 if matches!(resp, RespValue::SimpleString(_)) {
                     CommandValidation {

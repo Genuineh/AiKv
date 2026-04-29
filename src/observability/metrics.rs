@@ -125,6 +125,15 @@ impl LatencyHistogram {
                 self.buckets[i].fetch_add(1, Ordering::Relaxed);
             }
         }
+        // Always increment the last bucket (+Inf) to ensure histogram_quantile works
+        // even for very slow commands that exceed the max bucket bound.
+        if let Some(&last_bound) = LATENCY_BUCKET_BOUNDS.last() {
+            if usec > last_bound {
+                // Overflow case: usec exceeds max bound, increment last bucket
+                let last_idx = LATENCY_BUCKET_BOUNDS.len() - 1;
+                self.buckets[last_idx].fetch_add(1, Ordering::Relaxed);
+            }
+        }
     }
 
     /// Return non-zero buckets as `(upper_bound_usec, cumulative_count)` pairs.

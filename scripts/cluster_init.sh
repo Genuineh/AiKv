@@ -21,6 +21,7 @@ NC='\033[0m' # No Color
 # Default configuration
 MASTERS=()
 REPLICAS=()
+declare -a replica_ids=()
 REDIS_CLI="${REDIS_CLI:-redis-cli}"
 
 # Retry and timing configuration
@@ -483,10 +484,66 @@ for i in "${!MASTERS[@]}"; do
             print_warn "Failed to set up replication for ${replica}: ${output}"
             print_warn "Cluster can still function without all replicas"
         fi
-        
+
+        # Store replica IDs for later promotion
+        replica_ids[replica_idx]="${NODE_IDS[${replica}]}"
+
         replica_idx=$((replica_idx + 1))
     done
 done
+echo
+
+# Step 5.5: Promote replicas to MetaRaft voters
+# This is critical for automatic failover - replicas must be voters to participate in leader election
+print_info "Step 5.5: Promoting replicas to MetaRaft voters..."
+
+if [ ${#replica_ids[@]} -gt 0 ]; then
+    # Build the list of replica IDs to promote
+    # First get current voters to merge with
+    first_master="${MASTERS[0]}"
+    IFS=':' read -r master_host master_port <<< "${first_master}"
+
+    # Get current voters
+    voters_output=$(redis_exec ${master_host} ${master_port} CLUSTER METARAFT MEMBERS 2>/dev/null || echo "")
+    print_info "Current MetaRaft members: ${voters_output}"
+
+    # Build promotion list - include existing voters and new replicas
+    promotion_list=""
+    for voter_line in $(echo "${voters_output}" | grep "voter" | awk '{print $1}'); do
+        if [ -n "${promotion_list}" ]; then
+            promotion_list="${promotion_list},"
+        fi
+        promotion_list="${promotion_list}${voter_line}"
+    done
+
+    # Add replica IDs to the promotion list
+    for replica_id in "${replica_ids[@]}"; do
+        if [ -n "${replica_id}" ]; then
+            if [ -n "${promotion_list}" ]; then
+                promotion_list="${promotion_list},"
+            fi
+            promotion_list="${promotion_list}${replica_id}"
+        fi
+    done
+
+    print_info "Promoting to voters: ${promotion_list}"
+
+    # Execute the promotion on the first master (must be done on MetaRaft leader)
+    promo_output=$(redis_exec ${master_host} ${master_port} CLUSTER METARAFT PROMOTE ${promotion_list} 2>&1)
+    if echo "${promo_output}" | grep -q "OK"; then
+        print_success "Replicas promoted to MetaRaft voters"
+    else
+        print_warn "Failed to promote replicas: ${promo_output}"
+        print_warn "Automatic failover may not work"
+    fi
+
+    # Wait for promotion to propagate
+    sleep 2
+
+    # Verify promotion
+    print_info "Verifying MetaRaft members after promotion:"
+    redis_exec ${master_host} ${master_port} CLUSTER METARAFT MEMBERS 2>/dev/null || true
+fi
 echo
 
 # Step 6: Verify cluster status

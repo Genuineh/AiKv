@@ -1,6 +1,12 @@
 pub mod aidb_adapter;
 pub mod memory_adapter;
 
+#[cfg(feature = "cluster")]
+mod cluster_raft;
+
+#[cfg(feature = "cluster")]
+use cluster_raft::ClusterRaftEngine;
+
 // Re-export the memory adapter as StorageAdapter for backward compatibility
 // In production, you would switch to aidb_adapter::AiDbStorageAdapter
 pub use memory_adapter::StorageAdapter;
@@ -25,6 +31,9 @@ pub enum StorageEngine {
     Memory(StorageAdapter),
     /// AiDb LSM-Tree persistent storage
     AiDb(AiDbStorageAdapter),
+    /// Cluster mode: user data via Multi-Raft (replicated)
+    #[cfg(feature = "cluster")]
+    ClusterRaft(ClusterRaftEngine),
 }
 
 impl StorageEngine {
@@ -48,6 +57,12 @@ impl StorageEngine {
         )?))
     }
 
+    /// Multi-Raft backed storage (cluster mode).
+    #[cfg(feature = "cluster")]
+    pub fn new_cluster_raft(multi: std::sync::Arc<aidb::cluster::MultiRaftNode>, db_count: usize) -> Self {
+        StorageEngine::ClusterRaft(ClusterRaftEngine::new(multi, db_count))
+    }
+
     // ========================================================================
     // CORE STORAGE METHODS
     // ========================================================================
@@ -57,6 +72,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.get_value(db_index, key),
             StorageEngine::AiDb(adapter) => adapter.get_value(db_index, key),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.get_value(db_index, key),
         }
     }
 
@@ -65,6 +82,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.set_value(db_index, key, value),
             StorageEngine::AiDb(adapter) => adapter.set_value(db_index, key, value),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.set_value(db_index, key, value),
         }
     }
 
@@ -73,6 +92,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.delete_and_get(db_index, key),
             StorageEngine::AiDb(adapter) => adapter.delete_and_get(db_index, key),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.delete_and_get(db_index, key),
         }
     }
 
@@ -84,6 +105,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.update_value(db_index, key, f),
             StorageEngine::AiDb(adapter) => adapter.update_value(db_index, key, f),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.update_value(db_index, key, f),
         }
     }
 
@@ -92,6 +115,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.write_batch(db_index, operations),
             StorageEngine::AiDb(adapter) => adapter.write_batch(db_index, operations),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.write_batch(db_index, operations),
         }
     }
 
@@ -104,6 +129,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.get_from_db(db_index, key),
             StorageEngine::AiDb(adapter) => adapter.get_from_db(db_index, key),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.get_from_db(db_index, key),
         }
     }
 
@@ -112,6 +139,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.get(key),
             StorageEngine::AiDb(adapter) => adapter.get(key),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.get(key),
         }
     }
 
@@ -120,6 +149,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.set_in_db(db_index, key, value),
             StorageEngine::AiDb(adapter) => adapter.set_in_db(db_index, key, value),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.set_in_db(db_index, key, value),
         }
     }
 
@@ -128,6 +159,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.set(key, value),
             StorageEngine::AiDb(adapter) => adapter.set(key, value),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.set(key, value),
         }
     }
 
@@ -146,6 +179,10 @@ impl StorageEngine {
             StorageEngine::AiDb(adapter) => {
                 adapter.set_with_expiration_in_db(db_index, key, value, expires_at)
             }
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => {
+                c.set_with_expiration_in_db(db_index, key, value, expires_at)
+            }
         }
     }
 
@@ -154,6 +191,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.set_expire_in_db(db_index, key, expire_ms),
             StorageEngine::AiDb(adapter) => adapter.set_expire_in_db(db_index, key, expire_ms),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.set_expire_in_db(db_index, key, expire_ms),
         }
     }
 
@@ -171,6 +210,8 @@ impl StorageEngine {
             StorageEngine::AiDb(adapter) => {
                 adapter.set_expire_at_in_db(db_index, key, timestamp_ms)
             }
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.set_expire_at_in_db(db_index, key, timestamp_ms),
         }
     }
 
@@ -179,6 +220,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.get_ttl_in_db(db_index, key),
             StorageEngine::AiDb(adapter) => adapter.get_ttl_in_db(db_index, key),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.get_ttl_in_db(db_index, key),
         }
     }
 
@@ -187,6 +230,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.get_expire_time_in_db(db_index, key),
             StorageEngine::AiDb(adapter) => adapter.get_expire_time_in_db(db_index, key),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.get_expire_time_in_db(db_index, key),
         }
     }
 
@@ -195,6 +240,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.persist_in_db(db_index, key),
             StorageEngine::AiDb(adapter) => adapter.persist_in_db(db_index, key),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.persist_in_db(db_index, key),
         }
     }
 
@@ -203,6 +250,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.delete_from_db(db_index, key),
             StorageEngine::AiDb(adapter) => adapter.delete_from_db(db_index, key),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.delete_from_db(db_index, key),
         }
     }
 
@@ -211,6 +260,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.delete(key),
             StorageEngine::AiDb(adapter) => adapter.delete(key),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.delete(key),
         }
     }
 
@@ -219,6 +270,29 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.exists_in_db(db_index, key),
             StorageEngine::AiDb(adapter) => adapter.exists_in_db(db_index, key),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.exists_in_db(db_index, key),
+        }
+    }
+
+    /// Like [`Self::exists_in_db`], but for RESTORE after `ASKING` during slot IMPORTING (cluster only).
+    #[cfg(feature = "cluster")]
+    pub fn exists_in_db_for_restore(
+        &self,
+        db_index: usize,
+        key: &str,
+        importing_after_asking: bool,
+    ) -> Result<bool> {
+        match self {
+            StorageEngine::Memory(adapter) => adapter.exists_in_db(db_index, key),
+            StorageEngine::AiDb(adapter) => adapter.exists_in_db(db_index, key),
+            StorageEngine::ClusterRaft(c) => {
+                if importing_after_asking {
+                    c.exists_in_db_importing_restore(db_index, key)
+                } else {
+                    c.exists_in_db(db_index, key)
+                }
+            }
         }
     }
 
@@ -227,6 +301,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.exists(key),
             StorageEngine::AiDb(adapter) => adapter.exists(key),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.exists(key),
         }
     }
 
@@ -235,6 +311,20 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.get_all_keys_in_db(db_index),
             StorageEngine::AiDb(adapter) => adapter.get_all_keys_in_db(db_index),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.get_all_keys_in_db(db_index),
+        }
+    }
+
+    /// Scan keys in a database using cursor-based pagination
+    ///
+    /// Returns (next_cursor, keys). If next_cursor is empty or "0", iteration is complete.
+    pub fn scan_keys_in_db(&self, db_index: usize, cursor: &str, count: usize) -> Result<(String, Vec<String>)> {
+        match self {
+            StorageEngine::Memory(adapter) => adapter.scan_keys_in_db(db_index, cursor, count),
+            StorageEngine::AiDb(adapter) => adapter.scan_keys_in_db(db_index, cursor, count),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.scan_keys_in_db(db_index, cursor, count),
         }
     }
 
@@ -243,6 +333,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.dbsize_in_db(db_index),
             StorageEngine::AiDb(adapter) => adapter.dbsize_in_db(db_index),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.dbsize_in_db(db_index),
         }
     }
 
@@ -251,6 +343,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.keyspace_stats_in_db(db_index),
             StorageEngine::AiDb(adapter) => adapter.keyspace_stats_in_db(db_index),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.keyspace_stats_in_db(db_index),
         }
     }
 
@@ -259,6 +353,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.flush_db(db_index),
             StorageEngine::AiDb(adapter) => adapter.flush_db(db_index),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.flush_db(db_index),
         }
     }
 
@@ -267,6 +363,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.flush_all(),
             StorageEngine::AiDb(adapter) => adapter.flush_all(),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.flush_all(),
         }
     }
 
@@ -275,6 +373,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.swap_db(db1, db2),
             StorageEngine::AiDb(adapter) => adapter.swap_db(db1, db2),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.swap_db(db1, db2),
         }
     }
 
@@ -283,6 +383,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.move_key(src_db, dst_db, key),
             StorageEngine::AiDb(adapter) => adapter.move_key(src_db, dst_db, key),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.move_key(src_db, dst_db, key),
         }
     }
 
@@ -291,6 +393,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.rename_in_db(db_index, old_key, new_key),
             StorageEngine::AiDb(adapter) => adapter.rename_in_db(db_index, old_key, new_key),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.rename_in_db(db_index, old_key, new_key),
         }
     }
 
@@ -299,6 +403,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.rename_nx_in_db(db_index, old_key, new_key),
             StorageEngine::AiDb(adapter) => adapter.rename_nx_in_db(db_index, old_key, new_key),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.rename_nx_in_db(db_index, old_key, new_key),
         }
     }
 
@@ -318,6 +424,10 @@ impl StorageEngine {
             StorageEngine::AiDb(adapter) => {
                 adapter.copy_in_db(src_db, dst_db, src_key, dst_key, replace)
             }
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => {
+                c.copy_in_db(src_db, dst_db, src_key, dst_key, replace)
+            }
         }
     }
 
@@ -326,6 +436,8 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.random_key_in_db(db_index),
             StorageEngine::AiDb(adapter) => adapter.random_key_in_db(db_index),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.random_key_in_db(db_index),
         }
     }
 
@@ -334,6 +446,47 @@ impl StorageEngine {
         match self {
             StorageEngine::Memory(adapter) => adapter.export_all_databases(),
             StorageEngine::AiDb(adapter) => adapter.export_all_databases(),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.export_all_databases(),
         }
+    }
+
+    /// Get AiDb storage statistics (MemTable, WAL, Block Cache).
+    ///
+    /// Returns aggregated statistics from all AiDb instances:
+    /// - memtable_bytes: Total size of all MemTables
+    /// - wal_bytes: Total WAL file size
+    /// - block_cache_bytes: Current block cache usage
+    /// - block_cache_capacity_bytes: Block cache capacity
+    ///
+    /// For Memory storage, returns (0, 0, 0, 0).
+    pub fn get_aidb_stats(&self) -> (u64, u64, u64, u64) {
+        match self {
+            StorageEngine::Memory(_) => (0, 0, 0, 0),
+            StorageEngine::AiDb(adapter) => adapter.get_storage_stats(),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.get_aidb_stats(),
+        }
+    }
+
+    /// Create a backup of the underlying storage.
+    ///
+    /// For AiDb: flushes MemTable and copies SSTable + WAL files to `backup_dir`.
+    /// For ClusterRaft: backs up all local Raft group databases.
+    /// Memory engine does not support backup and returns an error.
+    pub fn create_backup(&self, backup_dir: &std::path::Path) -> Result<Vec<String>> {
+        match self {
+            StorageEngine::Memory(_) => Err(crate::error::AikvError::Storage(
+                "Memory engine does not support SAVE (no persistent data)".to_string(),
+            )),
+            StorageEngine::AiDb(adapter) => adapter.create_backup(backup_dir),
+            #[cfg(feature = "cluster")]
+            StorageEngine::ClusterRaft(c) => c.create_backup(backup_dir),
+        }
+    }
+
+    /// Check if this is an AiDb storage engine.
+    pub fn is_aidb(&self) -> bool {
+        matches!(self, StorageEngine::AiDb(_))
     }
 }

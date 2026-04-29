@@ -365,8 +365,16 @@ fn create_storage_engine(storage_config: &StorageConfig) -> StorageEngine {
     }
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(8 * 1024 * 1024)
+        .build()
+        .expect("Failed to build Tokio runtime");
+    runtime.block_on(async_main());
+}
+
+async fn async_main() {
     // Parse command line arguments
     let cli = parse_args();
 
@@ -415,11 +423,30 @@ async fn main() {
     println!();
 
     // Create storage engine based on configuration
+    #[cfg(feature = "cluster")]
+    let storage = if cluster_config.enabled && storage_config.engine.to_lowercase() == "aidb" {
+        info!(
+            "Cluster + AiDb: opening data dir only for Raft/MetaRaft; KV will use Multi-Raft sharded DBs"
+        );
+        // `initialize_cluster` replaces this with `StorageEngine::ClusterRaft`.
+        StorageEngine::new_memory(storage_config.databases)
+    } else {
+        create_storage_engine(&storage_config)
+    };
+    #[cfg(not(feature = "cluster"))]
     let storage = create_storage_engine(&storage_config);
 
     // Create and run server
     #[allow(unused_mut)]
     let mut server = Server::new(addr, storage);
+
+    if storage_config.engine.to_lowercase() == "aidb" {
+        let backup_dir = std::path::Path::new(&storage_config.data_dir)
+            .join("backups")
+            .to_string_lossy()
+            .into_owned();
+        server.set_config("backup-dir", backup_dir);
+    }
 
     // Initialize cluster if enabled
     #[cfg(feature = "cluster")]
@@ -431,6 +458,7 @@ async fn main() {
                 &cluster_config.raft_address,
                 cluster_config.is_bootstrap,
                 &cluster_config.peers,
+                storage_config.databases,
             )
             .await
         {

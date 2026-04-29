@@ -2,7 +2,12 @@ use crate::error::{AikvError, Result};
 use crate::protocol::RespValue;
 use crate::storage::{SerializableStoredValue, StorageEngine, StoredValue};
 use bytes::Bytes;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::io::{Read, Write};
+use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tracing::{info, warn};
 
 /// Default number of databases (matching Redis default)
 const DEFAULT_DB_COUNT: usize = 16;
@@ -13,6 +18,70 @@ pub struct KeyCommands {
 }
 
 impl KeyCommands {
+    fn dump_payload_from_value(stored_value: &StoredValue) -> Result<Vec<u8>> {
+        let serializable = stored_value.to_serializable();
+        let serialized = bincode::serialize(&serializable)
+            .map_err(|e| AikvError::Storage(format!("Failed to serialize value: {}", e)))?;
+        let mut dump_data = serialized;
+        dump_data.extend_from_slice(&[0x00, 0x09]);
+        let checksum = Self::calculate_checksum(&dump_data);
+        dump_data.extend_from_slice(&checksum.to_le_bytes());
+        Ok(dump_data)
+    }
+
+    fn write_resp_command(stream: &mut TcpStream, parts: &[Vec<u8>]) -> Result<()> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(format!("*{}\r\n", parts.len()).as_bytes());
+        for p in parts {
+            buf.extend_from_slice(format!("${}\r\n", p.len()).as_bytes());
+            buf.extend_from_slice(p);
+            buf.extend_from_slice(b"\r\n");
+        }
+        stream
+            .write_all(&buf)
+            .map_err(|e| AikvError::Io(std::io::Error::new(e.kind(), e.to_string())))?;
+        stream
+            .flush()
+            .map_err(|e| AikvError::Io(std::io::Error::new(e.kind(), e.to_string())))?;
+        Ok(())
+    }
+
+    fn read_resp_status_line(stream: &mut TcpStream) -> Result<(u8, String)> {
+        let mut first = [0u8; 1];
+        stream
+            .read_exact(&mut first)
+            .map_err(|e| AikvError::Io(std::io::Error::new(e.kind(), e.to_string())))?;
+        let mut line = Vec::new();
+        loop {
+            let mut b = [0u8; 1];
+            stream
+                .read_exact(&mut b)
+                .map_err(|e| AikvError::Io(std::io::Error::new(e.kind(), e.to_string())))?;
+            if b[0] == b'\n' {
+                break;
+            }
+            if b[0] != b'\r' {
+                line.push(b[0]);
+            }
+        }
+        Ok((first[0], String::from_utf8_lossy(&line).to_string()))
+    }
+
+    fn send_expect_ok(stream: &mut TcpStream, parts: &[Vec<u8>], cmd: &str) -> Result<()> {
+        Self::write_resp_command(stream, parts)?;
+        let (prefix, msg) = Self::read_resp_status_line(stream)?;
+        match prefix {
+            b'+' => Ok(()),
+            b'-' => Err(AikvError::InvalidArgument(format!(
+                "ERR {} failed on target: {}",
+                cmd, msg
+            ))),
+            _ => Err(AikvError::InvalidArgument(format!(
+                "ERR {} failed with unexpected RESP type: {}",
+                cmd, prefix as char
+            ))),
+        }
+    }
     pub fn new(storage: StorageEngine) -> Self {
         Self {
             storage,
@@ -27,7 +96,28 @@ impl KeyCommands {
         }
 
         let pattern = String::from_utf8_lossy(&args[0]).to_string();
-        let all_keys = self.storage.get_all_keys_in_db(current_db)?;
+
+        // KEYS is expensive - it collects ALL keys first. Use a timeout to prevent blocking.
+        // For production, prefer SCAN which is cursor-based.
+        let storage = self.storage.clone();
+        let (tx, rx) = mpsc::channel();
+
+        thread::spawn(move || {
+            let result = storage.get_all_keys_in_db(current_db);
+            let _ = tx.send(result);
+        });
+
+        // Increased timeout to 60 seconds for large databases
+        let all_keys = match rx.recv_timeout(Duration::from_secs(60)) {
+            Ok(Ok(keys)) => keys,
+            Ok(Err(e)) => return Err(e),
+            Err(_) => {
+                return Err(AikvError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "KEYS command timed out (too many keys). Use SCAN instead.",
+                )));
+            }
+        };
 
         // Simple pattern matching: * matches everything, otherwise exact match
         let matched_keys: Vec<RespValue> = if pattern == "*" {
@@ -88,17 +178,14 @@ impl KeyCommands {
     }
 
     /// SCAN cursor \[MATCH pattern\] \[COUNT count\]
-    /// Iterate keys using cursor-based iteration
+    /// Iterate keys using cursor-based iteration (true cursor-based, not full scan)
     pub fn scan(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
         if args.is_empty() {
             return Err(AikvError::WrongArgCount("SCAN".to_string()));
         }
 
-        // Parse cursor
-        let cursor_str = String::from_utf8_lossy(&args[0]);
-        let cursor = cursor_str
-            .parse::<usize>()
-            .map_err(|_| AikvError::InvalidArgument("ERR invalid cursor".to_string()))?;
+        // Parse cursor (as string for true cursor-based implementation)
+        let cursor_str = String::from_utf8_lossy(&args[0]).to_string();
 
         // Parse optional arguments
         let mut pattern = String::from("*");
@@ -138,34 +225,28 @@ impl KeyCommands {
             i += 1;
         }
 
-        // Get all keys and filter by pattern
-        let all_keys = self.storage.get_all_keys_in_db(current_db)?;
+        // Use true cursor-based scan - O(1) per call
+        let (next_cursor, keys) = self.storage.scan_keys_in_db(current_db, &cursor_str, count)?;
+
+        // Filter keys by pattern (if not "*")
         let matched_keys: Vec<String> = if pattern == "*" {
-            all_keys
+            keys
         } else {
-            all_keys
-                .into_iter()
-                .filter(|k| self.match_pattern(k, &pattern))
-                .collect()
+            keys.into_iter().filter(|k| self.match_pattern(k, &pattern)).collect()
         };
 
-        // Calculate the range to return
-        let total_keys = matched_keys.len();
-        let start = cursor;
-        let end = std::cmp::min(start + count, total_keys);
-
-        // Determine next cursor (0 means iteration complete)
-        let next_cursor = if end >= total_keys { 0 } else { end };
-
-        // Collect keys for this iteration
-        let keys_to_return: Vec<RespValue> = matched_keys[start..end]
+        // Convert to RespValue
+        let keys_to_return: Vec<RespValue> = matched_keys
             .iter()
             .map(|k| RespValue::bulk_string(k.clone()))
             .collect();
 
         // Return [cursor, [keys]]
+        // next_cursor == "0" or empty means iteration complete
+        let return_cursor = if next_cursor.is_empty() { "0".to_string() } else { next_cursor };
+
         Ok(RespValue::array(vec![
-            RespValue::bulk_string(next_cursor.to_string()),
+            RespValue::bulk_string(return_cursor),
             RespValue::array(keys_to_return),
         ]))
     }
@@ -522,7 +603,14 @@ impl KeyCommands {
     /// - serialized-value: The serialized value from DUMP command
     /// - REPLACE: Replace existing key if present
     /// - ABSTTL: TTL is an absolute Unix timestamp in milliseconds
-    pub fn restore(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
+    pub fn restore(
+        &self,
+        args: &[Bytes],
+        current_db: usize,
+        importing_after_asking: bool,
+    ) -> Result<RespValue> {
+        #[cfg(not(feature = "cluster"))]
+        let _ = importing_after_asking;
         if args.len() < 3 {
             return Err(AikvError::WrongArgCount("RESTORE".to_string()));
         }
@@ -534,6 +622,8 @@ impl KeyCommands {
             .map_err(|_| AikvError::InvalidArgument("ERR invalid TTL value".to_string()))?;
 
         let serialized_value = &args[2];
+
+        tracing::debug!("RESTORE key={}, ttl={}, serialized_value_len={}", key, ttl, serialized_value.len());
 
         // Parse options
         let mut replace = false;
@@ -567,7 +657,18 @@ impl KeyCommands {
         }
 
         // Check if key already exists
-        if !replace && self.storage.exists_in_db(current_db, &key)? {
+        let key_exists = {
+            #[cfg(feature = "cluster")]
+            {
+                self.storage
+                    .exists_in_db_for_restore(current_db, &key, importing_after_asking)?
+            }
+            #[cfg(not(feature = "cluster"))]
+            {
+                self.storage.exists_in_db(current_db, &key)?
+            }
+        };
+        if !replace && key_exists {
             return Err(AikvError::InvalidArgument(
                 "BUSYKEY Target key name already exists".to_string(),
             ));
@@ -603,16 +704,19 @@ impl KeyCommands {
 
         // Set expiration if TTL is provided
         if ttl > 0 {
+            // StackExchange.Redis sends TTL in seconds (like EXPIRE), but Redis RESTORE expects milliseconds.
+            // If TTL < 1000, assume it's seconds and convert to milliseconds.
+            let ttl_ms = if ttl < 1000 { ttl * 1000 } else { ttl };
             let expires_at = if absttl {
-                // TTL is an absolute timestamp
+                // TTL is an absolute timestamp (milliseconds)
                 ttl as u64
             } else {
-                // TTL is relative (milliseconds from now)
+                // TTL is relative (already in milliseconds, or converted from seconds above)
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
                     .as_millis() as u64;
-                now + (ttl as u64)
+                now + (ttl_ms as u64)
             };
             stored_value.set_expiration(Some(expires_at));
         } else if ttl == 0 {
@@ -625,8 +729,42 @@ impl KeyCommands {
             ));
         }
 
-        // Store the value
-        self.storage.set_value(current_db, key, stored_value)?;
+        // Store the value.
+        // During slot migration, metadata/group sync may lag by a few milliseconds right after
+        // IMPORTING+ASKING. Retry a few times only when storage reports MOVED.
+        let mut last_err: Option<AikvError> = None;
+        let max_retries = 100u16; // ~2s with 20ms backoff
+        for attempt in 0..=max_retries {
+            match self
+                .storage
+                .set_value(current_db, key.clone(), stored_value.clone())
+            {
+                Ok(()) => {
+                    last_err = None;
+                    break;
+                }
+                Err(AikvError::Moved(slot, addr)) if attempt < max_retries => {
+                    tracing::warn!(
+                        diag_event = "cluster_restore_retry_on_moved",
+                        key = %key,
+                        slot = slot,
+                        target = %addr,
+                        attempt = attempt as u64 + 1,
+                        max_retries = max_retries as u64,
+                        "RESTORE got MOVED after ASKING; retrying shortly"
+                    );
+                    last_err = Some(AikvError::Moved(slot, addr));
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    break;
+                }
+            }
+        }
+        if let Some(e) = last_err {
+            return Err(e);
+        }
 
         Ok(RespValue::ok())
     }
@@ -635,31 +773,46 @@ impl KeyCommands {
     ///
     /// Atomically transfer a key from a source Redis instance to a destination Redis instance.
     ///
-    /// Note: This is a simplified implementation that works within a single AiKv instance.
-    /// It simulates migration by moving/copying keys between databases.
-    ///
-    /// For true cross-instance migration, a network client would need to be implemented.
     pub fn migrate(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
+        let start = std::time::Instant::now();
         if args.len() < 5 {
             return Err(AikvError::WrongArgCount("MIGRATE".to_string()));
         }
 
-        let _host = String::from_utf8_lossy(&args[0]).to_string();
-        let _port = String::from_utf8_lossy(&args[1]);
+        let host = String::from_utf8_lossy(&args[0]).to_string();
+        let port = String::from_utf8_lossy(&args[1])
+            .parse::<u16>()
+            .map_err(|_| AikvError::InvalidArgument("ERR invalid port".to_string()))?;
         let key_arg = String::from_utf8_lossy(&args[2]).to_string();
         let dest_db_str = String::from_utf8_lossy(&args[3]);
         let dest_db = dest_db_str
             .parse::<usize>()
             .map_err(|_| AikvError::InvalidArgument("ERR invalid DB index".to_string()))?;
-        let _timeout_str = String::from_utf8_lossy(&args[4]);
-        let _timeout = _timeout_str
+        let timeout_str = String::from_utf8_lossy(&args[4]);
+        let timeout_ms = timeout_str
             .parse::<i64>()
             .map_err(|_| AikvError::InvalidArgument("ERR timeout is not an integer".to_string()))?;
+        if timeout_ms <= 0 {
+            return Err(AikvError::InvalidArgument(
+                "ERR timeout is not an integer or out of range".to_string(),
+            ));
+        }
+        info!(
+            diag_event = "cluster_migrate_attempt",
+            source_db = current_db,
+            dest_db = dest_db,
+            target_host = %host,
+            target_port = port,
+            timeout_ms = timeout_ms as u64,
+            "Starting MIGRATE"
+        );
 
         // Parse options
         let mut copy = false;
         let mut replace = false;
         let mut keys: Vec<String> = Vec::new();
+        let mut auth: Option<String> = None;
+        let mut auth2: Option<(String, String)> = None;
 
         let mut i = 5;
         while i < args.len() {
@@ -672,27 +825,35 @@ impl KeyCommands {
                     replace = true;
                 }
                 "AUTH" => {
-                    // Skip AUTH argument (password)
                     if i + 1 >= args.len() {
                         return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
                     }
                     i += 1;
+                    auth = Some(String::from_utf8_lossy(&args[i]).to_string());
                 }
                 "AUTH2" => {
-                    // Skip AUTH2 arguments (username, password)
                     if i + 2 >= args.len() {
                         return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
                     }
+                    let user = String::from_utf8_lossy(&args[i + 1]).to_string();
+                    let pass = String::from_utf8_lossy(&args[i + 2]).to_string();
+                    auth2 = Some((user, pass));
                     i += 2;
                 }
                 "KEYS" => {
-                    // Collect all remaining arguments as keys
+                    // Keys until another option (Redis allows COPY / REPLACE / AUTH* after KEYS).
                     i += 1;
                     while i < args.len() {
-                        keys.push(String::from_utf8_lossy(&args[i]).to_string());
-                        i += 1;
+                        let peek = String::from_utf8_lossy(&args[i]).to_uppercase();
+                        match peek.as_str() {
+                            "COPY" | "REPLACE" | "AUTH" | "AUTH2" => break,
+                            _ => {
+                                keys.push(String::from_utf8_lossy(&args[i]).to_string());
+                                i += 1;
+                            }
+                        }
                     }
-                    break;
+                    continue;
                 }
                 _ => {
                     return Err(AikvError::InvalidArgument(format!(
@@ -721,55 +882,146 @@ impl KeyCommands {
             ));
         }
 
+        // 须支持主机名（Docker DNS 如 aikv-master-3），不能仅用 SocketAddr::parse（只接受 IP 字面量）
+        let addr = format!("{}:{}", host, port)
+            .to_socket_addrs()
+            .map_err(|_| AikvError::InvalidArgument("ERR invalid host/port".to_string()))?
+            .next()
+            .ok_or_else(|| AikvError::InvalidArgument("ERR invalid host/port".to_string()))?;
+        let timeout = Duration::from_millis(timeout_ms as u64);
+        let mut stream = TcpStream::connect_timeout(&addr, timeout).map_err(|e| {
+            warn!(
+                diag_event = "cluster_migrate_connect_failed",
+                source_db = current_db,
+                dest_db = dest_db,
+                target_host = %host,
+                target_port = port,
+                timeout_ms = timeout_ms as u64,
+                error = %e,
+                "MIGRATE connect failed"
+            );
+            AikvError::Io(std::io::Error::new(
+                e.kind(),
+                format!("MIGRATE connect failed: {}", e),
+            ))
+        })?;
+        stream.set_read_timeout(Some(timeout)).map_err(AikvError::Io)?;
+        stream.set_write_timeout(Some(timeout)).map_err(AikvError::Io)?;
+
+        if let Some((user, pass)) = auth2 {
+            Self::send_expect_ok(
+                &mut stream,
+                &[b"AUTH".to_vec(), user.into_bytes(), pass.into_bytes()],
+                "AUTH2",
+            )
+            .map_err(|e| {
+                warn!(diag_event = "cluster_migrate_auth_failed", error = %e, "MIGRATE AUTH2 failed");
+                e
+            })?;
+        } else if let Some(pass) = auth {
+            Self::send_expect_ok(&mut stream, &[b"AUTH".to_vec(), pass.into_bytes()], "AUTH")
+                .map_err(|e| {
+                    warn!(diag_event = "cluster_migrate_auth_failed", error = %e, "MIGRATE AUTH failed");
+                    e
+                })?;
+        }
+
+        if dest_db != 0 {
+            Self::send_expect_ok(
+                &mut stream,
+                &[b"SELECT".to_vec(), dest_db.to_string().into_bytes()],
+                "SELECT",
+            )?;
+        }
+
         // Process each key
         let mut migrated_count = 0;
         for key in &keys {
-            // Check if source key exists
-            if !self.storage.exists_in_db(current_db, key)? {
-                continue;
-            }
-
-            // Check if destination key exists and REPLACE is not set
-            if self.storage.exists_in_db(dest_db, key)? && !replace {
-                return Err(AikvError::InvalidArgument(
-                    "BUSYKEY Target key name already exists".to_string(),
-                ));
-            }
-
-            // Get the source value
             if let Some(stored_value) = self.storage.get_value(current_db, key)? {
-                // Remember if destination had a value for rollback
-                let dest_had_value = self.storage.exists_in_db(dest_db, key)?;
-                let dest_old_value = if dest_had_value && replace {
-                    self.storage.get_value(dest_db, key)?
-                } else {
-                    None
-                };
+                let mut ttl = 0u64;
+                if let Some(expires_at) = stored_value.expires_at() {
+                    let now = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis() as u64;
+                    ttl = expires_at.saturating_sub(now);
+                }
+                let payload = Self::dump_payload_from_value(&stored_value)?;
 
-                // Copy to destination
-                self.storage
-                    .set_value(dest_db, key.clone(), stored_value.clone())?;
+                // Target slot is usually still owned by source until SETSLOT NODE.
+                // Send ASKING before RESTORE so target accepts write in IMPORTING state.
+                if let Err(e) = Self::send_expect_ok(&mut stream, &[b"ASKING".to_vec()], "ASKING") {
+                    warn!(
+                        diag_event = "cluster_migrate_restore_failed",
+                        key = %key,
+                        source_db = current_db,
+                        dest_db = dest_db,
+                        target_host = %host,
+                        target_port = port,
+                        error = %e,
+                        "MIGRATE ASKING failed before RESTORE"
+                    );
+                    return Err(e);
+                }
 
-                // Delete from source if not COPY mode
+                let mut restore_cmd = vec![
+                    b"RESTORE".to_vec(),
+                    key.clone().into_bytes(),
+                    ttl.to_string().into_bytes(),
+                    payload,
+                ];
+                if replace {
+                    restore_cmd.push(b"REPLACE".to_vec());
+                }
+                if let Err(e) = Self::send_expect_ok(&mut stream, &restore_cmd, "RESTORE") {
+                    warn!(
+                        diag_event = "cluster_migrate_restore_failed",
+                        key = %key,
+                        source_db = current_db,
+                        dest_db = dest_db,
+                        target_host = %host,
+                        target_port = port,
+                        error = %e,
+                        "MIGRATE RESTORE failed"
+                    );
+                    return Err(e);
+                }
+
                 if !copy {
                     if let Err(e) = self.storage.delete_from_db(current_db, key) {
-                        // Rollback: restore destination to previous state
-                        if let Some(old_val) = dest_old_value {
-                            let _ = self.storage.set_value(dest_db, key.clone(), old_val);
-                        } else if !dest_had_value {
-                            let _ = self.storage.delete_from_db(dest_db, key);
-                        }
+                        warn!(
+                            diag_event = "cluster_migrate_delete_source_failed",
+                            key = %key,
+                            source_db = current_db,
+                            dest_db = dest_db,
+                            error = %e,
+                            "MIGRATE delete source failed after RESTORE"
+                        );
                         return Err(e);
                     }
                 }
-
                 migrated_count += 1;
             }
         }
 
         if migrated_count == 0 {
+            info!(
+                diag_event = "cluster_migrate_nokey",
+                source_db = current_db,
+                dest_db = dest_db,
+                duration_ms = start.elapsed().as_millis() as u64,
+                "MIGRATE completed with NOKEY"
+            );
             Ok(RespValue::simple_string("NOKEY"))
         } else {
+            info!(
+                diag_event = "cluster_migrate_success",
+                source_db = current_db,
+                dest_db = dest_db,
+                migrated_count = migrated_count,
+                duration_ms = start.elapsed().as_millis() as u64,
+                "MIGRATE completed"
+            );
             Ok(RespValue::ok())
         }
     }

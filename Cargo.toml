@@ -1,6 +1,6 @@
 [package]
 name = "aikv"
-version = "0.1.0"
+version = "0.2.2"
 edition = "2021"
 authors = ["Jerry"]
 description = "Redis protocol compatible key-value store based on AiDb"
@@ -12,7 +12,7 @@ categories = ["database", "network-programming"]
 
 [features]
 default = []
-cluster = ["aidb/raft-cluster", "openraft", "tonic"]
+cluster = ["aidb/raft-cluster", "openraft", "tonic", "redis"]
 
 [dependencies]
 # Async runtime
@@ -30,7 +30,8 @@ thiserror = "1.0"
 
 # Logging
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-log = "0.2"
 
 # OpenTelemetry tracing
 opentelemetry = "0.21"
@@ -42,12 +43,14 @@ tracing-opentelemetry = "0.22"
 toml = "0.8"
 
 # Storage engine
-aidb = { git = "https://github.com/wiqun/AiDb", tag = "v0.7.0" }
+aidb = { path = "../AiDb" }
 
 # Raft consensus (optional, for cluster mode)
 openraft = { version = "0.9", features = ["serde"], optional = true }
 # gRPC transport used for Raft RPC server (optional, enabled with `cluster` feature)
 tonic = { version = "0.11", features = ["transport"], optional = true }
+# Redis async client used for cluster-internal command forwarding (optional)
+redis = { version = "0.24", optional = true, features = ["tokio-comp"] }
 
 # Lua scripting
 mlua = { version = "0.10", features = ["lua54", "async", "send", "vendored"] }
@@ -61,8 +64,8 @@ rmp-serde = "1.1"
 tempfile = "3.8"
 
 [dev-dependencies]
-redis = "0.24"
 criterion = { version = "0.5", features = ["html_reports"] }
+redis = { version = "0.24", features = ["tokio-comp"] }
 
 [[bin]]
 name = "aikv"

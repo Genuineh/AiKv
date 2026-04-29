@@ -522,13 +522,9 @@ impl AiDbStorageAdapter {
             return Ok(false);
         }
 
-        // Set expiration
+        // Set expiration at absolute timestamp
         let expire_at = Self::current_time_ms() + expire_ms;
-        let expire_key = Self::expiration_key(key_bytes);
-        db.put(&expire_key, &expire_at.to_le_bytes())
-            .map_err(|e| AikvError::Storage(format!("Failed to set expiration: {}", e)))?;
-
-        Ok(true)
+        self.set_expire_at_in_db(db_index, key, expire_at)
     }
 
     /// Set expiration at absolute timestamp in milliseconds
@@ -548,11 +544,7 @@ impl AiDbStorageAdapter {
         let db = &self.databases[db_index];
         let key_bytes = key.as_bytes();
 
-        // Check if key exists and is not expired
-        if self.is_expired(db, key_bytes)? {
-            return Ok(false);
-        }
-
+        // Check if key exists and is not expired (using old expiration)
         if db
             .get(key_bytes)
             .map_err(|e| AikvError::Storage(format!("Failed to check key existence: {}", e)))?
@@ -561,7 +553,22 @@ impl AiDbStorageAdapter {
             return Ok(false);
         }
 
-        // Set expiration
+        // Read the current value and update its expires_at field
+        if let Some(serialized) = db
+            .get(key_bytes)
+            .map_err(|e| AikvError::Storage(format!("Failed to get value: {}", e)))? {
+            if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(&serialized) {
+                let mut stored_value = StoredValue::from_serializable(sv);
+                stored_value.set_expiration(Some(timestamp_ms));
+                let new_serialized = stored_value.to_serializable();
+                let new_value = bincode::serialize(&new_serialized)
+                    .map_err(|e| AikvError::Storage(format!("Failed to serialize: {}", e)))?;
+                db.put(key_bytes, &new_value)
+                    .map_err(|e| AikvError::Storage(format!("Failed to update value: {}", e)))?;
+            }
+        }
+
+        // Also set the expiration metadata key for compatibility
         let expire_key = Self::expiration_key(key_bytes);
         db.put(&expire_key, &timestamp_ms.to_le_bytes())
             .map_err(|e| AikvError::Storage(format!("Failed to set expiration: {}", e)))?;
@@ -794,7 +801,8 @@ impl AiDbStorageAdapter {
         }
 
         let db = &self.databases[db_index];
-        let mut keys = Vec::new();
+        let mut keys: Vec<String> = Vec::new();
+        let now = Self::current_time_ms();
 
         // Create an iterator to scan all keys
         // Note: AiDb v0.6.2+ iterator automatically skips tombstones (deleted keys)
@@ -811,14 +819,26 @@ impl AiDbStorageAdapter {
                 continue;
             }
 
-            // Check if expired
-            if self.is_expired(db, key)? {
-                iter.next();
-                continue;
-            }
+            // Check if this key is expired by reading expires_at from the stored value
+            // This avoids an extra db.get() call per key compared to calling is_expired()
+            let is_expired = {
+                let value_bytes = iter.value();
+                if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(value_bytes) {
+                    if let Some(expires_at) = StoredValue::from_serializable(sv).expires_at() {
+                        now >= expires_at
+                    } else {
+                        false
+                    }
+                } else {
+                    // If deserialization fails, fall back to the metadata key check
+                    self.is_expired(db, key).unwrap_or(false)
+                }
+            };
 
-            if let Ok(key_str) = String::from_utf8(key.to_vec()) {
-                keys.push(key_str);
+            if !is_expired {
+                if let Ok(key_str) = String::from_utf8(key.to_vec()) {
+                    keys.push(key_str);
+                }
             }
 
             iter.next();
@@ -827,13 +847,130 @@ impl AiDbStorageAdapter {
         Ok(keys)
     }
 
+    /// Scan keys in a database using cursor-based pagination
+    ///
+    /// Cursor is interpreted as a numeric position: SCAN n means skip n keys and return the next batch.
+    /// This is similar to Redis's SCAN where cursor is a position in the key space.
+    ///
+    /// # Arguments
+    ///
+    /// * `db_index` - Database index
+    /// * `cursor` - Numeric position to skip (0 means start from beginning)
+    /// * `count` - Maximum number of keys to return
+    ///
+    /// # Returns
+    ///
+    /// Tuple of (next_cursor, keys). If next_cursor is 0 or empty, iteration is complete.
+    pub fn scan_keys_in_db(&self, db_index: usize, cursor: &str, count: usize) -> Result<(String, Vec<String>)> {
+        if db_index >= self.databases.len() {
+            return Err(AikvError::Storage(format!(
+                "Invalid database index: {}",
+                db_index
+            )));
+        }
+
+        let db = &self.databases[db_index];
+
+        // Parse cursor as number of keys to skip
+        let skip_count: usize = cursor.parse().unwrap_or(0);
+
+        // Create iterator
+        let mut iter = db
+            .iter()
+            .map_err(|e| AikvError::Storage(format!("AiDb iterator: {}", e)))?;
+
+        // Collect keys, filtering as we go
+        let mut keys: Vec<String> = Vec::new();
+        let mut keys_seen = 0;
+        let now = Self::current_time_ms();
+
+        while iter.valid() {
+            let key = iter.key();
+
+            // Skip expiration metadata keys
+            if key.starts_with(b"__exp__:") {
+                iter.next();
+                continue;
+            }
+
+            let key_str = match String::from_utf8(key.to_vec()) {
+                Ok(k) => k,
+                Err(_) => {
+                    iter.next();
+                    continue;
+                }
+            };
+
+            // Check if this key is expired by reading expires_at from the stored value
+            // This avoids an extra db.get() call per key compared to calling is_expired()
+            let is_expired = {
+                let value_bytes = iter.value();
+                if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(value_bytes) {
+                    if let Some(expires_at) = StoredValue::from_serializable(sv).expires_at() {
+                        now >= expires_at
+                    } else {
+                        false
+                    }
+                } else {
+                    // If deserialization fails, fall back to the metadata key check
+                    self.is_expired(db, key_str.as_bytes()).unwrap_or(false)
+                }
+            };
+
+            if is_expired {
+                iter.next();
+                continue;
+            }
+
+            keys_seen += 1;
+
+            // Skip keys until we've passed the cursor position
+            if keys_seen <= skip_count {
+                iter.next();
+                continue;
+            }
+
+            // We've passed the cursor, collect keys
+            keys.push(key_str.clone());
+
+            if keys.len() >= count {
+                break;
+            }
+
+            iter.next();
+        }
+
+        // Determine next cursor
+        // Return the position we've skipped + collected as the next cursor
+        let next_cursor = if iter.valid() {
+            // More keys available, return the next position to skip from
+            format!("{}", keys_seen)
+        } else {
+            // Iteration complete
+            String::new()
+        };
+
+        Ok((next_cursor, keys))
+    }
+
     /// Get database size (number of keys)
+    ///
+    /// Uses the global key counter maintained by AiDb for O(1) performance.
+    /// The counter is incremented on put (new key) and decremented on delete.
+    /// Note: Internal keys like __exp__: are excluded from counting.
     pub fn dbsize_in_db(&self, db_index: usize) -> Result<usize> {
-        Ok(self.get_all_keys_in_db(db_index)?.len())
+        if db_index >= self.databases.len() {
+            return Err(AikvError::Storage(format!(
+                "Invalid database index: {}",
+                db_index
+            )));
+        }
+        Ok(self.databases[db_index].dbsize())
     }
 
     /// Get keyspace stats for INFO keyspace: (keys, expires, avg_ttl_ms)
-    /// AiDb: 暂只返回 keys，expires/avg_ttl 需遍历 key 计算，后续可完善
+    /// AiDb: Uses MemTable unique key count for O(1) performance
+    /// expires/avg_ttl 需遍历 key 计算，后续可完善
     pub fn keyspace_stats_in_db(&self, db_index: usize) -> Result<(usize, usize, u64)> {
         let keys = self.dbsize_in_db(db_index)?;
         Ok((keys, 0, 0))
@@ -850,7 +987,7 @@ impl AiDbStorageAdapter {
 
         let db = &self.databases[db_index];
 
-        // Get all keys and delete them
+        // Get all keys and delete them from MemTable
         let mut iter = db
             .iter()
             .map_err(|e| AikvError::Storage(format!("AiDb iterator: {}", e)))?;
@@ -862,6 +999,14 @@ impl AiDbStorageAdapter {
             db.delete(&key)
                 .map_err(|e| AikvError::Storage(format!("Failed to delete key: {}", e)))?;
         }
+
+        // Delete all SSTable files to ensure SSTable data is also cleared
+        // This is necessary because SSTable data is not deleted by normal delete operations
+        db.clear_all_data()
+            .map_err(|e| AikvError::Storage(format!("Failed to clear all data: {}", e)))?;
+
+        // Reset the key count to ensure accurate counting after flush
+        db.reset_key_count();
 
         Ok(())
     }
@@ -1216,6 +1361,62 @@ impl AiDbStorageAdapter {
         }
 
         Ok(result)
+    }
+
+    /// Create a backup of all databases using AiDb's BackupManager.
+    ///
+    /// For each logical database (db0..dbN), flushes MemTable and copies SSTable + WAL
+    /// files to `backup_base_dir/dbN/`. Returns the backup IDs for each database.
+    pub fn create_backup(&self, backup_base_dir: &std::path::Path) -> Result<Vec<String>> {
+        use aidb::backup::{BackupManager, LocalFileStorage};
+
+        let mut backup_ids = Vec::with_capacity(self.databases.len());
+        for (i, db) in self.databases.iter().enumerate() {
+            let db_backup_dir = backup_base_dir.join(format!("db{}", i));
+            let storage = LocalFileStorage::new(&db_backup_dir);
+            let manager = BackupManager::new(storage);
+            let id = manager
+                .create_backup(db)
+                .map_err(|e| AikvError::Persistence(format!("Backup db{} failed: {}", i, e)))?;
+            backup_ids.push(id);
+        }
+        Ok(backup_ids)
+    }
+
+    /// Get aggregated storage statistics from all AiDb instances.
+    ///
+    /// Returns (total_memtable_bytes, total_wal_bytes, total_block_cache_bytes, block_cache_capacity_bytes)
+    /// summed across all databases.
+    pub fn get_storage_stats(&self) -> (u64, u64, u64, u64) {
+        let mut total_memtable = 0u64;
+        let mut total_wal = 0u64;
+        let mut total_block_cache = 0u64;
+        let mut total_block_cache_cap = 0u64;
+
+        for db in self.databases.iter() {
+            total_memtable += db.total_memtable_size();
+            total_wal += db.wal_size();
+            total_block_cache += db.block_cache_size();
+            total_block_cache_cap += db.block_cache_capacity();
+        }
+
+        (total_memtable, total_wal, total_block_cache, total_block_cache_cap)
+    }
+
+    /// Get memory usage breakdown from all databases.
+    ///
+    /// This is useful for monitoring AiDb-layer memory consumption:
+    /// - MemTable: in-memory write buffer
+    /// - WAL: write-ahead log file on disk (but counted as memory pressure)
+    /// - Block Cache: recently accessed data blocks
+    pub fn get_memory_breakdown(&self) -> HashMap<String, u64> {
+        let mut breakdown = HashMap::new();
+        let (memtable, wal, block_cache, block_cache_cap) = self.get_storage_stats();
+        breakdown.insert("memtable".to_string(), memtable);
+        breakdown.insert("wal".to_string(), wal);
+        breakdown.insert("block_cache".to_string(), block_cache);
+        breakdown.insert("block_cache_capacity".to_string(), block_cache_cap);
+        breakdown
     }
 }
 

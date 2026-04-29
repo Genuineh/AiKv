@@ -25,6 +25,9 @@ use openraft::raft::{
 use openraft::{LeaderId, LogId, Raft};
 
 #[cfg(feature = "cluster")]
+use tracing::info;
+
+#[cfg(feature = "cluster")]
 use tonic::{Request, Response, Status};
 
 #[cfg(feature = "cluster")]
@@ -254,10 +257,20 @@ impl rpc::raft_service_server::RaftService for MultiRaftService {
             last_log_id,
         };
 
+        info!(
+            "VOTE REQUEST: group_id={}, term={}, vote_node_id={}, last_log_id={:?}",
+            group_id, req.vote_term, req.vote_node_id, last_log_id
+        );
+
         let vote_resp = raft
             .vote(vote_req)
             .await
             .map_err(|e| Status::internal(format!("Vote failed: {}", e)))?;
+
+        info!(
+            "VOTE RESPONSE: group_id={}, granted={}, term={}, node_id={}",
+            group_id, vote_resp.vote_granted, vote_resp.vote.leader_id.term, vote_resp.vote.leader_id.node_id
+        );
 
         let response = rpc::VoteResponse {
             vote_term: vote_resp.vote.leader_id.term,

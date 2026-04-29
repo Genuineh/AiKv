@@ -35,7 +35,7 @@ port = 6379
 #                 In-memory storage, high performance, no persistence
 #   - "aidb"    : AiDb LSM-Tree 持久化存储
 #                 AiDb LSM-Tree persistent storage
-engine = "memory"
+engine = "aidb"
 
 # ✅ 数据存储目录（aidb 模式需要）/ Data directory (required for aidb mode)
 data_dir = "./data"

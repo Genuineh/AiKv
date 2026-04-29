@@ -859,6 +859,62 @@ impl StorageAdapter {
         }
     }
 
+    /// Scan keys using cursor-based pagination
+    ///
+    /// Cursor is interpreted as a numeric position: SCAN n means skip n keys and return the next batch.
+    /// This is similar to Redis's SCAN where cursor is a position in the key space.
+    ///
+    /// Returns (next_cursor, keys). If next_cursor is empty or "0", iteration is complete.
+    pub fn scan_keys_in_db(&self, db_index: usize, cursor: &str, count: usize) -> Result<(String, Vec<String>)> {
+        let databases = self
+            .databases
+            .read()
+            .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
+
+        if let Some(db) = databases.get(db_index) {
+            // Parse cursor as number of keys to skip
+            let skip_count: usize = cursor.parse().unwrap_or(0);
+
+            let mut keys: Vec<String> = Vec::new();
+            let mut keys_seen = 0;
+            let mut has_more = false;
+
+            for (key, value) in db.iter() {
+                if value.is_expired() {
+                    continue;
+                }
+
+                keys_seen += 1;
+
+                // Skip keys until we've passed the cursor position
+                if keys_seen <= skip_count {
+                    continue;
+                }
+
+                // We've passed the cursor, collect keys
+                keys.push(key.clone());
+
+                if keys.len() >= count {
+                    has_more = true;
+                    break;
+                }
+            }
+
+            // Determine next cursor
+            let next_cursor = if has_more {
+                // Return position after the last collected key
+                format!("{}", keys_seen)
+            } else {
+                // Iteration complete
+                String::new()
+            };
+
+            Ok((next_cursor, keys))
+        } else {
+            Ok((String::new(), Vec::new()))
+        }
+    }
+
     /// Get database size (number of keys)
     pub fn dbsize_in_db(&self, db_index: usize) -> Result<usize> {
         Ok(self.get_all_keys_in_db(db_index)?.len())
