@@ -160,11 +160,15 @@ impl Server {
             ..RaftConfig::default()
         };
 
-        // Create MultiRaftNode
+        // In cluster mode, AiDb WAL is redundant (Raft log ensures durability)
+        let storage_opts = aidb::Options::default().use_wal(false);
+
+        // Create MultiRaftNode with WAL disabled on AiDb instances for Raft groups
         let mut multi_raft = MultiRaftNode::new(
             self.node_id,
             std::path::Path::new(data_dir),
             raft_config.clone(),
+            Some(storage_opts),
         )
         .await
         .map_err(|e| {
