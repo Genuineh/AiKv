@@ -117,9 +117,26 @@ impl AiDbStorageAdapter {
             .as_millis() as u64
     }
 
-    /// Check if a key is expired based on its stored expiration metadata
-    fn is_expired(&self, db: &DB, key: &[u8]) -> Result<bool> {
-        let expire_key = Self::expiration_key(key);
+    /// Check if a serialized value blob is expired by examining its embedded
+    /// `expires_at` field. Returns `false` if deserialization fails or no
+    /// expiration is set.
+    fn is_expired_blob(serialized: &[u8]) -> bool {
+        if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(serialized) {
+            let stored = StoredValue::from_serializable(sv);
+            if let Some(expires_at) = stored.expires_at() {
+                return Self::current_time_ms() >= expires_at;
+            }
+        }
+        false
+    }
+
+    /// Legacy fallback: check `__exp__:key` for old data that was persisted
+    /// before TTL was embedded in the serialized blob.  Only used from
+    /// `get_value()` for backward compatibility.
+    fn check_expiration_legacy(db: &DB, key: &[u8]) -> Result<bool> {
+        let mut expire_key = Vec::with_capacity(key.len() + 8);
+        expire_key.extend_from_slice(b"__exp__:");
+        expire_key.extend_from_slice(key);
         if let Some(expire_bytes) = db
             .get(&expire_key)
             .map_err(|e| AikvError::Storage(format!("Failed to get expiration: {}", e)))?
@@ -140,14 +157,6 @@ impl AiDbStorageAdapter {
             }
         }
         Ok(false)
-    }
-
-    /// Generate expiration metadata key for a given key
-    fn expiration_key(key: &[u8]) -> Vec<u8> {
-        let mut expire_key = Vec::with_capacity(key.len() + 8);
-        expire_key.extend_from_slice(b"__exp__:");
-        expire_key.extend_from_slice(key);
-        expire_key
     }
 
     // ========================================================================
@@ -194,31 +203,41 @@ impl AiDbStorageAdapter {
         let db = &self.databases[db_index];
         let key_bytes = key.as_bytes();
 
-        // Try to read main key first, only check expiration when key exists
-        // This avoids unnecessary database reads for non-existent keys
+        // Read key, deserialize, and check expiration from the blob's embedded expires_at.
+        // If expires_at is None in the blob, fall back to __exp__:key for old data.
         match db
             .get(key_bytes)
             .map_err(|e| AikvError::Storage(format!("Failed to get value: {}", e)))?
         {
             Some(serialized) => {
-                // Main key exists, check if expired
-                if self.is_expired(db, key_bytes)? {
-                    // Clean up expired key
+                let serializable: SerializableStoredValue =
+                    match bincode::deserialize(&serialized) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            return Err(AikvError::Storage(format!(
+                                "Failed to deserialize value: {}",
+                                e
+                            )))
+                        }
+                    };
+                let stored_value = StoredValue::from_serializable(serializable);
+                let expired = match stored_value.expires_at() {
+                    Some(expires_at) => Self::current_time_ms() >= expires_at,
+                    // Fallback: check __exp__:key for backward compat with old data
+                    None => Self::check_expiration_legacy(db, key_bytes)?,
+                };
+                if expired {
                     db.delete(key_bytes).map_err(|e| {
                         AikvError::Storage(format!("Failed to delete expired key: {}", e))
                     })?;
-                    let expire_key = Self::expiration_key(key_bytes);
-                    db.delete(&expire_key).map_err(|e| {
-                        AikvError::Storage(format!("Failed to delete expiration: {}", e))
-                    })?;
+                    // Clean up legacy __exp__: key if present
+                    let mut expire_key = Vec::with_capacity(key_bytes.len() + 8);
+                    expire_key.extend_from_slice(b"__exp__:");
+                    expire_key.extend_from_slice(key_bytes);
+                    let _ = db.delete(&expire_key);
                     return Ok(None);
                 }
-                // Deserialize and return
-                let serializable: SerializableStoredValue = bincode::deserialize(&serialized)
-                    .map_err(|e| {
-                        AikvError::Storage(format!("Failed to deserialize value: {}", e))
-                    })?;
-                Ok(Some(StoredValue::from_serializable(serializable)))
+                Ok(Some(stored_value))
             }
             None => Ok(None),
         }
@@ -260,16 +279,9 @@ impl AiDbStorageAdapter {
         let serialized = bincode::serialize(&serializable)
             .map_err(|e| AikvError::Storage(format!("Failed to serialize value: {}", e)))?;
 
-        // Store the serialized value
+        // Store the serialized value (expires_at is embedded in the blob)
         db.put(key_bytes, &serialized)
             .map_err(|e| AikvError::Storage(format!("Failed to put value: {}", e)))?;
-
-        // Handle expiration if set
-        if let Some(expires_at) = value.expires_at() {
-            let expire_key = Self::expiration_key(key_bytes);
-            db.put(&expire_key, &expires_at.to_le_bytes())
-                .map_err(|e| AikvError::Storage(format!("Failed to set expiration: {}", e)))?;
-        }
 
         Ok(())
     }
@@ -360,13 +372,9 @@ impl AiDbStorageAdapter {
         let value = self.get_value(db_index, key)?;
 
         if value.is_some() {
-            // Delete the key
+            // Delete the key (expires_at is embedded in the blob)
             db.delete(key_bytes)
                 .map_err(|e| AikvError::Storage(format!("Failed to delete key: {}", e)))?;
-
-            // Delete expiration metadata if exists
-            let expire_key = Self::expiration_key(key_bytes);
-            let _ = db.delete(&expire_key);
         }
 
         Ok(value)
@@ -428,9 +436,6 @@ impl AiDbStorageAdapter {
                 }
                 BatchOp::Delete => {
                     batch.delete(key_bytes);
-                    // Also delete expiration metadata
-                    let expire_key = Self::expiration_key(key_bytes);
-                    batch.delete(&expire_key);
                 }
             }
         }
@@ -509,16 +514,16 @@ impl AiDbStorageAdapter {
         let db = &self.databases[db_index];
         let key_bytes = key.as_bytes();
 
-        // Check if key exists and is not expired
-        if self.is_expired(db, key_bytes)? {
-            return Ok(false);
-        }
-
-        if db
+        // Read the current value and check expiration from the blob
+        let serialized = match db
             .get(key_bytes)
-            .map_err(|e| AikvError::Storage(format!("Failed to check key existence: {}", e)))?
-            .is_none()
+            .map_err(|e| AikvError::Storage(format!("Failed to get value: {}", e)))?
         {
+            Some(v) => v,
+            None => return Ok(false),
+        };
+
+        if Self::is_expired_blob(&serialized) {
             return Ok(false);
         }
 
@@ -568,11 +573,6 @@ impl AiDbStorageAdapter {
             }
         }
 
-        // Also set the expiration metadata key for compatibility
-        let expire_key = Self::expiration_key(key_bytes);
-        db.put(&expire_key, &timestamp_ms.to_le_bytes())
-            .map_err(|e| AikvError::Storage(format!("Failed to set expiration: {}", e)))?;
-
         Ok(true)
     }
 
@@ -588,47 +588,29 @@ impl AiDbStorageAdapter {
         let db = &self.databases[db_index];
         let key_bytes = key.as_bytes();
 
-        // Check if key exists
-        if db
+        // Read the blob and extract expires_at from it
+        let serialized = match db
             .get(key_bytes)
-            .map_err(|e| AikvError::Storage(format!("Failed to check key existence: {}", e)))?
-            .is_none()
+            .map_err(|e| AikvError::Storage(format!("Failed to get value: {}", e)))?
         {
-            return Ok(-2); // Key doesn't exist
-        }
+            Some(v) => v,
+            None => return Ok(-2), // Key doesn't exist
+        };
 
-        // Check if expired
-        if self.is_expired(db, key_bytes)? {
-            return Ok(-2);
-        }
-
-        // Get expiration
-        let expire_key = Self::expiration_key(key_bytes);
-        if let Some(expire_bytes) = db
-            .get(&expire_key)
-            .map_err(|e| AikvError::Storage(format!("Failed to get expiration: {}", e)))?
-        {
-            if expire_bytes.len() == 8 {
-                let expire_at = u64::from_le_bytes([
-                    expire_bytes[0],
-                    expire_bytes[1],
-                    expire_bytes[2],
-                    expire_bytes[3],
-                    expire_bytes[4],
-                    expire_bytes[5],
-                    expire_bytes[6],
-                    expire_bytes[7],
-                ]);
+        if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(&serialized) {
+            let stored_value = StoredValue::from_serializable(sv);
+            if let Some(expires_at) = stored_value.expires_at() {
                 let now = Self::current_time_ms();
-                if expire_at > now {
-                    return Ok((expire_at - now) as i64);
+                if expires_at > now {
+                    return Ok((expires_at - now) as i64);
                 } else {
-                    return Ok(-2);
+                    return Ok(-2); // Expired
                 }
             }
+            return Ok(-1); // No expiration set
         }
 
-        Ok(-1) // No expiration set
+        Ok(-2) // Deserialization failed
     }
 
     /// Get expiration timestamp in milliseconds
@@ -643,42 +625,28 @@ impl AiDbStorageAdapter {
         let db = &self.databases[db_index];
         let key_bytes = key.as_bytes();
 
-        // Check if key exists
-        if db
+        // Read the blob and extract expires_at from it
+        let serialized = match db
             .get(key_bytes)
-            .map_err(|e| AikvError::Storage(format!("Failed to check key existence: {}", e)))?
-            .is_none()
+            .map_err(|e| AikvError::Storage(format!("Failed to get value: {}", e)))?
         {
-            return Ok(-2); // Key doesn't exist
-        }
+            Some(v) => v,
+            None => return Ok(-2), // Key doesn't exist
+        };
 
-        // Check if expired
-        if self.is_expired(db, key_bytes)? {
-            return Ok(-2);
-        }
-
-        // Get expiration
-        let expire_key = Self::expiration_key(key_bytes);
-        if let Some(expire_bytes) = db
-            .get(&expire_key)
-            .map_err(|e| AikvError::Storage(format!("Failed to get expiration: {}", e)))?
-        {
-            if expire_bytes.len() == 8 {
-                let expire_at = u64::from_le_bytes([
-                    expire_bytes[0],
-                    expire_bytes[1],
-                    expire_bytes[2],
-                    expire_bytes[3],
-                    expire_bytes[4],
-                    expire_bytes[5],
-                    expire_bytes[6],
-                    expire_bytes[7],
-                ]);
-                return Ok(expire_at as i64);
+        if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(&serialized) {
+            let stored_value = StoredValue::from_serializable(sv);
+            if let Some(expires_at) = stored_value.expires_at() {
+                let now = Self::current_time_ms();
+                if now >= expires_at {
+                    return Ok(-2); // Expired
+                }
+                return Ok(expires_at as i64);
             }
+            return Ok(-1); // No expiration set
         }
 
-        Ok(-1) // No expiration set
+        Ok(-2) // Deserialization failed
     }
 
     /// Remove expiration from a key
@@ -693,31 +661,26 @@ impl AiDbStorageAdapter {
         let db = &self.databases[db_index];
         let key_bytes = key.as_bytes();
 
-        // Check if key exists
-        if db
+        // Read the blob and check/manage its expires_at
+        if let Some(serialized) = db
             .get(key_bytes)
-            .map_err(|e| AikvError::Storage(format!("Failed to check key existence: {}", e)))?
-            .is_none()
+            .map_err(|e| AikvError::Storage(format!("Failed to get value: {}", e)))?
         {
-            return Ok(false);
-        }
-
-        // Check if expired
-        if self.is_expired(db, key_bytes)? {
-            return Ok(false);
-        }
-
-        // Check if expiration exists
-        let expire_key = Self::expiration_key(key_bytes);
-        if db
-            .get(&expire_key)
-            .map_err(|e| AikvError::Storage(format!("Failed to get expiration: {}", e)))?
-            .is_some()
-        {
-            // Remove expiration
-            db.delete(&expire_key)
-                .map_err(|e| AikvError::Storage(format!("Failed to delete expiration: {}", e)))?;
-            return Ok(true);
+            if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(&serialized) {
+                let mut stored_value = StoredValue::from_serializable(sv);
+                if stored_value.is_expired() {
+                    return Ok(false);
+                }
+                if stored_value.expires_at().is_some() {
+                    stored_value.set_expiration(None);
+                    let new_serialized = stored_value.to_serializable();
+                    let new_value = bincode::serialize(&new_serialized)
+                        .map_err(|e| AikvError::Storage(format!("Failed to serialize: {}", e)))?;
+                    db.put(key_bytes, &new_value)
+                        .map_err(|e| AikvError::Storage(format!("Failed to update value: {}", e)))?;
+                    return Ok(true);
+                }
+            }
         }
 
         Ok(false)
@@ -742,13 +705,9 @@ impl AiDbStorageAdapter {
             .is_some();
 
         if exists {
-            // Delete the key
+            // Delete the key (expires_at is embedded in the blob)
             db.delete(key_bytes)
                 .map_err(|e| AikvError::Storage(format!("Failed to delete key: {}", e)))?;
-
-            // Delete expiration metadata if exists
-            let expire_key = Self::expiration_key(key_bytes);
-            let _ = db.delete(&expire_key);
 
             Ok(true)
         } else {
@@ -773,16 +732,20 @@ impl AiDbStorageAdapter {
         let db = &self.databases[db_index];
         let key_bytes = key.as_bytes();
 
-        // Check if expired
-        if self.is_expired(db, key_bytes)? {
-            return Ok(false);
-        }
-
-        // Check if key exists
-        Ok(db
+        // Read the blob and check expiration
+        match db
             .get(key_bytes)
             .map_err(|e| AikvError::Storage(format!("Failed to check key existence: {}", e)))?
-            .is_some())
+        {
+            Some(serialized) => {
+                if Self::is_expired_blob(&serialized) {
+                    Ok(false)
+                } else {
+                    Ok(true)
+                }
+            }
+            None => Ok(false),
+        }
     }
 
     /// Check if a key exists (in default database 0)
@@ -820,18 +783,18 @@ impl AiDbStorageAdapter {
             }
 
             // Check if this key is expired by reading expires_at from the stored value
-            // This avoids an extra db.get() call per key compared to calling is_expired()
             let is_expired = {
                 let value_bytes = iter.value();
                 if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(value_bytes) {
-                    if let Some(expires_at) = StoredValue::from_serializable(sv).expires_at() {
+                    let stored = StoredValue::from_serializable(sv);
+                    if let Some(expires_at) = stored.expires_at() {
                         now >= expires_at
                     } else {
                         false
                     }
                 } else {
-                    // If deserialization fails, fall back to the metadata key check
-                    self.is_expired(db, key).unwrap_or(false)
+                    // Deserialization failure; not a valid content key (e.g. old __exp__: key)
+                    true
                 }
             };
 
@@ -902,18 +865,18 @@ impl AiDbStorageAdapter {
             };
 
             // Check if this key is expired by reading expires_at from the stored value
-            // This avoids an extra db.get() call per key compared to calling is_expired()
             let is_expired = {
                 let value_bytes = iter.value();
                 if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(value_bytes) {
-                    if let Some(expires_at) = StoredValue::from_serializable(sv).expires_at() {
+                    let stored = StoredValue::from_serializable(sv);
+                    if let Some(expires_at) = stored.expires_at() {
                         now >= expires_at
                     } else {
                         false
                     }
                 } else {
-                    // If deserialization fails, fall back to the metadata key check
-                    self.is_expired(db, key_str.as_bytes()).unwrap_or(false)
+                    // Deserialization failure; not a valid content key
+                    true
                 }
             };
 
@@ -1041,10 +1004,6 @@ impl AiDbStorageAdapter {
         let key_bytes = key.as_bytes();
 
         // Check if key exists in source and is not expired
-        if self.is_expired(src, key_bytes)? {
-            return Ok(false);
-        }
-
         let value = match src
             .get(key_bytes)
             .map_err(|e| AikvError::Storage(format!("Failed to get value: {}", e)))?
@@ -1052,6 +1011,10 @@ impl AiDbStorageAdapter {
             Some(v) => v,
             None => return Ok(false),
         };
+
+        if Self::is_expired_blob(&value) {
+            return Ok(false);
+        }
 
         // Check if key already exists in destination
         if dst
@@ -1062,24 +1025,13 @@ impl AiDbStorageAdapter {
             return Ok(false);
         }
 
-        // Copy to destination
+        // Copy to destination (expires_at is embedded in the blob)
         dst.put(key_bytes, &value)
             .map_err(|e| AikvError::Storage(format!("Failed to put value: {}", e)))?;
-
-        // Copy expiration if exists
-        let expire_key = Self::expiration_key(key_bytes);
-        if let Some(expire_bytes) = src
-            .get(&expire_key)
-            .map_err(|e| AikvError::Storage(format!("Failed to get expiration: {}", e)))?
-        {
-            dst.put(&expire_key, &expire_bytes)
-                .map_err(|e| AikvError::Storage(format!("Failed to put expiration: {}", e)))?;
-        }
 
         // Delete from source
         src.delete(key_bytes)
             .map_err(|e| AikvError::Storage(format!("Failed to delete from source: {}", e)))?;
-        let _ = src.delete(&expire_key);
 
         Ok(true)
     }
@@ -1098,10 +1050,6 @@ impl AiDbStorageAdapter {
         let new_key_bytes = new_key.as_bytes();
 
         // Check if old key exists and is not expired
-        if self.is_expired(db, old_key_bytes)? {
-            return Ok(false);
-        }
-
         let value = match db
             .get(old_key_bytes)
             .map_err(|e| AikvError::Storage(format!("Failed to get value: {}", e)))?
@@ -1110,25 +1058,17 @@ impl AiDbStorageAdapter {
             None => return Ok(false),
         };
 
-        // Set new key
+        if Self::is_expired_blob(&value) {
+            return Ok(false);
+        }
+
+        // Set new key (expires_at is embedded in the blob)
         db.put(new_key_bytes, &value)
             .map_err(|e| AikvError::Storage(format!("Failed to put value: {}", e)))?;
-
-        // Copy expiration if exists
-        let old_expire_key = Self::expiration_key(old_key_bytes);
-        let new_expire_key = Self::expiration_key(new_key_bytes);
-        if let Some(expire_bytes) = db
-            .get(&old_expire_key)
-            .map_err(|e| AikvError::Storage(format!("Failed to get expiration: {}", e)))?
-        {
-            db.put(&new_expire_key, &expire_bytes)
-                .map_err(|e| AikvError::Storage(format!("Failed to put expiration: {}", e)))?;
-        }
 
         // Delete old key
         db.delete(old_key_bytes)
             .map_err(|e| AikvError::Storage(format!("Failed to delete old key: {}", e)))?;
-        let _ = db.delete(&old_expire_key);
 
         Ok(true)
     }
@@ -1179,10 +1119,6 @@ impl AiDbStorageAdapter {
         let dst_key_bytes = dst_key.as_bytes();
 
         // Check if source key exists and is not expired
-        if self.is_expired(src, src_key_bytes)? {
-            return Ok(false);
-        }
-
         let value = match src
             .get(src_key_bytes)
             .map_err(|e| AikvError::Storage(format!("Failed to get value: {}", e)))?
@@ -1190,6 +1126,10 @@ impl AiDbStorageAdapter {
             Some(v) => v,
             None => return Ok(false),
         };
+
+        if Self::is_expired_blob(&value) {
+            return Ok(false);
+        }
 
         // Check if destination key exists
         let dst_exists = dst
@@ -1201,20 +1141,9 @@ impl AiDbStorageAdapter {
             return Ok(false);
         }
 
-        // Copy to destination
+        // Copy to destination (expires_at is embedded in the blob)
         dst.put(dst_key_bytes, &value)
             .map_err(|e| AikvError::Storage(format!("Failed to put value: {}", e)))?;
-
-        // Copy expiration if exists
-        let src_expire_key = Self::expiration_key(src_key_bytes);
-        let dst_expire_key = Self::expiration_key(dst_key_bytes);
-        if let Some(expire_bytes) = src
-            .get(&src_expire_key)
-            .map_err(|e| AikvError::Storage(format!("Failed to get expiration: {}", e)))?
-        {
-            dst.put(&dst_expire_key, &expire_bytes)
-                .map_err(|e| AikvError::Storage(format!("Failed to put expiration: {}", e)))?;
-        }
 
         Ok(true)
     }
@@ -1244,8 +1173,9 @@ impl AiDbStorageAdapter {
                 continue;
             }
 
-            // Check if expired
-            if self.is_expired(db, key)? {
+            // Check if expired from the blob
+            let value_bytes = iter.value();
+            if Self::is_expired_blob(value_bytes) {
                 iter.next();
                 continue;
             }
@@ -1278,7 +1208,8 @@ impl AiDbStorageAdapter {
                 continue;
             }
 
-            if self.is_expired(db, key)? {
+            let value_bytes = iter.value();
+            if Self::is_expired_blob(value_bytes) {
                 iter.next();
                 continue;
             }
@@ -1313,42 +1244,21 @@ impl AiDbStorageAdapter {
                     continue;
                 }
 
-                // Check if expired
-                if self.is_expired(db, key)? {
+                // Iterator already has the serialized value; avoid an extra db.get()
+                let serialized = iter.value();
+
+                // Check if expired from the blob
+                if Self::is_expired_blob(serialized) {
                     iter.next();
                     continue;
                 }
-
-                // Iterator already has the serialized value; avoid an extra db.get()
-                let serialized = iter.value();
 
                 // Deserialize using bincode
                 let serializable: SerializableStoredValue = bincode::deserialize(serialized)
                     .map_err(|e| {
                         AikvError::Storage(format!("Failed to deserialize value: {}", e))
                     })?;
-                let mut stored_value = StoredValue::from_serializable(serializable);
-
-                // Get expiration if exists
-                let expire_key = Self::expiration_key(key);
-                if let Some(expire_bytes) = db
-                    .get(&expire_key)
-                    .map_err(|e| AikvError::Storage(format!("Failed to get expiration: {}", e)))?
-                {
-                    if expire_bytes.len() == 8 {
-                        let expire_at = u64::from_le_bytes([
-                            expire_bytes[0],
-                            expire_bytes[1],
-                            expire_bytes[2],
-                            expire_bytes[3],
-                            expire_bytes[4],
-                            expire_bytes[5],
-                            expire_bytes[6],
-                            expire_bytes[7],
-                        ]);
-                        stored_value.set_expiration(Some(expire_at));
-                    }
-                }
+                let stored_value = StoredValue::from_serializable(serializable);
 
                 if let Ok(key_str) = String::from_utf8(key.to_vec()) {
                     db_map.insert(key_str, stored_value);
