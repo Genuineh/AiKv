@@ -28,7 +28,7 @@ use std::time::{Duration, Instant};
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::time::{sleep, timeout};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 #[cfg(feature = "cluster")]
 use aidb::cluster::{
@@ -2137,6 +2137,18 @@ impl ClusterCommands {
         let group_id = match group_id {
             Some(id) => id,
             None => {
+                error!(
+                    "CLUSTER FAILOVER: Cannot find group for node {:040x}. self={:040x} target={:?} groups({}): {}",
+                    promoted_node_id,
+                    self.node_id,
+                    target_node_id,
+                    meta.groups.len(),
+                    meta.groups.iter().map(|(gid, g)|
+                        format!("gid={:040x} L={:?} R=[{}]",
+                            gid, g.leader,
+                            g.replicas.iter().map(|r| format!("{:040x}", r)).collect::<Vec<_>>().join(","))
+                    ).collect::<Vec<_>>().join("; ")
+                );
                 return Err(AikvError::Invalid(
                     "This node is not a replica or already a master".to_string(),
                 ));
