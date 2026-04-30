@@ -49,6 +49,8 @@ pub struct Connection {
     #[cfg(feature = "cluster")]
     /// Redis ASKING one-shot flag for next command.
     allow_importing_slot_once: bool,
+    /// Whether the connection is in READONLY mode.
+    readonly_mode: bool,
 }
 
 impl Connection {
@@ -95,6 +97,7 @@ impl Connection {
             last_command: None,
             #[cfg(feature = "cluster")]
             allow_importing_slot_once: false,
+            readonly_mode: false,
         }
     }
 
@@ -386,6 +389,15 @@ impl Connection {
                     }
                 }
 
+                #[cfg(feature = "cluster")]
+                if command_upper == "READONLY" {
+                    self.readonly_mode = true;
+                }
+                #[cfg(feature = "cluster")]
+                if command_upper == "READWRITE" {
+                    self.readonly_mode = false;
+                }
+
                 // executor.execute() is synchronous and may block for an extended period
                 // (e.g. INFO keyspace scans all MemTables). block_in_place allows the Tokio
                 // runtime to continue scheduling other tasks on this worker thread while we wait.
@@ -398,6 +410,8 @@ impl Connection {
                             self.client_id,
                             #[cfg(feature = "cluster")]
                             self.allow_importing_slot_once,
+                            #[cfg(feature = "cluster")]
+                            self.readonly_mode,
                         )
                 });
                 #[cfg(feature = "cluster")]

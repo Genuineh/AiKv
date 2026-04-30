@@ -3336,13 +3336,13 @@ impl ClusterCommands {
     /// // If no error, proceed with the command
     /// ```
     pub fn check_key_slot(&self, key: &[u8]) -> Result<()> {
-        self.check_key_slot_with_asking(key, false)
+        self.check_key_slot_with_asking(key, false, false)
     }
 
     /// Check key ownership with optional ASKING allowance for importing slot.
-    pub fn check_key_slot_with_asking(&self, key: &[u8], allow_importing: bool) -> Result<()> {
+    pub fn check_key_slot_with_asking(&self, key: &[u8], allow_importing: bool, readonly: bool) -> Result<()> {
         let slot = key_to_slot_with_hash_tag(key);
-        self.check_slot_ownership_with_asking(slot, allow_importing)
+        self.check_slot_ownership_with_asking(slot, allow_importing, readonly)
     }
 
     /// Check if a slot should be handled by this node.
@@ -3360,10 +3360,10 @@ impl ClusterCommands {
     /// * `Err(AikvError::Moved(slot, addr))` - Slot belongs to another node
     /// * `Err(AikvError::Ask(slot, addr))` - Slot is being migrated
     pub fn check_slot_ownership(&self, slot: u16) -> Result<()> {
-        self.check_slot_ownership_with_asking(slot, false)
+        self.check_slot_ownership_with_asking(slot, false, false)
     }
 
-    pub fn check_slot_ownership_with_asking(&self, slot: u16, allow_importing: bool) -> Result<()> {
+    pub fn check_slot_ownership_with_asking(&self, slot: u16, allow_importing: bool, readonly: bool) -> Result<()> {
         let meta: ClusterMeta = self.meta_raft.get_cluster_meta();
 
         // Check if slot is assigned to any group
@@ -3470,8 +3470,10 @@ impl ClusterCommands {
             }
 
             // Check if this node is a replica (can handle READONLY requests)
-            // For now, we always redirect to the leader for write operations
-            if group_meta.replicas.contains(&self.node_id) {
+            if group_meta.replicas.contains(&self.node_id) && group_meta.leader != Some(self.node_id) {
+                if readonly {
+                    return Ok(());
+                }
                 // This node is a replica, redirect to the leader
                 if let Some(leader_id) = group_meta.leader {
                     if let Some(leader_info) = meta.nodes.get(&leader_id) {
@@ -3520,10 +3522,10 @@ impl ClusterCommands {
     /// * `Err(AikvError::Moved(slot, addr))` - Keys belong to another node
     /// * `Err(AikvError::CrossSlot)` - Keys span multiple slots (not supported)
     pub fn check_keys_slot(&self, keys: &[&[u8]]) -> Result<()> {
-        self.check_keys_slot_with_asking(keys, false)
+        self.check_keys_slot_with_asking(keys, false, false)
     }
 
-    pub fn check_keys_slot_with_asking(&self, keys: &[&[u8]], allow_importing: bool) -> Result<()> {
+    pub fn check_keys_slot_with_asking(&self, keys: &[&[u8]], allow_importing: bool, readonly: bool) -> Result<()> {
         if keys.is_empty() {
             return Ok(());
         }
@@ -3540,7 +3542,7 @@ impl ClusterCommands {
         }
 
         // Check if the slot belongs to this node
-        self.check_slot_ownership_with_asking(first_slot, allow_importing)
+        self.check_slot_ownership_with_asking(first_slot, allow_importing, readonly)
     }
 
     /// Get the slot number for a key.
