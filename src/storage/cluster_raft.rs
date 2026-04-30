@@ -370,14 +370,18 @@ impl ClusterRaftEngine {
         Ok(())
     }
 
-    fn is_expired(&self, db_index: usize, key: &str) -> Result<bool> {
-        let slot = key_to_slot_with_hash_tag(key.as_bytes());
-        let ph = physical_raft_storage_key(db_index, key);
-        let ex_key = expiration_meta_key(&ph);
+    /// Check if the key is expired via the legacy `__exp__:` metadata key.
+    /// Used as a fallback when the blob's embedded `expires_at` is `None`.
+    fn is_expired_legacy<F>(&self, ph: &[u8], map_err_fn: &F) -> Result<bool>
+    where
+        F: Fn(aidb::Error) -> AikvError,
+    {
+        let ex_key = expiration_meta_key(ph);
+        let slot = key_to_slot_with_hash_tag(ph);
         match self
             .multi
             .get_in_slot(slot, &ex_key)
-            .map_err(|e| map_aidb_read_err(e, slot, &self.multi))?
+            .map_err(|e| map_err_fn(e))?
         {
             Some(bytes) if bytes.len() == 8 => {
                 let exp_at = u64::from_le_bytes(bytes[..8].try_into().unwrap());
@@ -387,11 +391,32 @@ impl ClusterRaftEngine {
         }
     }
 
+    /// Get expiration timestamp from legacy `__exp__:` metadata key.
+    /// Returns `Some(timestamp_ms)` if the legacy key exists with valid data,
+    /// `None` if the legacy key does not exist or has invalid data.
+    fn legacy_expires_at<F>(&self, ph: &[u8], map_err_fn: &F) -> Result<Option<u64>>
+    where
+        F: Fn(aidb::Error) -> AikvError,
+    {
+        let ex_key = expiration_meta_key(ph);
+        let slot = key_to_slot_with_hash_tag(ph);
+        match self
+            .multi
+            .get_in_slot(slot, &ex_key)
+            .map_err(|e| map_err_fn(e))?
+        {
+            Some(bytes) if bytes.len() == 8 => {
+                let val = u64::from_le_bytes(bytes[..8].try_into().unwrap());
+                Ok(Some(val))
+            }
+            _ => Ok(None),
+        }
+    }
+
     pub fn get_value(&self, db_index: usize, key: &str) -> Result<Option<StoredValue>> {
         self.check_db(db_index)?;
         let slot = key_to_slot_with_hash_tag(key.as_bytes());
         let map_read = |e: aidb::Error| map_aidb_read_err(e, slot, &self.multi);
-        let _ = self.purge_expired_if_needed_mapped(db_index, key, &map_read);
         let ph = physical_raft_storage_key(db_index, key);
 
         // While the slot is MIGRATING, the source still holds keys in `from_group`. Normal
@@ -412,7 +437,15 @@ impl ClusterRaftEngine {
                                 bincode::deserialize(&serialized).map_err(|e| {
                                     AikvError::Storage(format!("deserialize: {}", e))
                                 })?;
-                            return Ok(Some(StoredValue::from_serializable(serializable)));
+                            let stored_value = StoredValue::from_serializable(serializable);
+                            let expired = match stored_value.expires_at() {
+                                Some(expires_at) => now_ms() >= expires_at,
+                                None => self.is_expired_legacy(&ph, &map_read)?,
+                            };
+                            if expired {
+                                return Ok(None);
+                            }
+                            return Ok(Some(stored_value));
                         }
                         None => return Ok(None),
                     }
@@ -429,46 +462,24 @@ impl ClusterRaftEngine {
             Some(serialized) => {
                 let serializable: SerializableStoredValue = bincode::deserialize(&serialized)
                     .map_err(|e| AikvError::Storage(format!("deserialize: {}", e)))?;
-                Ok(Some(StoredValue::from_serializable(serializable)))
+                let stored_value = StoredValue::from_serializable(serializable);
+                let expired = match stored_value.expires_at() {
+                    Some(expires_at) => now_ms() >= expires_at,
+                    None => self.is_expired_legacy(&ph, &map_read)?,
+                };
+                if expired {
+                    // Clean up: remove data key + legacy __exp__: key
+                    let mut batch = WriteBatch::new();
+                    batch.delete(ph.clone());
+                    batch.delete(expiration_meta_key(&ph));
+                    let _ = raft_io_rt()
+                        .block_on(self.multi.write_batch_for_route_key(&ph, batch));
+                    return Ok(None);
+                }
+                Ok(Some(stored_value))
             }
             None => Ok(None),
         }
-    }
-
-    fn purge_expired_if_needed_mapped<F>(
-        &self,
-        db_index: usize,
-        key: &str,
-        map_err_fn: &F,
-    ) -> Result<()>
-    where
-        F: Fn(aidb::Error) -> AikvError,
-    {
-        let ph = physical_raft_storage_key(db_index, key);
-        let ex_key = expiration_meta_key(&ph);
-        let slot = key_to_slot_with_hash_tag(key.as_bytes());
-        let expired = match self
-            .multi
-            .get_in_slot(slot, &ex_key)
-            .map_err(|e| map_err_fn(e))?
-        {
-            Some(bytes) if bytes.len() == 8 => {
-                let exp_at = u64::from_le_bytes(bytes[..8].try_into().unwrap());
-                now_ms() >= exp_at
-            }
-            _ => false,
-        };
-        if !expired {
-            return Ok(());
-        }
-        let route_key = ph.clone();
-        let mut batch = WriteBatch::new();
-        batch.delete(ph);
-        batch.delete(expiration_meta_key(&route_key));
-        raft_io_rt()
-            .block_on(self.multi.write_batch_for_route_key(&route_key, batch))
-            .map_err(|e| map_aidb_write_err(e, slot, &self.multi))?;
-        Ok(())
     }
 
     /// During CLUSTER SETSLOT IMPORTING, allow target node to persist incoming
@@ -604,12 +615,6 @@ impl ClusterRaftEngine {
 
         let mut batch = WriteBatch::new();
         batch.put(ph.clone(), serialized);
-        if let Some(expires_at) = value.expires_at() {
-            let ex_key = expiration_meta_key(&ph);
-            tracing::debug!("set_value: storing expiration metadata: key={}, expires_at={}, ex_key={:?}",
-                String::from_utf8_lossy(&ph), expires_at, ex_key);
-            batch.put(ex_key, expires_at.to_le_bytes().to_vec());
-        }
 
         // Importing target fast-path for slot migration.
         if self.try_write_importing_locally(slot, batch.clone())? {
@@ -646,7 +651,6 @@ impl ClusterRaftEngine {
         let route_key = ph.clone();
         let mut batch = WriteBatch::new();
         batch.delete(ph);
-        batch.delete(expiration_meta_key(&route_key));
         if self.try_write_migrating_source_locally(slot, batch.clone())? {
             return Ok(value);
         }
@@ -676,7 +680,6 @@ impl ClusterRaftEngine {
                 }
                 BatchOp::Delete => {
                     batch.delete(ph.clone());
-                    batch.delete(expiration_meta_key(&ph));
                 }
             }
         }
@@ -723,17 +726,21 @@ impl ClusterRaftEngine {
 
     pub fn set_expire_in_db(&self, db_index: usize, key: &str, expire_ms: u64) -> Result<bool> {
         let slot = key_to_slot_with_hash_tag(key.as_bytes());
-        if self.is_expired(db_index, key)? {
-            return Ok(false);
-        }
-        if self.get_value(db_index, key)?.is_none() {
-            return Ok(false);
-        }
+        let mut value = match self.get_value(db_index, key)? {
+            Some(v) => v,
+            None => return Ok(false),
+        };
         let ph = physical_raft_storage_key(db_index, key);
         let route_key = ph.clone();
         let expire_at = now_ms() + expire_ms;
+        value.set_expiration(Some(expire_at));
+        let serializable = value.to_serializable();
+        let serialized = bincode::serialize(&serializable)
+            .map_err(|e| AikvError::Storage(format!("serialize: {}", e)))?;
         let mut batch = WriteBatch::new();
-        batch.put(expiration_meta_key(&ph), expire_at.to_le_bytes().to_vec());
+        batch.put(ph.clone(), serialized);
+        // Clean up legacy __exp__: key in case it still exists
+        batch.delete(expiration_meta_key(&ph));
         raft_io_rt()
             .block_on(self.multi.write_batch_for_route_key(&route_key, batch))
             .map_err(|e| map_aidb_write_err(e, slot, &self.multi))?;
@@ -747,19 +754,20 @@ impl ClusterRaftEngine {
         timestamp_ms: u64,
     ) -> Result<bool> {
         let slot = key_to_slot_with_hash_tag(key.as_bytes());
-        if self.is_expired(db_index, key)? {
-            return Ok(false);
-        }
-        if self.get_value(db_index, key)?.is_none() {
-            return Ok(false);
-        }
+        let mut value = match self.get_value(db_index, key)? {
+            Some(v) => v,
+            None => return Ok(false),
+        };
         let ph = physical_raft_storage_key(db_index, key);
         let route_key = ph.clone();
+        value.set_expiration(Some(timestamp_ms));
+        let serializable = value.to_serializable();
+        let serialized = bincode::serialize(&serializable)
+            .map_err(|e| AikvError::Storage(format!("serialize: {}", e)))?;
         let mut batch = WriteBatch::new();
-        batch.put(
-            expiration_meta_key(&ph),
-            timestamp_ms.to_le_bytes().to_vec(),
-        );
+        batch.put(ph.clone(), serialized);
+        // Clean up legacy __exp__: key in case it still exists
+        batch.delete(expiration_meta_key(&ph));
         raft_io_rt()
             .block_on(self.multi.write_batch_for_route_key(&route_key, batch))
             .map_err(|e| map_aidb_write_err(e, slot, &self.multi))?;
@@ -769,66 +777,122 @@ impl ClusterRaftEngine {
     pub fn get_ttl_in_db(&self, db_index: usize, key: &str) -> Result<i64> {
         let slot = key_to_slot_with_hash_tag(key.as_bytes());
         let ph = physical_raft_storage_key(db_index, key);
-        if self.get_value(db_index, key)?.is_none() {
-            return Ok(-2);
-        }
-        let ex_key = expiration_meta_key(&ph);
-        tracing::debug!("get_ttl_in_db: reading expiration metadata: key={}, ph={}, ex_key={:?}",
-            key, String::from_utf8_lossy(&ph), ex_key);
+        let map_read = |e: aidb::Error| map_aidb_read_err(e, slot, &self.multi);
+        let route_slot = key_to_slot_with_hash_tag(&ph);
         match self
             .multi
-            .get_in_slot(slot, &ex_key)
-            .map_err(|e| map_aidb_read_err(e, slot, &self.multi))?
+            .get_in_slot(route_slot, &ph)
+            .map_err(|e| map_read(e))?
         {
-            Some(bytes) if bytes.len() == 8 => {
-                let exp_at = u64::from_le_bytes(bytes[..8].try_into().unwrap());
-                let now = now_ms();
-                tracing::debug!("get_ttl_in_db: found expiration: exp_at={}, now={}, diff={}", exp_at, now, exp_at as i64 - now as i64);
-                if now >= exp_at {
-                    Ok(-2)
-                } else {
-                    Ok((exp_at - now) as i64)
+            Some(serialized) => {
+                if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(&serialized) {
+                    let stored_value = StoredValue::from_serializable(sv);
+                    if let Some(expires_at) = stored_value.expires_at() {
+                        let now = now_ms();
+                        if expires_at > now {
+                            return Ok((expires_at - now) as i64);
+                        } else {
+                            return Ok(-2);
+                        }
+                    }
+                    // No embedded expiration, check legacy __exp__:key
+                    if let Some(legacy_ts) = self.legacy_expires_at(&ph, &map_read)? {
+                        let now = now_ms();
+                        if legacy_ts > now {
+                            return Ok((legacy_ts - now) as i64);
+                        } else {
+                            return Ok(-2);
+                        }
+                    }
+                    return Ok(-1);
                 }
+                Ok(-2)
             }
-            _ => {
-                tracing::debug!("get_ttl_in_db: no expiration metadata found");
-                Ok(-1)
-            }
+            None => Ok(-2),
         }
     }
 
     pub fn get_expire_time_in_db(&self, db_index: usize, key: &str) -> Result<i64> {
         let slot = key_to_slot_with_hash_tag(key.as_bytes());
         let ph = physical_raft_storage_key(db_index, key);
-        if self.get_value(db_index, key)?.is_none() {
-            return Ok(-2);
-        }
+        let map_read = |e: aidb::Error| map_aidb_read_err(e, slot, &self.multi);
+        let route_slot = key_to_slot_with_hash_tag(&ph);
         match self
             .multi
-            .get_in_slot(slot, &expiration_meta_key(&ph))
-            .map_err(|e| map_aidb_read_err(e, slot, &self.multi))?
+            .get_in_slot(route_slot, &ph)
+            .map_err(|e| map_read(e))?
         {
-            Some(bytes) if bytes.len() == 8 => {
-                let exp_at = u64::from_le_bytes(bytes[..8].try_into().unwrap());
-                Ok(exp_at as i64)
+            Some(serialized) => {
+                if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(&serialized) {
+                    let stored_value = StoredValue::from_serializable(sv);
+                    if let Some(expires_at) = stored_value.expires_at() {
+                        let now = now_ms();
+                        if now >= expires_at {
+                            return Ok(-2);
+                        }
+                        return Ok(expires_at as i64);
+                    }
+                    // No embedded expiration, check legacy __exp__:key
+                    if let Some(legacy_ts) = self.legacy_expires_at(&ph, &map_read)? {
+                        let now = now_ms();
+                        if now >= legacy_ts {
+                            return Ok(-2);
+                        }
+                        return Ok(legacy_ts as i64);
+                    }
+                    return Ok(-1);
+                }
+                Ok(-2)
             }
-            _ => Ok(-1),
+            None => Ok(-2),
         }
     }
 
     pub fn persist_in_db(&self, db_index: usize, key: &str) -> Result<bool> {
         let slot = key_to_slot_with_hash_tag(key.as_bytes());
-        if self.get_value(db_index, key)?.is_none() {
-            return Ok(false);
-        }
         let ph = physical_raft_storage_key(db_index, key);
-        let route_key = ph.clone();
-        let mut batch = WriteBatch::new();
-        batch.delete(expiration_meta_key(&ph));
-        raft_io_rt()
-            .block_on(self.multi.write_batch_for_route_key(&route_key, batch))
-            .map_err(|e| map_aidb_write_err(e, slot, &self.multi))?;
-        Ok(true)
+        let map_read = |e: aidb::Error| map_aidb_read_err(e, slot, &self.multi);
+        let route_slot = key_to_slot_with_hash_tag(&ph);
+        let serialized = match self
+            .multi
+            .get_in_slot(route_slot, &ph)
+            .map_err(|e| map_read(e))?
+        {
+            Some(v) => v,
+            None => return Ok(false),
+        };
+        if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(&serialized) {
+            let mut stored_value = StoredValue::from_serializable(sv);
+            if stored_value.expires_at().is_some() {
+                stored_value.set_expiration(None);
+                let new_serialized = bincode::serialize(&stored_value.to_serializable())
+                    .map_err(|e| AikvError::Storage(format!("serialize: {}", e)))?;
+                let route_key = ph.clone();
+                let mut batch = WriteBatch::new();
+                batch.put(ph.clone(), new_serialized);
+                // Clean up legacy __exp__: key in case it still exists
+                batch.delete(expiration_meta_key(&ph));
+                raft_io_rt()
+                    .block_on(self.multi.write_batch_for_route_key(&route_key, batch))
+                    .map_err(|e| map_aidb_write_err(e, slot, &self.multi))?;
+                return Ok(true);
+            }
+            // No embedded expiration, check legacy __exp__:key
+            if let Some(legacy_ts) = self.legacy_expires_at(&ph, &map_read)? {
+                if now_ms() >= legacy_ts {
+                    return Ok(false);
+                }
+                // Legacy TTL exists but not expired. Delete legacy key to persist.
+                let route_key = ph.clone();
+                let mut batch = WriteBatch::new();
+                batch.delete(expiration_meta_key(&ph));
+                raft_io_rt()
+                    .block_on(self.multi.write_batch_for_route_key(&route_key, batch))
+                    .map_err(|e| map_aidb_write_err(e, slot, &self.multi))?;
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub fn delete_from_db(&self, db_index: usize, key: &str) -> Result<bool> {
@@ -862,16 +926,23 @@ impl ClusterRaftEngine {
         let Some(serialized) = raw else {
             return Ok(false);
         };
-        let _: SerializableStoredValue = bincode::deserialize(&serialized)
+        let serializable: SerializableStoredValue = bincode::deserialize(&serialized)
             .map_err(|e| AikvError::Storage(format!("deserialize: {}", e)))?;
+        let stored_value = StoredValue::from_serializable(serializable);
 
-        let ex_key = expiration_meta_key(&ph);
-        let expired = match get_from_local_group_resilient(&self.multi, to_group, &ex_key).map_err(map_aidb_err)? {
-            Some(bytes) if bytes.len() == 8 => {
-                let exp_at = u64::from_le_bytes(bytes[..8].try_into().unwrap());
-                now_ms() >= exp_at
+        let expired = match stored_value.expires_at() {
+            Some(expires_at) => now_ms() >= expires_at,
+            None => {
+                // Fall back to legacy __exp__: key
+                let ex_key = expiration_meta_key(&ph);
+                match get_from_local_group_resilient(&self.multi, to_group, &ex_key).map_err(map_aidb_err)? {
+                    Some(bytes) if bytes.len() == 8 => {
+                        let exp_at = u64::from_le_bytes(bytes[..8].try_into().unwrap());
+                        now_ms() >= exp_at
+                    }
+                    _ => false,
+                }
             }
-            _ => false,
         };
         Ok(!expired)
     }
