@@ -548,7 +548,7 @@ impl AiDbStorageAdapter {
         let db = &self.databases[db_index];
         let key_bytes = key.as_bytes();
 
-        // Single read: check existence, expiration, and deserialize
+        // Single read: check existence, then deserialize
         let serialized = match db
             .get(key_bytes)
             .map_err(|e| AikvError::Storage(format!("Read: {}", e)))?
@@ -557,15 +557,22 @@ impl AiDbStorageAdapter {
             None => return Ok(false),
         };
 
-        // Don't resurrect expired keys (Redis semantics)
-        if Self::is_expired_blob(&serialized) {
-            return Ok(false);
-        }
-
         let mut stored_value = StoredValue::from_serializable(
             bincode::deserialize::<SerializableStoredValue>(&serialized)
                 .map_err(|e| AikvError::Storage(format!("Deserialize: {}", e)))?,
         );
+
+        // Don't resurrect expired keys (Redis semantics).
+        // Check embedded expiration first, then fall back to legacy __exp__: key.
+        let expired = match stored_value.expires_at() {
+            Some(ts) => Self::current_time_ms() >= ts,
+            None => Self::legacy_expires_at(db, key_bytes)?
+                .map(|legacy_ts| Self::current_time_ms() >= legacy_ts)
+                .unwrap_or(false),
+        };
+        if expired {
+            return Ok(false);
+        }
         stored_value.set_expiration(Some(timestamp_ms));
         let new_serialized = bincode::serialize(&stored_value.to_serializable())
             .map_err(|e| AikvError::Storage(format!("Serialize: {}", e)))?;
