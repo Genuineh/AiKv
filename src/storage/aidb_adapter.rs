@@ -159,6 +159,27 @@ impl AiDbStorageAdapter {
         Ok(false)
     }
 
+    /// Get expiration timestamp from legacy `__exp__:key` metadata.
+    /// Returns `Some(timestamp_ms)` if the legacy key exists with valid data,
+    /// `None` if the legacy key does not exist or has invalid data.
+    fn legacy_expires_at(db: &DB, key: &[u8]) -> Result<Option<u64>> {
+        let mut expire_key = Vec::with_capacity(key.len() + 8);
+        expire_key.extend_from_slice(b"__exp__:");
+        expire_key.extend_from_slice(key);
+        match db
+            .get(&expire_key)
+            .map_err(|e| AikvError::Storage(format!("Legacy exp: {}", e)))?
+        {
+            Some(bytes) if bytes.len() == 8 => {
+                let val = u64::from_le_bytes([
+                    bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                ]);
+                Ok(Some(val))
+            }
+            _ => Ok(None),
+        }
+    }
+
     // ========================================================================
     // CORE STORAGE METHODS (Minimal Interface Post-Refactoring)
     // ========================================================================
@@ -504,30 +525,8 @@ impl AiDbStorageAdapter {
 
     /// Set expiration for a key in milliseconds
     pub fn set_expire_in_db(&self, db_index: usize, key: &str, expire_ms: u64) -> Result<bool> {
-        if db_index >= self.databases.len() {
-            return Err(AikvError::Storage(format!(
-                "Invalid database index: {}",
-                db_index
-            )));
-        }
-
-        let db = &self.databases[db_index];
-        let key_bytes = key.as_bytes();
-
-        // Read the current value and check expiration from the blob
-        let serialized = match db
-            .get(key_bytes)
-            .map_err(|e| AikvError::Storage(format!("Failed to get value: {}", e)))?
-        {
-            Some(v) => v,
-            None => return Ok(false),
-        };
-
-        if Self::is_expired_blob(&serialized) {
-            return Ok(false);
-        }
-
-        // Set expiration at absolute timestamp
+        // Delegate to set_expire_at_in_db which handles existence, expiration,
+        // deserialization, and legacy cleanup in a single read
         let expire_at = Self::current_time_ms() + expire_ms;
         self.set_expire_at_in_db(db_index, key, expire_at)
     }
@@ -549,29 +548,38 @@ impl AiDbStorageAdapter {
         let db = &self.databases[db_index];
         let key_bytes = key.as_bytes();
 
-        // Check if key exists and is not expired (using old expiration)
-        if db
+        // Single read: check existence, expiration, and deserialize
+        let serialized = match db
             .get(key_bytes)
-            .map_err(|e| AikvError::Storage(format!("Failed to check key existence: {}", e)))?
-            .is_none()
+            .map_err(|e| AikvError::Storage(format!("Read: {}", e)))?
         {
+            Some(v) => v,
+            None => return Ok(false),
+        };
+
+        // Don't resurrect expired keys (Redis semantics)
+        if Self::is_expired_blob(&serialized) {
             return Ok(false);
         }
 
-        // Read the current value and update its expires_at field
-        if let Some(serialized) = db
-            .get(key_bytes)
-            .map_err(|e| AikvError::Storage(format!("Failed to get value: {}", e)))? {
-            if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(&serialized) {
-                let mut stored_value = StoredValue::from_serializable(sv);
-                stored_value.set_expiration(Some(timestamp_ms));
-                let new_serialized = stored_value.to_serializable();
-                let new_value = bincode::serialize(&new_serialized)
-                    .map_err(|e| AikvError::Storage(format!("Failed to serialize: {}", e)))?;
-                db.put(key_bytes, &new_value)
-                    .map_err(|e| AikvError::Storage(format!("Failed to update value: {}", e)))?;
-            }
-        }
+        let mut stored_value = StoredValue::from_serializable(
+            bincode::deserialize::<SerializableStoredValue>(&serialized)
+                .map_err(|e| AikvError::Storage(format!("Deserialize: {}", e)))?,
+        );
+        stored_value.set_expiration(Some(timestamp_ms));
+        let new_serialized = bincode::serialize(&stored_value.to_serializable())
+            .map_err(|e| AikvError::Storage(format!("Serialize: {}", e)))?;
+        db.put(key_bytes, &new_serialized)
+            .map_err(|e| AikvError::Storage(format!("Put: {}", e)))?;
+
+        // Optionally clean up legacy __exp__: key
+        let legacy_key = {
+            let mut k = Vec::with_capacity(key_bytes.len() + 8);
+            k.extend_from_slice(b"__exp__:");
+            k.extend_from_slice(key_bytes);
+            k
+        };
+        let _ = db.delete(&legacy_key);
 
         Ok(true)
     }
@@ -603,6 +611,15 @@ impl AiDbStorageAdapter {
                 let now = Self::current_time_ms();
                 if expires_at > now {
                     return Ok((expires_at - now) as i64);
+                } else {
+                    return Ok(-2); // Expired
+                }
+            }
+            // No embedded expiration, check legacy __exp__:key
+            if let Some(legacy_ts) = Self::legacy_expires_at(db, key_bytes)? {
+                let now = Self::current_time_ms();
+                if legacy_ts > now {
+                    return Ok((legacy_ts - now) as i64);
                 } else {
                     return Ok(-2); // Expired
                 }
@@ -643,6 +660,14 @@ impl AiDbStorageAdapter {
                 }
                 return Ok(expires_at as i64);
             }
+            // No embedded expiration, check legacy __exp__:key
+            if let Some(legacy_ts) = Self::legacy_expires_at(db, key_bytes)? {
+                let now = Self::current_time_ms();
+                if now >= legacy_ts {
+                    return Ok(-2); // Expired
+                }
+                return Ok(legacy_ts as i64);
+            }
             return Ok(-1); // No expiration set
         }
 
@@ -678,6 +703,18 @@ impl AiDbStorageAdapter {
                         .map_err(|e| AikvError::Storage(format!("Failed to serialize: {}", e)))?;
                     db.put(key_bytes, &new_value)
                         .map_err(|e| AikvError::Storage(format!("Failed to update value: {}", e)))?;
+                    return Ok(true);
+                }
+                // expires_at is None in blob, check legacy __exp__:key
+                if let Some(legacy_ts) = Self::legacy_expires_at(db, key_bytes)? {
+                    if Self::current_time_ms() >= legacy_ts {
+                        return Ok(false); // Already expired via legacy key
+                    }
+                    // Legacy TTL exists but not expired. Delete legacy key to persist.
+                    let mut expire_key = Vec::with_capacity(key_bytes.len() + 8);
+                    expire_key.extend_from_slice(b"__exp__:");
+                    expire_key.extend_from_slice(key_bytes);
+                    let _ = db.delete(&expire_key);
                     return Ok(true);
                 }
             }
@@ -739,8 +776,32 @@ impl AiDbStorageAdapter {
         {
             Some(serialized) => {
                 if Self::is_expired_blob(&serialized) {
+                    // Clean up expired key
+                    db.delete(key_bytes).ok();
+                    let mut expire_key = Vec::with_capacity(key_bytes.len() + 8);
+                    expire_key.extend_from_slice(b"__exp__:");
+                    expire_key.extend_from_slice(key_bytes);
+                    let _ = db.delete(&expire_key);
                     Ok(false)
                 } else {
+                    // Check if blob has no embedded expiration and legacy exists
+                    if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(&serialized) {
+                        let stored = StoredValue::from_serializable(sv);
+                        if stored.expires_at().is_none() {
+                            match Self::legacy_expires_at(db, key_bytes)? {
+                                Some(legacy_ts) if Self::current_time_ms() >= legacy_ts => {
+                                    // Legacy says expired, clean up
+                                    db.delete(key_bytes).ok();
+                                    let mut expire_key = Vec::with_capacity(key_bytes.len() + 8);
+                                    expire_key.extend_from_slice(b"__exp__:");
+                                    expire_key.extend_from_slice(key_bytes);
+                                    let _ = db.delete(&expire_key);
+                                    return Ok(false);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
                     Ok(true)
                 }
             }
@@ -790,7 +851,11 @@ impl AiDbStorageAdapter {
                     if let Some(expires_at) = stored.expires_at() {
                         now >= expires_at
                     } else {
-                        false
+                        // No embedded expiration, check legacy __exp__:key
+                        match Self::legacy_expires_at(db, key) {
+                            Ok(Some(legacy_ts)) => now >= legacy_ts,
+                            _ => false,
+                        }
                     }
                 } else {
                     // Deserialization failure; not a valid content key (e.g. old __exp__: key)
@@ -872,7 +937,11 @@ impl AiDbStorageAdapter {
                     if let Some(expires_at) = stored.expires_at() {
                         now >= expires_at
                     } else {
-                        false
+                        // No embedded expiration, check legacy __exp__:key
+                        match Self::legacy_expires_at(db, key) {
+                            Ok(Some(legacy_ts)) => now >= legacy_ts,
+                            _ => false,
+                        }
                     }
                 } else {
                     // Deserialization failure; not a valid content key
@@ -1180,6 +1249,19 @@ impl AiDbStorageAdapter {
                 continue;
             }
 
+            // Also check legacy __exp__:key if blob has no embedded expiration
+            if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(value_bytes) {
+                let stored = StoredValue::from_serializable(sv);
+                if stored.expires_at().is_none() {
+                    if let Ok(Some(legacy_ts)) = Self::legacy_expires_at(db, key) {
+                        if Self::current_time_ms() >= legacy_ts {
+                            iter.next();
+                            continue;
+                        }
+                    }
+                }
+            }
+
             if let Ok(key_str) = String::from_utf8(key.to_vec()) {
                 // Use current time as a simple random selection mechanism
                 // In a production system, this would use a proper random number generator
@@ -1212,6 +1294,19 @@ impl AiDbStorageAdapter {
             if Self::is_expired_blob(value_bytes) {
                 iter.next();
                 continue;
+            }
+
+            // Also check legacy __exp__:key if blob has no embedded expiration
+            if let Ok(sv) = bincode::deserialize::<SerializableStoredValue>(value_bytes) {
+                let stored = StoredValue::from_serializable(sv);
+                if stored.expires_at().is_none() {
+                    if let Ok(Some(legacy_ts)) = Self::legacy_expires_at(db, key) {
+                        if Self::current_time_ms() >= legacy_ts {
+                            iter.next();
+                            continue;
+                        }
+                    }
+                }
             }
 
             if let Ok(key_str) = String::from_utf8(key.to_vec()) {
@@ -1259,6 +1354,23 @@ impl AiDbStorageAdapter {
                         AikvError::Storage(format!("Failed to deserialize value: {}", e))
                     })?;
                 let stored_value = StoredValue::from_serializable(serializable);
+
+                // Check legacy __exp__:key if blob has no embedded expiration
+                if stored_value.expires_at().is_none() {
+                    if let Ok(Some(legacy_ts)) = Self::legacy_expires_at(db, key)
+                    {
+                        if Self::current_time_ms() >= legacy_ts {
+                            // Legacy says expired, clean up
+                            db.delete(key).ok();
+                            let mut expire_key = Vec::with_capacity(key.len() + 8);
+                            expire_key.extend_from_slice(b"__exp__:");
+                            expire_key.extend_from_slice(key);
+                            let _ = db.delete(&expire_key);
+                            iter.next();
+                            continue;
+                        }
+                    }
+                }
 
                 if let Ok(key_str) = String::from_utf8(key.to_vec()) {
                     db_map.insert(key_str, stored_value);
