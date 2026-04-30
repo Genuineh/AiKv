@@ -104,11 +104,13 @@ impl ClusterNode {
             ..RaftConfig::default()
         };
 
-        // Create MultiRaftNode
+        // Create MultiRaftNode (cluster mode: AiDb WAL is redundant)
+        let storage_opts = aidb::Options::default().use_wal(false);
         let mut multi_raft = MultiRaftNode::new(
             self.config.node_id,
             &self.config.data_dir,
             raft_config.clone(),
+            Some(storage_opts),
         )
         .await
         .map_err(|e| {
