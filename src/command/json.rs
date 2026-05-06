@@ -71,8 +71,11 @@ impl JsonCommands {
                 "XE" => xe = true,
                 _ => {
                     // Try to parse as expire seconds (TL.KvDoc convention: number arg = expire)
+                    // expire=0 means "no expiration", skip it
                     if let Ok(secs) = raw.parse::<u64>() {
-                        expire_seconds = Some(secs);
+                        if secs > 0 {
+                            expire_seconds = Some(secs);
+                        }
                     }
                 }
             }
