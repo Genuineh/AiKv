@@ -432,6 +432,70 @@ impl ClusterCommands {
         Self::post_meta_sync_for_multi(&self.multi_raft, &format!("{:040x}", self.node_id)).await
     }
 
+    /// Wait for the Data Raft group to elect a leader after a metadata-level failover.
+    ///
+    /// Raft best practice: after updating `GroupMeta.leader` in MetaRaft, we must
+    /// wait for the Data Raft group's actual leader election to complete before
+    /// reporting success to the client. Otherwise the client gets OK but the
+    /// promoted node may not yet be the Data Raft leader, causing write failures.
+    ///
+    /// Returns `true` if the promoted node became leader within the timeout.
+    async fn wait_for_data_raft_leader(
+        multi_raft: &MultiRaftNode,
+        group_id: GroupId,
+        promoted_node_id: NodeId,
+        timeout: Duration,
+    ) -> bool {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            if let Some(raft) = multi_raft.get_raft_group(group_id) {
+                let metrics = raft.metrics().borrow().clone();
+                match metrics.current_leader {
+                    Some(leader) if leader == promoted_node_id => return true,
+                    Some(leader) => {
+                        // Raft elected a different node — log but accept it,
+                        // the quorum may have converged on another replica.
+                        info!(
+                            "Data Raft group {} elected leader {:040x} (expected {:040x}), accepting",
+                            group_id, leader, promoted_node_id
+                        );
+                        return true;
+                    }
+                    None => {} // No leader yet, keep waiting
+                }
+            }
+            sleep(Duration::from_millis(200)).await;
+        }
+        warn!(
+            "Data Raft group {} did not elect a leader within {:?} after failover",
+            group_id, timeout
+        );
+        false
+    }
+
+    /// Wait until the local metadata's config_version reaches at least the target.
+    async fn wait_for_meta_version(
+        meta_raft: &MetaRaftNode,
+        target_version: u64,
+        timeout: Duration,
+    ) -> bool {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            let meta = meta_raft.get_cluster_meta();
+            if meta.config_version >= target_version {
+                return true;
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+        warn!(
+            "Local metadata config_version did not reach {} within {:?} (current: {})",
+            target_version,
+            timeout,
+            meta_raft.get_cluster_meta().config_version,
+        );
+        false
+    }
+
     /// Same as [`Self::sync_data_raft_groups_after_meta_change`] but does not block the caller.
     ///
     /// MetaRaft changes are already durable when this runs; local data-group construction
@@ -2215,6 +2279,21 @@ impl ClusterCommands {
                                 forward_redis_addr = %leader_redis_addr,
                                 "Failover proposal succeeded after forwarding to MetaRaft leader"
                             );
+
+                            // Raft best practice: wait for the promoted node to actually
+                            // become the Data Raft leader before returning OK.
+                            Self::wait_for_meta_version(
+                                &self.meta_raft,
+                                meta.config_version + 1,
+                                Duration::from_secs(5),
+                            ).await;
+                            Self::wait_for_data_raft_leader(
+                                &self.multi_raft,
+                                group_id,
+                                promoted_node_id,
+                                Duration::from_secs(10),
+                            ).await;
+
                             return Ok(RespValue::SimpleString("OK".to_string()));
                         }
                     }
@@ -2271,6 +2350,19 @@ impl ClusterCommands {
                         forward_redis_addr = %leader_redis_addr,
                         "Failover proposal succeeded after fallback forwarding"
                     );
+
+                    Self::wait_for_meta_version(
+                        &self.meta_raft,
+                        meta.config_version + 1,
+                        Duration::from_secs(5),
+                    ).await;
+                    Self::wait_for_data_raft_leader(
+                        &self.multi_raft,
+                        group_id,
+                        promoted_node_id,
+                        Duration::from_secs(10),
+                    ).await;
+
                     return Ok(RespValue::SimpleString("OK".to_string()));
                 }
             }
@@ -2332,6 +2424,15 @@ impl ClusterCommands {
             sync_reason = "after_local_commit",
             "Data-group sync completed after failover commit"
         );
+
+        // Wait for Data Raft to elect a leader. For the local commit path
+        // the metadata is already up-to-date, so no meta-version wait needed.
+        Self::wait_for_data_raft_leader(
+            &self.multi_raft,
+            group_id,
+            promoted_node_id,
+            Duration::from_secs(10),
+        ).await;
 
         Ok(RespValue::SimpleString("OK".to_string()))
     }
