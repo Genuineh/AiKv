@@ -2219,224 +2219,48 @@ impl ClusterCommands {
         };
 
         if let Err(e) = update_res {
-            // OpenRaft returns ForwardToLeader when requester is not MetaRaft leader.
-            // For manual failover we transparently retry by sending the same command
-            // to MetaRaft leader's Redis endpoint, keeping CLI behavior simple.
             let err_msg = e.to_string();
-            let looks_like_forward = err_msg.contains("ForwardToLeader");
-            if looks_like_forward {
-                if let Some(meta_leader_id) = self.meta_raft.get_leader().await {
-                    if meta_leader_id != self.node_id {
-                        if let Some(leader_node) = meta.nodes.get(&meta_leader_id) {
-                            let leader_redis_addr = Self::extract_data_address(&leader_node.addr);
-                            info!(
-                                "CLUSTER FAILOVER: forwarding request to MetaRaft leader {} at {} (redis={})",
-                                meta_leader_id, leader_node.addr, leader_redis_addr
-                            );
-                            self.forward_failover_to_leader(
-                                &leader_redis_addr,
-                                mode,
-                                promoted_node_id,
-                            )
-                            .await?;
-                            info!(
-                                diag_event = "cluster_failover_post_sync_start",
-                                requester_node_id = %format!("{:040x}", self.node_id),
-                                promoted_node_id = %format!("{:040x}", promoted_node_id),
-                                group_id = group_id,
-                                mode = ?mode,
-                                sync_reason = "after_forward_success",
-                                "Starting local data-group sync after forwarded failover"
-                            );
-                            self.sync_data_raft_groups_after_meta_change()
-                                .await
-                                .map_err(|e| {
-                                    warn!(
-                                        diag_event = "cluster_failover_post_sync_failed",
-                                        requester_node_id = %format!("{:040x}", self.node_id),
-                                        promoted_node_id = %format!("{:040x}", promoted_node_id),
-                                        group_id = group_id,
-                                        mode = ?mode,
-                                        sync_reason = "after_forward_success",
-                                        error = %e,
-                                        "Data-group sync failed after forwarded failover"
-                                    );
-                                    e
-                                })?;
-                            info!(
-                                diag_event = "cluster_failover_post_sync_success",
-                                requester_node_id = %format!("{:040x}", self.node_id),
-                                promoted_node_id = %format!("{:040x}", promoted_node_id),
-                                group_id = group_id,
-                                mode = ?mode,
-                                sync_reason = "after_forward_success",
-                                "Data-group sync completed after forwarded failover"
-                            );
-                            info!(
-                                diag_event = "cluster_failover_forward_success",
-                                requester_node_id = %format!("{:040x}", self.node_id),
-                                promoted_node_id = %format!("{:040x}", promoted_node_id),
-                                group_id = group_id,
-                                mode = ?mode,
-                                forward_mode = "leader_lookup",
-                                forward_leader_id = %format!("{:040x}", meta_leader_id),
-                                forward_redis_addr = %leader_redis_addr,
-                                "Failover proposal succeeded after forwarding to MetaRaft leader"
-                            );
+            let action = if mode == FailoverMode::Takeover { "takeover" } else { "failover" };
 
-                            // Diagnostic: capture local meta version after forward completes
-                            let current_version = self.meta_raft.get_cluster_meta().config_version;
-                            info!(
-                                "CLUSTER FAILOVER: after forward, local config_version={} (expected={})",
-                                current_version,
-                                meta.config_version + 1,
-                            );
+            if !err_msg.contains("ForwardToLeader") {
+                return Err(AikvError::Internal(format!("Failed to perform {}: {}", action, e)));
+            }
 
-                            // Raft best practice: wait for the promoted node to actually
-                            // become the Data Raft leader before returning OK.
-                            let meta_ok = Self::wait_for_meta_version(
-                                &self.meta_raft,
-                                meta.config_version + 1,
-                                Duration::from_secs(5),
-                            ).await;
-                            if !meta_ok {
-                                warn!(
-                                    "CLUSTER FAILOVER: metadata version did not advance after forward; \
-                                     UpdateGroupLeader may not have been replicated to this node"
-                                );
-                            }
-                            let leader_ok = Self::wait_for_data_raft_leader(
-                                &self.multi_raft,
-                                group_id,
-                                promoted_node_id,
-                                Duration::from_secs(10),
-                            ).await;
-                            if !leader_ok {
-                                warn!(
-                                    "CLUSTER FAILOVER: Data Raft group {} did not elect a leader after promotion; \
-                                     writes to this shard may fail until election completes",
-                                    group_id,
-                                );
-                            }
-
-                            return Ok(RespValue::SimpleString("OK".to_string()));
+            // Try forwarding via get_leader() first (fast path)
+            let mut forwarded = false;
+            if let Some(leader_id) = self.meta_raft.get_leader().await {
+                if leader_id != self.node_id {
+                    if let Some(leader_node) = meta.nodes.get(&leader_id) {
+                        let addr = Self::extract_data_address(&leader_node.addr);
+                        info!(
+                            "CLUSTER FAILOVER: forwarding request to MetaRaft leader {} at {}",
+                            leader_id, addr,
+                        );
+                        if self.forward_failover_to_leader(&addr, mode, promoted_node_id).await.is_ok() {
+                            info!("CLUSTER FAILOVER: forward to leader {} succeeded", leader_id);
+                            forwarded = true;
                         }
                     }
                 }
-                if let Some(leader_redis_addr) =
-                    Self::extract_forward_leader_addr_from_error(&err_msg)
-                {
-                    info!(
-                        "CLUSTER FAILOVER: fallback forwarding via ForwardToLeader addr (redis={})",
-                        leader_redis_addr
-                    );
-                    self.forward_failover_to_leader(&leader_redis_addr, mode, promoted_node_id)
-                        .await?;
-                    info!(
-                        diag_event = "cluster_failover_post_sync_start",
-                        requester_node_id = %format!("{:040x}", self.node_id),
-                        promoted_node_id = %format!("{:040x}", promoted_node_id),
-                        group_id = group_id,
-                        mode = ?mode,
-                        sync_reason = "after_forward_fallback_success",
-                        "Starting local data-group sync after fallback-forwarded failover"
-                    );
-                    self.sync_data_raft_groups_after_meta_change()
-                        .await
-                        .map_err(|e| {
-                            warn!(
-                                diag_event = "cluster_failover_post_sync_failed",
-                                requester_node_id = %format!("{:040x}", self.node_id),
-                                promoted_node_id = %format!("{:040x}", promoted_node_id),
-                                group_id = group_id,
-                                mode = ?mode,
-                                sync_reason = "after_forward_fallback_success",
-                                error = %e,
-                                "Data-group sync failed after fallback-forwarded failover"
-                            );
-                            e
-                        })?;
-                    info!(
-                        diag_event = "cluster_failover_post_sync_success",
-                        requester_node_id = %format!("{:040x}", self.node_id),
-                        promoted_node_id = %format!("{:040x}", promoted_node_id),
-                        group_id = group_id,
-                        mode = ?mode,
-                        sync_reason = "after_forward_fallback_success",
-                        "Data-group sync completed after fallback-forwarded failover"
-                    );
-                    info!(
-                        diag_event = "cluster_failover_forward_success",
-                        requester_node_id = %format!("{:040x}", self.node_id),
-                        promoted_node_id = %format!("{:040x}", promoted_node_id),
-                        group_id = group_id,
-                        mode = ?mode,
-                        forward_mode = "error_hint",
-                        forward_redis_addr = %leader_redis_addr,
-                        "Failover proposal succeeded after fallback forwarding"
-                    );
-
-                    let meta_ok = Self::wait_for_meta_version(
-                        &self.meta_raft,
-                        meta.config_version + 1,
-                        Duration::from_secs(5),
-                    ).await;
-                    if !meta_ok {
-                        warn!(
-                            "CLUSTER FAILOVER (fallback): metadata version did not advance after forward; \
-                             UpdateGroupLeader may not have been replicated to this node"
-                        );
-                    }
-                    let leader_ok = Self::wait_for_data_raft_leader(
-                        &self.multi_raft,
-                        group_id,
-                        promoted_node_id,
-                        Duration::from_secs(10),
-                    ).await;
-                    if !leader_ok {
-                        warn!(
-                            "CLUSTER FAILOVER (fallback): Data Raft group {} did not elect a leader after promotion",
-                            group_id,
-                        );
-                    }
-
-                    return Ok(RespValue::SimpleString("OK".to_string()));
-                }
             }
-            warn!(
-                diag_event = "cluster_failover_failed",
-                requester_node_id = %format!("{:040x}", self.node_id),
-                promoted_node_id = %format!("{:040x}", promoted_node_id),
-                group_id = group_id,
-                mode = ?mode,
-                error = %e,
-                "Failover proposal failed and was not recoverable by forwarding"
-            );
 
-            let action = if mode == FailoverMode::Takeover { "takeover" } else { "failover" };
-            return Err(AikvError::Internal(format!(
-                "Failed to perform {}: {}",
-                action, e
-            )));
+            // Fallback: try all voters (handles stale get_leader())
+            if !forwarded {
+                warn!(
+                    "CLUSTER FAILOVER: get_leader() target unreachable, trying all {} MetaRaft voters",
+                    voters.len(),
+                );
+                self.forward_failover_to_voters(&voters, &meta, mode, promoted_node_id).await?;
+            }
+            // Wait for metadata to catch up on this node after forward
+            Self::wait_for_meta_version(
+                &self.meta_raft,
+                meta.config_version + 1,
+                Duration::from_secs(5),
+            ).await;
         }
-        info!(
-            diag_event = "cluster_failover_success",
-            requester_node_id = %format!("{:040x}", self.node_id),
-            promoted_node_id = %format!("{:040x}", promoted_node_id),
-            group_id = group_id,
-            mode = ?mode,
-            commit_mode = "local",
-            "Failover proposal committed locally"
-        );
-        info!(
-            diag_event = "cluster_failover_post_sync_start",
-            requester_node_id = %format!("{:040x}", self.node_id),
-            promoted_node_id = %format!("{:040x}", promoted_node_id),
-            group_id = group_id,
-            mode = ?mode,
-            sync_reason = "after_local_commit",
-            "Starting local data-group sync after failover commit"
-        );
+
+        // Wait for Data Raft to elect a leader and sync data groups
         self.sync_data_raft_groups_after_meta_change()
             .await
             .map_err(|e| {
@@ -2446,37 +2270,19 @@ impl ClusterCommands {
                     promoted_node_id = %format!("{:040x}", promoted_node_id),
                     group_id = group_id,
                     mode = ?mode,
-                    sync_reason = "after_local_commit",
+                    sync_reason = "after_commit",
                     error = %e,
-                    "Data-group sync failed after local failover commit"
+                    "Data-group sync failed after failover commit"
                 );
                 e
             })?;
-        info!(
-            diag_event = "cluster_failover_post_sync_success",
-            requester_node_id = %format!("{:040x}", self.node_id),
-            promoted_node_id = %format!("{:040x}", promoted_node_id),
-            group_id = group_id,
-            mode = ?mode,
-            sync_reason = "after_local_commit",
-            "Data-group sync completed after failover commit"
-        );
 
-        // Wait for Data Raft to elect a leader. For the local commit path
-        // the metadata is already up-to-date, so no meta-version wait needed.
-        let leader_ok = Self::wait_for_data_raft_leader(
+        Self::wait_for_data_raft_leader(
             &self.multi_raft,
             group_id,
             promoted_node_id,
             Duration::from_secs(10),
         ).await;
-        if !leader_ok {
-            warn!(
-                "CLUSTER FAILOVER: Data Raft group {} did not elect a leader within 10s after \
-                 local commit; writes may be unavailable until election completes",
-                group_id,
-            );
-        }
 
         Ok(RespValue::SimpleString("OK".to_string()))
     }
