@@ -47,7 +47,7 @@ impl JsonCommands {
         }
     }
 
-    /// JSON.SET key path value \[NX|XX\]
+    /// JSON.SET key path value \[NX|XX\] \[expire_seconds\]
     pub fn json_set(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
         if args.len() < 3 {
             return Err(AikvError::WrongArgCount("JSON.SET".to_string()));
@@ -57,17 +57,24 @@ impl JsonCommands {
         let path = String::from_utf8_lossy(&args[1]).to_string();
         let value_str = String::from_utf8_lossy(&args[2]).to_string();
 
-        // Parse options
+        // Parse options and optional expire
         let mut nx = false;
         let mut xx = false;
         let mut xe = false; // TL.KvDoc: throw when exist (opposite of NX)
+        let mut expire_seconds: Option<u64> = None;
         for arg in args.iter().skip(3) {
-            let option = String::from_utf8_lossy(arg).to_uppercase();
+            let raw = String::from_utf8_lossy(arg);
+            let option = raw.to_uppercase();
             match option.as_str() {
                 "NX" => nx = true,
                 "XX" | "NN" => xx = true, // NN = TL.KvDoc: no-op if not exist
                 "XE" => xe = true,
-                _ => {}
+                _ => {
+                    // Try to parse as expire seconds (TL.KvDoc convention: number arg = expire)
+                    if let Ok(secs) = raw.parse::<u64>() {
+                        expire_seconds = Some(secs);
+                    }
+                }
             }
         }
 
@@ -126,7 +133,16 @@ impl JsonCommands {
         };
 
         let json_bytes = Bytes::from(serde_json::to_vec(&result_json)?);
-        self.storage.set_in_db(current_db, key, json_bytes)?;
+        if let Some(secs) = expire_seconds {
+            let expire_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64
+                + secs * 1000;
+            self.storage.set_with_expiration_in_db(current_db, key, json_bytes, expire_at)?;
+        } else {
+            self.storage.set_in_db(current_db, key, json_bytes)?;
+        }
 
         Ok(RespValue::ok())
     }
