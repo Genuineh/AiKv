@@ -49,6 +49,7 @@ pub struct Connection {
     #[cfg(feature = "cluster")]
     /// Redis ASKING one-shot flag for next command.
     allow_importing_slot_once: bool,
+    #[cfg(feature = "cluster")]
     /// Whether the connection is in READONLY mode.
     readonly_mode: bool,
 }
@@ -97,6 +98,7 @@ impl Connection {
             last_command: None,
             #[cfg(feature = "cluster")]
             allow_importing_slot_once: false,
+            #[cfg(feature = "cluster")]
             readonly_mode: false,
         }
     }

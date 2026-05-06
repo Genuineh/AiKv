@@ -200,6 +200,8 @@ impl CommandExecutor {
         #[cfg(feature = "cluster")] allow_importing_slot_once: bool,
         #[cfg(feature = "cluster")] readonly: bool,
     ) -> Result<RespValue> {
+        #[cfg(not(feature = "cluster"))]
+        let readonly = false;
         match command.to_uppercase().as_str() {
             // String commands - single key operations
             "GET" => {
