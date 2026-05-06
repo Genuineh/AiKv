@@ -2179,6 +2179,10 @@ impl ClusterCommands {
             "CLUSTER FAILOVER: requester_node_id={}, promoted_node_id={}, voters={:?}, learners={:?}, mode={:?}",
             self.node_id, promoted_node_id, voters, learners, mode
         );
+        info!(
+            "CLUSTER FAILOVER: initial config_version={}",
+            meta.config_version,
+        );
 
         // Check if this node is a voter
         let is_voter = membership.voter_ids().any(|id| id == self.node_id);
@@ -2280,19 +2284,40 @@ impl ClusterCommands {
                                 "Failover proposal succeeded after forwarding to MetaRaft leader"
                             );
 
+                            // Diagnostic: capture local meta version after forward completes
+                            let current_version = self.meta_raft.get_cluster_meta().config_version;
+                            info!(
+                                "CLUSTER FAILOVER: after forward, local config_version={} (expected={})",
+                                current_version,
+                                meta.config_version + 1,
+                            );
+
                             // Raft best practice: wait for the promoted node to actually
                             // become the Data Raft leader before returning OK.
-                            Self::wait_for_meta_version(
+                            let meta_ok = Self::wait_for_meta_version(
                                 &self.meta_raft,
                                 meta.config_version + 1,
                                 Duration::from_secs(5),
                             ).await;
-                            Self::wait_for_data_raft_leader(
+                            if !meta_ok {
+                                warn!(
+                                    "CLUSTER FAILOVER: metadata version did not advance after forward; \
+                                     UpdateGroupLeader may not have been replicated to this node"
+                                );
+                            }
+                            let leader_ok = Self::wait_for_data_raft_leader(
                                 &self.multi_raft,
                                 group_id,
                                 promoted_node_id,
                                 Duration::from_secs(10),
                             ).await;
+                            if !leader_ok {
+                                warn!(
+                                    "CLUSTER FAILOVER: Data Raft group {} did not elect a leader after promotion; \
+                                     writes to this shard may fail until election completes",
+                                    group_id,
+                                );
+                            }
 
                             return Ok(RespValue::SimpleString("OK".to_string()));
                         }
@@ -2351,17 +2376,29 @@ impl ClusterCommands {
                         "Failover proposal succeeded after fallback forwarding"
                     );
 
-                    Self::wait_for_meta_version(
+                    let meta_ok = Self::wait_for_meta_version(
                         &self.meta_raft,
                         meta.config_version + 1,
                         Duration::from_secs(5),
                     ).await;
-                    Self::wait_for_data_raft_leader(
+                    if !meta_ok {
+                        warn!(
+                            "CLUSTER FAILOVER (fallback): metadata version did not advance after forward; \
+                             UpdateGroupLeader may not have been replicated to this node"
+                        );
+                    }
+                    let leader_ok = Self::wait_for_data_raft_leader(
                         &self.multi_raft,
                         group_id,
                         promoted_node_id,
                         Duration::from_secs(10),
                     ).await;
+                    if !leader_ok {
+                        warn!(
+                            "CLUSTER FAILOVER (fallback): Data Raft group {} did not elect a leader after promotion",
+                            group_id,
+                        );
+                    }
 
                     return Ok(RespValue::SimpleString("OK".to_string()));
                 }
@@ -2427,12 +2464,19 @@ impl ClusterCommands {
 
         // Wait for Data Raft to elect a leader. For the local commit path
         // the metadata is already up-to-date, so no meta-version wait needed.
-        Self::wait_for_data_raft_leader(
+        let leader_ok = Self::wait_for_data_raft_leader(
             &self.multi_raft,
             group_id,
             promoted_node_id,
             Duration::from_secs(10),
         ).await;
+        if !leader_ok {
+            warn!(
+                "CLUSTER FAILOVER: Data Raft group {} did not elect a leader within 10s after \
+                 local commit; writes may be unavailable until election completes",
+                group_id,
+            );
+        }
 
         Ok(RespValue::SimpleString("OK".to_string()))
     }
