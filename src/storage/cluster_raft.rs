@@ -107,7 +107,13 @@ fn map_aidb_read_err(e: aidb::Error, slot: u16, multi: &MultiRaftNode) -> AikvEr
             let group_id = meta.slots[slot as usize];
             if group_id != 0 {
                 if let Some(group_meta) = meta.groups.get(&group_id) {
-                    if let Some(leader_id) = group_meta.leader {
+                    // Try MetaRaft cache first, then Data Raft metrics
+                    let leader_id = group_meta.leader.or_else(|| {
+                        multi
+                            .get_raft_group(group_id)
+                            .and_then(|r| r.metrics().borrow().current_leader)
+                    });
+                    if let Some(leader_id) = leader_id {
                         if let Some(node_info) = meta.nodes.get(&leader_id) {
                             return AikvError::Moved(slot, node_info.addr.clone());
                         }
@@ -211,19 +217,34 @@ fn normalize_data_addr(addr: &str) -> String {
 fn resolve_slot_owner_addr(
     slot: u16,
     meta: &aidb::cluster::ClusterMeta,
+    multi: &MultiRaftNode,
     fallback_leader_id: Option<NodeId>,
 ) -> Option<String> {
     let group_id = *meta.slots.get(slot as usize)?;
     if group_id != 0 {
-        if let Some(group_meta) = meta.groups.get(&group_id) {
-            if let Some(group_leader_id) = group_meta.leader {
+        if let Some(_group_meta) = meta.groups.get(&group_id) {
+            // 1. Try MetaRaft cache
+            if let Some(group_leader_id) =
+                meta.groups.get(&group_id).and_then(|g| g.leader)
+            {
                 if let Some(node_info) = meta.nodes.get(&group_leader_id) {
                     return Some(normalize_data_addr(&node_info.addr));
                 }
             }
-            for replica_id in &group_meta.replicas {
-                if let Some(node_info) = meta.nodes.get(replica_id) {
-                    return Some(normalize_data_addr(&node_info.addr));
+            // 2. Fall back to local Data Raft metrics
+            if let Some(raft) = multi.get_raft_group(group_id) {
+                if let Some(leader_id) = raft.metrics().borrow().current_leader {
+                    if let Some(node_info) = meta.nodes.get(&leader_id) {
+                        return Some(normalize_data_addr(&node_info.addr));
+                    }
+                }
+            }
+            // 3. Ultimate fallback: any replica
+            if let Some(group_meta) = meta.groups.get(&group_id) {
+                for replica_id in &group_meta.replicas {
+                    if let Some(node_info) = meta.nodes.get(replica_id) {
+                        return Some(normalize_data_addr(&node_info.addr));
+                    }
                 }
             }
         }
@@ -252,7 +273,7 @@ fn map_aidb_write_err(e: aidb::Error, slot: u16, multi: &MultiRaftNode) -> AikvE
         let hinted_leader_id = extract_leader_id(&msg);
         if let Some(meta_raft) = multi.meta_raft() {
             let meta = meta_raft.get_cluster_meta();
-            if let Some(target_addr) = resolve_slot_owner_addr(slot, &meta, hinted_leader_id) {
+            if let Some(target_addr) = resolve_slot_owner_addr(slot, &meta, multi, hinted_leader_id) {
                 let self_addr = meta
                     .nodes
                     .get(&multi.node_id())

@@ -432,36 +432,307 @@ impl ClusterCommands {
         Self::post_meta_sync_for_multi(&self.multi_raft, &format!("{:040x}", self.node_id)).await
     }
 
-    /// Wait for the Data Raft group to elect a leader after a metadata-level failover.
+    /// Attempt to repair a Data Raft group's voter set when the original leader is
+    /// unreachable and this replica needs to become a voter to trigger an election.
     ///
-    /// Raft best practice: after updating `GroupMeta.leader` in MetaRaft, we must
-    /// wait for the Data Raft group's actual leader election to complete before
-    /// reporting success to the client. Otherwise the client gets OK but the
-    /// promoted node may not yet be the Data Raft leader, causing write failures.
+    /// Reads the group's expected replicas from `ClusterMeta`, adds any missing
+    /// replicas as learners (non-blocking), then calls `change_membership` to
+    /// promote all live replicas to voters.
     ///
-    /// Returns `true` if the promoted node became leader within the timeout.
+    /// Returns `true` if the voter set was successfully updated.
+    async fn repair_data_raft_voter_set(
+        multi_raft: &MultiRaftNode,
+        meta: &ClusterMeta,
+        group_id: GroupId,
+        promoted_node_id: NodeId,
+    ) -> bool {
+        use std::collections::{BTreeMap, BTreeSet};
+
+        let raft = match multi_raft.get_raft_group(group_id) {
+            Some(r) => r,
+            None => {
+                warn!(
+                    diag_event = "failover_repair_no_group",
+                    group_id = group_id,
+                    "Cannot repair voter set: Data Raft group not found locally"
+                );
+                return false;
+            }
+        };
+
+        let group_meta = match meta.groups.get(&group_id) {
+            Some(g) => g,
+            None => {
+                warn!(
+                    diag_event = "failover_repair_no_meta",
+                    group_id = group_id,
+                    "Cannot repair voter set: group not found in ClusterMeta"
+                );
+                return false;
+            }
+        };
+
+        let metrics = raft.metrics().borrow().clone();
+        let membership = metrics.membership_config.membership();
+
+        // Build the desired voter set: all replicas in this group
+        let desired_voters: BTreeSet<NodeId> = group_meta
+            .replicas
+            .iter()
+            .copied()
+            .collect();
+
+        if desired_voters.is_empty() {
+            warn!(
+                diag_event = "failover_repair_empty_replicas",
+                group_id = group_id,
+                "Cannot repair voter set: ClusterMeta has empty replica list for this group"
+            );
+            return false;
+        }
+
+        info!(
+            diag_event = "failover_repair_start",
+            group_id = group_id,
+            promoted_node_id = promoted_node_id,
+            current_voters = ?membership.voter_ids().collect::<Vec<_>>(),
+            desired_voters = ?desired_voters,
+            "Repairing Data Raft voter set"
+        );
+
+        // If the group has no voters at all (uninitialized Raft instance), we cannot
+        // use add_learner or change_membership — they need an existing leader. Instead,
+        // initialize the local Raft instance with just this node as the sole voter,
+        // then continue to add the other replicas as learners below.
+        let voters_exist = membership.voter_ids().next().is_some();
+        let self_addr = match multi_raft.peer_raft_grpc_addr(promoted_node_id) {
+            Ok(a) => a,
+            Err(_) => {
+                warn!(
+                    diag_event = "failover_repair_no_self_addr",
+                    node_id = promoted_node_id,
+                    "Cannot repair: no gRPC address for this node"
+                );
+                return false;
+            }
+        };
+        if !voters_exist {
+            info!(
+                diag_event = "failover_repair_initialize",
+                group_id = group_id,
+                node_id = promoted_node_id,
+                "Data Raft group is uninitialized; bootstrapping with local node as single voter"
+            );
+            match raft
+                .initialize(BTreeMap::from([(
+                    promoted_node_id,
+                    BasicNode { addr: self_addr },
+                )]))
+                .await
+            {
+                Ok(_) => {
+                    info!(
+                        diag_event = "failover_repair_initialize_success",
+                        group_id = group_id,
+                        "Data Raft group initialized successfully"
+                    );
+                }
+                Err(e) => {
+                    // NotAllowed means another concurrent initializer won — accept it.
+                    let msg = format!("{}", e);
+                    if msg.contains("NotAllowed") || msg.contains("not allowed") {
+                        info!(
+                            diag_event = "failover_repair_initialize_race",
+                            group_id = group_id,
+                            "Data Raft group already initialized by another node"
+                        );
+                    } else {
+                        warn!(
+                            diag_event = "failover_repair_initialize_failed",
+                            group_id = group_id,
+                            error = %e,
+                            "Failed to initialize Data Raft group"
+                        );
+                        return false;
+                    }
+                }
+            }
+        }
+
+        // First add any missing replicas as learners (non-blocking — they just
+        // need to be known to Raft before change_membership can promote them)
+        for replica_id in &group_meta.replicas {
+            if *replica_id == promoted_node_id {
+                continue;
+            }
+            let already_known = membership.get_node(replica_id).is_some();
+            if already_known {
+                continue;
+            }
+            let addr = match multi_raft.peer_raft_grpc_addr(*replica_id) {
+                Ok(a) => a,
+                Err(_) => {
+                    warn!(
+                        diag_event = "failover_repair_no_addr",
+                        replica_id = *replica_id,
+                        "Cannot add learner: no gRPC address known for replica"
+                    );
+                    continue;
+                }
+            };
+            // Non-blocking: the replica may be unreachable (old master is down).
+            // We just need it in the membership config so change_membership can
+            // form a joint consensus that doesn't require the dead master.
+            if let Err(e) = raft
+                .add_learner(*replica_id, BasicNode { addr }, false)
+                .await
+            {
+                warn!(
+                    diag_event = "failover_repair_add_learner_failed",
+                    replica_id = *replica_id,
+                    error = %e,
+                    "Failed to add learner during repair"
+                );
+            }
+        }
+
+        // Re-read metrics after adding learners
+        let latest_metrics = raft.metrics().borrow().clone();
+        let latest_membership = latest_metrics.membership_config.membership();
+        let known_nodes: BTreeSet<NodeId> =
+            latest_membership.nodes().map(|(id, _)| *id).collect();
+
+        if !desired_voters.is_subset(&known_nodes) {
+            let missing: Vec<_> = desired_voters
+                .difference(&known_nodes)
+                .collect();
+            warn!(
+                diag_event = "failover_repair_missing_nodes",
+                group_id = group_id,
+                missing = ?missing,
+                "Cannot change_membership: some desired voters are unknown to Raft"
+            );
+            return false;
+        }
+
+        // Attempt change_membership with a short timeout (2s).
+        // We are in a degraded state; don't block the election loop for long.
+        match tokio::time::timeout(
+            Duration::from_secs(2),
+            raft.change_membership(desired_voters.clone(), true),
+        )
+        .await
+        {
+            Err(_) => {
+                warn!(
+                    diag_event = "failover_repair_change_timeout",
+                    group_id = group_id,
+                    "Timed out waiting for change_membership during repair"
+                );
+                false
+            }
+            Ok(Err(e)) => {
+                warn!(
+                    diag_event = "failover_repair_change_failed",
+                    group_id = group_id,
+                    error = %e,
+                    "change_membership failed during repair"
+                );
+                false
+            }
+            Ok(Ok(_)) => {
+                info!(
+                    diag_event = "failover_repair_change_success",
+                    group_id = group_id,
+                    voters = ?desired_voters,
+                    "Data Raft voter set repaired"
+                );
+                true
+            }
+        }
+    }
+
+    /// Wait for the Data Raft group to elect a leader after a failover.
+    ///
+    /// Polls the Data Raft group's `metrics.current_leader` until a leader is elected
+    /// or the timeout expires. Returns `(true, Some(leader))` when any leader is elected
+    /// (not necessarily the promoted node — openraft's quorum may converge on another
+    /// replica, and we accept that).
+    ///
+    /// Returns `(true, Some(actual_leader))` if a leader was elected within the timeout,
+    /// or `(false, None)` if no leader was elected.
     async fn wait_for_data_raft_leader(
         multi_raft: &MultiRaftNode,
+        meta: &ClusterMeta,
         group_id: GroupId,
         promoted_node_id: NodeId,
         timeout: Duration,
-    ) -> bool {
+    ) -> (bool, Option<NodeId>) {
         let deadline = Instant::now() + timeout;
+        let mut election_retriggered = false;
         while Instant::now() < deadline {
             if let Some(raft) = multi_raft.get_raft_group(group_id) {
                 let metrics = raft.metrics().borrow().clone();
                 match metrics.current_leader {
-                    Some(leader) if leader == promoted_node_id => return true,
+                    Some(leader) if leader == promoted_node_id => {
+                        return (true, Some(leader));
+                    }
                     Some(leader) => {
-                        // Raft elected a different node — log but accept it,
-                        // the quorum may have converged on another replica.
-                        info!(
+                        warn!(
                             "Data Raft group {} elected leader {:040x} (expected {:040x}), accepting",
                             group_id, leader, promoted_node_id
                         );
-                        return true;
+                        return (true, Some(leader));
                     }
-                    None => {} // No leader yet, keep waiting
+                    None => {
+                        // No leader yet. If we haven't already retriggered, check whether
+                        // this node is a voter. If not, try to repair membership from
+                        // ClusterMeta so the node can participate in (or start) an election.
+                        if !election_retriggered {
+                            let is_voter = metrics
+                                .membership_config
+                                .membership()
+                                .voter_ids()
+                                .any(|id| id == promoted_node_id);
+                            if !is_voter {
+                                warn!(
+                                    diag_event = "failover_repair_voter",
+                                    group_id = group_id,
+                                    node_id = promoted_node_id,
+                                    "Data Raft group has no leader and local node is not a voter; attempting self-healing"
+                                );
+                                let repaired = Self::repair_data_raft_voter_set(
+                                    multi_raft,
+                                    meta,
+                                    group_id,
+                                    promoted_node_id,
+                                )
+                                .await;
+                                if repaired {
+                                    info!(
+                                        diag_event = "failover_repair_voter_success",
+                                        group_id = group_id,
+                                        node_id = promoted_node_id,
+                                        "Self-healing repaired Data Raft voter set; retriggering election"
+                                    );
+                                    let _ = raft.trigger().elect().await;
+                                } else {
+                                    warn!(
+                                        diag_event = "failover_repair_voter_failed",
+                                        group_id = group_id,
+                                        node_id = promoted_node_id,
+                                        "Self-healing could not repair Data Raft voter set"
+                                    );
+                                }
+                            }
+                            // One-shot: only attempt self-healing once per failover call.
+                        // Repeated change_membership attempts are unlikely to succeed
+                        // immediately after a failure (e.g. a missing peer won't reappear
+                        // within the same 10s window), and each attempt triggers a Raft
+                        // config change that can slow down a natural election.
+                        election_retriggered = true;
+                        }
+                    }
                 }
             }
             sleep(Duration::from_millis(200)).await;
@@ -470,7 +741,45 @@ impl ClusterCommands {
             "Data Raft group {} did not elect a leader within {:?} after failover",
             group_id, timeout
         );
+        (false, None)
+    }
+
+    /// Wait until MetaRaft's `GroupMeta.leader` cache reflects the actual Data Raft leader.
+    async fn wait_for_meta_leader_sync(
+        meta_raft: &MetaRaftNode,
+        group_id: GroupId,
+        expected_leader: NodeId,
+        timeout: Duration,
+    ) -> bool {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            let meta = meta_raft.get_cluster_meta();
+            if meta
+                .groups
+                .get(&group_id)
+                .and_then(|g| g.leader)
+                == Some(expected_leader)
+            {
+                return true;
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
         false
+    }
+
+    /// Resolve the actual leader for a group, falling back from MetaRaft cache to
+    /// local Data Raft metrics when the cache is stale or None.
+    fn resolve_group_leader(&self, group_id: GroupId) -> Option<NodeId> {
+        // 1. Try MetaRaft cache (fast, eventually consistent)
+        let meta = self.meta_raft.get_cluster_meta();
+        if let Some(leader) = meta.groups.get(&group_id).and_then(|g| g.leader) {
+            return Some(leader);
+        }
+        // 2. Fall back to local Data Raft metrics (authoritative but local-only)
+        if let Some(raft) = self.multi_raft.get_raft_group(group_id) {
+            return raft.metrics().borrow().current_leader;
+        }
+        None
     }
 
     /// Wait until the local metadata's config_version reaches at least the target.
@@ -585,11 +894,11 @@ impl ClusterCommands {
 
         // Determine cluster state
         // Cluster is OK if all slots are assigned and all groups with slots have leaders
-        let all_groups_have_leaders = meta.groups.iter().all(|(gid, g)| {
+        let all_groups_have_leaders = meta.groups.iter().all(|(gid, _g)| {
             // Check if this group owns any slots
             let owns_slots = meta.slots.contains(gid);
-            // If it owns slots, it must have a leader
-            !owns_slots || g.leader.is_some()
+            // If it owns slots, it must have a leader (resolved via cache + Data Raft fallback)
+            !owns_slots || self.resolve_group_leader(*gid).is_some()
         });
 
         // Every non-zero slot must point at a group that exists in `meta.groups` (orphan slot
@@ -672,15 +981,13 @@ impl ClusterCommands {
 
             // Redis: 「master」= 分片主或尚未持槽的空主；「slave」= 挂在某 master 下的副本。
             // 仅把「在某组 replicas 里且不是该组 leader」的节点标为 slave。
-            // 旧逻辑把「还未 ADDSLOTS、因而不是任何组 leader」的新节点标成 slave，会误显示扩容 master。
+            // Uses resolve_group_leader() for the leader check so display is accurate even
+            // when the MetaRaft cache hasn't been updated yet by the background watcher.
             let is_replica = meta.groups.values().any(|g| {
                 if !g.replicas.contains(node_id) {
                     return false;
                 }
-                match g.leader {
-                    Some(leader) => leader != *node_id,
-                    None => false,
-                }
+                self.resolve_group_leader(g.group_id) != Some(*node_id)
             });
             let is_master = !is_replica;
             let role = if is_master { "master" } else { "slave" };
@@ -694,10 +1001,10 @@ impl ClusterCommands {
                     .values()
                     .find(|g| {
                         g.replicas.contains(node_id)
-                            && g.leader.is_some()
-                            && g.leader != Some(*node_id)
+                            && self.resolve_group_leader(g.group_id).is_some()
+                            && self.resolve_group_leader(g.group_id) != Some(*node_id)
                     })
-                    .and_then(|g| g.leader)
+                    .and_then(|g| self.resolve_group_leader(g.group_id))
                     .map(|lid| format!("{:040x}", lid))
                     .unwrap_or_else(|| "-".to_string())
             };
@@ -706,8 +1013,8 @@ impl ClusterCommands {
             let mut slot_ranges = Vec::new();
             let mut migration_flags = Vec::new();
             if is_master {
-                for (group_id, group_meta) in &meta.groups {
-                    if group_meta.leader == Some(*node_id) {
+                for (group_id, _group_meta) in &meta.groups {
+                    if self.resolve_group_leader(*group_id) == Some(*node_id) {
                         // Find slot range for this group
                         let mut start = None;
                         let mut end = None;
@@ -736,7 +1043,7 @@ impl ClusterCommands {
                                 | SlotMigrationState::Importing { from_group, to_group } => {
                                     if *group_id == from_group {
                                         if let Some(to_leader) =
-                                            meta.groups.get(&to_group).and_then(|g| g.leader)
+                                            self.resolve_group_leader(to_group)
                                         {
                                             migration_flags.push(format!(
                                                 "[{}->-{:040x}]",
@@ -746,7 +1053,7 @@ impl ClusterCommands {
                                     }
                                     if *group_id == to_group {
                                         if let Some(from_leader) =
-                                            meta.groups.get(&from_group).and_then(|g| g.leader)
+                                            self.resolve_group_leader(from_group)
                                         {
                                             migration_flags.push(format!(
                                                 "[{}-<-{:040x}]",
@@ -892,16 +1199,18 @@ impl ClusterCommands {
         ];
 
         if let Some(group_meta) = meta.groups.get(&group_id) {
+            let effective_leader = self.resolve_group_leader(group_id);
+
             // Add master node first
-            if let Some(leader_id) = group_meta.leader {
+            if let Some(leader_id) = effective_leader {
                 if let Some(node_info) = meta.nodes.get(&leader_id) {
                     elements.push(self.format_node_info(leader_id, node_info));
                 }
             }
 
-            // Add replica nodes
+            // Add replica nodes (excluding the leader)
             for &replica_id in &group_meta.replicas {
-                if Some(replica_id) != group_meta.leader {
+                if Some(replica_id) != effective_leader {
                     if let Some(node_info) = meta.nodes.get(&replica_id) {
                         elements.push(self.format_node_info(replica_id, node_info));
                     }
@@ -916,11 +1225,9 @@ impl ClusterCommands {
                     | SlotMigrationState::Importing { from_group, to_group } = m.state
                     {
                         if group_id == from_group {
-                            if let Some(target_group) = meta.groups.get(&to_group) {
-                                if let Some(target_leader) = target_group.leader {
-                                    if let Some(node_info) = meta.nodes.get(&target_leader) {
-                                        elements.push(self.format_node_info(target_leader, node_info));
-                                    }
+                            if let Some(target_leader) = self.resolve_group_leader(to_group) {
+                                if let Some(node_info) = meta.nodes.get(&target_leader) {
+                                    elements.push(self.format_node_info(target_leader, node_info));
                                 }
                             }
                         }
@@ -1355,7 +1662,7 @@ impl ClusterCommands {
             .groups
             .iter()
             .find(|(gid, g)| {
-                **gid == master_id || g.leader == Some(master_id) || g.replicas.contains(&master_id)
+                **gid == master_id || self.resolve_group_leader(**gid) == Some(master_id) || g.replicas.contains(&master_id)
             })
             .map(|(gid, _)| *gid)
             .ok_or_else(|| {
@@ -1418,7 +1725,7 @@ impl ClusterCommands {
             .groups
             .iter()
             .find(|(gid, g)| {
-                **gid == master_id || g.leader == Some(master_id) || g.replicas.contains(&master_id)
+                **gid == master_id || self.resolve_group_leader(**gid) == Some(master_id) || g.replicas.contains(&master_id)
             })
             .map(|(gid, _)| *gid)
             .ok_or_else(|| {
@@ -1467,7 +1774,8 @@ impl ClusterCommands {
             return Ok(None);
         }
         let member = meta.groups.get(&group_id).is_some_and(|g| {
-            g.leader == Some(self.node_id) || g.replicas.contains(&self.node_id)
+            self.resolve_group_leader(group_id) == Some(self.node_id)
+                || g.replicas.contains(&self.node_id)
         });
         if !member {
             return Err(AikvError::Invalid(format!(
@@ -1577,7 +1885,8 @@ impl ClusterCommands {
             let mut nodes_array = Vec::new();
 
             // Add master node first (leader)
-            if let Some(leader_id) = group_meta.leader {
+            let effective_leader = self.resolve_group_leader(*group_id);
+            if let Some(leader_id) = effective_leader {
                 if let Some(node_info) = meta.nodes.get(&leader_id) {
                     let data_addr = Self::extract_data_address(&node_info.addr);
                     let (ip, port) = Self::parse_addr(&data_addr);
@@ -1609,7 +1918,7 @@ impl ClusterCommands {
             // Add replica nodes
             for &replica_id in &group_meta.replicas {
                 // Skip leader (already added as master)
-                if Some(replica_id) == group_meta.leader {
+                if Some(replica_id) == effective_leader {
                     continue;
                 }
                 if let Some(node_info) = meta.nodes.get(&replica_id) {
@@ -1660,7 +1969,7 @@ impl ClusterCommands {
 
         // Find which group this node belongs to
         for (group_id, group_meta) in &meta.groups {
-            if group_meta.leader == Some(self.node_id)
+            if self.resolve_group_leader(*group_id) == Some(self.node_id)
                 || group_meta.replicas.contains(&self.node_id)
             {
                 return Ok(RespValue::BulkString(Some(Bytes::from(format!(
@@ -1695,8 +2004,8 @@ impl ClusterCommands {
         let mut replicas = Vec::new();
 
         // Find the group where this node is leader
-        for group_meta in meta.groups.values() {
-            if group_meta.leader == Some(master_id) {
+        for (group_id, group_meta) in meta.groups.iter() {
+            if self.resolve_group_leader(*group_id) == Some(master_id) {
                 // Found the group, list all replicas (excluding the leader)
                 for &replica_id in &group_meta.replicas {
                     if replica_id == master_id {
@@ -1945,6 +2254,99 @@ impl ClusterCommands {
         Ok(())
     }
 
+    async fn forward_group_leader_update_to_leader(
+        &self,
+        leader_redis_addr: &str,
+        group_id: GroupId,
+        leader_id: NodeId,
+    ) -> Result<()> {
+        if Self::is_loopback_redis_addr(leader_redis_addr) {
+            return Err(AikvError::Internal(format!(
+                "Refusing to forward SETLEADER to loopback address {}",
+                leader_redis_addr
+            )));
+        }
+        let client = redis::Client::open(format!("redis://{}/", leader_redis_addr)).map_err(|e| {
+            AikvError::Internal(format!(
+                "Failed to create redis client for MetaRaft leader {}: {}",
+                leader_redis_addr, e
+            ))
+        })?;
+        let mut conn = client.get_multiplexed_async_connection().await.map_err(|e| {
+            AikvError::Internal(format!(
+                "Failed to connect to MetaRaft leader {}: {}",
+                leader_redis_addr, e
+            ))
+        })?;
+        let mut cmd = redis::cmd("CLUSTER");
+        cmd.arg("SETLEADER")
+            .arg(format!("{}", group_id))
+            .arg(format!("{}", leader_id));
+        let _: String = cmd.query_async(&mut conn).await.map_err(|e| {
+            AikvError::Internal(format!(
+                "MetaRaft leader {} failed to execute SETLEADER {} {}: {}",
+                leader_redis_addr, group_id, leader_id, e
+            ))
+        })?;
+        Ok(())
+    }
+
+    async fn update_group_leader_with_forward(
+        &self,
+        group_id: GroupId,
+        leader_id: NodeId,
+        is_forwarded: bool,
+    ) -> Result<()> {
+        let res = self.meta_raft.update_group_leader(group_id, leader_id).await;
+        if let Err(e) = res {
+            let err_msg = e.to_string();
+            if err_msg.contains("ForwardToLeader") {
+                if is_forwarded {
+                    return Err(AikvError::Internal(format!(
+                        "SETLEADER forwarding loop detected for group {}",
+                        group_id
+                    )));
+                }
+                if let Some(meta_leader_id) = self.meta_raft.get_leader().await {
+                    if meta_leader_id != self.node_id {
+                        let meta = self.meta_raft.get_cluster_meta();
+                        if let Some(leader_node) = meta.nodes.get(&meta_leader_id) {
+                            let leader_redis_addr = Self::extract_data_address(&leader_node.addr);
+                            self.forward_group_leader_update_to_leader(
+                                &leader_redis_addr,
+                                group_id,
+                                leader_id,
+                            )
+                            .await?;
+                            return Ok(());
+                        }
+                    }
+                }
+                // Fallback: try to extract address from error message
+                let leader_redis_addr =
+                    Self::extract_forward_leader_addr_from_error(&err_msg).unwrap_or_default();
+                if !leader_redis_addr.is_empty() {
+                    self.forward_group_leader_update_to_leader(
+                        &leader_redis_addr,
+                        group_id,
+                        leader_id,
+                    )
+                    .await?;
+                    return Ok(());
+                }
+                return Err(AikvError::Internal(format!(
+                    "Failed to forward SETLEADER for group {}: {}",
+                    group_id, err_msg
+                )));
+            }
+            return Err(AikvError::Internal(format!(
+                "Failed to update group leader: {}",
+                err_msg
+            )));
+        }
+        Ok(())
+    }
+
     async fn forward_setslot_to_leader(
         &self,
         leader_redis_addr: &str,
@@ -2160,7 +2562,14 @@ impl ClusterCommands {
     /// Handle CLUSTER FAILOVER command.
     ///
     /// Triggers a manual failover (replica becomes master).
-    /// `target_node_id` is optional and intended for internal forwarding to MetaRaft leader.
+    ///
+    /// No longer manually designates a leader in MetaRaft. Instead, the command ensures
+    /// the local Data Raft instance is active, then waits for openraft to naturally elect
+    /// a leader (which happens automatically after the old master stops sending heartbeats).
+    ///
+    /// After Data Raft elects a leader, the background metadata watcher will sync the
+    /// result to MetaRaft's `GroupMeta.leader` cache within one cycle (~2s).
+    /// `target_node_id` is optional and intended for internal forwarding.
     pub async fn cluster_failover(
         &self,
         mode: FailoverMode,
@@ -2193,12 +2602,15 @@ impl ClusterCommands {
             );
         }
 
-        // Find which group this node is a replica of
+        // Find which group this node is a replica of.
+        // Use resolve_group_leader() for the leader check so the MetaRaft cache
+        // staleness does not block failover.
         let group_id = meta
             .groups
             .iter()
-            .find(|(_, g)| {
-                g.replicas.contains(&promoted_node_id) && g.leader != Some(promoted_node_id)
+            .find(|(gid, g)| {
+                g.replicas.contains(&promoted_node_id)
+                    && self.resolve_group_leader(**gid) != Some(promoted_node_id)
             })
             .map(|(gid, _)| *gid);
 
@@ -2211,56 +2623,8 @@ impl ClusterCommands {
             }
         };
 
-        // Perform failover based on mode
-        let update_res = match mode {
-            FailoverMode::Default | FailoverMode::Force | FailoverMode::Takeover => {
-                self.meta_raft.update_group_leader(group_id, promoted_node_id).await
-            }
-        };
-
-        if let Err(e) = update_res {
-            let err_msg = e.to_string();
-            let action = if mode == FailoverMode::Takeover { "takeover" } else { "failover" };
-
-            if !err_msg.contains("ForwardToLeader") {
-                return Err(AikvError::Internal(format!("Failed to perform {}: {}", action, e)));
-            }
-
-            // Try forwarding via get_leader() first (fast path)
-            let mut forwarded = false;
-            if let Some(leader_id) = self.meta_raft.get_leader().await {
-                if leader_id != self.node_id {
-                    if let Some(leader_node) = meta.nodes.get(&leader_id) {
-                        let addr = Self::extract_data_address(&leader_node.addr);
-                        info!(
-                            "CLUSTER FAILOVER: forwarding request to MetaRaft leader {} at {}",
-                            leader_id, addr,
-                        );
-                        if self.forward_failover_to_leader(&addr, mode, promoted_node_id).await.is_ok() {
-                            info!("CLUSTER FAILOVER: forward to leader {} succeeded", leader_id);
-                            forwarded = true;
-                        }
-                    }
-                }
-            }
-
-            // Fallback: try all voters (handles stale get_leader())
-            if !forwarded {
-                warn!(
-                    "CLUSTER FAILOVER: get_leader() target unreachable, trying all {} MetaRaft voters",
-                    voters.len(),
-                );
-                self.forward_failover_to_voters(&voters, &meta, mode, promoted_node_id).await?;
-            }
-            // Wait for metadata to catch up on this node after forward
-            Self::wait_for_meta_version(
-                &self.meta_raft,
-                meta.config_version + 1,
-                Duration::from_secs(5),
-            ).await;
-        }
-
-        // Wait for Data Raft to elect a leader and sync data groups
+        // Sync local data Raft groups from ClusterMeta so the promoted node's
+        // data-raft instance is active and can participate in leader election.
         self.sync_data_raft_groups_after_meta_change()
             .await
             .map_err(|e| {
@@ -2270,19 +2634,91 @@ impl ClusterCommands {
                     promoted_node_id = %format!("{:040x}", promoted_node_id),
                     group_id = group_id,
                     mode = ?mode,
-                    sync_reason = "after_commit",
+                    sync_reason = "pre_election",
                     error = %e,
-                    "Data-group sync failed after failover commit"
+                    "Data-group sync failed before failover election wait"
                 );
                 e
             })?;
 
-        Self::wait_for_data_raft_leader(
+        // Diagnostic: log Data Raft group membership after sync
+        if let Some(raft) = self.multi_raft.get_raft_group(group_id) {
+            let dr_metrics = raft.metrics().borrow().clone();
+            let dr_membership = dr_metrics.membership_config.membership();
+            let dr_voters: Vec<_> = dr_membership.voter_ids().collect();
+            let dr_learners: Vec<_> = dr_membership.learner_ids().collect();
+            let dr_leader = dr_metrics.current_leader;
+            info!(
+                diag_event = "cluster_failover_data_raft_state",
+                group_id = group_id,
+                data_raft_leader = dr_leader.map(|id| format!("{:040x}", id)),
+                data_raft_voters = ?dr_voters,
+                data_raft_learners = ?dr_learners,
+                data_raft_term = dr_metrics.current_term,
+                "Data Raft group state before election trigger"
+            );
+        }
+
+        // TAKEOVER and FORCE: actively trigger a Raft election instead of waiting
+        // for the passive election timeout. This matches Redis semantics where
+        // TAKEOVER means "become master immediately regardless of old master state".
+        if matches!(mode, FailoverMode::Takeover) || matches!(mode, FailoverMode::Force) {
+            if let Some(raft) = self.multi_raft.get_raft_group(group_id) {
+                let _ = raft.trigger().elect().await;
+            }
+        }
+
+        // Wait for the Data Raft group to elect a leader.
+        // Under normal conditions this completes within ~150-300ms (election timeout).
+        // The active trigger above (for TAKEOVER/FORCE) makes this near-instant.
+        let (raft_leader_ok, actual_leader) = Self::wait_for_data_raft_leader(
             &self.multi_raft,
+            &meta,
             group_id,
             promoted_node_id,
             Duration::from_secs(10),
         ).await;
+
+        if !raft_leader_ok {
+            return Err(AikvError::Internal(format!(
+                "CLUSTER FAILOVER: Data Raft group {} did not elect a leader within 10s after failover",
+                group_id,
+            )));
+        }
+
+        // Actively propose the Data Raft leader to MetaRaft's GroupMeta.leader cache.
+        // Uses forwarding to MetaRaft leader via Redis when ForwardToLeader is returned.
+        if let Some(leader_id) = actual_leader {
+            match self
+                .update_group_leader_with_forward(group_id, leader_id, false)
+                .await
+            {
+                Ok(_) => {
+                    info!(
+                        diag_event = "cluster_failover_meta_synced",
+                        group_id = group_id,
+                        leader = %format!("{:040x}", leader_id),
+                        "MetaRaft group leader cache updated after failover"
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        diag_event = "cluster_failover_meta_stale",
+                        requester_node_id = %format!("{:040x}", self.node_id),
+                        group_id = group_id,
+                        actual_leader = %format!("{:040x}", leader_id),
+                        error = %e,
+                        "MetaRaft cache not updated after failover; background watcher will sync within next cycle"
+                    );
+                }
+            }
+        }
+
+        info!(
+            "CLUSTER FAILOVER: Data Raft group {} elected leader {}",
+            group_id,
+            actual_leader.map_or_else(|| "none".to_string(), |l| format!("{:040x}", l)),
+        );
 
         Ok(RespValue::SimpleString("OK".to_string()))
     }
@@ -2305,9 +2741,9 @@ impl ClusterCommands {
         // `g.leader != Some(self)` is true for the sole shard master and we would
         // incorrectly enter Takeover failover, racing provisioning and tearing down
         // the Redis connection (client sees "Server closed the connection").
-        let replica_group = meta.groups.iter().find(|(_, g)| {
+        let replica_group = meta.groups.iter().find(|(gid, g)| {
             g.replicas.contains(&self.node_id)
-                && g.leader.is_some_and(|l| l != self.node_id)
+                && self.resolve_group_leader(**gid).is_some_and(|l| l != self.node_id)
         });
 
         let (group_id, group_meta) = match replica_group {
@@ -2323,13 +2759,14 @@ impl ClusterCommands {
             }
         };
 
+        let resolved_leader = self.resolve_group_leader(group_id);
         info!(
             "Automatic failover check: node {:040x} is replica of group {}, leader is {:?}, replicas are {:?}",
-            self.node_id, group_id, group_meta.leader, group_meta.replicas
+            self.node_id, group_id, resolved_leader, group_meta.replicas
         );
 
         // Check if the master (leader) is reachable
-        if let Some(leader_id) = group_meta.leader {
+        if let Some(leader_id) = self.resolve_group_leader(group_id) {
             // Try to get leader info
             if let Some(leader_info) = meta.nodes.get(&leader_id) {
                 let leader_reachable = Self::is_addr_reachable(&leader_info.addr, 300).await;
@@ -2630,8 +3067,8 @@ impl ClusterCommands {
             // For now, just clear slot assignments for this node
             let meta = self.meta_raft.get_cluster_meta();
 
-            for (group_id, group_meta) in &meta.groups {
-                if group_meta.leader == Some(self.node_id) {
+            for (group_id, _group_meta) in &meta.groups {
+                if self.resolve_group_leader(*group_id) == Some(self.node_id) {
                     // Clear slots for groups where this node is leader
                     for (slot_idx, &assigned_group) in meta.slots.iter().enumerate() {
                         if assigned_group == *group_id {
@@ -2679,8 +3116,8 @@ impl ClusterCommands {
         let meta = self.meta_raft.get_cluster_meta();
 
         // Find groups where this node is leader and clear their slots
-        for (group_id, group_meta) in &meta.groups {
-            if group_meta.leader == Some(self.node_id) {
+        for (group_id, _group_meta) in &meta.groups {
+            if self.resolve_group_leader(*group_id) == Some(self.node_id) {
                 for (slot_idx, &assigned_group) in meta.slots.iter().enumerate() {
                     if assigned_group == *group_id {
                         self.meta_raft
@@ -3223,6 +3660,16 @@ impl ClusterCommands {
     /// Handle CLUSTER METARAFT SETSTATUS command.
     ///
     /// Internal command for updating node status in MetaRaft with consensus.
+    pub async fn cluster_metaraft_setleader(
+        &self,
+        group_id: GroupId,
+        leader_id: NodeId,
+    ) -> Result<RespValue> {
+        self.update_group_leader_with_forward(group_id, leader_id, false)
+            .await?;
+        Ok(RespValue::SimpleString("OK".to_string()))
+    }
+
     pub async fn cluster_metaraft_setstatus(
         &self,
         node_id: NodeId,
@@ -3318,7 +3765,8 @@ impl ClusterCommands {
             {
                 let in_group = |gid: GroupId| {
                     meta.groups.get(&gid).is_some_and(|g| {
-                        g.leader == Some(self.node_id) || g.replicas.contains(&self.node_id)
+                        self.resolve_group_leader(gid) == Some(self.node_id)
+                            || g.replicas.contains(&self.node_id)
                     })
                 };
                 let is_to_group_member = in_group(to_group);
@@ -3400,21 +3848,24 @@ impl ClusterCommands {
             )));
         }
 
-        // Check if this node owns the slot (is the leader of the assigned group)
+        // Check if this node owns the slot (is the leader of the assigned group).
+        // Use resolve_group_leader() which falls back from MetaRaft cache to Data Raft metrics.
+        let effective_leader = self.resolve_group_leader(assigned_group);
+
         if let Some(group_meta) = meta.groups.get(&assigned_group) {
             // Check if this node is the leader of the group
-            if group_meta.leader == Some(self.node_id) {
+            if effective_leader == Some(self.node_id) {
                 // This node owns the slot
                 return Ok(());
             }
 
             // Check if this node is a replica (can handle READONLY requests)
-            if group_meta.replicas.contains(&self.node_id) && group_meta.leader != Some(self.node_id) {
+            if group_meta.replicas.contains(&self.node_id) && effective_leader != Some(self.node_id) {
                 if readonly {
                     return Ok(());
                 }
                 // This node is a replica, redirect to the leader
-                if let Some(leader_id) = group_meta.leader {
+                if let Some(leader_id) = effective_leader {
                     if let Some(leader_info) = meta.nodes.get(&leader_id) {
                         let data_addr = Self::extract_data_address(&leader_info.addr);
                         return Err(Self::moved_error(slot, &data_addr));
@@ -3423,7 +3874,7 @@ impl ClusterCommands {
             }
 
             // Slot belongs to another node, find the leader and redirect
-            if let Some(leader_id) = group_meta.leader {
+            if let Some(leader_id) = effective_leader {
                 if let Some(leader_info) = meta.nodes.get(&leader_id) {
                     let data_addr = Self::extract_data_address(&leader_info.addr);
                     debug!(
@@ -3507,11 +3958,12 @@ impl ClusterCommands {
             )));
         }
 
-        // Check if all groups have leaders
-        for (group_id, group_meta) in &meta.groups {
+        // Check if all groups have leaders (via resolve_group_leader which
+        // falls back from MetaRaft cache to Data Raft metrics).
+        for (group_id, _group_meta) in &meta.groups {
             // Check if this group owns any slots
             let owns_slots = meta.slots.contains(group_id);
-            if owns_slots && group_meta.leader.is_none() {
+            if owns_slots && self.resolve_group_leader(*group_id).is_none() {
                 return Err(AikvError::Internal(format!(
                     "CLUSTERDOWN The cluster is down. Group {group_id} has no leader",
                     group_id = group_id
@@ -3537,8 +3989,8 @@ impl ClusterCommands {
             return None;
         }
 
-        if let Some(group_meta) = meta.groups.get(&assigned_group) {
-            if let Some(leader_id) = group_meta.leader {
+        if let Some(_group_meta) = meta.groups.get(&assigned_group) {
+            if let Some(leader_id) = self.resolve_group_leader(assigned_group) {
                 if let Some(leader_info) = meta.nodes.get(&leader_id) {
                     let data_addr = Self::extract_data_address(&leader_info.addr);
                     return Some((leader_id, data_addr));

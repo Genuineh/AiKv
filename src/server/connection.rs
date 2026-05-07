@@ -943,6 +943,42 @@ impl Connection {
                             .cluster_metaraft_setstatus(node_id, status, is_forwarded)
                             .await
                     }
+                    "SETLEADER" => {
+                        // CLUSTER METARAFT SETLEADER group_id leader_id
+                        if args.len() != 3 {
+                            return Err(AikvError::WrongArgCount(
+                                "CLUSTER METARAFT SETLEADER".to_string(),
+                            ));
+                        }
+
+                        let group_id = {
+                            let s = String::from_utf8_lossy(&args[1]);
+                            s.parse::<u64>()
+                                .or_else(|_| u64::from_str_radix(&s, 16))
+                                .map_err(|_| {
+                                    AikvError::Invalid(
+                                        "Invalid group ID: must be a positive integer or hex string"
+                                            .to_string(),
+                                    )
+                                })?
+                        };
+
+                        let leader_id = {
+                            let s = String::from_utf8_lossy(&args[2]);
+                            s.parse::<u64>()
+                                .or_else(|_| u64::from_str_radix(&s, 16))
+                                .map_err(|_| {
+                                    AikvError::Invalid(
+                                        "Invalid leader ID: must be a positive integer or hex string"
+                                            .to_string(),
+                                    )
+                                })?
+                        };
+
+                        cluster_cmds
+                            .cluster_metaraft_setleader(group_id, leader_id)
+                            .await
+                    }
                     _ => Err(AikvError::InvalidCommand(format!(
                         "Unknown CLUSTER METARAFT subcommand: {}",
                         metaraft_subcmd

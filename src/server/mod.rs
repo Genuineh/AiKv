@@ -368,6 +368,9 @@ impl Server {
                 if let Err(e) = multi_raft.sync_data_groups_from_meta().await {
                     tracing::warn!("data-groups watcher: sync failed: {}", e);
                 }
+                if let Err(e) = multi_raft.sync_data_group_leaders_to_meta().await {
+                    tracing::warn!("data-groups leader sync failed: {}", e);
+                }
                 if let Some(r) = multi_raft.router() {
                     let _ = r.refresh_metadata();
                 }
