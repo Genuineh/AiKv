@@ -81,6 +81,22 @@ impl rpc::raft_service_server::RaftService for MultiRaftService {
             .get_raft(group_id)
             .ok_or_else(|| Status::not_found(format!("Group {group_id} not found")))?;
 
+        // Auto-initialize uninitialized data groups so the Raft Core does not
+        // panic when processing AppendEntries from the leader. Without this,
+        // add_learner fails and joint consensus stalls.
+        if group_id != 0 {
+            if let Err(e) = self.multi.ensure_group_initialized(group_id, req.vote_node_id).await {
+                if !e.to_string().contains("NotAllowed") && !e.to_string().contains("not allowed") {
+                    tracing::warn!(
+                        group_id = group_id,
+                        leader_node_id = req.vote_node_id,
+                        error = %e,
+                        "Failed to auto-initialize data group before AppendEntries"
+                    );
+                }
+            }
+        }
+
         // Convert entries
         let mut entries = Vec::new();
         for entry in req.entries {
