@@ -219,7 +219,7 @@ impl KeyCommands {
     )))
   }
 
-  /// DUMP — WiQun 内部格式 `[version: u8=0][bincode(StoredValue)]`, 非 Redis 兼容.
+  /// DUMP — AiKv 内部格式 `[version: u8=0][bincode(StoredValue)]`, 非 Redis 兼容.
   #[instrument(name = "cmd_keys", skip(self, args), fields(cmd.name = "DUMP"))]
   pub async fn dump(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
     router::require_args("DUMP", args, 1)?;

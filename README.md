@@ -130,7 +130,9 @@ cargo build --release
 
 ## 设计文档
 
-详见 [WiQunTools](https://github.com/GO-Zheng/WiQunTools) 仓库下 `docs/aikv-inventory/`.
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [DEPLOYMENT.md](DEPLOYMENT.md)
+- [docs/superpowers/](docs/superpowers/)
 
 ## 许可
 

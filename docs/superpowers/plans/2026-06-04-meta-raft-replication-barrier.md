@@ -54,7 +54,7 @@ pub async fn new(
 - [ ] **Step 3: 编译验证**
 
 ```bash
-cd /root/code/dev/AiDb && cargo build --features cluster 2>&1 | tail -5
+cd aidb && cargo build --features cluster 2>&1 | tail -5
 ```
 
 Expected: 编译成功 (struct 字段新增不影响现有调用方).
@@ -131,7 +131,7 @@ async fn wait_learner_catch_up(&self, node_id: NodeId) -> Result<()> {
 - [ ] **Step 3: 编译验证**
 
 ```bash
-cd /root/code/dev/AiDb && cargo build --features cluster 2>&1 | tail -5
+cd aidb && cargo build --features cluster 2>&1 | tail -5
 ```
 
 Expected: 编译成功. 新方法是 private 的, 仅被 Task 4 调用.
@@ -211,7 +211,7 @@ async fn confirm_replication(&self, voter_ids: &[NodeId]) -> Result<()> {
 - [ ] **Step 3: 编译验证**
 
 ```bash
-cd /root/code/dev/AiDb && cargo build --features cluster 2>&1 | tail -5
+cd aidb && cargo build --features cluster 2>&1 | tail -5
 ```
 
 Expected: 编译成功.
@@ -287,7 +287,7 @@ pub async fn promote_learner_to_voter(&self, node_id: NodeId) -> Result<()> {
 - [ ] **Step 2: 编译 + clippy 验证**
 
 ```bash
-cd /root/code/dev/AiDb && cargo build --features cluster 2>&1 | tail -5
+cd aidb && cargo build --features cluster 2>&1 | tail -5
 cargo clippy --features cluster -- -D warnings 2>&1 | tail -10
 ```
 
@@ -296,7 +296,7 @@ Expected: 编译成功, clippy 无 warning.
 - [ ] **Step 3: 运行已有测试确保无回归**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --features cluster meta_raft_node -- --test-threads=1 2>&1 | tail -20
+cd aidb && cargo test --features cluster meta_raft_node -- --test-threads=1 2>&1 | tail -20
 ```
 
 Expected: `test_single_node_propose_register` PASS. 新 barrier 在单节点场景下通过快速路径 (learner 是 self → catch_up 立即返回, voter_ids=[1] → confirm 快速路径跳过).
@@ -444,7 +444,7 @@ async fn test_barrier_fast_path() {
 - [ ] **Step 4: 运行测试**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --features cluster meta_raft_node -- --test-threads=1 2>&1 | tail -30
+cd aidb && cargo test --features cluster meta_raft_node -- --test-threads=1 2>&1 | tail -30
 ```
 
 Expected: 4 tests PASS (1 existing + 3 new):
@@ -591,13 +591,13 @@ async fn test_promote_single_learner_success() {
 - [ ] **Step 3: 编译测试文件**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --features cluster --test meta_raft_promote_integration --no-run 2>&1 | tail -10
+cd aidb && cargo test --features cluster --test meta_raft_promote_integration --no-run 2>&1 | tail -10
 ```
 
 - [ ] **Step 4: 运行集成测试**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --features cluster --test meta_raft_promote_integration -- --test-threads=1 2>&1 | tail -20
+cd aidb && cargo test --features cluster --test meta_raft_promote_integration -- --test-threads=1 2>&1 | tail -20
 ```
 
 Expected: `test_promote_single_learner_success` PASS. N2 的 role 从 Learner 变为 Voter.
@@ -666,7 +666,7 @@ echo "${CLUSTER_NODES}"
 - [ ] **Step 3: 运行 E2E 测试验证**
 
 ```bash
-cd /root/code/dev/AiKv && bash e2e/test_cluster_failover.sh 2>&1 | tail -30
+cd aikv && bash e2e/test_cluster_failover.sh 2>&1 | tail -30
 ```
 
 Expected: 测试 PASS, 输出包含:
@@ -692,15 +692,15 @@ goes down."
 - [ ] **Step 1: 全量编译 + clippy**
 
 ```bash
-cd /root/code/dev/AiDb && cargo build --features cluster 2>&1 | tail -5
-cd /root/code/dev/AiDb && cargo clippy --features cluster --all-targets -- -D warnings 2>&1 | tail -10
-cd /root/code/dev/AiKv && cargo build --features cluster 2>&1 | tail -5
+cd aidb && cargo build --features cluster 2>&1 | tail -5
+cd aidb && cargo clippy --features cluster --all-targets -- -D warnings 2>&1 | tail -10
+cd aikv && cargo build --features cluster 2>&1 | tail -5
 ```
 
 - [ ] **Step 2: 运行全部 cluster 相关测试**
 
 ```bash
-cd /root/code/dev/AiDb && cargo test --features cluster -- --test-threads=1 2>&1 | tail -40
+cd aidb && cargo test --features cluster -- --test-threads=1 2>&1 | tail -40
 ```
 
 Expected: 所有已有测试 PASS + 新增 3 个测试 PASS.
@@ -708,7 +708,7 @@ Expected: 所有已有测试 PASS + 新增 3 个测试 PASS.
 - [ ] **Step 3: 检查测试覆盖率 (目标 ≥80%)**
 
 ```bash
-cd /root/code/dev/AiDb && cargo llvm-cov --features cluster --summary-only 2>&1 | tail -10
+cd aidb && cargo llvm-cov --features cluster --summary-only 2>&1 | tail -10
 ```
 
 关注 `meta_raft_node.rs` 的覆盖率.

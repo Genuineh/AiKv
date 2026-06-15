@@ -11,7 +11,7 @@
 
 ### 1.1 背景
 
-WiQun 的目标是 **替换 Redis** 作为业务 KV, 可观测性需满足:
+AiKv 的目标是 **替换 Redis** 作为业务 KV, 可观测性需满足:
 
 1. 继续走 **原生 `/metrics`** (`aikv_*`, `aidb_*`), 不依赖 redis-exporter.
 2. **语义对齐 Redis**: `redis-cli INFO` / `CLUSTER INFO` 能读到与 Redis 同名字段、同含义的统计.
@@ -33,7 +33,7 @@ WiQun 的目标是 **替换 Redis** 作为业务 KV, 可观测性需满足:
 
 - **不** 引入 redis-exporter 或 `redis_*` 指标命名.
 - **不** 为对齐而复制 Redis 未启用能力的「假活跃」行为 (如无 AOF 时 AOF 字段为 0).
-- **不** 在本 spec 中重构 Grafana 面板 (PromQL 已用 `wiqun_*`).
+- **不** 在本 spec 中重构 Grafana 面板 (PromQL 已用 `aikv_*`).
 - **不** 要求 AiDb 引擎指标映射进 Redis INFO (见 §7 扩展层).
 
 ---
@@ -48,7 +48,7 @@ WiQun 的目标是 **替换 Redis** 作为业务 KV, 可观测性需满足:
 | G2 | Redis INFO 字段对齐 | §5 矩阵中 P0 字段全部实现 |
 | G3 | Redis CLUSTER INFO 对齐 | §6 矩阵中 P0 字段全部实现 |
 | G4 | 集群模式正确标识 | `redis_mode:cluster`, `cluster_enabled:1` |
-| G5 | WiQun 扩展可识别 | server 段保留 `storage_engine`, `persistent`; 不污染 Redis 标准字段名 |
+| G5 | AiKv 扩展可识别 | server 段保留 `storage_engine`, `persistent`; 不污染 Redis 标准字段名 |
 | G6 | 契约测试 | CI 断言 INFO↔metrics 一致性与字段存在性 |
 
 ### 2.2 兼容性基准
@@ -78,7 +78,7 @@ pub struct RuntimeObservability {
   keyspace_hits: AtomicU64,
   keyspace_misses: AtomicU64,
   expired_keys: AtomicU64,
-  evicted_keys: AtomicU64,              // WiQun 无 maxmemory  eviction, 恒 0
+  evicted_keys: AtomicU64,              // AiKv 无 maxmemory  eviction, 恒 0
   net_input_bytes: AtomicU64,
   net_output_bytes: AtomicU64,
   // --- 与 Redis memory 对齐 ---
@@ -163,7 +163,7 @@ impl InfoRenderer<'_> {
 
 ### 4.1 Section 路由
 
-| 请求 | Redis 行为 | WiQun 目标行为 |
+| 请求 | Redis 行为 | AiKv 目标行为 |
 |------|-----------|---------------|
 | `INFO` | default 多 section | 同 Redis default 列表 (§4.2) |
 | `INFO all` / `INFO everything` | 全 section | 同 Redis all 列表 |
@@ -192,15 +192,15 @@ impl InfoRenderer<'_> {
 
 ---
 
-## 5. INFO 字段矩阵 (Redis ↔ WiQun)
+## 5. INFO 字段矩阵 (Redis ↔ AiKv)
 
 **优先级:** P0 = 必须实现; P1 = 建议 stub/真实; P2 = 可选/恒 0.
 
 ### 5.1 Server (`INFO server`)
 
-| 字段 | P | Redis 含义 | WiQun 数据源 | 备注 |
+| 字段 | P | Redis 含义 | AiKv 数据源 | 备注 |
 |------|---|-----------|-------------|------|
-| `redis_version` | P0 | 版本 | `CARGO_PKG_VERSION` | 可另加 `wiqun_version` 扩展字段 |
+| `redis_version` | P0 | 版本 | `CARGO_PKG_VERSION` | 可另加 `aikv_version` 扩展字段 |
 | `redis_mode` | P0 | standalone/cluster | cluster 初始化状态 | **修**: 集群为 `cluster` |
 | `tcp_port` | P0 | 客户端端口 | `shared.tcp_port` | |
 | `uptime_in_seconds` | P0 | 运行秒数 | `shared.uptime_secs()` | |
@@ -208,8 +208,8 @@ impl InfoRenderer<'_> {
 | `process_id` | P1 | PID | `std::process::id()` | |
 | `os` / `arch_bits` | P1 | 平台 | `std::env::consts` | AiKv 已有模板 |
 | `hz` / `configured_hz` | P2 | 事件循环频率 | 固定 `10` | stub |
-| `storage_engine` | P0 | WiQun 扩展 | memory/aidb | 已有, 保留 |
-| `persistent` | P0 | WiQun 扩展 | engine kind | 已有, 保留 |
+| `storage_engine` | P0 | AiKv 扩展 | memory/aidb | 已有, 保留 |
+| `persistent` | P0 | AiKv 扩展 | engine kind | 已有, 保留 |
 
 ### 5.2 Clients (`INFO clients`)
 
@@ -282,7 +282,7 @@ Prometheus: **不新增** `aikv_cmdstat_*` (Redis 无对应 metric); 查询用 `
 
 ### 5.8 Replication (`INFO replication`)
 
-WiQun 集群复制模型 **≠** Redis 主从复制. 策略:
+AiKv 集群复制模型 **≠** Redis 主从复制. 策略:
 
 | 字段 | P | 值 |
 |------|---|-----|
@@ -302,7 +302,7 @@ WiQun 集群复制模型 **≠** Redis 主从复制. 策略:
 
 ### 5.10 Persistence (`INFO persistence`)
 
-| 字段 | P | WiQun 行为 |
+| 字段 | P | AiKv 行为 |
 |------|---|-----------|
 | `loading` | P0 | 0 (或 restore 中时为 1, 若未来支持) |
 | `rdb_bgsave_in_progress` | P0 | 已有 `shared.bgsave_in_progress()` |
@@ -352,7 +352,7 @@ P2: 空 section header only (`# Modules\r\n`).
 
 **语义说明 (文档化, 非 bug):**
 
-- Redis `cluster_size` = 主分片数; WiQun 当前 = `meta.groups.len()` (2-shard 部署为 2). 在 spec 与运维文档中明确, 不强行改字段含义.
+- Redis `cluster_size` = 主分片数; AiKv 当前 = `meta.groups.len()` (2-shard 部署为 2). 在 spec 与运维文档中明确, 不强行改字段含义.
 
 ### 6.2 与 INFO cluster section 的关系
 
@@ -375,9 +375,9 @@ P2: 空 section header only (`# Modules\r\n`).
 | SSTable | `aidb_sstable_count`, `aidb_sstable_size_bytes` | |
 | Compaction | `aidb_compaction_total`, `_duration_seconds` | |
 | Block cache | `aidb_block_cache_*` | |
-| Raft | `wiqun_raft_rpc_total`, `wiqun_raft_log_entries_total` | cluster+monitoring |
+| Raft | `aidb_raft_rpc_total`, `aidb_raft_log_entries_total` | cluster+monitoring |
 
-**可选未来扩展:** `INFO wiqun` 自定义 section 暴露引擎摘要 (本 spec **不做**, YAGNI).
+**可选未来扩展:** `INFO aikv` 自定义 section 暴露引擎摘要 (本 spec **不做**, YAGNI).
 
 ---
 
@@ -393,7 +393,7 @@ P2: 空 section header only (`# Modules\r\n`).
 
 ### 8.2 保持不变
 
-现有 `aikv_*` / `aidb_*` 命名 **不改** (避免破坏已迁移 Grafana).
+现有 `aikv_*` / `aidb_*` 命名 **不改** (避免破坏已有 Grafana 面板).
 
 进程级指标 (`aikv_process_*`) 保留, 作为 Redis INFO 无对应项的 **运维增强**.
 
@@ -516,7 +516,7 @@ INFO [section]:
 
 - [x] golden file: Redis 7 字段存在性
 - [x] 集成测试: 跑命令后 INFO + curl /metrics 对比
-- [x] 更新 `08-observability.md` 与 `wiqun-factory/monitoring/grafana/dashboards/README.md`
+- [x] 更新 `08-observability.md` 与 `/monitoring/grafana/dashboards/README.md`
 
 ---
 
@@ -561,7 +561,7 @@ Prometheus client 侧重 export, 不适合高频 INFO 解析; 且 counter 读 ga
 
 ### D3: replication 段 stub 是否合理?
 
-Redis 主从字段在 WiQun 集群语义下 **无直接等价**. stub 是为兼容 `redis-cli INFO` 与监控探针不报错; 真实角色信息在 `role` + `CLUSTER NODES`.
+Redis 主从字段在 AiKv 集群语义下 **无直接等价**. stub 是为兼容 `redis-cli INFO` 与监控探针不报错; 真实角色信息在 `role` + `CLUSTER NODES`.
 
 ### D4: 是否在 INFO 暴露 aidb?
 
@@ -577,11 +577,11 @@ Redis INFO **直接暴露** 该字段, 运维脚本依赖. Prometheus 侧同步 
 
 | ID | 问题 | 建议默认 |
 |----|------|---------|
-| Q1 | `redis_version` 报 WiQun 版本还是固定 Redis 兼容版本 (如 7.2.0)? | **WiQun 真实版本** + 可选 `redis_compatible_version:7.2` |
+| Q1 | `redis_version` 报 AiKv 版本还是固定 Redis 兼容版本 (如 7.2.0)? | **AiKv 真实版本** + 可选 `redis_compatible_version:7.2` |
 | Q2 | 内部命令是否计入 commandstats? | **否**, 仅客户端可见命令 |
 | Q3 | `cluster_size` 是否改为 Redis 语义 (仅 master shard)? | **保持现状**, 文档说明 |
 | Q4 | errorstats 按命令名还是 Redis 错误码? | Phase 2 用命令名, Phase 3 细化错误码 |
-| Q5 | 是否新增 `INFO wiqun` section? | **否** (本 spec) |
+| Q5 | 是否新增 `INFO aikv` section? | **否** (本 spec) |
 
 ---
 

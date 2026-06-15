@@ -276,7 +276,7 @@ async fn init_cluster(
   // 5. 确定本节点的 client_addr (外部可达地址).
   // bootstrap 节点通过 initialize_with_client 设置; 加入节点通过后台 task
   // 等待 MEET 注册后通过 MetaRaft proposal 更新.
-  let external_client_addr = std::env::var("WIQUN_CLIENT_ADDR").unwrap_or_else(|_| {
+  let external_client_addr = std::env::var("AIKV_CLIENT_ADDR").unwrap_or_else(|_| {
     let rpc_host = rpc_addr
       .rsplit_once(':')
       .map(|(h, _)| h.to_string())
@@ -321,7 +321,7 @@ async fn init_cluster(
   });
   tracing::info!(rpc_addr = %rpc_addr, "meta raft gRPC server started");
 
-  // 6a. 所有节点后台同步 WIQUN_CLIENT_ADDR → MetaRaft (含 bootstrap).
+  // 6a. 所有节点后台同步 AIKV_CLIENT_ADDR → MetaRaft (含 bootstrap).
   spawn_client_addr_sync(
     Arc::clone(&meta_raft),
     node_id,
@@ -501,7 +501,7 @@ async fn init_cluster(
 }
 
 fn init_logging() {
-  let json_enabled = std::env::var("WIQUN_JSON_LOG")
+  let json_enabled = std::env::var("AIKV_JSON_LOG")
     .ok()
     .and_then(|v| v.parse::<bool>().ok())
     .unwrap_or(true);
@@ -559,12 +559,12 @@ fn init_logging() {
 }
 
 /// 创建 OTel tracer provider (仅 `monitoring` feature)。
-/// 通过 `WIQUN_OTLP_ENDPOINT` 环境变量启用。
+/// 通过 `AIKV_OTLP_ENDPOINT` 环境变量启用。
 #[cfg(feature = "monitoring")]
 fn create_otel_tracer() -> Option<opentelemetry_sdk::trace::Tracer> {
   use opentelemetry_otlp::WithExportConfig;
 
-  let endpoint = std::env::var("WIQUN_OTLP_ENDPOINT")
+  let endpoint = std::env::var("AIKV_OTLP_ENDPOINT")
     .ok()
     .filter(|v| !v.is_empty())?;
   let exporter = opentelemetry_otlp::new_exporter()

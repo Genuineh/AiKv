@@ -11,7 +11,7 @@ pub enum AnnounceMode {
 
 impl AnnounceMode {
   pub fn from_env() -> Self {
-    match std::env::var("WIQUN_CLUSTER_ANNOUNCE_MODE")
+    match std::env::var("AIKV_CLUSTER_ANNOUNCE_MODE")
       .ok()
       .as_deref()
       .map(str::to_ascii_lowercase)
@@ -22,7 +22,7 @@ impl AnnounceMode {
       Some(other) => {
         tracing::warn!(
           mode = %other,
-          "unknown WIQUN_CLUSTER_ANNOUNCE_MODE, using unknown"
+          "unknown AIKV_CLUSTER_ANNOUNCE_MODE, using unknown"
         );
         AnnounceMode::UnknownEndpoint
       }

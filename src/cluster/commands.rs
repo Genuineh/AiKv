@@ -14,7 +14,7 @@ use aidb::cluster::meta_types::SlotStatus;
 use aidb::cluster::router::key_to_slot;
 use aidb::cluster::types::ClusterError;
 use aidb::cluster::ReplicaAllocator;
-use aidb::Error as WiqunDbError;
+use aidb::Error as AidbError;
 
 /// Parse an integer from bytes (used by CLUSTER command argument parsing).
 pub fn parse_int<T: std::str::FromStr>(bytes: &[u8]) -> Option<T> {
@@ -658,7 +658,7 @@ pub async fn cluster_meet(
     {
       Ok(()) => return Ok("OK".to_string()),
       Err(e) => {
-        let is_not_leader = matches!(&e, WiqunDbError::Cluster(ClusterError::NotLeader { .. }));
+        let is_not_leader = matches!(&e, AidbError::Cluster(ClusterError::NotLeader { .. }));
         last_err = map_propose_error(e);
         if is_not_leader && attempt < 10 {
           sleep(Duration::from_millis(delay_ms)).await;
@@ -1137,7 +1137,7 @@ pub async fn cluster_add_replica(primary_id: u64, replica_id: u64) -> Result<Str
       {
         Ok(()) => {}
         Err(e) => {
-          let is_not_leader = matches!(&e, WiqunDbError::Cluster(ClusterError::NotLeader { .. }));
+          let is_not_leader = matches!(&e, AidbError::Cluster(ClusterError::NotLeader { .. }));
           if is_not_leader && attempt < 3 {
             direct_ok = false;
             sleep(Duration::from_millis(delay_ms)).await;
@@ -1314,7 +1314,7 @@ pub async fn cluster_del_replica(primary_id: u64, replica_id: u64) -> Result<Str
       {
         Ok(()) => {}
         Err(e) => {
-          let is_not_leader = matches!(&e, WiqunDbError::Cluster(ClusterError::NotLeader { .. }));
+          let is_not_leader = matches!(&e, AidbError::Cluster(ClusterError::NotLeader { .. }));
           if is_not_leader && attempt < 3 {
             direct_ok = false;
             sleep(Duration::from_millis(delay_ms)).await;

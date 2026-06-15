@@ -18,7 +18,7 @@ echo ""
 
 DATA_DIRS=()
 for i in $(seq 0 $((NODE_COUNT - 1))); do
-  DATA_DIRS[$i]="$(mktemp -d /tmp/wiqun-node-$((i + 1))-XXXXXX)"
+  DATA_DIRS[$i]="$(mktemp -d /tmp/aikv-node-$((i + 1))-XXXXXX)"
 done
 
 PIDS=()

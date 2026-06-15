@@ -84,14 +84,14 @@
 
 ### Added
 
-- **集群客户端地址通告 (`AnnounceResolver`)**: 新增 `WIQUN_CLUSTER_ANNOUNCE_MODE` 环境变量 (`unknown` | `fixed`, 默认 `unknown`). `unknown` 模式下 `CLUSTER SLOTS` / `CLUSTER SHARDS` / MOVED/ASK 输出空 host (`:port`), 客户端沿用种子连接地址 (对标 Redis 7 `cluster-preferred-endpoint-type`). `CLUSTER NODES` 仍显示完整 `client_addr` 供运维查看.
-- **bootstrap `client_addr` 同步**: 所有节点 (含 bootstrap) 启动后自动将 `WIQUN_CLIENT_ADDR` 同步至 MetaRaft.
+- **集群客户端地址通告 (`AnnounceResolver`)**: 新增 `AIKV_CLUSTER_ANNOUNCE_MODE` 环境变量 (`unknown` | `fixed`, 默认 `unknown`). `unknown` 模式下 `CLUSTER SLOTS` / `CLUSTER SHARDS` / MOVED/ASK 输出空 host (`:port`), 客户端沿用种子连接地址 (对标 Redis 7 `cluster-preferred-endpoint-type`). `CLUSTER NODES` 仍显示完整 `client_addr` 供运维查看.
+- **bootstrap `client_addr` 同步**: 所有节点 (含 bootstrap) 启动后自动将 `AIKV_CLIENT_ADDR` 同步至 MetaRaft.
 - **E2E**: `e2e/test_cluster_announce.sh` 验证 unknown 模式 SLOTS 与跨 shard 路由.
 
 ### Changed
 
-- **默认集群通告行为**: 新部署默认 `unknown` 模式; 依赖 LAN IP 做服务发现的环境请设置 `WIQUN_CLUSTER_ANNOUNCE_MODE=fixed`.
-- **WSL2 部署脚本**: `up-cluster.sh` 在 WSL2 上默认 `WIQUN_EXTERNAL_HOST=127.0.0.1`.
+- **默认集群通告行为**: 新部署默认 `unknown` 模式; 依赖 LAN IP 做服务发现的环境请设置 `AIKV_CLUSTER_ANNOUNCE_MODE=fixed`.
+- **WSL2 默认通告**: WSL2 环境下默认 `AIKV_EXTERNAL_HOST=127.0.0.1`.
 
 ## [0.9.8] - 2026-06-04
 
@@ -110,11 +110,11 @@
 
 - **CLUSTER NODES 角色显示错误**: `cluster_nodes()` 现在从 Raft 元数据 (group membership) 推导本节点角色 (`myself,master` / `myself,slave`) 和 `primary_id`, 而非依赖始终为 `Primary` 的本地缓存. 同时为所有节点 (含远端) 正确计算 `primary_id`.
 - **CLUSTER ADD_REPLICA 跨 group 失败**: `change_group_membership()` 对非本地 group 跳过 MultiRaft 操作, 仅更新 MetaRaft 元数据. `cluster_add_replica()` 添加元数据回退路径, 在 MultiRaft group 未初始化或不在本地时仍能完成元数据更新.
-- **集群地址通告 (announce address)**: `WIQUN_CLIENT_ADDR` 现在对所有节点 (含 `--cluster-peers` 加入节点) 生效. 加入节点启动后通过后台 task 将外部可达地址写入 MetaRaft 元数据, 确保 MOVED 重定向返回客户端可解析的地址而非容器内部 hostname.
+- **集群地址通告 (announce address)**: `AIKV_CLIENT_ADDR` 现在对所有节点 (含 `--cluster-peers` 加入节点) 生效. 加入节点启动后通过后台 task 将外部可达地址写入 MetaRaft 元数据, 确保 MOVED 重定向返回客户端可解析的地址而非容器内部 hostname.
 
 ### Changed
 
-- **部署脚本**: `deploy-cluster.sh` 添加 CLUSTER MEET 步骤 (Docker 网络使用容器 hostname 进行 RPC 通信, 使用 `EXTERNAL_HOST` 作为客户端通告地址); group 稳定等待时间延长至 10s; ADD_REPLICA 支持重试 (最多 15 次) 和错误报告.
+- **集群部署**: 添加 CLUSTER MEET 步骤 (Docker 网络使用容器 hostname 进行 RPC 通信, 使用 `EXTERNAL_HOST` 作为客户端通告地址); group 稳定等待时间延长至 10s; ADD_REPLICA 支持重试 (最多 15 次) 和错误报告.
 
 ## [0.9.6] - 2026-06-03
 
@@ -199,7 +199,7 @@
 ### Added
 
 - **集群测试覆盖 (C3)**: 17 个新增测试, 总计 40 个集群测试 — L1 命令格式/错误路径 (22 个) + L2 路由全分支/集成 (9 个) + 路由格式验证 (8 个)
-- **E2E 脚本扩展 (E)**: 6 个新增 shell 脚本 — `test_hash.sh` (Hash 全命令族), `test_string_extra.sh` (APPEND/INCR/MGET/MSET), `test_key_mgmt.sh` (RENAME/EXPIRE/COPY), `test_lua_json_ttl.sh` (从 WiQunTools 移植改自启动), `test_persistence.sh` (从 WiQunTools 移植), `test_restart_recovery.sh` (从 WiQunTools 移植, kill-9 崩溃恢复)
+- **E2E 脚本扩展 (E)**: 6 个新增 shell 脚本 — `test_hash.sh` (Hash 全命令族), `test_string_extra.sh` (APPEND/INCR/MGET/MSET), `test_key_mgmt.sh` (RENAME/EXPIRE/COPY), `test_lua_json_ttl.sh` (从  移植改自启动), `test_persistence.sh` (从  移植), `test_restart_recovery.sh` (从  移植, kill-9 崩溃恢复)
 - **`jsonpath_util.rs` (D.4)**: 从 `jsonpath.rs` 拆分, 提取 `split_top_level`/`json_equal`/`json_compare` 工具函数及测试
 
 ### Changed
@@ -212,17 +212,17 @@
 
 ### Added
 
-- **日志初始化 (P0)**: `init_logging()` 支持 `WIQUN_JSON_LOG` 环境变量切换 JSON/人类可读格式; `EnvFilter` 配置; 使用 `try_init()` 避免重复初始化 panic
+- **日志初始化 (P0)**: `init_logging()` 支持 `AIKV_JSON_LOG` 环境变量切换 JSON/人类可读格式; `EnvFilter` 配置; 使用 `try_init()` 避免重复初始化 panic
 - **统一 Metrics 结构体 (P0)**: `Metrics` 结构体整合 18 个 Prometheus 指标 (15 基础 + 3 集群), 自定义 `Registry`; `ServerMetrics` 所有方法 (`on_command`/`on_connect`/`on_keyspace_hit` 等) 同步更新 Prometheus 指标
 - **Metrics HTTP 服务器 (P0)**: `metrics_server.rs` — 独立端口 (默认 9191) 暴露 `/metrics` (Prometheus text/plain)、`/health`、`/` 端点; 仅在 `monitoring` feature 下编译
 - **CLI 参数 (P0)**: `--metrics-port` (默认 9191)、`--metrics-addr` (默认 127.0.0.1)
-- **OTel 导出器 (P1)**: `init_otel_tracer()` 支持 `WIQUN_OTLP_ENDPOINT` 环境变量; 通过 `opentelemetry-otlp` 批式导出 tracing span; 失败降级不阻塞启动
+- **OTel 导出器 (P1)**: `init_otel_tracer()` 支持 `AIKV_OTLP_ENDPOINT` 环境变量; 通过 `opentelemetry-otlp` 批式导出 tracing span; 失败降级不阻塞启动
 - **可观测性测试**: Prometheus 集成测试验证 `connects_total`/`commands_total` 数据流; 依赖 `monitoring` feature
 - **Raft snapshot span**: `raft_snapshot`/`raft_install_snapshot` 添加 `#[instrument]`
 
 ### Changed
 
-- **tracing 订阅者**: 从 `tracing_subscriber::fmt().json().init()` 升级为 `init_logging()` — `WIQUN_JSON_LOG=false` 输出人类可读 `compact` 格式
+- **tracing 订阅者**: 从 `tracing_subscriber::fmt().json().init()` 升级为 `init_logging()` — `AIKV_JSON_LOG=false` 输出人类可读 `compact` 格式
 - **ServerSharedState**: 新增 `metrics_port`/`metrics_addr`/`prometheus_metrics` 字段; `new_with_backup_dir` 新增 `metrics_port`/`metrics_addr` 参数
 - **ServerMetrics**: 新增 `prom: Option<Arc<Metrics>>` 字段和 `with_prometheus()` 方法; 默认行为不变 (无 monitoring feature 时无 prometheus 同步)
 
@@ -285,7 +285,6 @@
   - Server graceful shutdown (`CancellationToken`); `KvStorage` 桥接 (`flush_engine` / `create_checkpoint` / `close_engine`)
 - **AiDb 0.7.5**: `engine/checkpoint/` MVP + `checkpoint_in_progress` 并发协议
 - CommandRegistry +4 (COMMAND COUNT **126**)
-- 测试: `persistence::*` L1/L2 + `e2e/test_persistence.sh` + `persistence-acceptance.json`
 
 ## [0.5.0] - 2026-05-26
 
@@ -327,7 +326,7 @@
 - **List 扩展**: LINSERT, LMOVE, LPOS
 - **Set 扩展**: SMOVE, SSCAN (`scan_util` 与 ZSCAN 共享分页 helper)
 - **Key 扩展**: EXPIRETIME, PEXPIRETIME, DUMP, RESTORE, MIGRATE
-  - DUMP/RESTORE 使用 WiQun 内部格式 `[version: u8=0][bincode(StoredValue)]`, **与 Redis DUMP 不兼容**
+  - DUMP/RESTORE 使用 AiKv 内部格式 `[version: u8=0][bincode(StoredValue)]`, **与 Redis DUMP 不兼容**
   - MIGRATE 仅支持 localhost 目标 (`127.0.0.1` / `::1`); 非 localhost 返回 `ERR not supported`
 - **Server 扩展**: SLOWLOG GET/LEN/RESET, COMMAND COUNT/INFO/GETKEYS/DOCS/HELP, LATENCY HISTOGRAM/LATEST/HISTORY/RESET/HELP
   - LATENCY 为内存直方图 (无 Prometheus); RESP2 返回 Array, RESP3 返回 Map

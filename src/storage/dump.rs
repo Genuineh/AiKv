@@ -1,4 +1,4 @@
-//! WiQun 内部 DUMP 编解码 (非 Redis 兼容)
+//! AiKv 内部 DUMP 编解码 (非 Redis 兼容)
 
 use crate::error::{Error, Result};
 use crate::storage::StoredValue;

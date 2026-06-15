@@ -20,7 +20,7 @@ rc SMOVE srcset dstset y | grep -q '^1$'
 test "$(rc SMEMBERS srcset | tr '\n' ' ' | xargs)" = "x"
 test "$(rc SMEMBERS dstset | sort | tr '\n' ' ' | xargs)" = "y z"
 
-# DUMP / RESTORE (WiQun internal format; pipe binary payload)
+# DUMP / RESTORE (AiKv internal format; pipe binary payload)
 rc SET dumpkey hello | grep -q '^OK$'
 rc DEL restorekey >/dev/null 2>&1 || true
 rc --raw DUMP dumpkey | rc -x RESTORE restorekey 0

@@ -30,19 +30,6 @@ cargo run -- --bind 127.0.0.1:6379
 cargo build --features cluster
 cargo test --features cluster -- --test-threads=1
 
-# Phase 9 验收
-python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/storage-acceptance.json
-
-# Phase 8 回归
-python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/resp-acceptance.json
-
-# Phase 10 回归
-python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/extended-acceptance.json
-
-# Phase 11 JSON / Lua 验收
-python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/json-acceptance.json
-python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/lua-acceptance.json
-
 # E2E 测试 (需 redis-cli)
 cargo build --release
 ./e2e/test_basic.sh

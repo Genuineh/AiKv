@@ -8,9 +8,9 @@ source "${SCRIPT_DIR}/utils.sh"
 require_redis_cli
 build_release_cluster
 
-export WIQUN_CLUSTER_ANNOUNCE_MODE="${WIQUN_CLUSTER_ANNOUNCE_MODE:-unknown}"
+export AIKV_CLUSTER_ANNOUNCE_MODE="${AIKV_CLUSTER_ANNOUNCE_MODE:-unknown}"
 
-echo "=== Cluster Announce Test (mode=${WIQUN_CLUSTER_ANNOUNCE_MODE}) ==="
+echo "=== Cluster Announce Test (mode=${AIKV_CLUSTER_ANNOUNCE_MODE}) ==="
 
 DATA1="$(mktemp -d)"
 DATA2="$(mktemp -d)"
@@ -35,7 +35,7 @@ sleep 2
 echo "--- CLUSTER SLOTS host field ---"
 SLOTS="$(rc_node "${N1_HOST}" "${N1_PORT}" CLUSTER SLOTS)"
 echo "${SLOTS}" | head -5
-if [[ "${WIQUN_CLUSTER_ANNOUNCE_MODE}" == "unknown" ]]; then
+if [[ "${AIKV_CLUSTER_ANNOUNCE_MODE}" == "unknown" ]]; then
   if echo "${SLOTS}" | grep -qE '"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"'; then
     echo "FAIL: unknown mode should not expose IP in CLUSTER SLOTS" >&2
     exit 1
@@ -46,7 +46,7 @@ else
 fi
 
 echo "--- cross-shard SET/GET via redis-cli -c ---"
-KEY="wiqun:announce:e2e"
+KEY="aikv:announce:e2e"
 rc_cluster "${N1_HOST}" "${N1_PORT}" SET "${KEY}" "ok" | grep -qi ok
 VAL="$(rc_cluster "${N1_HOST}" "${N1_PORT}" GET "${KEY}" | tr -d '\r\n')"
 if [[ "${VAL}" != "ok" ]]; then

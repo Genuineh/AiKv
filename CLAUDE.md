@@ -22,21 +22,6 @@ cargo test --test resp --test server -- --test-threads=1
 cargo clippy -- -D warnings
 cargo fmt --check
 cargo run -- --bind 127.0.0.1:6379   # redis-cli SET/GET/HSET/SELECT
-
-# Phase 9 验收 (在 AiKv 目录)
-python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/storage-acceptance.json
-
-# Phase 8 回归
-python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/resp-acceptance.json
-
-# Phase 10 回归
-python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/extended-acceptance.json
-
-# Phase 11 JSON 验收
-python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/json-acceptance.json
-
-# Phase 11 Lua 验收
-python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/lua-acceptance.json
 ```
 
 ## 约束
@@ -77,4 +62,4 @@ bash e2e/test_cluster_formation.sh   # 单个集群测试
 
 ## 设计文档
 
-详见 `WiQunTools/docs/aikv-inventory/` 下各模块设计规格。
+详见 `/docs/aikv-inventory/` 下各模块设计规格。

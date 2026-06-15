@@ -40,10 +40,3 @@
 - `test_tcp_pipeline_large_buffer`
 
 CI 默认跳过; 本地: `cargo test --test server -- --ignored --test-threads=1`
-
-## 验收
-
-```bash
-python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/storage-acceptance.json
-python3 ../WiQunTools/scripts/acceptance.py ../WiQunTools/scripts/resp-acceptance.json
-```

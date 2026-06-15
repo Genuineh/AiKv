@@ -6,4 +6,4 @@
 
 **Architecture:** `AnnounceResolver` 输出层插在 Router `client_addr` 与 RESP 协议之间; `CLUSTER NODES` 不经 resolver.
 
-**Delivered:** `announce.rs`, `state.rs`, `commands.rs`, `router.rs`, `main.rs`, `up-cluster.sh`, `docker-compose.cluster.yaml`, tests, `e2e/test_cluster_announce.sh`.
+**Delivered:** `announce.rs`, `state.rs`, `commands.rs`, `router.rs`, `main.rs`, tests, `e2e/test_cluster_announce.sh`.

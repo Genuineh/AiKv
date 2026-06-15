@@ -127,22 +127,20 @@ OK
 
 Docker 集群在 WSL2 中运行时, Windows 宿主机经 `127.0.0.1` 端口转发访问, **不能** 使用 WSL 网卡 IP (`192.168.x.x`) 作为集群拓扑通告地址.
 
-推荐配置 (`wiqun-factory`):
-
-```bash
-cd wiqun-factory
-./scripts/up-cluster.sh   # WSL2 自动默认 127.0.0.1 + announce_mode=unknown
-```
+推荐环境变量:
 
 | 变量 | 默认 (WSL2) | 作用 |
 |------|------------|------|
-| `WIQUN_EXTERNAL_HOST` | `127.0.0.1` | 写入 MetaRaft `client_addr`, 显示在 `CLUSTER NODES` |
-| `WIQUN_CLUSTER_ANNOUNCE_MODE` | WSL2: `unknown`; Linux 物理机: **`fixed`** | `CLUSTER SLOTS`/MOVED; LAN/GUI 请用 `fixed` |
+| `AIKV_EXTERNAL_HOST` | `127.0.0.1` | 写入 MetaRaft `client_addr`, 显示在 `CLUSTER NODES` |
+| `AIKV_CLUSTER_ANNOUNCE_MODE` | WSL2: `unknown`; Linux 物理机: **`fixed`** | `CLUSTER SLOTS`/MOVED; LAN/GUI 请用 `fixed` |
+| `AIKV_CLIENT_ADDR` | 从 bind 推导 | 外部可达 `host:port`, 同步至 MetaRaft |
 
 局域网远程客户端需显式:
 
 ```bash
-WIQUN_EXTERNAL_HOST=<主机 LAN IP> WIQUN_CLUSTER_ANNOUNCE_MODE=fixed ./scripts/up-cluster.sh
+export AIKV_EXTERNAL_HOST=<主机 LAN IP>
+export AIKV_CLUSTER_ANNOUNCE_MODE=fixed
+# 然后按上文启动各 aikv 节点
 ```
 
 ## Docker 部署
@@ -163,7 +161,7 @@ CMD ["aikv", "--engine", "aidb", "--data-dir", "/data", "--port", "6379"]
 
 ### docker-compose (可观测性栈)
 
-详见 [WiQunTools/docs/observability/](https://github.com/GO-Zheng/WiQunTools) 的 docker-compose 配置, 包含 Collector + Prometheus + Loki + Tempo + Grafana 预设大盘.
+可按需编写 docker-compose, 将 aikv 与 Prometheus / OTel Collector 等服务编排在一起. 示例:
 
 ```yaml
 services:
@@ -173,7 +171,7 @@ services:
       - "6379:6379"
       - "9191:9191"
     environment:
-      - WIQUN_JSON_LOG=true
+      - AIKV_JSON_LOG=true
   prometheus:
     image: prom/prometheus
     ports:

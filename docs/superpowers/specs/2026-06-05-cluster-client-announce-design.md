@@ -3,7 +3,7 @@
 **日期:** 2026-06-05  
 **状态:** Implemented (2026-06-05)  
 **版本:** v1.1 (审核修订)  
-**关联:** `WIQUN_CLIENT_ADDR`, `WIQUN_EXTERNAL_HOST`, `WIQUN_CLUSTER_ANNOUNCE_MODE`, `CLUSTER SLOTS`, `CLUSTER SHARDS`, MOVED/ASK
+**关联:** `AIKV_CLIENT_ADDR`, `AIKV_EXTERNAL_HOST`, `AIKV_CLUSTER_ANNOUNCE_MODE`, `CLUSTER SLOTS`, `CLUSTER SHARDS`, MOVED/ASK
 
 ---
 
@@ -17,11 +17,11 @@
   - **集群模式** 连接同一地址 **无限转圈、无报错**
 - Windows `redis-cli.exe -c -h 127.0.0.1` 正常; `-h 192.168.0.140` 超时.
 
-**方案 A 已验证 (2026-06-05):** `WIQUN_EXTERNAL_HOST=127.0.0.1` 重建后, Windows `redis-cli.exe -c` 跨 shard 正常, `CLUSTER SLOTS` 全为 `127.0.0.1`.
+**方案 A 已验证 (2026-06-05):** `AIKV_EXTERNAL_HOST=127.0.0.1` 重建后, Windows `redis-cli.exe -c` 跨 shard 正常, `CLUSTER SLOTS` 全为 `127.0.0.1`.
 
 ### 1.2 根因 (已验证)
 
-集群拓扑命令 (`CLUSTER SLOTS` / `CLUSTER SHARDS`) 通告的是 `WIQUN_EXTERNAL_HOST` 自动检测到的 WSL 网卡 IP (`192.168.0.140`), 而非 Windows 经 WSL2 端口转发可达的 `127.0.0.1`.
+集群拓扑命令 (`CLUSTER SLOTS` / `CLUSTER SHARDS`) 通告的是 `AIKV_EXTERNAL_HOST` 自动检测到的 WSL 网卡 IP (`192.168.0.140`), 而非 Windows 经 WSL2 端口转发可达的 `127.0.0.1`.
 
 | 客户端模式 | 行为 | 结果 |
 |-----------|------|------|
@@ -45,7 +45,7 @@
 ### 2.1 目标
 
 1. **短期:** WSL2 + Windows GUI 开发场景开箱可用 (方案 A 已验证; 方案 B 降低配置成本).
-2. **长期:** 在 **`unknown` 默认模式** 下, 客户端用任意可达种子地址连入后, 拓扑发现与 MOVED/ASK 均可完成, **无需手动猜 IP**. (`fixed` + LAN 场景仍须正确设置 `WIQUN_EXTERNAL_HOST`.)
+2. **长期:** 在 **`unknown` 默认模式** 下, 客户端用任意可达种子地址连入后, 拓扑发现与 MOVED/ASK 均可完成, **无需手动猜 IP**. (`fixed` + LAN 场景仍须正确设置 `AIKV_EXTERNAL_HOST`.)
 3. **一致性:** `CLUSTER SLOTS`, `CLUSTER SHARDS`, 数据面 `MOVED`/`ASK`, `map_propose_error` NotLeader MOVED 统一经 `AnnounceResolver` 输出.
 4. **可运维:** 部署脚本与文档明确各环境变量语义; CHANGELOG 标明默认行为变更.
 
@@ -64,7 +64,7 @@
 
 | 方案 | 描述 | 优点 | 缺点 |
 |------|------|------|------|
-| **A. 部署参数** | `WIQUN_EXTERNAL_HOST=127.0.0.1` 重建 | 零代码, 已验证 | 换场景需重建; LAN 远程客户端失败 |
+| **A. 部署参数** | `AIKV_EXTERNAL_HOST=127.0.0.1` 重建 | 零代码, 已验证 | 换场景需重建; LAN 远程客户端失败 |
 | **B. 脚本智能默认** | WSL2 检测默认 `127.0.0.1` | 降低踩坑率 | 仅缓解 fixed 语义下的 host 选择 |
 | **C. NULL endpoint (实现主体)** | SLOTS/SHARDS/MOVED 空 host, 客户端沿用种子 IP | 兼容 Redis 7, 一劳永逸 | 需验证 GUI 客户端; 默认行为变更 |
 
@@ -74,10 +74,10 @@
 
 | 层级 | 默认 | 作用 |
 |------|------|------|
-| **代码** `WIQUN_CLUSTER_ANNOUNCE_MODE` | `unknown` | 决定 SLOTS/SHARDS/MOVED 是否输出空 host |
-| **脚本** `WIQUN_EXTERNAL_HOST` (WSL2) | `127.0.0.1` | 写入 MetaRaft `client_addr`, 影响 **CLUSTER NODES** 显示与 fixed 模式 |
+| **代码** `AIKV_CLUSTER_ANNOUNCE_MODE` | `unknown` | 决定 SLOTS/SHARDS/MOVED 是否输出空 host |
+| **脚本** `AIKV_EXTERNAL_HOST` (WSL2) | `127.0.0.1` | 写入 MetaRaft `client_addr`, 影响 **CLUSTER NODES** 显示与 fixed 模式 |
 
-在 `unknown` 模式下, `WIQUN_EXTERNAL_HOST` **不再决定** `CLUSTER SLOTS` 的 host 字段 (恒为空), 但仍写入 `client_addr` 供运维查看和 `fixed` 模式回退.
+在 `unknown` 模式下, `AIKV_EXTERNAL_HOST` **不再决定** `CLUSTER SLOTS` 的 host 字段 (恒为空), 但仍写入 `client_addr` 供运维查看和 `fixed` 模式回退.
 
 ---
 
@@ -90,7 +90,7 @@
 │ Layer 1: RPC (内部)     aikv-1:16379                │
 │          MultiRaft / MetaRaft / CLUSTER MEET bus        │
 ├─────────────────────────────────────────────────────────┤
-│ Layer 2: MetaRaft 存储  client_addr (WIQUN_CLIENT_ADDR) │
+│ Layer 2: MetaRaft 存储  client_addr (AIKV_CLIENT_ADDR) │
 │          Router 缓存完整地址; 人类可读 / fixed 模式源    │
 ├─────────────────────────────────────────────────────────┤
 │ Layer 3: Preferred endpoint (AnnounceResolver 输出层)   │
@@ -144,14 +144,14 @@ fn raw_client_endpoint(router: &Router, node_id: u64) -> Option<(String, u16)> {
 
 | 变量 | 含义 | 默认 |
 |------|------|------|
-| `WIQUN_CLIENT_ADDR` | 完整 `host:port` → MetaRaft `client_addr` | 从 bind 推导 |
-| `WIQUN_CLUSTER_ANNOUNCE_MODE` | `fixed` \| `unknown` | **`unknown`** |
+| `AIKV_CLIENT_ADDR` | 完整 `host:port` → MetaRaft `client_addr` | 从 bind 推导 |
+| `AIKV_CLUSTER_ANNOUNCE_MODE` | `fixed` \| `unknown` | **`unknown`** |
 
 ### 4.3 注入路径
 
 ```
 main.rs
-  ├─ 解析 WIQUN_CLUSTER_ANNOUNCE_MODE
+  ├─ 解析 AIKV_CLUSTER_ANNOUNCE_MODE
   ├─ 构造 AnnounceResolver
   ├─ 传入 ClusterStateManager::announce_resolver (新增字段)
   └─ CLUSTER_STATE_MGR.set(state_mgr)
@@ -164,7 +164,7 @@ ClusterStateManager (state.rs)
   router.rs    → leader_moved / leader_ask
 ```
 
-启动时若检测到同集群其它节点 env 不一致 (仅日志, 非阻断): `tracing::warn!("WIQUN_CLUSTER_ANNOUNCE_MODE mismatch across nodes is unsupported")` — 全集群须统一, 无运行时校验 RPC.
+启动时若检测到同集群其它节点 env 不一致 (仅日志, 非阻断): `tracing::warn!("AIKV_CLUSTER_ANNOUNCE_MODE mismatch across nodes is unsupported")` — 全集群须统一, 无运行时校验 RPC.
 
 ### 4.4 受影响命令与行为 (定稿)
 
@@ -181,28 +181,28 @@ ClusterStateManager (state.rs)
 
 ### 4.5 Bootstrap 节点 client_addr 同步 (bugfix)
 
-**问题:** 仅 join 节点 (`!peers.is_empty()`) 后台同步 `WIQUN_CLIENT_ADDR`; bootstrap 节点在持久化元数据已存在时不会更新.
+**问题:** 仅 join 节点 (`!peers.is_empty()`) 后台同步 `AIKV_CLIENT_ADDR`; bootstrap 节点在持久化元数据已存在时不会更新.
 
 **修复:** 提取 `sync_client_addr_on_startup(meta_raft, node_id, external_client_addr)`:
 
 - **所有节点** (含 bootstrap) 启动后执行.
-- 若 MetaRaft 中 `client_addr != WIQUN_CLIENT_ADDR`, propose `UpdateNodeClientAddr`.
+- 若 MetaRaft 中 `client_addr != AIKV_CLIENT_ADDR`, propose `UpdateNodeClientAddr`.
 - 重试策略与现有 join 节点 task 一致 (最多 20 次, 2s 间隔).
 - join 节点现有 task **合并** 到此函数, 避免双份逻辑.
 
-### 4.6 部署脚本 (wiqun-factory)
+### 4.6 部署环境变量
 
-**`up-cluster.sh`:**
+启动前设置:
 
-1. WSL2 检测 (`/proc/version` 含 `Microsoft`) 且未设 `WIQUN_EXTERNAL_HOST` → 默认 `127.0.0.1`.
+1. WSL2 检测 (`/proc/version` 含 `Microsoft`) 且未设 `AIKV_EXTERNAL_HOST` → 默认 `127.0.0.1`.
 2. 非 WSL2 保持现有 `ip route` 检测.
-3. 打印: `WIQUN_CLUSTER_ANNOUNCE_MODE` 与 `WIQUN_EXTERNAL_HOST` 当前值.
-4. LAN 远程访问提示: 显式 `WIQUN_EXTERNAL_HOST=<LAN IP>` + `WIQUN_CLUSTER_ANNOUNCE_MODE=fixed`.
+3. 打印: `AIKV_CLUSTER_ANNOUNCE_MODE` 与 `AIKV_EXTERNAL_HOST` 当前值.
+4. LAN 远程访问提示: 显式 `AIKV_EXTERNAL_HOST=<LAN IP>` + `AIKV_CLUSTER_ANNOUNCE_MODE=fixed`.
 
-**`docker-compose.cluster.yaml`:**
+docker-compose 示例:
 
 ```yaml
-WIQUN_CLUSTER_ANNOUNCE_MODE: "${WIQUN_CLUSTER_ANNOUNCE_MODE:-unknown}"
+AIKV_CLUSTER_ANNOUNCE_MODE: "${AIKV_CLUSTER_ANNOUNCE_MODE:-unknown}"
 ```
 
 ---
@@ -236,7 +236,7 @@ sequenceDiagram
 | Router 无地址 | `CLUSTERDOWN unknown node address` (现有) |
 | fixed 模式, `client_addr` 未设置 | 回退 `rpc_addr` → resolver 输出 (可能不可达, 运维责任) |
 | unknown 模式 MOVED | `:port` 格式 |
-| 改 `WIQUN_CLIENT_ADDR` 后旧 volume | `sync_client_addr_on_startup` 修正; 或 `down -v` 重建 |
+| 改 `AIKV_CLIENT_ADDR` 后旧 volume | `sync_client_addr_on_startup` 修正; 或 `down -v` 重建 |
 | 集群节点 `ANNOUNCE_MODE` 不一致 | 启动 `warn` 日志, 不阻断 (文档禁止) |
 | 升级默认 unknown | CHANGELOG + 迁移节说明; `fixed` 一键回滚 |
 
@@ -276,7 +276,7 @@ sequenceDiagram
 | # | 场景 | 说明 |
 |---|------|------|
 | M1 | Tiny RDM Windows 集群模式 | 无法 CI, 保留手动 (#3) |
-| M2 | `WIQUN_EXTERNAL_HOST=127.0.0.1` + **`ANNOUNCE_MODE=fixed`** | 方案 A 回归 (#1 修订) |
+| M2 | `AIKV_EXTERNAL_HOST=127.0.0.1` + **`ANNOUNCE_MODE=fixed`** | 方案 A 回归 (#1 修订) |
 | M3 | unknown + 任意 EXTERNAL_HOST | Windows 127.0.0.1 与 WSL 内均可用 (#4) |
 | M4 | `CLUSTER NODES` master/slave | 无回归 (#5) |
 
@@ -306,8 +306,8 @@ sequenceDiagram
 | `aikv/tests/cluster_routing.rs` | I1 参数化 |
 | `aikv/tests/cluster_integration.rs` | I2/I3 |
 | `aikv/e2e/test_cluster_announce.sh` | P1-4 |
-| `wiqun-factory/scripts/up-cluster.sh` | WSL2 默认 + 日志 |
-| `wiqun-factory/docker-compose.cluster.yaml` | 新 env |
+| 部署脚本 (外部) | WSL2 默认 + 日志 |
+| `/` | 新 env |
 | `aikv/DEPLOYMENT.md` | WSL2 / Windows GUI / announce_mode |
 | `aikv/CHANGELOG.md` | **Breaking-ish:** 默认 `unknown`; `fixed` 回滚说明 |
 
@@ -319,17 +319,17 @@ sequenceDiagram
 
 | 升级前 | 升级后 (默认 unknown) |
 |--------|----------------------|
-| `CLUSTER SLOTS` host = `WIQUN_EXTERNAL_HOST` | host = `""` |
+| `CLUSTER SLOTS` host = `AIKV_EXTERNAL_HOST` | host = `""` |
 | MOVED = `host:port` | MOVED = `:port` |
 | `CLUSTER NODES` | **不变** (完整 client_addr) |
 
-依赖 LAN IP 做服务发现的部署: 设置 `WIQUN_CLUSTER_ANNOUNCE_MODE=fixed` + 正确 `WIQUN_EXTERNAL_HOST`.
+依赖 LAN IP 做服务发现的部署: 设置 `AIKV_CLUSTER_ANNOUNCE_MODE=fixed` + 正确 `AIKV_EXTERNAL_HOST`.
 
 ### 9.2 迁移路径
 
-1. **已用方案 A 的 dev 环境:** 可继续 `fixed` + `127.0.0.1`, 或切 `unknown` 后删 `WIQUN_EXTERNAL_HOST` 特殊配置.
+1. **已用方案 A 的 dev 环境:** 可继续 `fixed` + `127.0.0.1`, 或切 `unknown` 后删 `AIKV_EXTERNAL_HOST` 特殊配置.
 2. **生产 LAN 客户端:** 保持 `fixed` 直至确认客户端支持 unknown.
-3. **回滚:** `WIQUN_CLUSTER_ANNOUNCE_MODE=fixed` 或 revert commit.
+3. **回滚:** `AIKV_CLUSTER_ANNOUNCE_MODE=fixed` 或 revert commit.
 
 ---
 
@@ -337,8 +337,8 @@ sequenceDiagram
 
 - Redis: `cluster-announce-ip`, `cluster-preferred-endpoint-type` (Redis 7+)
 - Kvrocks: `--bind`, proxy 层外部地址配置
-- AiKv CHANGELOG 0.9.7: `WIQUN_CLIENT_ADDR` / 角色显示修复
-- AiDb: [`aidb/docs/superpowers/specs/2026-06-03-data-plane-port-configurable-design.md`](../../../aidb/docs/superpowers/specs/2026-06-03-data-plane-port-configurable-design.md) — bus `@cport` 偏移; SLOTS client port 问题记录
+- AiKv CHANGELOG 0.9.7: `AIKV_CLIENT_ADDR` / 角色显示修复
+- AiDb:  — bus `@cport` 偏移; SLOTS client port 问题记录
 
 ---
 

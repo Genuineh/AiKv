@@ -35,5 +35,5 @@ Environment overrides:
   # 重启同命令后 GET k
   ```
 
-- 本目录为 **shell-only** (无 `runner.rs`); `extended-acceptance.json` 直接执行上述脚本.
+- 本目录为 **shell-only** (无 `runner.rs`); 直接执行上述脚本.
 - CI images without `redis-cli` should install `redis-tools` or skip these scripts.
