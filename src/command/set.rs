@@ -1,626 +1,363 @@
-use crate::error::{AikvError, Result};
-use crate::protocol::RespValue;
-use crate::storage::{StorageEngine, StoredValue};
-use bytes::Bytes;
-use std::collections::HashSet;
+//! Set 命令
 
-/// Set command handler
+use std::collections::HashSet;
+use std::sync::Arc;
+
+use bytes::Bytes;
+use rand::seq::SliceRandom;
+use tracing::instrument;
+
+use crate::command::router::{self, KeyLock};
+use crate::command::scan_util;
+use crate::error::{Error, Result};
+use crate::protocol::RespValue;
+use crate::storage::memory::glob_match;
+use crate::storage::{KvStorage, StoredValue, ValueType};
+
 pub struct SetCommands {
-    storage: StorageEngine,
+  storage: Arc<dyn KvStorage>,
+  key_lock: Arc<KeyLock>,
 }
 
 impl SetCommands {
-    pub fn new(storage: StorageEngine) -> Self {
-        Self {
-            storage,
-        }
+  pub fn new(storage: Arc<dyn KvStorage>, key_lock: Arc<KeyLock>) -> Self {
+    Self { storage, key_lock }
+  }
+
+  #[instrument(name = "cmd_set", skip(self, args), fields(cmd.name = "SADD"))]
+  pub async fn sadd(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_min_args("SADD", args, 2)?;
+    let key = &args[0];
+    let _lock = self.key_lock.lock(key).await;
+    let mut stored = self.load_or_create_set(db, key).await?;
+    let set = stored.as_set_mut()?;
+    let mut count = 0i64;
+    for member in &args[1..] {
+      if set.insert(member.to_vec()) {
+        count += 1;
+      }
+    }
+    self.storage.set_typed(db, key, stored).await?;
+    Ok(router::integer(count))
+  }
+
+  pub async fn srem(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_min_args("SREM", args, 2)?;
+    let key = &args[0];
+    let _lock = self.key_lock.lock(key).await;
+    let Some(mut stored) = self.storage.get_typed(db, key).await? else {
+      return Ok(router::integer(0));
+    };
+    let set = stored.as_set_mut()?;
+    let mut count = 0i64;
+    for member in &args[1..] {
+      if set.remove(member.as_ref()) {
+        count += 1;
+      }
+    }
+    if set.is_empty() {
+      self.storage.delete(db, key).await?;
+    } else {
+      self.storage.set_typed(db, key, stored).await?;
+    }
+    Ok(router::integer(count))
+  }
+
+  pub async fn sismember(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("SISMEMBER", args, 2)?;
+    let set = self.load_set(db, &args[0]).await?;
+    let exists = set.is_some_and(|s| s.contains(args[1].as_ref()));
+    Ok(router::integer(i64::from(exists)))
+  }
+
+  pub async fn smembers(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("SMEMBERS", args, 1)?;
+    let set = self.load_set(db, &args[0]).await?;
+    Ok(array_of_bulk(
+      set.map(|s| s.iter().cloned().collect()).unwrap_or_default(),
+    ))
+  }
+
+  pub async fn scard(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("SCARD", args, 1)?;
+    let set = self.load_set(db, &args[0]).await?;
+    Ok(router::integer(set.map(|s| s.len() as i64).unwrap_or(0)))
+  }
+
+  pub async fn spop(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_min_args("SPOP", args, 1)?;
+    let count = if args.len() > 1 {
+      Some(parse_i64(&args[1])?)
+    } else {
+      None
+    };
+    let _lock = self.key_lock.lock(&args[0]).await;
+    let Some(mut stored) = self.storage.get_typed(db, &args[0]).await? else {
+      return Ok(router::nil_bulk());
+    };
+    let set = stored.as_set_mut()?;
+    let count = count.unwrap_or(1);
+    if count == 0 {
+      return Ok(RespValue::Array(Some(vec![])));
+    }
+    let mut members: Vec<Vec<u8>> = set.iter().cloned().collect();
+    members.shuffle(&mut rand::thread_rng());
+    let n = (count as usize).min(members.len());
+    let picked: Vec<Vec<u8>> = members.into_iter().take(n).collect();
+    for m in &picked {
+      set.remove(m);
+    }
+    if set.is_empty() {
+      self.storage.delete(db, &args[0]).await?;
+    } else {
+      self.storage.set_typed(db, &args[0], stored).await?;
+    }
+    if count == 1 && picked.len() == 1 {
+      return Ok(router::bulk(picked.into_iter().next().unwrap()));
+    }
+    Ok(array_of_bulk(picked))
+  }
+
+  pub async fn srandmember(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_min_args("SRANDMEMBER", args, 1)?;
+    let count = if args.len() > 1 {
+      Some(parse_i64(&args[1])?)
+    } else {
+      None
+    };
+    let set = self.load_set(db, &args[0]).await?;
+    let Some(set) = set else {
+      return if count.is_some() {
+        Ok(RespValue::Array(Some(vec![])))
+      } else {
+        Ok(router::nil_bulk())
+      };
+    };
+    let mut members: Vec<Vec<u8>> = set.iter().cloned().collect();
+    let count = count.unwrap_or(1);
+    if count == 0 {
+      return Ok(RespValue::Array(Some(vec![])));
+    }
+    let mut rng = rand::thread_rng();
+    if count > 0 {
+      members.shuffle(&mut rng);
+      let n = (count as usize).min(members.len());
+      let picked: Vec<Vec<u8>> = members.into_iter().take(n).collect();
+      if args.len() == 1 {
+        return Ok(router::bulk(picked.into_iter().next().unwrap()));
+      }
+      return Ok(array_of_bulk(picked));
+    }
+    let picked: Vec<Vec<u8>> = (0..(-count) as usize)
+      .map(|_| members.choose(&mut rng).cloned().unwrap())
+      .collect();
+    Ok(array_of_bulk(picked))
+  }
+
+  pub async fn sunion(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_min_args("SUNION", args, 1)?;
+    let result = self.compute_union(db, args).await?;
+    Ok(array_of_bulk(result.into_iter().collect()))
+  }
+
+  pub async fn sinter(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_min_args("SINTER", args, 1)?;
+    let result = self.compute_inter(db, args).await?;
+    Ok(array_of_bulk(result.into_iter().collect()))
+  }
+
+  pub async fn sdiff(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_min_args("SDIFF", args, 1)?;
+    let result = self.compute_diff(db, args).await?;
+    Ok(array_of_bulk(result.into_iter().collect()))
+  }
+
+  pub async fn sunionstore(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_min_args("SUNIONSTORE", args, 2)?;
+    let dest = &args[0];
+    let result = self.compute_union(db, &args[1..]).await?;
+    self.store_set(db, dest, result).await
+  }
+
+  pub async fn sinterstore(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_min_args("SINTERSTORE", args, 2)?;
+    let dest = &args[0];
+    let result = self.compute_inter(db, &args[1..]).await?;
+    self.store_set(db, dest, result).await
+  }
+
+  pub async fn sdiffstore(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_min_args("SDIFFSTORE", args, 2)?;
+    let dest = &args[0];
+    let result = self.compute_diff(db, &args[1..]).await?;
+    self.store_set(db, dest, result).await
+  }
+
+  #[instrument(name = "cmd_set", skip(self, args), fields(cmd.name = "SMOVE"))]
+  pub async fn smove(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("SMOVE", args, 3)?;
+    let source = &args[0];
+    let dest = &args[1];
+    let member = args[2].to_vec();
+
+    let (_lock_a, _lock_b) = self.key_lock.lock_two(source, dest).await;
+    let same_key = source == dest;
+
+    let Some(mut src_stored) = self.storage.get_typed(db, source).await? else {
+      return Ok(router::integer(0));
+    };
+    let src_set = src_stored.as_set_mut()?;
+    if !src_set.remove(&member) {
+      return Ok(router::integer(0));
     }
 
-    /// SADD key member [member ...]
-    /// Add the specified members to the set stored at key
-    pub fn sadd(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() < 2 {
-            return Err(AikvError::WrongArgCount("SADD".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let members: Vec<Bytes> = args[1..].to_vec();
-
-        // Migrated: Logic moved from storage layer to command layer
-        let set = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let mut set = stored.as_set()?.clone();
-            let mut count = 0;
-            for member in &members {
-                if set.insert(member.to_vec()) {
-                    count += 1;
-                }
-            }
-            (count, set)
-        } else {
-            let mut set = HashSet::new();
-            let mut count = 0;
-            for member in &members {
-                if set.insert(member.to_vec()) {
-                    count += 1;
-                }
-            }
-            (count, set)
-        };
-
-        self.storage
-            .set_value(db_index, key, StoredValue::new_set(set.1))?;
-        Ok(RespValue::Integer(set.0 as i64))
+    if same_key {
+      src_set.insert(member);
+      self.storage.set_typed(db, source, src_stored).await?;
+      return Ok(router::integer(1));
     }
 
-    /// SREM key member [member ...]
-    /// Remove the specified members from the set stored at key
-    pub fn srem(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() < 2 {
-            return Err(AikvError::WrongArgCount("SREM".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let members: Vec<Bytes> = args[1..].to_vec();
-
-        // Migrated: Logic moved from storage layer to command layer
-        let mut count = 0;
-
-        if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let mut set = stored.as_set()?.clone();
-
-            for member in &members {
-                if set.remove(&member.to_vec()) {
-                    count += 1;
-                }
-            }
-
-            // Update or delete the set
-            if set.is_empty() {
-                self.storage.delete_from_db(db_index, &key)?;
-            } else {
-                self.storage
-                    .set_value(db_index, key, StoredValue::new_set(set))?;
-            }
-        }
-
-        Ok(RespValue::Integer(count as i64))
+    if let Some(dest_stored) = self.storage.get_typed(db, dest).await? {
+      if !matches!(dest_stored.value, ValueType::Set(_)) {
+        return Err(router::wrongtype());
+      }
     }
 
-    /// SISMEMBER key member
-    /// Returns if member is a member of the set stored at key
-    pub fn sismember(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("SISMEMBER".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let member = args[1].clone();
-
-        let is_member = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let set = stored.as_set()?;
-            set.contains(&member.to_vec())
-        } else {
-            false
-        };
-
-        Ok(RespValue::Integer(if is_member { 1 } else { 0 }))
+    if src_set.is_empty() {
+      self.storage.delete(db, source).await?;
+    } else {
+      self.storage.set_typed(db, source, src_stored).await?;
     }
 
-    /// SMEMBERS key
-    /// Returns all the members of the set value stored at key
-    pub fn smembers(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("SMEMBERS".to_string()));
-        }
+    let mut dest_stored = match self.storage.get_typed(db, dest).await? {
+      None => StoredValue::new_set(HashSet::new()),
+      Some(stored) => stored,
+    };
+    let dest_set = dest_stored.as_set_mut()?;
+    dest_set.insert(member);
+    self.storage.set_typed(db, dest, dest_stored).await?;
+    Ok(router::integer(1))
+  }
 
-        let key = String::from_utf8_lossy(&args[0]).to_string();
+  #[instrument(name = "cmd_set", skip(self, args), fields(cmd.name = "SSCAN"))]
+  pub async fn sscan(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_min_args("SSCAN", args, 2)?;
+    let cursor = scan_util::parse_u64(&args[1])?;
+    let opts = scan_util::parse_scan_options("SSCAN", args, 2)?;
 
-        let members = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let set = stored.as_set()?;
-            set.iter().map(|v| Bytes::from(v.clone())).collect()
-        } else {
-            Vec::new()
-        };
-
-        Ok(RespValue::Array(Some(
-            members.into_iter().map(RespValue::bulk_string).collect(),
-        )))
+    let Some(stored) = self.storage.get_typed(db, &args[0]).await? else {
+      return Ok(scan_util::scan_response_bulk(0, &[]));
+    };
+    if !matches!(stored.value, ValueType::Set(_)) {
+      return Err(router::wrongtype());
     }
+    let set = stored.as_set()?;
+    let mut members: Vec<Vec<u8>> = set
+      .iter()
+      .filter(|m| {
+        opts
+          .pattern
+          .as_ref()
+          .is_none_or(|p| glob_match(p, m.as_slice()))
+      })
+      .cloned()
+      .collect();
+    members.sort();
 
-    /// SCARD key
-    /// Returns the set cardinality (number of elements) of the set stored at key
-    pub fn scard(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("SCARD".to_string()));
-        }
+    let (next_cursor, page) = scan_util::paginate_slice(&members, cursor, opts.count);
+    Ok(scan_util::scan_response_bulk(next_cursor, page))
+  }
 
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-
-        let count = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let set = stored.as_set()?;
-            set.len()
-        } else {
-            0
-        };
-
-        Ok(RespValue::Integer(count as i64))
+  async fn store_set(&self, db: usize, dest: &Bytes, set: HashSet<Vec<u8>>) -> Result<RespValue> {
+    let _lock = self.key_lock.lock(dest).await;
+    if let Some(stored) = self.storage.get_typed(db, dest).await? {
+      if !matches!(stored.value, ValueType::Set(_)) {
+        return Err(router::wrongtype());
+      }
     }
+    let len = set.len() as i64;
+    self
+      .storage
+      .set_typed(db, dest, StoredValue::new_set(set))
+      .await?;
+    Ok(router::integer(len))
+  }
 
-    /// SPOP key \[count\]
-    /// Remove and return one or multiple random members from the set value stored at key
-    pub fn spop(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.is_empty() {
-            return Err(AikvError::WrongArgCount("SPOP".to_string()));
+  async fn compute_union(&self, db: usize, keys: &[Bytes]) -> Result<HashSet<Vec<u8>>> {
+    let mut result = HashSet::new();
+    for key in keys {
+      match self.storage.get_typed(db, key).await? {
+        None => {}
+        Some(stored) => {
+          let set = stored.as_set()?;
+          result.extend(set.iter().cloned());
         }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let count = if args.len() > 1 {
-            String::from_utf8_lossy(&args[1])
-                .parse::<usize>()
-                .map_err(|_| AikvError::InvalidArgument("invalid count".to_string()))?
-        } else {
-            1
-        };
-
-        // Migrated: Logic moved from storage layer to command layer
-        let mut members = Vec::new();
-
-        if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let mut set = stored.as_set()?.clone();
-
-            let to_remove: Vec<Vec<u8>> = set.iter().take(count).cloned().collect();
-            for member in to_remove {
-                set.remove(&member);
-                members.push(Bytes::from(member));
-            }
-
-            // Update or delete the set
-            if set.is_empty() {
-                self.storage.delete_from_db(db_index, &key)?;
-            } else {
-                self.storage
-                    .set_value(db_index, key, StoredValue::new_set(set))?;
-            }
-        }
-
-        if members.is_empty() {
-            Ok(RespValue::Null)
-        } else if count == 1 {
-            Ok(RespValue::bulk_string(members[0].clone()))
-        } else {
-            Ok(RespValue::Array(Some(
-                members.into_iter().map(RespValue::bulk_string).collect(),
-            )))
-        }
+      }
     }
+    Ok(result)
+  }
 
-    /// SRANDMEMBER key \[count\]
-    /// Return one or multiple random members from the set value stored at key
-    pub fn srandmember(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.is_empty() {
-            return Err(AikvError::WrongArgCount("SRANDMEMBER".to_string()));
+  async fn compute_inter(&self, db: usize, keys: &[Bytes]) -> Result<HashSet<Vec<u8>>> {
+    let mut result: Option<HashSet<Vec<u8>>> = None;
+    for key in keys {
+      let Some(stored) = self.storage.get_typed(db, key).await? else {
+        return Ok(HashSet::new());
+      };
+      let set = stored.as_set()?;
+      result = Some(match result {
+        None => set.clone(),
+        Some(mut acc) => {
+          acc.retain(|m| set.contains(m));
+          acc
         }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let count = if args.len() > 1 {
-            String::from_utf8_lossy(&args[1])
-                .parse::<i64>()
-                .map_err(|_| AikvError::InvalidArgument("invalid count".to_string()))?
-        } else {
-            1
-        };
-
-        let members = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let set = stored.as_set()?;
-            set.iter()
-                .take(count.unsigned_abs() as usize)
-                .map(|v| Bytes::from(v.clone()))
-                .collect()
-        } else {
-            Vec::new()
-        };
-
-        if members.is_empty() && args.len() == 1 {
-            Ok(RespValue::Null)
-        } else if count == 1 && args.len() == 1 {
-            Ok(RespValue::bulk_string(members[0].clone()))
-        } else {
-            Ok(RespValue::Array(Some(
-                members.into_iter().map(RespValue::bulk_string).collect(),
-            )))
-        }
+      });
     }
+    Ok(result.unwrap_or_default())
+  }
 
-    /// SUNION key [key ...]
-    /// Returns the members of the set resulting from the union of all the given sets
-    pub fn sunion(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.is_empty() {
-            return Err(AikvError::WrongArgCount("SUNION".to_string()));
+  async fn compute_diff(&self, db: usize, keys: &[Bytes]) -> Result<HashSet<Vec<u8>>> {
+    let first = self.storage.get_typed(db, &keys[0]).await?;
+    let mut result = match first {
+      None => HashSet::new(),
+      Some(stored) => stored.as_set()?.clone(),
+    };
+    for key in &keys[1..] {
+      match self.storage.get_typed(db, key).await? {
+        None => {}
+        Some(stored) => {
+          let set = stored.as_set()?;
+          result.retain(|m| !set.contains(m));
         }
-
-        let keys: Vec<String> = args
-            .iter()
-            .map(|b| String::from_utf8_lossy(b).to_string())
-            .collect();
-
-        let mut result = HashSet::new();
-        for key in keys {
-            if let Some(stored) = self.storage.get_value(db_index, &key)? {
-                let set = stored.as_set()?;
-                result.extend(set.iter().cloned());
-            }
-        }
-
-        Ok(RespValue::Array(Some(
-            result
-                .into_iter()
-                .map(|v| RespValue::bulk_string(Bytes::from(v)))
-                .collect(),
-        )))
+      }
     }
+    Ok(result)
+  }
 
-    /// SINTER key [key ...]
-    /// Returns the members of the set resulting from the intersection of all the given sets
-    pub fn sinter(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.is_empty() {
-            return Err(AikvError::WrongArgCount("SINTER".to_string()));
-        }
+  async fn load_set(&self, db: usize, key: &[u8]) -> Result<Option<HashSet<Vec<u8>>>> {
+    let Some(stored) = self.storage.get_typed(db, key).await? else {
+      return Ok(None);
+    };
+    Ok(Some(stored.as_set()?.clone()))
+  }
 
-        let keys: Vec<String> = args
-            .iter()
-            .map(|b| String::from_utf8_lossy(b).to_string())
-            .collect();
-
-        let mut result: Option<HashSet<Vec<u8>>> = None;
-
-        for key in keys {
-            if let Some(stored) = self.storage.get_value(db_index, &key)? {
-                let set = stored.as_set()?;
-                if let Some(res) = &mut result {
-                    *res = res.intersection(set).cloned().collect();
-                } else {
-                    result = Some(set.clone());
-                }
-            } else {
-                // If any key doesn't exist, intersection is empty
-                return Ok(RespValue::Array(Some(Vec::new())));
-            }
-        }
-
-        Ok(RespValue::Array(Some(
-            result
-                .unwrap_or_default()
-                .into_iter()
-                .map(|v| RespValue::bulk_string(Bytes::from(v)))
-                .collect(),
-        )))
+  async fn load_or_create_set(&self, db: usize, key: &[u8]) -> Result<StoredValue> {
+    match self.storage.get_typed(db, key).await? {
+      None => Ok(StoredValue::new_set(HashSet::new())),
+      Some(stored) => match stored.value {
+        ValueType::Set(_) => Ok(stored),
+        _ => Err(router::wrongtype()),
+      },
     }
+  }
+}
 
-    /// SDIFF key [key ...]
-    /// Returns the members of the set resulting from the difference between the first set and all the successive sets
-    pub fn sdiff(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.is_empty() {
-            return Err(AikvError::WrongArgCount("SDIFF".to_string()));
-        }
+fn array_of_bulk(items: Vec<Vec<u8>>) -> RespValue {
+  RespValue::Array(Some(items.into_iter().map(router::bulk).collect()))
+}
 
-        let keys: Vec<String> = args
-            .iter()
-            .map(|b| String::from_utf8_lossy(b).to_string())
-            .collect();
-
-        let mut result: HashSet<Vec<u8>> = HashSet::new();
-
-        // Start with the first set
-        if let Some(stored) = self.storage.get_value(db_index, &keys[0])? {
-            let set = stored.as_set()?;
-            result = set.clone();
-        }
-
-        // Subtract all other sets
-        for key in &keys[1..] {
-            if let Some(stored) = self.storage.get_value(db_index, key)? {
-                let set = stored.as_set()?;
-                result = result.difference(set).cloned().collect();
-            }
-        }
-
-        Ok(RespValue::Array(Some(
-            result
-                .into_iter()
-                .map(|v| RespValue::bulk_string(Bytes::from(v)))
-                .collect(),
-        )))
-    }
-
-    /// SUNIONSTORE destination key [key ...]
-    /// Store the members of the set resulting from the union of all the given sets
-    pub fn sunionstore(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() < 2 {
-            return Err(AikvError::WrongArgCount("SUNIONSTORE".to_string()));
-        }
-
-        let dest = String::from_utf8_lossy(&args[0]).to_string();
-        let keys: Vec<String> = args[1..]
-            .iter()
-            .map(|b| String::from_utf8_lossy(b).to_string())
-            .collect();
-
-        let mut result = HashSet::new();
-        for key in keys {
-            if let Some(stored) = self.storage.get_value(db_index, &key)? {
-                let set = stored.as_set()?;
-                result.extend(set.iter().cloned());
-            }
-        }
-
-        let count = result.len();
-        self.storage
-            .set_value(db_index, dest, StoredValue::new_set(result))?;
-
-        Ok(RespValue::Integer(count as i64))
-    }
-
-    /// SINTERSTORE destination key [key ...]
-    /// Store the members of the set resulting from the intersection of all the given sets
-    pub fn sinterstore(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() < 2 {
-            return Err(AikvError::WrongArgCount("SINTERSTORE".to_string()));
-        }
-
-        let dest = String::from_utf8_lossy(&args[0]).to_string();
-        let keys: Vec<String> = args[1..]
-            .iter()
-            .map(|b| String::from_utf8_lossy(b).to_string())
-            .collect();
-
-        let mut result: Option<HashSet<Vec<u8>>> = None;
-
-        for key in keys {
-            if let Some(stored) = self.storage.get_value(db_index, &key)? {
-                let set = stored.as_set()?;
-                if let Some(res) = &mut result {
-                    *res = res.intersection(set).cloned().collect();
-                } else {
-                    result = Some(set.clone());
-                }
-            } else {
-                // If any key doesn't exist, intersection is empty
-                result = Some(HashSet::new());
-                break;
-            }
-        }
-
-        let final_set = result.unwrap_or_default();
-        let count = final_set.len();
-        self.storage
-            .set_value(db_index, dest, StoredValue::new_set(final_set))?;
-
-        Ok(RespValue::Integer(count as i64))
-    }
-
-    /// SDIFFSTORE destination key [key ...]
-    /// Store the members of the set resulting from the difference between the first set and all the successive sets
-    pub fn sdiffstore(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() < 2 {
-            return Err(AikvError::WrongArgCount("SDIFFSTORE".to_string()));
-        }
-
-        let dest = String::from_utf8_lossy(&args[0]).to_string();
-        let keys: Vec<String> = args[1..]
-            .iter()
-            .map(|b| String::from_utf8_lossy(b).to_string())
-            .collect();
-
-        let mut result: HashSet<Vec<u8>> = HashSet::new();
-
-        // Start with the first set
-        if let Some(stored) = self.storage.get_value(db_index, &keys[0])? {
-            let set = stored.as_set()?;
-            result = set.clone();
-        }
-
-        // Subtract all other sets
-        for key in &keys[1..] {
-            if let Some(stored) = self.storage.get_value(db_index, key)? {
-                let set = stored.as_set()?;
-                result = result.difference(set).cloned().collect();
-            }
-        }
-
-        let count = result.len();
-        self.storage
-            .set_value(db_index, dest, StoredValue::new_set(result))?;
-
-        Ok(RespValue::Integer(count as i64))
-    }
-
-    /// SSCAN key cursor [MATCH pattern] [COUNT count]
-    /// Incrementally iterates over the members of a set
-    pub fn sscan(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() < 2 {
-            return Err(AikvError::WrongArgCount("SSCAN".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let cursor = String::from_utf8_lossy(&args[1])
-            .parse::<usize>()
-            .map_err(|_| AikvError::InvalidArgument("ERR invalid cursor".to_string()))?;
-
-        // Parse optional arguments
-        let mut pattern: Option<String> = None;
-        let mut count: usize = 10; // Default count
-
-        let mut i = 2;
-        while i < args.len() {
-            let option = String::from_utf8_lossy(&args[i]).to_uppercase();
-            match option.as_str() {
-                "MATCH" => {
-                    if i + 1 >= args.len() {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    i += 1;
-                    pattern = Some(String::from_utf8_lossy(&args[i]).to_string());
-                }
-                "COUNT" => {
-                    if i + 1 >= args.len() {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    i += 1;
-                    count = String::from_utf8_lossy(&args[i])
-                        .parse::<usize>()
-                        .map_err(|_| {
-                            AikvError::InvalidArgument(
-                                "ERR value is not an integer or out of range".to_string(),
-                            )
-                        })?;
-                }
-                _ => {
-                    return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                }
-            }
-            i += 1;
-        }
-
-        let (next_cursor, members) = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let set = stored.as_set()?;
-            let all_members: Vec<Vec<u8>> = set.iter().cloned().collect();
-
-            // Filter by pattern if provided
-            let filtered: Vec<Vec<u8>> = if let Some(ref pat) = pattern {
-                all_members
-                    .into_iter()
-                    .filter(|m| {
-                        let member_str = String::from_utf8_lossy(m);
-                        Self::glob_match(pat, &member_str)
-                    })
-                    .collect()
-            } else {
-                all_members
-            };
-
-            let total = filtered.len();
-            if cursor >= total {
-                (0, Vec::new())
-            } else {
-                let end = (cursor + count).min(total);
-                let members: Vec<Vec<u8>> = filtered[cursor..end].to_vec();
-                let next = if end >= total { 0 } else { end };
-                (next, members)
-            }
-        } else {
-            (0, Vec::new())
-        };
-
-        // Build response: [cursor, [members...]]
-        let cursor_str = Bytes::from(next_cursor.to_string());
-        let members_arr: Vec<RespValue> = members
-            .into_iter()
-            .map(|m| RespValue::bulk_string(Bytes::from(m)))
-            .collect();
-
-        Ok(RespValue::Array(Some(vec![
-            RespValue::bulk_string(cursor_str),
-            RespValue::Array(Some(members_arr)),
-        ])))
-    }
-
-    /// SMOVE source destination member
-    /// Move a member from one set to another
-    pub fn smove(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 3 {
-            return Err(AikvError::WrongArgCount("SMOVE".to_string()));
-        }
-
-        let source_key = String::from_utf8_lossy(&args[0]).to_string();
-        let dest_key = String::from_utf8_lossy(&args[1]).to_string();
-        let member = args[2].clone();
-
-        // Get source set
-        if let Some(stored) = self.storage.get_value(db_index, &source_key)? {
-            let mut source_set = stored.as_set()?.clone();
-
-            // Check if member exists in source
-            if !source_set.remove(&member.to_vec()) {
-                return Ok(RespValue::Integer(0));
-            }
-
-            // Get or create destination set and add member
-            let dest_set = if source_key == dest_key {
-                // Moving within the same set - member was just removed, add it back
-                source_set.insert(member.to_vec());
-                source_set.clone()
-            } else if let Some(dest_stored) = self.storage.get_value(db_index, &dest_key)? {
-                let mut dest = dest_stored.as_set()?.clone();
-                dest.insert(member.to_vec());
-                dest
-            } else {
-                let mut new_set = HashSet::new();
-                new_set.insert(member.to_vec());
-                new_set
-            };
-
-            // Update source set
-            if source_key != dest_key {
-                if source_set.is_empty() {
-                    self.storage.delete_from_db(db_index, &source_key)?;
-                } else {
-                    self.storage.set_value(
-                        db_index,
-                        source_key,
-                        StoredValue::new_set(source_set),
-                    )?;
-                }
-            }
-
-            // Update destination set
-            self.storage
-                .set_value(db_index, dest_key, StoredValue::new_set(dest_set))?;
-
-            Ok(RespValue::Integer(1))
-        } else {
-            Ok(RespValue::Integer(0))
-        }
-    }
-
-    /// Simple glob pattern matching for SSCAN
-    fn glob_match(pattern: &str, text: &str) -> bool {
-        let mut pattern_chars = pattern.chars().peekable();
-        let mut text_chars = text.chars().peekable();
-
-        while let Some(p) = pattern_chars.next() {
-            match p {
-                '*' => {
-                    // Skip consecutive stars
-                    while pattern_chars.peek() == Some(&'*') {
-                        pattern_chars.next();
-                    }
-                    // If star is at end, match rest of text
-                    if pattern_chars.peek().is_none() {
-                        return true;
-                    }
-                    // Try matching remaining pattern at each position
-                    let remaining_pattern: String = pattern_chars.collect();
-                    while text_chars.peek().is_some() {
-                        let remaining_text: String = text_chars.clone().collect();
-                        if Self::glob_match(&remaining_pattern, &remaining_text) {
-                            return true;
-                        }
-                        text_chars.next();
-                    }
-                    return Self::glob_match(&remaining_pattern, "");
-                }
-                '?' => {
-                    if text_chars.next().is_none() {
-                        return false;
-                    }
-                }
-                c => {
-                    if text_chars.next() != Some(c) {
-                        return false;
-                    }
-                }
-            }
-        }
-        text_chars.peek().is_none()
-    }
+fn parse_i64(b: &Bytes) -> Result<i64> {
+  let s =
+    std::str::from_utf8(b).map_err(|_| Error::Command("ERR value is not an integer".into()))?;
+  s.parse::<i64>()
+    .map_err(|_| Error::Command("ERR value is not an integer".into()))
 }

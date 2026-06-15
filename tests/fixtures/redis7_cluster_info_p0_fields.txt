@@ -1,0 +1,13 @@
+# Redis 7 CLUSTER INFO P0 字段
+cluster_state
+cluster_slots_assigned
+cluster_slots_ok
+cluster_slots_pfail
+cluster_slots_fail
+cluster_slots_migrating
+cluster_known_nodes
+cluster_size
+cluster_current_epoch
+cluster_my_epoch
+cluster_stats_messages_sent
+cluster_stats_messages_received

@@ -1,530 +1,320 @@
-use crate::error::{AikvError, Result};
-use crate::protocol::RespValue;
-use crate::storage::{StorageEngine, StoredValue};
-use bytes::Bytes;
-use std::collections::HashMap;
+//! Hash 命令
 
-/// Hash command handler
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use bytes::Bytes;
+use tracing::instrument;
+
+use crate::command::router::{self, KeyLock};
+use crate::command::scan_util;
+use crate::error::{Error, Result};
+use crate::protocol::RespValue;
+use crate::storage::memory::glob_match;
+use crate::storage::{KvStorage, StoredValue, ValueType, WRONGTYPE};
+
 pub struct HashCommands {
-    storage: StorageEngine,
+  storage: Arc<dyn KvStorage>,
+  key_lock: Arc<KeyLock>,
 }
 
 impl HashCommands {
-    pub fn new(storage: StorageEngine) -> Self {
-        Self {
-            storage,
-        }
+  pub fn new(storage: Arc<dyn KvStorage>, key_lock: Arc<KeyLock>) -> Self {
+    Self { storage, key_lock }
+  }
+
+  #[instrument(name = "cmd_hash", skip(self, args), fields(cmd.name = "HSET"))]
+  pub async fn hset(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    if args.len() < 3 || args.len().is_multiple_of(2) {
+      return Err(router::wrong_args("HSET", ""));
     }
-
-    /// HSET key field value [field value ...]
-    /// Sets field in the hash stored at key to value
-    pub fn hset(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() < 3 || args.len() % 2 == 0 {
-            return Err(AikvError::WrongArgCount("HSET".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-
-        // Migrated: Logic moved from storage layer to command layer
-        let mut hash = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            stored.as_hash()?.clone()
-        } else {
-            HashMap::new()
-        };
-
-        let mut count = 0;
-        for i in (1..args.len()).step_by(2) {
-            let field = String::from_utf8_lossy(&args[i]).to_string();
-            let value = args[i + 1].clone();
-            if hash.insert(field, value).is_none() {
-                count += 1;
-            }
-        }
-
-        self.storage
-            .set_value(db_index, key, StoredValue::new_hash(hash))?;
-        Ok(RespValue::Integer(count as i64))
+    let key = &args[0];
+    let _lock = self.key_lock.lock(key).await;
+    let mut stored = self.load_or_create_hash(db, key).await?;
+    let ValueType::Hash(ref mut map) = stored.value else {
+      return Err(router::wrongtype());
+    };
+    let mut new_fields = 0i64;
+    for chunk in args[1..].chunks(2) {
+      let field = chunk[0].to_vec();
+      let value = chunk[1].to_vec();
+      if !map.contains_key(&field) {
+        new_fields += 1;
+      }
+      map.insert(field, value);
     }
+    self.storage.set_typed(db, key, stored).await?;
+    Ok(router::integer(new_fields))
+  }
 
-    /// HSETNX key field value
-    /// Sets field in the hash stored at key to value, only if field does not yet exist
-    pub fn hsetnx(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 3 {
-            return Err(AikvError::WrongArgCount("HSETNX".to_string()));
-        }
+  /// HMSET — Redis 兼容: 始终返回 `OK` (HSET 返回新增字段数).
+  #[instrument(name = "cmd_hash", skip(self, args), fields(cmd.name = "HMSET"))]
+  pub async fn hmset(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    self.hset(db, args).await?;
+    Ok(RespValue::SimpleString("OK".into()))
+  }
 
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let field = String::from_utf8_lossy(&args[1]).to_string();
-        let value = args[2].clone();
-
-        // Migrated: Logic moved from storage layer to command layer
-        let mut hash = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            stored.as_hash()?.clone()
-        } else {
-            HashMap::new()
-        };
-
-        let set = if let std::collections::hash_map::Entry::Vacant(e) = hash.entry(field) {
-            e.insert(value);
-            true
-        } else {
-            false
-        };
-
-        if set {
-            self.storage
-                .set_value(db_index, key, StoredValue::new_hash(hash))?;
-        }
-
-        Ok(RespValue::Integer(if set { 1 } else { 0 }))
+  pub async fn hget(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("HGET", args, 2)?;
+    let map = self.load_hash(db, &args[0]).await?;
+    match map {
+      None => Ok(router::nil_bulk()),
+      Some(map) => match map.get(args[1].as_ref()) {
+        Some(v) => Ok(router::bulk(v.clone())),
+        None => Ok(router::nil_bulk()),
+      },
     }
+  }
 
-    /// HGET key field
-    /// Returns the value associated with field in the hash stored at key
-    pub fn hget(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("HGET".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let field = String::from_utf8_lossy(&args[1]).to_string();
-
-        // Migrated: Logic moved from storage layer to command layer
-        let value = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            stored.as_hash()?.get(&field).cloned()
-        } else {
-            None
-        };
-
-        match value {
-            Some(value) => Ok(RespValue::bulk_string(value)),
-            None => Ok(RespValue::Null),
-        }
+  pub async fn hdel(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_min_args("HDEL", args, 2)?;
+    let key = &args[0];
+    let _lock = self.key_lock.lock(key).await;
+    let Some(mut stored) = self.storage.get_typed(db, key).await? else {
+      return Ok(router::integer(0));
+    };
+    let ValueType::Hash(ref mut map) = stored.value else {
+      return Err(router::wrongtype());
+    };
+    let mut count = 0i64;
+    for field in &args[1..] {
+      if map.remove(field.as_ref()).is_some() {
+        count += 1;
+      }
     }
-
-    /// HMGET key field [field ...]
-    /// Returns the values associated with the specified fields in the hash stored at key
-    pub fn hmget(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() < 2 {
-            return Err(AikvError::WrongArgCount("HMGET".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let fields: Vec<String> = args[1..]
-            .iter()
-            .map(|b| String::from_utf8_lossy(b).to_string())
-            .collect();
-
-        // Migrated: Logic moved from storage layer to command layer
-        let values = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let hash = stored.as_hash()?;
-            fields.iter().map(|f| hash.get(f).cloned()).collect()
-        } else {
-            vec![None; fields.len()]
-        };
-
-        Ok(RespValue::Array(Some(
-            values
-                .into_iter()
-                .map(|v| match v {
-                    Some(val) => RespValue::bulk_string(val),
-                    None => RespValue::Null,
-                })
-                .collect(),
-        )))
+    if map.is_empty() {
+      self.storage.delete(db, key).await?;
+    } else {
+      self.storage.set_typed(db, key, stored).await?;
     }
+    Ok(router::integer(count))
+  }
 
-    /// HDEL key field [field ...]
-    /// Removes the specified fields from the hash stored at key
-    pub fn hdel(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() < 2 {
-            return Err(AikvError::WrongArgCount("HDEL".to_string()));
-        }
+  pub async fn hexists(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("HEXISTS", args, 2)?;
+    let map = self.load_hash(db, &args[0]).await?;
+    let exists = map.is_some_and(|m| m.contains_key(args[1].as_ref()));
+    Ok(router::integer(i64::from(exists)))
+  }
 
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let fields: Vec<String> = args[1..]
-            .iter()
-            .map(|b| String::from_utf8_lossy(b).to_string())
-            .collect();
+  pub async fn hlen(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("HLEN", args, 1)?;
+    let map = self.load_hash(db, &args[0]).await?;
+    Ok(router::integer(map.map(|m| m.len() as i64).unwrap_or(0)))
+  }
 
-        // Migrated: Logic moved from storage layer to command layer
-        let count = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let mut hash = stored.as_hash()?.clone();
-            let mut deleted = 0;
+  pub async fn hkeys(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("HKEYS", args, 1)?;
+    let map = self.load_hash(db, &args[0]).await?;
+    Ok(array_of_bulk(
+      map.map(|m| m.keys().cloned().collect()).unwrap_or_default(),
+    ))
+  }
 
-            for field in fields {
-                if hash.remove(&field).is_some() {
-                    deleted += 1;
-                }
-            }
+  pub async fn hvals(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("HVALS", args, 1)?;
+    let map = self.load_hash(db, &args[0]).await?;
+    Ok(array_of_bulk(
+      map
+        .map(|m| m.values().cloned().collect())
+        .unwrap_or_default(),
+    ))
+  }
 
-            if hash.is_empty() {
-                self.storage.delete_from_db(db_index, &key)?;
-            } else {
-                self.storage
-                    .set_value(db_index, key, StoredValue::new_hash(hash))?;
-            }
-
-            deleted
-        } else {
-            0
-        };
-
-        Ok(RespValue::Integer(count as i64))
+  pub async fn hgetall(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("HGETALL", args, 1)?;
+    let map = self.load_hash(db, &args[0]).await?;
+    let mut items = Vec::new();
+    if let Some(map) = map {
+      for (k, v) in map {
+        items.push(router::bulk(k));
+        items.push(router::bulk(v));
+      }
     }
+    Ok(RespValue::Array(Some(items)))
+  }
 
-    /// HEXISTS key field
-    /// Returns if field is an existing field in the hash stored at key
-    pub fn hexists(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("HEXISTS".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let field = String::from_utf8_lossy(&args[1]).to_string();
-
-        // Migrated: Logic moved from storage layer to command layer
-        let exists = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            stored.as_hash()?.contains_key(&field)
-        } else {
-            false
-        };
-
-        Ok(RespValue::Integer(if exists { 1 } else { 0 }))
+  pub async fn hmget(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_min_args("HMGET", args, 2)?;
+    let map = self.load_hash(db, &args[0]).await?;
+    let mut items = Vec::with_capacity(args.len() - 1);
+    for field in &args[1..] {
+      match &map {
+        None => items.push(router::nil_bulk()),
+        Some(m) => match m.get(field.as_ref()) {
+          Some(v) => items.push(router::bulk(v.clone())),
+          None => items.push(router::nil_bulk()),
+        },
+      }
     }
+    Ok(RespValue::Array(Some(items)))
+  }
 
-    /// HLEN key
-    /// Returns the number of fields contained in the hash stored at key
-    pub fn hlen(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("HLEN".to_string()));
+  pub async fn hsetnx(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("HSETNX", args, 3)?;
+    let key = &args[0];
+    let _lock = self.key_lock.lock(key).await;
+    let mut stored = match self.storage.get_typed(db, key).await? {
+      None => StoredValue {
+        value: ValueType::Hash(HashMap::new()),
+        expires_at: None,
+      },
+      Some(s) => {
+        if !matches!(s.value, ValueType::Hash(_)) {
+          return Err(router::wrongtype());
         }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-
-        // Migrated: Logic moved from storage layer to command layer
-        let len = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            stored.as_hash()?.len()
-        } else {
-            0
-        };
-
-        Ok(RespValue::Integer(len as i64))
+        s
+      }
+    };
+    let ValueType::Hash(ref mut map) = stored.value else {
+      return Err(router::wrongtype());
+    };
+    if map.contains_key(args[1].as_ref()) {
+      return Ok(router::integer(0));
     }
+    map.insert(args[1].to_vec(), args[2].to_vec());
+    self.storage.set_typed(db, key, stored).await?;
+    Ok(router::integer(1))
+  }
 
-    /// HKEYS key
-    /// Returns all field names in the hash stored at key
-    pub fn hkeys(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("HKEYS".to_string()));
-        }
+  pub async fn hscan(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_min_args("HSCAN", args, 2)?;
+    let cursor = scan_util::parse_u64(&args[1])?;
+    let opts = scan_util::parse_scan_options("HSCAN", args, 2)?;
 
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-
-        // Migrated: Logic moved from storage layer to command layer
-        let keys = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            stored.as_hash()?.keys().cloned().collect()
-        } else {
-            Vec::new()
-        };
-
-        Ok(RespValue::Array(Some(
-            keys.into_iter()
-                .map(|k| RespValue::bulk_string(Bytes::from(k)))
-                .collect(),
-        )))
+    let Some(stored) = self.storage.get_typed(db, &args[0]).await? else {
+      return Ok(hscan_response(0, &[]));
+    };
+    if !matches!(stored.value, ValueType::Hash(_)) {
+      return Err(router::wrongtype());
     }
+    let ValueType::Hash(map) = stored.value else {
+      unreachable!()
+    };
+    let mut pairs: Vec<(Vec<u8>, Vec<u8>)> = map
+      .into_iter()
+      .filter(|(field, _)| {
+        opts
+          .pattern
+          .as_ref()
+          .is_none_or(|p| glob_match(p, field.as_slice()))
+      })
+      .collect();
+    pairs.sort_by(|a, b| a.0.cmp(&b.0));
 
-    /// HVALS key
-    /// Returns all values in the hash stored at key
-    pub fn hvals(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("HVALS".to_string()));
-        }
+    let (next_cursor, page) = scan_util::paginate_slice(&pairs, cursor, opts.count);
+    Ok(hscan_response(next_cursor, page))
+  }
 
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-
-        // Migrated: Logic moved from storage layer to command layer
-        let vals = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            stored.as_hash()?.values().cloned().collect()
-        } else {
-            Vec::new()
-        };
-
-        Ok(RespValue::Array(Some(
-            vals.into_iter().map(RespValue::bulk_string).collect(),
-        )))
+  pub async fn hincrbyfloat(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("HINCRBYFLOAT", args, 3)?;
+    let delta = parse_f64_field_bytes(&args[2])?;
+    if !delta.is_finite() {
+      return Err(Error::Command("ERR value is not a valid float".into()));
     }
-
-    /// HGETALL key
-    /// Returns all fields and values of the hash stored at key
-    pub fn hgetall(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("HGETALL".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-
-        // Migrated: Logic moved from storage layer to command layer
-        let fields = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            stored
-                .as_hash()?
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect()
-        } else {
-            Vec::new()
-        };
-
-        let mut result = Vec::new();
-        for (field, value) in fields {
-            result.push(RespValue::bulk_string(Bytes::from(field)));
-            result.push(RespValue::bulk_string(value));
-        }
-
-        Ok(RespValue::Array(Some(result)))
+    let key = &args[0];
+    let field = args[1].to_vec();
+    let _lock = self.key_lock.lock(key).await;
+    let mut stored = self.load_or_create_hash(db, key).await?;
+    let ValueType::Hash(ref mut map) = stored.value else {
+      return Err(router::wrongtype());
+    };
+    let current = match map.get(&field) {
+      None => 0.0f64,
+      Some(existing) => parse_f64_field_bytes(existing)?,
+    };
+    let new_val = current + delta;
+    if !new_val.is_finite() {
+      return Err(Error::Command(
+        "ERR increment would produce NaN or Infinity".into(),
+      ));
     }
+    let s = format_hash_float(new_val);
+    map.insert(field, s.as_bytes().to_vec());
+    self.storage.set_typed(db, key, stored).await?;
+    Ok(router::bulk(s.into_bytes()))
+  }
 
-    /// HINCRBY key field increment
-    /// Increments the number stored at field in the hash stored at key by increment
-    pub fn hincrby(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 3 {
-            return Err(AikvError::WrongArgCount("HINCRBY".to_string()));
-        }
+  pub async fn hincrby(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("HINCRBY", args, 3)?;
+    let delta = parse_i64_field(&args[2])?;
+    let key = &args[0];
+    let field = args[1].to_vec();
+    let _lock = self.key_lock.lock(key).await;
+    let mut stored = self.load_or_create_hash(db, key).await?;
+    let ValueType::Hash(ref mut map) = stored.value else {
+      return Err(router::wrongtype());
+    };
+    let new_val = match map.get(&field) {
+      None => delta,
+      Some(existing) => {
+        let v = parse_i64_field(existing)?;
+        v.checked_add(delta)
+          .ok_or_else(|| Error::Command("ERR increment or decrement would overflow".into()))?
+      }
+    };
+    map.insert(field, new_val.to_string().into_bytes());
+    self.storage.set_typed(db, key, stored).await?;
+    Ok(router::integer(new_val))
+  }
 
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let field = String::from_utf8_lossy(&args[1]).to_string();
-        let increment = String::from_utf8_lossy(&args[2])
-            .parse::<i64>()
-            .map_err(|_| AikvError::InvalidArgument("invalid increment".to_string()))?;
-
-        // Migrated: Logic moved from storage layer to command layer
-        let mut hash = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            stored.as_hash()?.clone()
-        } else {
-            HashMap::new()
-        };
-
-        let current_value = if let Some(val_bytes) = hash.get(&field) {
-            String::from_utf8_lossy(val_bytes)
-                .parse::<i64>()
-                .map_err(|_| {
-                    AikvError::InvalidArgument("hash value is not an integer".to_string())
-                })?
-        } else {
-            0
-        };
-
-        let new_value = current_value + increment;
-        hash.insert(field, Bytes::from(new_value.to_string()));
-
-        self.storage
-            .set_value(db_index, key, StoredValue::new_hash(hash))?;
-        Ok(RespValue::Integer(new_value))
+  async fn load_hash(&self, db: usize, key: &[u8]) -> Result<Option<HashMap<Vec<u8>, Vec<u8>>>> {
+    let Some(stored) = self.storage.get_typed(db, key).await? else {
+      return Ok(None);
+    };
+    match stored.value {
+      ValueType::Hash(map) => Ok(Some(map)),
+      _ => Err(router::wrongtype()),
     }
+  }
 
-    /// HINCRBYFLOAT key field increment
-    /// Increments the float value stored at field in the hash stored at key by increment
-    pub fn hincrbyfloat(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 3 {
-            return Err(AikvError::WrongArgCount("HINCRBYFLOAT".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let field = String::from_utf8_lossy(&args[1]).to_string();
-        let increment = String::from_utf8_lossy(&args[2])
-            .parse::<f64>()
-            .map_err(|_| AikvError::InvalidArgument("invalid increment".to_string()))?;
-
-        // Migrated: Logic moved from storage layer to command layer
-        let mut hash = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            stored.as_hash()?.clone()
-        } else {
-            HashMap::new()
-        };
-
-        let current_value = if let Some(val_bytes) = hash.get(&field) {
-            String::from_utf8_lossy(val_bytes)
-                .parse::<f64>()
-                .map_err(|_| AikvError::InvalidArgument("hash value is not a float".to_string()))?
-        } else {
-            0.0
-        };
-
-        let new_value = current_value + increment;
-        hash.insert(field, Bytes::from(new_value.to_string()));
-
-        self.storage
-            .set_value(db_index, key, StoredValue::new_hash(hash))?;
-        Ok(RespValue::bulk_string(Bytes::from(new_value.to_string())))
+  async fn load_or_create_hash(&self, db: usize, key: &[u8]) -> Result<StoredValue> {
+    match self.storage.get_typed(db, key).await? {
+      None => Ok(StoredValue {
+        value: ValueType::Hash(HashMap::new()),
+        expires_at: None,
+      }),
+      Some(stored) => match stored.value {
+        ValueType::Hash(_) => Ok(stored),
+        _ => Err(router::wrongtype()),
+      },
     }
+  }
+}
 
-    /// HMSET key field value [field value ...]
-    /// Sets multiple field-value pairs in the hash stored at key
-    /// This command is deprecated in favor of HSET, but still supported for compatibility
-    pub fn hmset(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() < 3 || args.len() % 2 == 0 {
-            return Err(AikvError::WrongArgCount("HMSET".to_string()));
-        }
+fn array_of_bulk(items: Vec<Vec<u8>>) -> RespValue {
+  RespValue::Array(Some(items.into_iter().map(router::bulk).collect()))
+}
 
-        let key = String::from_utf8_lossy(&args[0]).to_string();
+fn hscan_response(cursor: u64, page: &[(Vec<u8>, Vec<u8>)]) -> RespValue {
+  let mut items = vec![RespValue::BulkString(Some(Bytes::from(cursor.to_string())))];
+  let mut pairs = Vec::new();
+  for (field, value) in page {
+    pairs.push(router::bulk(field.clone()));
+    pairs.push(router::bulk(value.clone()));
+  }
+  items.push(RespValue::Array(Some(pairs)));
+  RespValue::Array(Some(items))
+}
 
-        // Get existing hash or create new one
-        let mut hash = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            stored.as_hash()?.clone()
-        } else {
-            HashMap::new()
-        };
+fn parse_i64_field(b: &[u8]) -> Result<i64> {
+  let s = std::str::from_utf8(b).map_err(|_| Error::Command(WRONGTYPE.into()))?;
+  s.parse::<i64>()
+    .map_err(|_| Error::Command(WRONGTYPE.into()))
+}
 
-        // Set all field-value pairs
-        for i in (1..args.len()).step_by(2) {
-            let field = String::from_utf8_lossy(&args[i]).to_string();
-            let value = args[i + 1].clone();
-            hash.insert(field, value);
-        }
+fn parse_f64_field_bytes(b: &[u8]) -> Result<f64> {
+  let s = std::str::from_utf8(b)
+    .map_err(|_| Error::Command("ERR hash value is not a valid float".into()))?;
+  s.parse::<f64>()
+    .map_err(|_| Error::Command("ERR hash value is not a valid float".into()))
+}
 
-        self.storage
-            .set_value(db_index, key, StoredValue::new_hash(hash))?;
-
-        // HMSET returns OK, unlike HSET which returns the number of new fields
-        Ok(RespValue::ok())
-    }
-
-    /// HSCAN key cursor [MATCH pattern] [COUNT count]
-    /// Iterates fields of a hash stored at key using cursor-based iteration
-    pub fn hscan(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() < 2 {
-            return Err(AikvError::WrongArgCount("HSCAN".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-
-        // Parse cursor
-        let cursor_str = String::from_utf8_lossy(&args[1]);
-        let cursor = cursor_str
-            .parse::<usize>()
-            .map_err(|_| AikvError::InvalidArgument("ERR invalid cursor".to_string()))?;
-
-        // Parse optional arguments
-        let mut pattern = String::from("*");
-        let mut count = 10_usize; // Default count
-
-        let mut i = 2;
-        while i < args.len() {
-            let option = String::from_utf8_lossy(&args[i]).to_uppercase();
-            match option.as_str() {
-                "MATCH" => {
-                    if i + 1 >= args.len() {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    i += 1;
-                    pattern = String::from_utf8_lossy(&args[i]).to_string();
-                }
-                "COUNT" => {
-                    if i + 1 >= args.len() {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    i += 1;
-                    let count_str = String::from_utf8_lossy(&args[i]);
-                    count = count_str.parse::<usize>().map_err(|_| {
-                        AikvError::InvalidArgument("ERR value is not an integer".to_string())
-                    })?;
-                    if count == 0 {
-                        count = 1; // Minimum count is 1
-                    }
-                }
-                _ => {
-                    return Err(AikvError::InvalidArgument(format!(
-                        "ERR unknown option '{}'",
-                        option
-                    )));
-                }
-            }
-            i += 1;
-        }
-
-        // Get hash fields
-        let hash = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            stored.as_hash()?.clone()
-        } else {
-            HashMap::new()
-        };
-
-        // Convert hash to sorted list of (field, value) pairs for consistent iteration
-        let mut fields: Vec<(String, Bytes)> = hash.into_iter().collect();
-        fields.sort_by(|a, b| a.0.cmp(&b.0));
-
-        // Filter by pattern if not "*"
-        let matched_fields: Vec<(String, Bytes)> = if pattern == "*" {
-            fields
-        } else {
-            fields
-                .into_iter()
-                .filter(|(field, _)| Self::match_pattern(field, &pattern))
-                .collect()
-        };
-
-        // Calculate the range to return
-        let total_fields = matched_fields.len();
-        let start = cursor;
-        let end = std::cmp::min(start + count, total_fields);
-
-        // Determine next cursor (0 means iteration complete)
-        let next_cursor = if end >= total_fields { 0 } else { end };
-
-        // Collect field-value pairs for this iteration
-        let mut result_items = Vec::new();
-        for (field, value) in matched_fields.into_iter().skip(start).take(count) {
-            result_items.push(RespValue::bulk_string(Bytes::from(field)));
-            result_items.push(RespValue::bulk_string(value));
-        }
-
-        // Return [cursor, [field, value, field, value, ...]]
-        Ok(RespValue::array(vec![
-            RespValue::bulk_string(next_cursor.to_string()),
-            RespValue::array(result_items),
-        ]))
-    }
-
-    /// Simple pattern matching helper (supports * and ? wildcards)
-    fn match_pattern(key: &str, pattern: &str) -> bool {
-        if pattern == "*" {
-            return true;
-        }
-
-        let pattern_chars: Vec<char> = pattern.chars().collect();
-        let key_chars: Vec<char> = key.chars().collect();
-
-        Self::match_pattern_recursive(&key_chars, 0, &pattern_chars, 0)
-    }
-
-    fn match_pattern_recursive(key: &[char], ki: usize, pattern: &[char], pi: usize) -> bool {
-        if pi == pattern.len() {
-            return ki == key.len();
-        }
-
-        if pattern[pi] == '*' {
-            // Try matching zero or more characters
-            for i in ki..=key.len() {
-                if Self::match_pattern_recursive(key, i, pattern, pi + 1) {
-                    return true;
-                }
-            }
-            false
-        } else if pattern[pi] == '?' {
-            // Match exactly one character
-            if ki < key.len() {
-                Self::match_pattern_recursive(key, ki + 1, pattern, pi + 1)
-            } else {
-                false
-            }
-        } else {
-            // Exact character match
-            if ki < key.len() && key[ki] == pattern[pi] {
-                Self::match_pattern_recursive(key, ki + 1, pattern, pi + 1)
-            } else {
-                false
-            }
-        }
-    }
+fn format_hash_float(v: f64) -> String {
+  let s = v.to_string();
+  if s.contains('.') {
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+  } else {
+    s
+  }
 }

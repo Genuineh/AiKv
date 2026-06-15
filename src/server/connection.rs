@@ -1,1069 +1,1220 @@
-use crate::command::CommandExecutor;
-use crate::error::Result;
-use crate::observability::Metrics;
-use crate::protocol::{RespParser, RespValue};
-use crate::server::monitor::MonitorBroadcaster;
-use bytes::Bytes;
-use std::sync::atomic::{AtomicUsize, Ordering};
+//! 单连接处理
+
+use std::collections::{HashMap, HashSet};
+use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
+use bytes::Bytes;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::select;
-use tracing::{debug, info, warn};
+use tokio::sync::broadcast;
+use tokio::time;
+use tracing::instrument;
 
-static CLIENT_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+use crate::command;
+use crate::error::{Error, Result};
+use crate::protocol::{ProtocolVersion, RespParser, RespValue};
+use crate::server::config::ServerSharedState;
+use crate::storage::dump::{decode as dump_decode, encode as dump_encode};
+use crate::storage::StoredValue;
 
-/// Commands that should not be broadcast to MONITOR clients.
-/// These are typically internal, debugging, or replication commands.
-const MONITOR_EXCLUDED_COMMANDS: &[&str] = &["MONITOR", "DEBUG", "SYNC", "PSYNC"];
-
-/// Protocol version
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ProtocolVersion {
-    Resp2,
-    Resp3,
-}
-
-/// Connection mode
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ConnectionMode {
-    Normal,
-    Monitor,
+  Normal,
+  Monitor,
 }
 
-/// Connection handler for a single client
+/// 原子事务状态 (ATOM.MULTI / EXEC / DISCARD / WATCH)
+struct TransactionState {
+  in_multi: bool,
+  tx_queue: Vec<(String, Vec<Bytes>)>,
+  watched_keys: HashMap<Vec<u8>, u64>,
+}
+
+impl TransactionState {
+  fn new() -> Self {
+    Self {
+      in_multi: false,
+      tx_queue: Vec::new(),
+      watched_keys: HashMap::new(),
+    }
+  }
+
+  fn reset(&mut self) {
+    self.in_multi = false;
+    self.tx_queue.clear();
+    self.watched_keys.clear();
+  }
+}
+
 pub struct Connection {
-    stream: TcpStream,
-    parser: RespParser,
-    executor: CommandExecutor,
-    protocol_version: ProtocolVersion,
-    current_db: usize,
-    client_id: usize,
-    metrics: Option<Arc<Metrics>>,
-    client_addr: String,
-    monitor_broadcaster: Option<Arc<MonitorBroadcaster>>,
-    mode: ConnectionMode,
-    /// Last executed command name (for diagnostics when connection drops)
-    last_command: Option<String>,
-    #[cfg(feature = "cluster")]
-    /// Redis ASKING one-shot flag for next command.
-    allow_importing_slot_once: bool,
-    #[cfg(feature = "cluster")]
-    /// Whether the connection is in READONLY mode.
-    readonly_mode: bool,
+  stream: TcpStream,
+  remote: SocketAddr,
+  parser: RespParser,
+  state: Arc<ServerSharedState>,
+  protocol_version: ProtocolVersion,
+  /// 客户端是否通过 HELLO 命令显式协商过协议版本。
+  /// 仅在协商后才会按 RESP3 格式编码 null（`_` 替代 `$-1`）。
+  protocol_negotiated: bool,
+  last_active: Instant,
+  client_id: usize,
+  current_db: usize,
+  quit: bool,
+  mode: ConnectionMode,
+  monitor_rx: Option<broadcast::Receiver<String>>,
+  #[cfg(feature = "cluster")]
+  /// 集群模式连接级状态 (asking/readonly)
+  cluster_state: crate::cluster::connection::ClusterConnectionState,
+  /// 原子事务状态 (ATOM.MULTI / EXEC / DISCARD / WATCH)
+  tx_state: TransactionState,
 }
 
 impl Connection {
-    /// Create a new connection handler.
-    ///
-    /// # Arguments
-    /// * `stream` - The TCP stream for this connection
-    /// * `executor` - Command executor for processing Redis commands
-    /// * `metrics` - Optional metrics collector for connection statistics
-    /// * `monitor_broadcaster` - Optional broadcaster for MONITOR command support.
-    ///   If None, MONITOR command will return an error. This is typically None
-    ///   only in unit tests or when MONITOR support is intentionally disabled.
-    pub fn new(
-        stream: TcpStream,
-        executor: CommandExecutor,
-        metrics: Option<Arc<Metrics>>,
-        monitor_broadcaster: Option<Arc<MonitorBroadcaster>>,
-    ) -> Self {
-        let client_id = CLIENT_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let peer_addr = stream
-            .peer_addr()
-            .map(|addr| addr.to_string())
-            .unwrap_or_else(|_| "unknown".to_string());
+  pub async fn handle(stream: TcpStream, remote: SocketAddr, state: Arc<ServerSharedState>) {
+    let client_id = state.alloc_client_id();
+    state.register_client(client_id, remote);
+    let mut conn = Self {
+      stream,
+      remote,
+      parser: RespParser::new(),
+      state: state.clone(),
+      protocol_version: ProtocolVersion::default(),
+      protocol_negotiated: false,
+      last_active: Instant::now(),
+      client_id,
+      current_db: 0,
+      quit: false,
+      mode: ConnectionMode::Normal,
+      monitor_rx: None,
+      #[cfg(feature = "cluster")]
+      cluster_state: crate::cluster::connection::ClusterConnectionState::new(),
+      tx_state: TransactionState::new(),
+    };
+    tracing::info!(remote = %remote, client_id, "kv.connection.open");
+    let _ = conn.run().await;
+    state.unregister_client(client_id);
+    tracing::info!(remote = %conn.remote, client_id, "kv.connection.close");
+  }
 
-        // Register client
-        if let Err(e) = executor
-            .server_commands()
-            .register_client(client_id, peer_addr.clone())
-        {
-            warn!("Failed to register client: {}", e);
+  #[instrument(name = "kv_connection", skip(self), fields(remote_addr = %self.remote, db_index = 0))]
+  async fn run(&mut self) -> Result<()> {
+    tracing::Span::current().record("db_index", self.current_db as i64);
+    let config = Arc::clone(&self.state.connection_config);
+    let mut buf = vec![0u8; 4096];
+
+    loop {
+      if self.state.shutdown.is_cancelled() {
+        break;
+      }
+      if self.quit {
+        break;
+      }
+
+      if self.mode == ConnectionMode::Monitor {
+        self.run_monitor(&mut buf).await?;
+        break;
+      }
+
+      if let Some(idle) = config.idle_timeout {
+        if self.last_active.elapsed() > idle {
+          break;
         }
+      }
 
-        Self {
-            stream,
-            parser: RespParser::new(8192),
-            executor,
-            protocol_version: ProtocolVersion::Resp2, // Default to RESP2
-            current_db: 0,                            // Default to database 0
-            client_id,
-            metrics,
-            client_addr: peer_addr,
-            monitor_broadcaster,
-            mode: ConnectionMode::Normal,
-            last_command: None,
-            #[cfg(feature = "cluster")]
-            allow_importing_slot_once: false,
-            #[cfg(feature = "cluster")]
-            readonly_mode: false,
+      let n = if let Some(timeout) = config.read_timeout {
+        match time::timeout(timeout, self.read_buf(&mut buf)).await {
+          Ok(Ok(n)) => n,
+          Ok(Err(e)) => return Err(e.into()),
+          Err(_) => break,
         }
-    }
+      } else {
+        self.read_buf(&mut buf).await?
+      };
 
-    /// Handle the connection using a state machine
-    pub async fn handle(&mut self) -> Result<()> {
-        loop {
-            match self.mode {
-                ConnectionMode::Normal => {
-                    if !self.handle_normal_mode().await? {
-                        break;
-                    }
-                }
-                ConnectionMode::Monitor => {
-                    if !self.handle_monitor_mode().await? {
-                        break;
-                    }
-                }
+      if n == 0 {
+        break;
+      }
+
+      if self.parser.buffer_len() + n > self.parser.max_buffer_size() {
+        break;
+      }
+
+      self.parser.feed(&buf[..n]);
+
+      loop {
+        match self.parse_frame().await {
+          Ok(Some(value)) => {
+            self.process_value(value).await?;
+            tracing::Span::current().record("db_index", self.current_db as i64);
+            self.last_active = Instant::now();
+            if self.quit {
+              break;
             }
-        }
-
-        self.cleanup().await;
-        Ok(())
-    }
-
-    /// Handle normal command mode. Returns false if connection should close.
-    async fn handle_normal_mode(&mut self) -> Result<bool> {
-        // Read data from the client
-        let n = self
-            .stream
-            .read_buf(self.parser.buffer_mut())
-            .await
-            .map_err(|e: std::io::Error| {
-                warn!(
-                    client_id = self.client_id,
-                    addr = %self.client_addr,
-                    last_command = ?self.last_command.as_deref(),
-                    error = %e,
-                    "connection read error (client likely closed or network issue)"
-                );
-                crate::error::AikvError::from(e)
-            })?;
-
-        if n == 0 {
-            info!(
-                client_id = self.client_id,
-                addr = %self.client_addr,
-                "client closed connection (EOF)"
-            );
-            return Ok(false);
-        }
-
-        // Record bytes received
-        if let Some(ref metrics) = self.metrics {
-            metrics.connections.record_bytes_received(n as u64);
-        }
-
-        // Parse and process commands
-        while let Some(value) = self.parser.parse()? {
-            let response = self.process_command(value).await;
-            self.write_response(response)
-                .await
-                .map_err(|e: crate::error::AikvError| {
-                    warn!(
-                        client_id = self.client_id,
-                        addr = %self.client_addr,
-                        last_command = ?self.last_command.as_deref(),
-                        error = %e,
-                        "connection write error (client may have closed or timeout)"
-                    );
-                    e
-                })?;
-
-            // Check if mode changed to monitor
             if self.mode == ConnectionMode::Monitor {
-                return Ok(true);
+              self.run_monitor(&mut buf).await?;
+              return Ok(());
             }
+          }
+          Ok(None) => break,
+          Err(e) if is_fatal_protocol(&e) => return Err(e),
+          Err(e) => {
+            self.write_error(&e).await?;
+          }
         }
+      }
+    }
+    Ok(())
+  }
 
-        Ok(true)
+  async fn run_monitor(&mut self, buf: &mut [u8]) -> Result<()> {
+    let mut rx = self
+      .monitor_rx
+      .take()
+      .expect("monitor mode requires monitor_rx");
+    let result = self.run_monitor_loop(&mut rx, buf).await;
+    self.monitor_rx = Some(rx);
+    result
+  }
+
+  async fn run_monitor_loop(
+    &mut self,
+    rx: &mut broadcast::Receiver<String>,
+    buf: &mut [u8],
+  ) -> Result<()> {
+    let config = Arc::clone(&self.state.connection_config);
+
+    loop {
+      if self.quit {
+        break;
+      }
+
+      tokio::select! {
+        read_result = self.read_monitor_input(&config, buf) => {
+          match read_result {
+            Ok(0) => break,
+            Ok(n) => {
+              self.parser.feed(&buf[..n]);
+              loop {
+                match self.parse_frame().await {
+                  Ok(Some(value)) => {
+                    self.process_monitor_command(value).await?;
+                    self.last_active = Instant::now();
+                    if self.quit {
+                      return Ok(());
+                    }
+                  }
+                  Ok(None) => break,
+                  Err(e) if is_fatal_protocol(&e) => return Err(e),
+                  Err(_) => break,
+                }
+              }
+            }
+            Err(e) => return Err(e),
+          }
+        }
+        msg = rx.recv() => {
+          match msg {
+            Ok(line) => {
+              self.stream.write_all(line.as_bytes()).await?;
+            }
+            Err(broadcast::error::RecvError::Lagged(_)) => {}
+            Err(broadcast::error::RecvError::Closed) => break,
+          }
+        }
+      }
+    }
+    Ok(())
+  }
+
+  async fn read_monitor_input(
+    &mut self,
+    config: &Arc<crate::server::config::ConnectionConfig>,
+    buf: &mut [u8],
+  ) -> Result<usize> {
+    if let Some(idle) = config.idle_timeout {
+      if self.last_active.elapsed() > idle {
+        return Ok(0);
+      }
+    }
+    if let Some(timeout) = config.read_timeout {
+      match time::timeout(timeout, self.read_buf(buf)).await {
+        Ok(Ok(n)) => Ok(n),
+        Ok(Err(e)) => Err(Error::Io(e)),
+        Err(_) => Ok(0),
+      }
+    } else {
+      self.read_buf(buf).await.map_err(Error::Io)
+    }
+  }
+
+  async fn process_monitor_command(&mut self, value: RespValue) -> Result<()> {
+    let RespValue::Array(items) = value else {
+      return Ok(());
+    };
+    let Some(items) = items else {
+      return Ok(());
+    };
+    if items.is_empty() {
+      return Ok(());
+    }
+    let Some(cmd_bytes) = extract_bulk(&items[0]) else {
+      return Ok(());
+    };
+    let cmd = String::from_utf8_lossy(&cmd_bytes).to_ascii_uppercase();
+    if cmd == "QUIT" {
+      self
+        .write_response(RespValue::SimpleString("OK".into()))
+        .await?;
+      self.quit = true;
+    }
+    Ok(())
+  }
+
+  #[instrument(name = "kv_read", skip(self, buf))]
+  async fn read_buf(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+    let n = self.stream.read(buf).await?;
+    if n > 0 {
+      self.state.metrics().on_net_input_bytes(n as u64);
+      tracing::debug!(bytes = n, "kv.read.complete");
+    }
+    Ok(n)
+  }
+
+  #[instrument(name = "kv_parse", skip(self), fields(frame_size, resp_version))]
+  async fn parse_frame(&mut self) -> Result<Option<RespValue>> {
+    let before = self.parser.buffer_len();
+    let result = self.parser.parse();
+    if let Ok(Some(_)) = &result {
+      let frame_size = before.saturating_sub(self.parser.buffer_len());
+      tracing::Span::current().record("frame_size", frame_size);
+      tracing::Span::current().record("resp_version", self.protocol_version.as_u8());
+      tracing::debug!(frame_size, "kv.parse.complete");
+    }
+    result
+  }
+
+  async fn process_value(&mut self, value: RespValue) -> Result<()> {
+    let RespValue::Array(items) = value else {
+      return self
+        .write_response(RespValue::Error("Protocol error: expected array".into()))
+        .await;
+    };
+
+    let Some(items) = items else {
+      return Ok(());
+    };
+    if items.is_empty() {
+      return Ok(());
     }
 
-    /// Handle monitor mode - stream all commands to this client.
-    /// Returns false if connection should close.
-    async fn handle_monitor_mode(&mut self) -> Result<bool> {
-        let broadcaster = match &self.monitor_broadcaster {
-            Some(b) => b.clone(),
-            None => {
-                warn!("Monitor mode enabled but no broadcaster available");
-                self.mode = ConnectionMode::Normal;
-                return Ok(true);
-            }
-        };
+    let Some(cmd_bytes) = extract_bulk(&items[0]) else {
+      return self
+        .write_response(RespValue::Error(
+          "Protocol error: command must be bulk string".into(),
+        ))
+        .await;
+    };
+    let cmd = String::from_utf8_lossy(&cmd_bytes).to_ascii_uppercase();
+    let args: Result<Vec<Bytes>> = items[1..]
+      .iter()
+      .map(|v| {
+        extract_bulk(v)
+          .ok_or_else(|| Error::Protocol("Protocol error: arguments must be bulk strings".into()))
+      })
+      .collect();
+    let args = match args {
+      Ok(a) => a,
+      Err(e) => return self.write_error(&e).await,
+    };
 
-        let mut receiver = broadcaster.subscribe();
+    self.process_command(&cmd, &args).await
+  }
 
-        loop {
-            select! {
-                // Receive monitor messages
-                msg = receiver.recv() => {
-                    match msg {
-                        Ok(monitor_msg) => {
-                            // Format and send the monitor message
-                            let formatted = monitor_msg.format();
-                            let response = RespValue::simple_string(formatted);
-                            if let Err(e) = self.write_response(response).await {
-                                debug!("Monitor client write error: {}", e);
-                                return Ok(false);
-                            }
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                            // We missed some messages due to slow reading
-                            debug!("Monitor client {} lagged behind by {} messages", self.client_id, n);
-                        }
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                            // Broadcaster closed
-                            return Ok(false);
-                        }
-                    }
-                }
-                // Check for client input (QUIT, RESET, or disconnect)
-                result = self.stream.read_buf(self.parser.buffer_mut()) => {
-                    match result {
-                        Ok(0) => {
-                            // Client disconnected
-                            broadcaster.unregister_monitor(self.client_id).await;
-                            return Ok(false);
-                        }
-                        Ok(_) => {
-                            // Client sent data - check for QUIT or RESET
-                            while let Some(value) = self.parser.parse()? {
-                                if let RespValue::Array(Some(arr)) = &value {
-                                    if !arr.is_empty() {
-                                        if let RespValue::BulkString(Some(cmd)) = &arr[0] {
-                                            let command = String::from_utf8_lossy(cmd).to_uppercase();
-                                            if command == "QUIT" {
-                                                broadcaster.unregister_monitor(self.client_id).await;
-                                                self.write_response(RespValue::ok()).await?;
-                                                return Ok(false);
-                                            } else if command == "RESET" {
-                                                broadcaster.unregister_monitor(self.client_id).await;
-                                                self.mode = ConnectionMode::Normal;
-                                                self.write_response(RespValue::simple_string("RESET")).await?;
-                                                return Ok(true);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            debug!("Monitor client read error: {}", e);
-                            broadcaster.unregister_monitor(self.client_id).await;
-                            return Ok(false);
-                        }
-                    }
-                }
-            }
-        }
+  async fn process_command(&mut self, cmd: &str, args: &[Bytes]) -> Result<()> {
+    if cmd != "MONITOR" && self.mode != ConnectionMode::Monitor {
+      self.broadcast_monitor(cmd, args);
     }
 
-    /// Cleanup on connection close
-    async fn cleanup(&mut self) {
-        // Unregister client
-        if let Err(e) = self
-            .executor
-            .server_commands()
-            .unregister_client(self.client_id)
-        {
-            warn!("Failed to unregister client: {}", e);
+    match cmd {
+      "PING" => self.cmd_ping(args).await,
+      "ECHO" => self.cmd_echo(args).await,
+      "HELLO" => self.cmd_hello(args).await,
+      "QUIT" => self.cmd_quit().await,
+      "MONITOR" => self.cmd_monitor().await,
+      "MULTI" | "ATOM.MULTI" => self.cmd_atom_multi().await,
+      "EXEC" | "ATOM.EXEC" => self.cmd_atom_exec(args).await,
+      "DISCARD" | "ATOM.DISCARD" => self.cmd_atom_discard().await,
+      "WATCH" | "ATOM.WATCH" => self.cmd_atom_watch(args).await,
+      "UNWATCH" | "ATOM.UNWATCH" => self.cmd_atom_unwatch().await,
+      _ => {
+        // If in MULTI mode, queue the command instead of executing
+        if self.tx_state.in_multi {
+          return self.cmd_atom_enqueue(cmd, args).await;
+        }
+        // Handle ASKING/READONLY/READWRITE at connection level (operate on per-conn state)
+        #[cfg(feature = "cluster")]
+        if cmd.eq_ignore_ascii_case("asking") {
+          self.cluster_state.set_asking(true);
+          return self
+            .write_response(RespValue::SimpleString("OK".into()))
+            .await;
+        }
+        #[cfg(feature = "cluster")]
+        if cmd.eq_ignore_ascii_case("readonly") {
+          self.cluster_state.set_readonly(true);
+          return self
+            .write_response(RespValue::SimpleString("OK".into()))
+            .await;
+        }
+        #[cfg(feature = "cluster")]
+        if cmd.eq_ignore_ascii_case("readwrite") {
+          self.cluster_state.set_readonly(false);
+          return self
+            .write_response(RespValue::SimpleString("OK".into()))
+            .await;
         }
 
-        // Unregister from monitor if in monitor mode
-        if self.mode == ConnectionMode::Monitor {
-            if let Some(ref broadcaster) = self.monitor_broadcaster {
-                broadcaster.unregister_monitor(self.client_id).await;
-            }
-        }
-    }
-
-    async fn process_command(&mut self, value: RespValue) -> RespValue {
-        let start = Instant::now();
-
-        match value {
-            RespValue::Array(Some(arr)) if !arr.is_empty() => {
-                // Extract command and arguments
-                let command = match &arr[0] {
-                    RespValue::BulkString(Some(cmd)) => String::from_utf8_lossy(cmd).to_string(),
-                    _ => {
-                        return RespValue::error("ERR invalid command format");
-                    }
-                };
-
-                let command_upper = command.to_uppercase();
-                self.last_command = Some(command_upper.clone());
-
-                // Handle HELLO command for protocol version negotiation
-                if command_upper == "HELLO" {
-                    return self.handle_hello(&arr[1..]);
-                }
-
-                // Handle MONITOR command
-                if command_upper == "MONITOR" {
-                    return self.handle_monitor().await;
-                }
-
-                #[cfg(feature = "cluster")]
-                if command_upper == "ASKING" {
-                    self.allow_importing_slot_once = true;
-                    debug!(
-                        diag_event = "cluster_client_asking_marked",
-                        client = %self.client_addr,
-                        "ASKING accepted; next command may access importing slot"
-                    );
-                    return RespValue::ok();
-                }
-
-                let args: Vec<Bytes> = arr[1..]
-                    .iter()
-                    .filter_map(|v| match v {
-                        RespValue::BulkString(Some(b)) => Some(b.clone()),
-                        _ => None,
-                    })
-                    .collect();
-
-                // Broadcast to monitors (except excluded internal/debugging commands)
-                if !MONITOR_EXCLUDED_COMMANDS.contains(&command_upper.as_str()) {
-                    self.broadcast_to_monitors(&command_upper, &args);
-                }
-
-                // Handle async CLUSTER commands before synchronous execution
-                #[cfg(feature = "cluster")]
-                if command_upper == "CLUSTER" && !args.is_empty() {
-                    let subcommand = String::from_utf8_lossy(&args[0]).to_uppercase();
-                    // These are async cluster management commands
-                    if matches!(
-                        subcommand.as_str(),
-                        "MEET"
-                            | "FORGET"
-                            | "ADDSLOTS"
-                            | "ADDSLOTSRANGE"
-                            | "DELSLOTS"
-                            | "SETSLOT"
-                            | "REPLICATE"
-                            | "ADDREPLICATION"
-                            | "FAILOVER"
-                            | "METARAFT"
-                    ) {
-                        if let Some(cluster_cmds) = self.executor.cluster_commands() {
-                            let result = self
-                                .handle_async_cluster_command(cluster_cmds, &subcommand, &args[1..])
-                                .await;
-
-                            // Record metrics
-                            if let Some(ref metrics) = self.metrics {
-                                let duration = start.elapsed();
-                                match &result {
-                                    Ok(_) => {
-                                        metrics.commands.record_command(
-                                            &format!("CLUSTER {}", subcommand),
-                                            duration,
-                                        );
-                                        debug!(
-                                            command = %format!("CLUSTER {}", subcommand),
-                                            duration_us = duration.as_micros(),
-                                            client = %self.client_addr,
-                                            db = self.current_db,
-                                            "Async cluster command executed"
-                                        );
-                                    }
-                                    Err(_) => {
-                                        metrics
-                                            .commands
-                                            .record_error(&format!("CLUSTER {}", subcommand));
-                                    }
-                                }
-                            }
-
-                            return match result {
-                                Ok(resp) => resp,
-                                Err(e) => {
-                                    let cmd = format!("CLUSTER {}", subcommand);
-                                    Self::log_command_error(&cmd, &self.client_addr, &e);
-                                    Self::format_error_response(e)
-                                }
-                            };
-                        } else {
-                            return RespValue::error("ERR Cluster not initialized. Please initialize cluster node first.");
-                        }
-                    }
-                }
-
-                #[cfg(feature = "cluster")]
-                if command_upper == "READONLY" {
-                    self.readonly_mode = true;
-                }
-                #[cfg(feature = "cluster")]
-                if command_upper == "READWRITE" {
-                    self.readonly_mode = false;
-                }
-
-                // executor.execute() is synchronous and may block for an extended period
-                // (e.g. INFO keyspace scans all MemTables). block_in_place allows the Tokio
-                // runtime to continue scheduling other tasks on this worker thread while we wait.
-                let result = tokio::task::block_in_place(|| {
-                    self.executor
-                        .execute(
-                            &command,
-                            &args,
-                            &mut self.current_db,
-                            self.client_id,
-                            #[cfg(feature = "cluster")]
-                            self.allow_importing_slot_once,
-                            #[cfg(feature = "cluster")]
-                            self.readonly_mode,
-                        )
-                });
-                #[cfg(feature = "cluster")]
-                {
-                    self.allow_importing_slot_once = false;
-                }
-
-                let duration = start.elapsed();
-
-                // Record metrics
-                if let Some(ref metrics) = self.metrics {
-                    match &result {
-                        Ok(resp) => {
-                            metrics.commands.record_command(&command, duration);
-                            // Keyspace hit/miss for GET
-                            if command.eq_ignore_ascii_case("GET") {
-                                match resp {
-                                    RespValue::BulkString(Some(_)) => metrics.memory.record_hit(),
-                                    RespValue::BulkString(None) => metrics.memory.record_miss(),
-                                    _ => {}
-                                }
-                            }
-                            debug!(
-                                command = %command,
-                                duration_us = duration.as_micros(),
-                                client = %self.client_addr,
-                                db = self.current_db,
-                                "Command executed"
-                            );
-                        }
-                        Err(_) => {
-                            metrics.commands.record_error(&command);
-                        }
-                    }
-                }
-
-                // Record slow query if over threshold (Redis SLOWLOG semantics)
-                {
-                    let args_str: Vec<String> = args
-                        .iter()
-                        .map(|b| String::from_utf8_lossy(b).into_owned())
-                        .collect();
-                    self.executor.server_commands().slow_query_log().record(
-                        &command,
-                        &args_str,
-                        duration,
-                        Some(self.client_addr.clone()),
-                    );
-                }
-
-                match result {
-                    Ok(resp) => resp,
-                    Err(e) => {
-                        Self::log_command_error(&command, &self.client_addr, &e);
-                        Self::format_error_response(e)
-                    }
-                }
-            }
-            _ => RespValue::error("ERR invalid command format"),
-        }
-    }
-
-    /// 可观测性：带固定 `diag_event` 字段，便于 Loki / export_logs.sh 过滤。
-    fn log_command_error(command: &str, client_addr: &str, err: &crate::error::AikvError) {
-        use crate::error::AikvError;
-        match err {
-            AikvError::Moved(slot, addr) => {
-                debug!(
-                    diag_event = "cluster_client_moved",
-                    command = %command,
-                    client = %client_addr,
-                    slot = *slot,
-                    target = %addr,
-                    "returning MOVED to client"
-                );
-            }
-            AikvError::Ask(slot, addr) => {
-                debug!(
-                    diag_event = "cluster_client_ask",
-                    command = %command,
-                    client = %client_addr,
-                    slot = *slot,
-                    target = %addr,
-                    "returning ASK to client"
-                );
-            }
-            AikvError::Storage(msg) => {
-                warn!(
-                    diag_event = "cluster_command_storage_err",
-                    command = %command,
-                    client = %client_addr,
-                    error = %msg,
-                    "command failed: storage"
-                );
-            }
-            AikvError::Internal(msg) => {
-                warn!(
-                    diag_event = "cluster_command_internal_err",
-                    command = %command,
-                    client = %client_addr,
-                    error = %msg,
-                    "command failed: internal"
-                );
-            }
-            AikvError::Persistence(msg) | AikvError::Protocol(msg) => {
-                warn!(
-                    diag_event = "cluster_command_io_protocol_err",
-                    command = %command,
-                    client = %client_addr,
-                    error = %msg,
-                    "command failed: persistence/protocol"
-                );
-            }
-            _ => {
-                debug!(
-                    diag_event = "cluster_command_err_other",
-                    command = %command,
-                    client = %client_addr,
-                    error = %err,
-                    "command failed"
-                );
-            }
-        }
-    }
-
-    /// Format an error into a RESP error response.
-    ///
-    /// Cluster-specific errors (MOVED, ASK, CROSSSLOT) have special formats
-    /// that Redis clients expect.
-    fn format_error_response(e: crate::error::AikvError) -> RespValue {
-        use crate::error::AikvError;
-        match e {
-            // Cluster redirection errors - format without "ERR " prefix
-            AikvError::Moved(slot, addr) => RespValue::error(format!("MOVED {} {}", slot, addr)),
-            AikvError::Ask(slot, addr) => RespValue::error(format!("ASK {} {}", slot, addr)),
-            AikvError::CrossSlot => {
-                RespValue::error("CROSSSLOT Keys in request don't hash to the same slot")
-            }
-            // All other errors use the standard "ERR " prefix
-            _ => RespValue::error(format!("ERR {}", e)),
-        }
-    }
-
-    /// Broadcast command to all monitoring clients
-    fn broadcast_to_monitors(&self, command: &str, args: &[Bytes]) {
-        if let Some(ref broadcaster) = self.monitor_broadcaster {
-            if broadcaster.has_monitors() {
-                let args_str: Vec<String> = args
-                    .iter()
-                    .map(|b| String::from_utf8_lossy(b).to_string())
-                    .collect();
-                broadcaster.broadcast_command(
-                    self.current_db,
-                    &self.client_addr,
-                    command,
-                    &args_str,
-                );
-            }
-        }
-    }
-
-    /// Handle async cluster commands
-    #[cfg(feature = "cluster")]
-    async fn handle_async_cluster_command(
-        &self,
-        cluster_cmds: &crate::cluster::ClusterCommands,
-        subcommand: &str,
-        args: &[Bytes],
-    ) -> Result<RespValue> {
-        use crate::error::AikvError;
-
-        match subcommand {
-            "MEET" => {
-                // CLUSTER MEET ip port [node-id]
-                if args.len() < 2 || args.len() > 3 {
-                    return Err(AikvError::WrongArgCount("CLUSTER MEET".to_string()));
-                }
-
-                let ip = String::from_utf8_lossy(&args[0]).to_string();
-                let port = String::from_utf8_lossy(&args[1])
-                    .parse::<u16>()
-                    .map_err(|_| AikvError::Invalid("Invalid port".to_string()))?;
-
-                let node_id = if args.len() == 3 {
-                    let id_str = String::from_utf8_lossy(&args[2]);
-                    Some(
-                        u64::from_str_radix(&id_str, 16)
-                            .map_err(|_| AikvError::Invalid("Invalid node ID".to_string()))?,
-                    )
-                } else {
-                    None
-                };
-
-                cluster_cmds.cluster_meet(ip, port, node_id).await
-            }
-            "FORGET" => {
-                // CLUSTER FORGET node-id
-                if args.len() != 1 {
-                    return Err(AikvError::WrongArgCount("CLUSTER FORGET".to_string()));
-                }
-
-                let id_str = String::from_utf8_lossy(&args[0]);
-                let node_id = u64::from_str_radix(&id_str, 16)
-                    .map_err(|_| AikvError::Invalid("Invalid node ID".to_string()))?;
-
-                cluster_cmds.cluster_forget(node_id).await
-            }
-            "ADDSLOTS" => {
-                // CLUSTER ADDSLOTS slot [slot ...]
-                if args.is_empty() {
-                    return Err(AikvError::WrongArgCount("CLUSTER ADDSLOTS".to_string()));
-                }
-
-                let mut slots = Vec::new();
-                for arg in args {
-                    let slot = String::from_utf8_lossy(arg)
-                        .parse::<u16>()
-                        .map_err(|_| AikvError::Invalid("Invalid slot".to_string()))?;
-
-                    if slot >= 16384 {
-                        return Err(AikvError::Invalid(format!("Slot out of range: {}", slot)));
-                    }
-                    slots.push(slot);
-                }
-
-                cluster_cmds.cluster_addslots(slots).await
-            }
-            "ADDSLOTSRANGE" => {
-                // CLUSTER ADDSLOTSRANGE start end [node_id]
-                // Efficiently add a range of slots to the specified node (or current node if not specified)
-                if args.len() < 2 || args.len() > 3 {
-                    return Err(AikvError::WrongArgCount(
-                        "CLUSTER ADDSLOTSRANGE".to_string(),
-                    ));
-                }
-
-                let start = String::from_utf8_lossy(&args[0])
-                    .parse::<u16>()
-                    .map_err(|_| AikvError::Invalid("Invalid start slot".to_string()))?;
-                let end = String::from_utf8_lossy(&args[1])
-                    .parse::<u16>()
-                    .map_err(|_| AikvError::Invalid("Invalid end slot".to_string()))?;
-
-                if start > end || end >= 16384 {
-                    return Err(AikvError::Invalid(format!(
-                        "Invalid slot range: {}-{}",
-                        start, end
-                    )));
-                }
-
-                let target_node_id = if args.len() == 3 {
-                    let id_str = String::from_utf8_lossy(&args[2]);
-                    // Try decimal first, then hex
-                    id_str
-                        .parse::<u64>()
-                        .or_else(|_| u64::from_str_radix(&id_str, 16))
-                        .map_err(|_| AikvError::Invalid("Invalid node ID".to_string()))?
-                } else {
-                    0 // 0 means current node
-                };
-
-                cluster_cmds
-                    .cluster_addslotsrange(start, end, target_node_id)
-                    .await
-            }
-            "DELSLOTS" => {
-                // CLUSTER DELSLOTS slot [slot ...]
-                if args.is_empty() {
-                    return Err(AikvError::WrongArgCount("CLUSTER DELSLOTS".to_string()));
-                }
-
-                let mut slots = Vec::new();
-                for arg in args {
-                    let slot = String::from_utf8_lossy(arg)
-                        .parse::<u16>()
-                        .map_err(|_| AikvError::Invalid("Invalid slot".to_string()))?;
-
-                    if slot >= 16384 {
-                        return Err(AikvError::Invalid(format!("Slot out of range: {}", slot)));
-                    }
-                    slots.push(slot);
-                }
-
-                cluster_cmds.cluster_delslots(slots).await
-            }
-            "SETSLOT" => {
-                // CLUSTER SETSLOT slot MIGRATING|IMPORTING|STABLE|NODE [node-id] [requester-node-id-internal]
-                if args.len() < 2 || args.len() > 4 {
-                    return Err(AikvError::WrongArgCount("CLUSTER SETSLOT".to_string()));
-                }
-                let slot = String::from_utf8_lossy(&args[0])
-                    .parse::<u16>()
-                    .map_err(|_| AikvError::Invalid("Invalid slot".to_string()))?;
-                if slot >= 16384 {
-                    return Err(AikvError::Invalid(format!("Slot out of range: {}", slot)));
-                }
-                let mode = String::from_utf8_lossy(&args[1]).to_uppercase();
-                let node_id = if args.len() >= 3 {
-                    let id_str = String::from_utf8_lossy(&args[2]);
-                    Some(
-                        id_str
-                            .parse::<u64>()
-                            .or_else(|_| u64::from_str_radix(&id_str, 16))
-                            .map_err(|_| AikvError::Invalid("Invalid node ID".to_string()))?,
-                    )
-                } else {
-                    None
-                };
-                let requester_node_id = if args.len() == 4 {
-                    let id_str = String::from_utf8_lossy(&args[3]);
-                    Some(
-                        id_str
-                            .parse::<u64>()
-                            .or_else(|_| u64::from_str_radix(&id_str, 16))
-                            .map_err(|_| {
-                                AikvError::Invalid("Invalid requester node ID".to_string())
-                            })?,
-                    )
-                } else {
-                    None
-                };
-                cluster_cmds
-                    .cluster_setslot(slot, &mode, node_id, requester_node_id)
-                    .await
-            }
-            "REPLICATE" => {
-                // CLUSTER REPLICATE node-id
-                if args.len() != 1 {
-                    return Err(AikvError::WrongArgCount("CLUSTER REPLICATE".to_string()));
-                }
-
-                let id_str = String::from_utf8_lossy(&args[0]);
-                let master_id = u64::from_str_radix(&id_str, 16)
-                    .map_err(|_| AikvError::Invalid("Invalid node ID".to_string()))?;
-
-                cluster_cmds.cluster_replicate(master_id).await
-            }
-            "ADDREPLICATION" => {
-                // CLUSTER ADDREPLICATION replica_node_id master_node_id
-                // This command is sent to the leader to add a replica to a master's group
-                if args.len() != 2 {
-                    return Err(AikvError::WrongArgCount(
-                        "CLUSTER ADDREPLICATION".to_string(),
-                    ));
-                }
-
-                let replica_id_str = String::from_utf8_lossy(&args[0]);
-                let replica_id = replica_id_str
-                    .parse::<u64>()
-                    .or_else(|_| u64::from_str_radix(&replica_id_str, 16))
-                    .map_err(|_| AikvError::Invalid("Invalid replica node ID".to_string()))?;
-
-                let master_id_str = String::from_utf8_lossy(&args[1]);
-                let master_id = master_id_str
-                    .parse::<u64>()
-                    .or_else(|_| u64::from_str_radix(&master_id_str, 16))
-                    .map_err(|_| AikvError::Invalid("Invalid master node ID".to_string()))?;
-
-                cluster_cmds
-                    .cluster_add_replication(replica_id, master_id)
-                    .await
-            }
-            "FAILOVER" => {
-                // CLUSTER FAILOVER [FORCE|TAKEOVER] [target-node-id]
-                let mut mode = crate::cluster::FailoverMode::Default;
-                let mut target_node_id = None;
-
-                if !args.is_empty() {
-                    let first = String::from_utf8_lossy(&args[0]).to_uppercase();
-                    match first.as_str() {
-                        "FORCE" => mode = crate::cluster::FailoverMode::Force,
-                        "TAKEOVER" => mode = crate::cluster::FailoverMode::Takeover,
-                        _ => {
-                            // Backward-compatible extension: allow target node as first arg.
-                            let node_id = first
-                                .parse::<u64>()
-                                .or_else(|_| u64::from_str_radix(&first, 16))
-                                .map_err(|_| {
-                                    AikvError::Invalid(format!(
-                                        "Unknown CLUSTER FAILOVER option or target node ID: {}",
-                                        first
-                                    ))
-                                })?;
-                            target_node_id = Some(node_id);
-                        }
-                    }
-                }
-
-                if args.len() >= 2 {
-                    let node_id_str = String::from_utf8_lossy(&args[1]);
-                    let node_id = node_id_str
-                        .parse::<u64>()
-                        .or_else(|_| u64::from_str_radix(&node_id_str, 16))
-                        .map_err(|_| {
-                            AikvError::Invalid("Invalid CLUSTER FAILOVER target node ID".to_string())
-                        })?;
-                    target_node_id = Some(node_id);
-                }
-
-                if args.len() > 2 {
-                    return Err(AikvError::WrongArgCount("CLUSTER FAILOVER".to_string()));
-                }
-
-                cluster_cmds.cluster_failover(mode, target_node_id).await
-            }
-            "METARAFT" => {
-                // CLUSTER METARAFT subcommand [args...]
-                if args.is_empty() {
-                    return Err(AikvError::WrongArgCount("CLUSTER METARAFT".to_string()));
-                }
-
-                let metaraft_subcmd = String::from_utf8_lossy(&args[0]).to_uppercase();
-                match metaraft_subcmd.as_str() {
-                    "ADDLEARNER" => {
-                        // CLUSTER METARAFT ADDLEARNER node_id addr
-                        if args.len() != 3 {
-                            return Err(AikvError::WrongArgCount(
-                                "CLUSTER METARAFT ADDLEARNER".to_string(),
-                            ));
-                        }
-
-                        let node_id_str = String::from_utf8_lossy(&args[1]);
-                        let node_id = node_id_str
-                            .parse::<u64>()
-                            .or_else(|_| u64::from_str_radix(&node_id_str, 16))
-                            .map_err(|_| {
-                                AikvError::Invalid(
-                                    "Invalid node ID: must be a positive integer or hex string"
-                                        .to_string(),
-                                )
-                            })?;
-                        let addr = String::from_utf8_lossy(&args[2]).to_string();
-
-                        cluster_cmds
-                            .cluster_metaraft_addlearner(node_id, addr)
-                            .await
-                    }
-                    "PROMOTE" => {
-                        // CLUSTER METARAFT PROMOTE node_id [node_id ...]
-                        if args.len() < 2 {
-                            return Err(AikvError::WrongArgCount(
-                                "CLUSTER METARAFT PROMOTE".to_string(),
-                            ));
-                        }
-
-                        let mut voters = Vec::new();
-                        for arg in &args[1..] {
-                            let node_id_str = String::from_utf8_lossy(arg);
-                            let node_id = node_id_str
-                                .parse::<u64>()
-                                .or_else(|_| u64::from_str_radix(&node_id_str, 16))
-                                .map_err(|_| {
-                                    AikvError::Invalid(
-                                        "Invalid node ID: must be a positive integer or hex string"
-                                            .to_string(),
-                                    )
-                                })?;
-                            voters.push(node_id);
-                        }
-
-                        cluster_cmds.cluster_metaraft_promote(voters).await
-                    }
-                    "MEMBERS" => {
-                        // CLUSTER METARAFT MEMBERS
-                        if args.len() != 1 {
-                            return Err(AikvError::WrongArgCount(
-                                "CLUSTER METARAFT MEMBERS".to_string(),
-                            ));
-                        }
-
-                        cluster_cmds.cluster_metaraft_members().await
-                    }
-                    "STATUS" => {
-                        // CLUSTER METARAFT STATUS
-                        if args.len() != 1 {
-                            return Err(AikvError::WrongArgCount(
-                                "CLUSTER METARAFT STATUS".to_string(),
-                            ));
-                        }
-
-                        cluster_cmds.cluster_metaraft_status().await
-                    }
-                    "SETSTATUS" => {
-                        // CLUSTER METARAFT SETSTATUS node_id status
-                        if args.len() != 3 && args.len() != 4 {
-                            return Err(AikvError::WrongArgCount(
-                                "CLUSTER METARAFT SETSTATUS".to_string(),
-                            ));
-                        }
-
-                        let node_id_str = String::from_utf8_lossy(&args[1]);
-                        let node_id = node_id_str
-                            .parse::<u64>()
-                            .or_else(|_| u64::from_str_radix(&node_id_str, 16))
-                            .map_err(|_| {
-                                AikvError::Invalid(
-                                    "Invalid node ID: must be a positive integer or hex string"
-                                        .to_string(),
-                                )
-                            })?;
-
-                        let status = match String::from_utf8_lossy(&args[2]).to_uppercase().as_str() {
-                            "ONLINE" => aidb::cluster::NodeStatus::Online,
-                            "OFFLINE" => aidb::cluster::NodeStatus::Offline,
-                            "JOINING" => aidb::cluster::NodeStatus::Joining,
-                            "LEAVING" => aidb::cluster::NodeStatus::Leaving,
-                            _ => {
-                                return Err(AikvError::Invalid(
-                                    "Invalid node status: expected ONLINE/OFFLINE/JOINING/LEAVING"
-                                        .to_string(),
-                                ))
-                            }
-                        };
-
-                        let is_forwarded = if args.len() == 4 {
-                            String::from_utf8_lossy(&args[3]).eq_ignore_ascii_case("__FORWARDED__")
-                        } else {
-                            false
-                        };
-                        if args.len() == 4 && !is_forwarded {
-                            return Err(AikvError::Invalid(
-                                "Invalid forwarding flag for CLUSTER METARAFT SETSTATUS".to_string(),
-                            ));
-                        }
-
-                        cluster_cmds
-                            .cluster_metaraft_setstatus(node_id, status, is_forwarded)
-                            .await
-                    }
-                    "SETLEADER" => {
-                        // CLUSTER METARAFT SETLEADER group_id leader_id
-                        if args.len() != 3 {
-                            return Err(AikvError::WrongArgCount(
-                                "CLUSTER METARAFT SETLEADER".to_string(),
-                            ));
-                        }
-
-                        let group_id = {
-                            let s = String::from_utf8_lossy(&args[1]);
-                            s.parse::<u64>()
-                                .or_else(|_| u64::from_str_radix(&s, 16))
-                                .map_err(|_| {
-                                    AikvError::Invalid(
-                                        "Invalid group ID: must be a positive integer or hex string"
-                                            .to_string(),
-                                    )
-                                })?
-                        };
-
-                        let leader_id = {
-                            let s = String::from_utf8_lossy(&args[2]);
-                            s.parse::<u64>()
-                                .or_else(|_| u64::from_str_radix(&s, 16))
-                                .map_err(|_| {
-                                    AikvError::Invalid(
-                                        "Invalid leader ID: must be a positive integer or hex string"
-                                            .to_string(),
-                                    )
-                                })?
-                        };
-
-                        cluster_cmds
-                            .cluster_metaraft_setleader(group_id, leader_id)
-                            .await
-                    }
-                    _ => Err(AikvError::InvalidCommand(format!(
-                        "Unknown CLUSTER METARAFT subcommand: {}",
-                        metaraft_subcmd
-                    ))),
-                }
-            }
-            _ => Err(AikvError::InvalidCommand(format!(
-                "Unknown async CLUSTER subcommand: {}",
-                subcommand
-            ))),
-        }
-    }
-
-    /// Handle MONITOR command
-    async fn handle_monitor(&mut self) -> RespValue {
-        if let Some(ref broadcaster) = self.monitor_broadcaster {
-            broadcaster
-                .register_monitor(self.client_id, self.client_addr.clone())
-                .await;
-            self.mode = ConnectionMode::Monitor;
-            RespValue::ok()
+        let track = should_track_observability(cmd);
+        let arg_strings: Vec<String> = if track {
+          args
+            .iter()
+            .map(|b| String::from_utf8_lossy(b).into_owned())
+            .collect()
         } else {
-            RespValue::error("ERR MONITOR not supported")
-        }
-    }
-
-    fn handle_hello(&mut self, args: &[RespValue]) -> RespValue {
-        if args.is_empty() {
-            return RespValue::error("ERR wrong number of arguments for 'hello' command");
-        }
-
-        // Parse protocol version
-        let version_str = match &args[0] {
-            RespValue::BulkString(Some(v)) => String::from_utf8_lossy(v).to_string(),
-            _ => return RespValue::error("ERR invalid protocol version"),
+          Vec::new()
         };
-
-        let version = match version_str.as_str() {
-            "2" => ProtocolVersion::Resp2,
-            "3" => ProtocolVersion::Resp3,
-            _ => return RespValue::error("NOPROTO unsupported protocol version"),
-        };
-
-        self.protocol_version = version;
-
-        // Build response based on protocol version
-        match self.protocol_version {
-            ProtocolVersion::Resp2 => {
-                // RESP2 response: array
-                RespValue::array(vec![
-                    RespValue::bulk_string("server"),
-                    RespValue::bulk_string("aikv"),
-                    RespValue::bulk_string("version"),
-                    RespValue::bulk_string("0.1.0"),
-                    RespValue::bulk_string("proto"),
-                    RespValue::integer(2),
-                ])
-            }
-            ProtocolVersion::Resp3 => {
-                // RESP3 response: map
-                RespValue::map(vec![
-                    (
-                        RespValue::simple_string("server"),
-                        RespValue::simple_string("aikv"),
-                    ),
-                    (
-                        RespValue::simple_string("version"),
-                        RespValue::simple_string("0.1.0"),
-                    ),
-                    (RespValue::simple_string("proto"), RespValue::integer(3)),
-                ])
-            }
+        let started = track.then(Instant::now);
+        let result = self
+          .state
+          .router()
+          .execute_with_client(
+            cmd,
+            args,
+            &mut self.current_db,
+            Some(self.client_id),
+            self.protocol_version,
+            #[cfg(feature = "cluster")]
+            Some(&self.cluster_state),
+          )
+          .await;
+        #[cfg(feature = "cluster")]
+        {
+          self.cluster_state.reset_asking();
         }
+        match result {
+          Ok(resp) => {
+            self.state.set_client_db(self.client_id, self.current_db);
+            if let Some(start) = started {
+              self.record_command_observability(cmd, &arg_strings, start, true);
+            }
+            self.write_response(resp).await?;
+            // Track key versions for write commands (WATCH support)
+            self.track_command_keys(cmd, args);
+            if cmd == "SHUTDOWN" {
+              self.quit = true;
+            }
+            Ok(())
+          }
+          Err(e) => {
+            if let Some(start) = started {
+              self.record_command_observability(cmd, &arg_strings, start, false);
+            }
+            tracing::error!(
+              command = cmd,
+              client_id = self.client_id,
+              error = %e,
+              "kv.command.error"
+            );
+            self.write_error(&e).await
+          }
+        }
+      }
+    }
+  }
+
+  fn broadcast_monitor(&self, cmd: &str, args: &[Bytes]) {
+    let line = format_monitor_line(self.current_db, cmd, args);
+    let _ = self.state.monitor_tx.send(line);
+  }
+
+  async fn cmd_ping(&mut self, args: &[Bytes]) -> Result<()> {
+    if args.len() > 1 {
+      return self
+        .write_response(RespValue::Error(
+          "ERR wrong number of arguments for 'ping' command".into(),
+        ))
+        .await;
+    }
+    if args.is_empty() {
+      self
+        .write_response(RespValue::SimpleString("PONG".into()))
+        .await
+    } else {
+      self
+        .write_response(RespValue::BulkString(Some(args[0].clone())))
+        .await
+    }
+  }
+
+  async fn cmd_echo(&mut self, args: &[Bytes]) -> Result<()> {
+    if args.len() != 1 {
+      return self
+        .write_response(RespValue::Error(
+          "ERR wrong number of arguments for 'echo' command".into(),
+        ))
+        .await;
+    }
+    self
+      .write_response(RespValue::BulkString(Some(args[0].clone())))
+      .await
+  }
+
+  async fn cmd_hello(&mut self, args: &[Bytes]) -> Result<()> {
+    if args.len() > 1 {
+      return self
+        .write_response(RespValue::Error(
+          "ERR wrong number of arguments for 'hello' command".into(),
+        ))
+        .await;
     }
 
-    async fn write_response(&mut self, response: RespValue) -> Result<()> {
-        let data = response.serialize();
-
-        // Record bytes sent
-        if let Some(ref metrics) = self.metrics {
-            metrics.connections.record_bytes_sent(data.len() as u64);
+    if args.len() == 1 {
+      let ver = String::from_utf8_lossy(&args[0]);
+      match ver.as_ref() {
+        "2" => self.protocol_version = ProtocolVersion::Resp2,
+        "3" => self.protocol_version = ProtocolVersion::Resp3,
+        _ => {
+          return self
+            .write_response(RespValue::Error("invalid protocol version".into()))
+            .await;
         }
-
-        self.stream.write_all(&data).await?;
-        self.stream.flush().await?;
-        Ok(())
+      }
+      self.protocol_negotiated = true;
     }
+
+    let response = hello_map(self.client_id, self.protocol_version);
+    self.write_response(response).await
+  }
+
+  async fn cmd_quit(&mut self) -> Result<()> {
+    self
+      .write_response(RespValue::SimpleString("OK".into()))
+      .await?;
+    self.quit = true;
+    Ok(())
+  }
+
+  async fn cmd_monitor(&mut self) -> Result<()> {
+    self
+      .write_response(RespValue::SimpleString("OK".into()))
+      .await?;
+    self.mode = ConnectionMode::Monitor;
+    self.monitor_rx = Some(self.state.monitor_tx.subscribe());
+    Ok(())
+  }
+
+  // ─── ATOM 事务命令 ─────────────────────────────────────────
+
+  async fn cmd_atom_multi(&mut self) -> Result<()> {
+    if self.tx_state.in_multi {
+      return self
+        .write_response(RespValue::Error("ERR MULTI calls can not be nested".into()))
+        .await;
+    }
+    self.tx_state.in_multi = true;
+    self.tx_state.tx_queue.clear();
+    self
+      .write_response(RespValue::SimpleString("OK".into()))
+      .await
+  }
+
+  async fn cmd_atom_exec(&mut self, args: &[Bytes]) -> Result<()> {
+    if !self.tx_state.in_multi {
+      if args.len() == 1 {
+        return self.cmd_atom_exec_json_batch(&args[0]).await;
+      }
+      if args.is_empty() {
+        return self
+          .write_response(RespValue::Error("ERR EXEC without MULTI".into()))
+          .await;
+      }
+      return self
+        .write_response(RespValue::Error(
+          "ERR wrong number of arguments for 'exec' command".into(),
+        ))
+        .await;
+    }
+    if !args.is_empty() {
+      return self
+        .write_response(RespValue::Error("ERR EXEC inside MULTI".into()))
+        .await;
+    }
+
+    // Check WATCH conflicts: if any watched key's version changed, abort
+    let conflict = self
+      .tx_state
+      .watched_keys
+      .iter()
+      .any(|(key, version)| self.state.get_key_version(key) != *version);
+
+    if conflict {
+      self.tx_state.reset();
+      return self.write_response(RespValue::BulkString(None)).await;
+    }
+
+    // Execute queued commands atomically
+    let queue = std::mem::take(&mut self.tx_state.tx_queue);
+    self.tx_state.in_multi = false;
+    self.tx_state.watched_keys.clear();
+
+    let mut results = Vec::with_capacity(queue.len());
+
+    for (cmd_name, cmd_args) in queue {
+      // Track whether this is a write command for key version tracking
+      let is_write = command::lookup(&cmd_name).is_some_and(|info| info.flags.contains(&"write"));
+
+      let result = self
+        .state
+        .router()
+        .execute_with_client(
+          &cmd_name,
+          &cmd_args,
+          &mut self.current_db,
+          Some(self.client_id),
+          self.protocol_version,
+          #[cfg(feature = "cluster")]
+          Some(&self.cluster_state),
+        )
+        .await;
+
+      match result {
+        Ok(resp) => {
+          if is_write {
+            self.track_command_keys(&cmd_name, &cmd_args);
+          }
+          results.push(resp);
+        }
+        Err(e) => {
+          let msg = format!("{e}");
+          results.push(RespValue::Error(msg));
+        }
+      }
+    }
+
+    self.write_response(RespValue::Array(Some(results))).await
+  }
+
+  async fn cmd_atom_discard(&mut self) -> Result<()> {
+    if !self.tx_state.in_multi {
+      return self
+        .write_response(RespValue::Error("ERR DISCARD without MULTI".into()))
+        .await;
+    }
+    self.tx_state.reset();
+    self
+      .write_response(RespValue::SimpleString("OK".into()))
+      .await
+  }
+
+  async fn cmd_atom_watch(&mut self, args: &[Bytes]) -> Result<()> {
+    if args.is_empty() {
+      return self
+        .write_response(RespValue::Error(
+          "ERR wrong number of arguments for 'watch' command".into(),
+        ))
+        .await;
+    }
+    // Record current version for each watched key
+    for key in args {
+      let version = self.state.get_key_version(key);
+      self.tx_state.watched_keys.insert(key.to_vec(), version);
+    }
+    self
+      .write_response(RespValue::SimpleString("OK".into()))
+      .await
+  }
+
+  async fn cmd_atom_unwatch(&mut self) -> Result<()> {
+    self.tx_state.watched_keys.clear();
+    self
+      .write_response(RespValue::SimpleString("OK".into()))
+      .await
+  }
+
+  async fn cmd_atom_exec_json_batch(&mut self, json_arg: &Bytes) -> Result<()> {
+    let commands = match parse_json_batch_commands(json_arg) {
+      Ok(cmds) => cmds,
+      Err(msg) => return self.write_response(RespValue::Error(msg)).await,
+    };
+
+    if commands.is_empty() {
+      return self
+        .write_response(RespValue::Array(Some(Vec::new())))
+        .await;
+    }
+
+    if let Some(msg) = detect_duplicate_batch_keys(&commands) {
+      return self.write_response(RespValue::Error(msg)).await;
+    }
+
+    let mut snapshots: Vec<BatchRollbackFrame> = Vec::new();
+    let mut snapshotted: HashSet<Vec<u8>> = HashSet::new();
+    let mut results: Vec<RespValue> = Vec::with_capacity(commands.len());
+    let mut written_cmds: Vec<(String, Vec<Bytes>)> = Vec::new();
+
+    for (cmd_name, cmd_args) in commands {
+      if let Err(e) = self
+        .snapshot_write_keys(&cmd_name, &cmd_args, &mut snapshots, &mut snapshotted)
+        .await
+      {
+        return self
+          .write_response(RespValue::Error(format!(
+            "ERR internal error during batch snapshot: {e}"
+          )))
+          .await;
+      }
+
+      let result = self
+        .state
+        .router()
+        .execute_with_client(
+          &cmd_name,
+          &cmd_args,
+          &mut self.current_db,
+          Some(self.client_id),
+          self.protocol_version,
+          #[cfg(feature = "cluster")]
+          Some(&self.cluster_state),
+        )
+        .await;
+
+      if let Some(err_msg) = batch_command_failure_message(&result) {
+        if let Err(rollback_err) = self.rollback_batch_snapshots(&snapshots).await {
+          tracing::error!(
+            target: "kv.batch",
+            error = %rollback_err,
+            "CRITICAL: JSON batch rollback failed after command error"
+          );
+          return self
+            .write_response(RespValue::Error("ERR batch rollback failed".into()))
+            .await;
+        }
+        return self.write_response(RespValue::Error(err_msg)).await;
+      }
+
+      if let Ok(resp) = result {
+        mark_batch_command_keys_written(&cmd_name, &cmd_args, &mut snapshots);
+        results.push(resp);
+        written_cmds.push((cmd_name, cmd_args));
+      }
+    }
+
+    for (cmd_name, cmd_args) in &written_cmds {
+      self.track_command_keys(cmd_name, cmd_args);
+    }
+
+    self.write_response(RespValue::Array(Some(results))).await
+  }
+
+  /// 经路由层执行命令 (集群模式下转发至 key 所在分片).
+  async fn routed_command(&mut self, cmd: &str, args: Vec<Bytes>) -> Result<RespValue> {
+    self
+      .state
+      .router()
+      .execute_with_client(
+        cmd,
+        &args,
+        &mut self.current_db,
+        Some(self.client_id),
+        self.protocol_version,
+        #[cfg(feature = "cluster")]
+        Some(&self.cluster_state),
+      )
+      .await
+  }
+
+  async fn snapshot_write_keys(
+    &mut self,
+    cmd: &str,
+    args: &[Bytes],
+    snapshots: &mut Vec<BatchRollbackFrame>,
+    snapshotted: &mut HashSet<Vec<u8>>,
+  ) -> Result<()> {
+    let Some(info) = command::lookup(cmd) else {
+      return Ok(());
+    };
+    if !info.flags.contains(&"write") {
+      return Ok(());
+    }
+    let indices = command::key_indices(&info, args.len() + 1);
+    for idx in indices {
+      if idx == 0 {
+        continue;
+      }
+      let arr_idx = idx - 1;
+      if arr_idx >= args.len() {
+        continue;
+      }
+      let key = args[arr_idx].to_vec();
+      if !snapshotted.insert(key.clone()) {
+        continue;
+      }
+      let previous = self.batch_load_key_snapshot(&key).await?;
+      snapshots.push(BatchRollbackFrame {
+        key,
+        previous,
+        written: false,
+      });
+    }
+    Ok(())
+  }
+
+  async fn batch_load_key_snapshot(&mut self, key: &[u8]) -> Result<Option<StoredValue>> {
+    let resp = self
+      .routed_command("DUMP", vec![Bytes::copy_from_slice(key)])
+      .await?;
+    match resp {
+      RespValue::BulkString(None) => Ok(None),
+      RespValue::BulkString(Some(payload)) => dump_decode(&payload).map(Some),
+      RespValue::Error(msg) => Err(Error::Command(msg)),
+      other => Err(Error::Command(format!(
+        "unexpected DUMP response: {other:?}"
+      ))),
+    }
+  }
+
+  async fn rollback_batch_snapshots(&mut self, snapshots: &[BatchRollbackFrame]) -> Result<()> {
+    for frame in snapshots.iter().rev().filter(|f| f.written) {
+      match &frame.previous {
+        None => {
+          let resp = self
+            .routed_command("DEL", vec![Bytes::copy_from_slice(&frame.key)])
+            .await?;
+          if let RespValue::Error(msg) = resp {
+            return Err(Error::Command(msg));
+          }
+        }
+        Some(previous) => {
+          let payload = dump_encode(previous)?;
+          let resp = self
+            .routed_command(
+              "RESTORE",
+              vec![
+                Bytes::copy_from_slice(&frame.key),
+                Bytes::from_static(b"0"),
+                Bytes::from(payload),
+                Bytes::from_static(b"REPLACE"),
+              ],
+            )
+            .await?;
+          if let RespValue::Error(msg) = resp {
+            return Err(Error::Command(msg));
+          }
+        }
+      }
+    }
+    Ok(())
+  }
+
+  /// 在 MULTI 模式中，将命令排入队列（不立即执行）
+  async fn cmd_atom_enqueue(&mut self, cmd: &str, args: &[Bytes]) -> Result<()> {
+    self
+      .tx_state
+      .tx_queue
+      .push((cmd.to_string(), args.to_vec()));
+    self
+      .write_response(RespValue::SimpleString("QUEUED".into()))
+      .await
+  }
+
+  /// 为写命令跟踪 key 版本（WATCH 冲突检测用）
+  fn track_command_keys(&self, cmd: &str, args: &[Bytes]) {
+    let Some(info) = command::lookup(cmd) else {
+      return;
+    };
+    if !info.flags.contains(&"write") {
+      return;
+    }
+    let indices = command::key_indices(&info, args.len() + 1);
+    for idx in indices {
+      if idx > 0 {
+        let arr_idx = idx - 1;
+        if arr_idx < args.len() {
+          self.state.increment_key_version(&args[arr_idx]);
+        }
+      }
+    }
+  }
+
+  async fn write_error(&mut self, err: &Error) -> Result<()> {
+    let msg = match err {
+      Error::Protocol(s) => format!("Protocol error: {s}"),
+      Error::Command(s) => s.clone(),
+      Error::Io(e) => return Err(Error::Io(std::io::Error::new(e.kind(), e.to_string()))),
+      Error::Storage(s) => format!("Internal storage error: {s}"),
+      Error::Config(s) => format!("CONFIG error: {s}"),
+      #[cfg(feature = "cluster")]
+      Error::Cluster(s) => format!("CLUSTER error: {s}"),
+    };
+    self.write_response(RespValue::Error(msg)).await
+  }
+
+  #[instrument(name = "kv_write", skip(self, value), fields(response_size))]
+  async fn write_response(&mut self, value: RespValue) -> Result<()> {
+    let bytes = self.encode(&value);
+    tracing::Span::current().record("response_size", bytes.len());
+    self.stream.write_all(&bytes).await?;
+    self.state.metrics().on_net_output_bytes(bytes.len() as u64);
+    tracing::debug!(response_size = bytes.len(), "kv.write.complete");
+    Ok(())
+  }
+
+  #[instrument(name = "kv_encode", skip(self, value), fields(value_type))]
+  fn encode(&self, value: &RespValue) -> Bytes {
+    let bytes = self.adapt_for_protocol(value).serialize();
+    tracing::debug!(encoded_size = bytes.len(), "kv.encode.complete");
+    bytes
+  }
+
+  /// RESP3 模式下将 RESP2 风格的 null 表示转为 RESP3 原生 Null。
+  /// 仅在客户端通过 HELLO 3 显式协商后才生效，避免破坏未协商的 RESP2 客户端。
+  /// redis-py 8.0 的 RESP3 解析器对 `$-1\r\n` / `*-1\r\n` 处理有兼容性问题，
+  /// 需使用 RESP3 原生 `_\r\n` (Null)。
+  /// 递归处理嵌套结构（数组、Map、Set 等内部可能包含 null）。
+  fn adapt_for_protocol(&self, value: &RespValue) -> RespValue {
+    if !self.protocol_negotiated || self.protocol_version != ProtocolVersion::Resp3 {
+      return value.clone();
+    }
+    self.adapt_null_to_resp3(value)
+  }
+
+  fn adapt_null_to_resp3(&self, value: &RespValue) -> RespValue {
+    match value {
+      RespValue::BulkString(None) | RespValue::Array(None) => RespValue::Null,
+      RespValue::Array(Some(items)) => RespValue::Array(Some(
+        items.iter().map(|v| self.adapt_null_to_resp3(v)).collect(),
+      )),
+      RespValue::Map(pairs) => RespValue::Map(
+        pairs
+          .iter()
+          .map(|(k, v)| (self.adapt_null_to_resp3(k), self.adapt_null_to_resp3(v)))
+          .collect(),
+      ),
+      RespValue::Set(items) => {
+        RespValue::Set(items.iter().map(|v| self.adapt_null_to_resp3(v)).collect())
+      }
+      RespValue::Push(items) => {
+        RespValue::Push(items.iter().map(|v| self.adapt_null_to_resp3(v)).collect())
+      }
+      RespValue::Attribute { attributes, data } => RespValue::Attribute {
+        attributes: attributes
+          .iter()
+          .map(|(k, v)| (self.adapt_null_to_resp3(k), self.adapt_null_to_resp3(v)))
+          .collect(),
+        data: Box::new(self.adapt_null_to_resp3(data)),
+      },
+      other => other.clone(),
+    }
+  }
+
+  fn record_command_observability(&self, cmd: &str, args: &[String], start: Instant, ok: bool) {
+    let duration_us = start.elapsed().as_micros() as u64;
+    self.state.latency_stats.record(cmd, duration_us);
+    self.state.slow_query_log.record(
+      cmd,
+      args,
+      duration_us,
+      &self.remote.to_string(),
+      self.current_db as u16,
+    );
+    self
+      .state
+      .metrics()
+      .on_command_duration(cmd, duration_us, ok);
+    #[cfg(feature = "monitoring")]
+    if duration_us >= self.state.slow_query_log.threshold_us() {
+      self.state.metrics().on_slow_query(cmd);
+    }
+  }
+}
+
+fn should_track_observability(cmd: &str) -> bool {
+  !matches!(
+    cmd,
+    "SLOWLOG" | "MONITOR" | "PING" | "ECHO" | "HELLO" | "QUIT"
+  )
+}
+
+fn format_monitor_line(db: usize, cmd: &str, args: &[Bytes]) -> String {
+  let sec = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .unwrap_or_default()
+    .as_secs();
+  let mut line = format!("+{sec} [db {db}] \"{cmd}\"");
+  for arg in args {
+    let s = String::from_utf8_lossy(arg);
+    line.push_str(&format!(" \"{s}\""));
+  }
+  line.push_str("\r\n");
+  line
+}
+
+fn hello_map(client_id: usize, proto: ProtocolVersion) -> RespValue {
+  #[cfg(feature = "cluster")]
+  let mode = match crate::cluster::state::CLUSTER_STATE_MGR.get() {
+    Some(_) => "cluster",
+    None => "standalone",
+  };
+  #[cfg(not(feature = "cluster"))]
+  let mode = "standalone";
+
+  #[cfg(feature = "cluster")]
+  let role = match crate::cluster::state::CLUSTER_STATE_MGR.get() {
+    Some(mgr) => {
+      let meta = mgr.meta_raft.get_cluster_meta();
+      crate::cluster::replication::node_replication_role(&meta, mgr.node_id).to_string()
+    }
+    None => "master".to_string(),
+  };
+  #[cfg(not(feature = "cluster"))]
+  let role = "master".to_string();
+
+  // 对齐 Redis 7 原生 HELLO 响应格式:
+  //   RESP3 Map — proto/id 为 Integer, 其余为 BulkString
+  //   RESP2 Array — 全部 BulkString (RESP2 无 Map, 用 flat array 交替 key-value)
+  let version = env!("CARGO_PKG_VERSION");
+  match proto {
+    ProtocolVersion::Resp3 => RespValue::Map(vec![
+      (
+        RespValue::BulkString(Some(Bytes::from_static(b"server"))),
+        RespValue::BulkString(Some(Bytes::from_static(b"aikv"))),
+      ),
+      (
+        RespValue::BulkString(Some(Bytes::from_static(b"version"))),
+        RespValue::BulkString(Some(Bytes::from(version))),
+      ),
+      (
+        RespValue::BulkString(Some(Bytes::from_static(b"proto"))),
+        RespValue::Integer(proto.as_u8() as i64),
+      ),
+      (
+        RespValue::BulkString(Some(Bytes::from_static(b"id"))),
+        RespValue::Integer(client_id as i64),
+      ),
+      (
+        RespValue::BulkString(Some(Bytes::from_static(b"mode"))),
+        RespValue::BulkString(Some(Bytes::from(mode))),
+      ),
+      (
+        RespValue::BulkString(Some(Bytes::from_static(b"role"))),
+        RespValue::BulkString(Some(Bytes::from(role))),
+      ),
+    ]),
+    ProtocolVersion::Resp2 => RespValue::Array(Some(vec![
+      RespValue::BulkString(Some(Bytes::from_static(b"server"))),
+      RespValue::BulkString(Some(Bytes::from_static(b"aikv"))),
+      RespValue::BulkString(Some(Bytes::from_static(b"version"))),
+      RespValue::BulkString(Some(Bytes::from(version))),
+      RespValue::BulkString(Some(Bytes::from_static(b"proto"))),
+      RespValue::BulkString(Some(Bytes::from(format!("{}", proto.as_u8())))),
+      RespValue::BulkString(Some(Bytes::from_static(b"id"))),
+      RespValue::BulkString(Some(Bytes::from(format!("{client_id}")))),
+      RespValue::BulkString(Some(Bytes::from_static(b"mode"))),
+      RespValue::BulkString(Some(Bytes::from(mode))),
+      RespValue::BulkString(Some(Bytes::from_static(b"role"))),
+      RespValue::BulkString(Some(Bytes::from(role))),
+    ])),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn hello_map_uses_bulkstring_for_all_values() {
+    // 对齐 Redis 7 原生: RESP3 Map 中 proto/id 是 Integer, 其余是 BulkString.
+
+    // 测试 RESP3 Map 响应
+    let map = hello_map(42, ProtocolVersion::Resp3);
+    let RespValue::Map(pairs) = map else {
+      panic!("RESP3 HELLO 应返回 Map");
+    };
+    for (key, value) in &pairs {
+      assert!(
+        matches!(key, RespValue::BulkString(Some(_))),
+        "Map key 必须是 BulkString，得到: {key:?}"
+      );
+      let RespValue::BulkString(Some(key_bytes)) = key else { unreachable!() };
+      let key_str = String::from_utf8_lossy(key_bytes);
+      match key_str.as_ref() {
+        "proto" | "id" => {
+          assert!(
+            matches!(value, RespValue::Integer(_)),
+            "字段 '{key_str}' 必须是 Integer (Redis 7 兼容), 得到: {value:?}"
+          );
+        }
+        _ => {
+          assert!(
+            matches!(value, RespValue::BulkString(Some(_))),
+            "字段 '{key_str}' 必须是 BulkString, 得到: {value:?}"
+          );
+        }
+      }
+    }
+
+    // 测试 RESP2 Array 响应: 全部 BulkString (RESP2 无原生 Integer 语义)
+    let arr = hello_map(42, ProtocolVersion::Resp2);
+    let RespValue::Array(Some(items)) = arr else {
+      panic!("RESP2 HELLO 应返回 Array");
+    };
+    assert_eq!(items.len() % 2, 0, "Array 项数应为偶数 (交替 key-value)");
+    for item in &items {
+      assert!(
+        matches!(item, RespValue::BulkString(Some(_))),
+        "RESP2 Array 中的每一项必须是 BulkString，得到: {item:?}"
+      );
+    }
+  }
+}
+
+struct BatchRollbackFrame {
+  key: Vec<u8>,
+  previous: Option<StoredValue>,
+  /// 仅回滚本 batch 已成功写入的 key, 避免失败事务用旧 snapshot 覆盖并发写入.
+  written: bool,
+}
+
+fn mark_batch_command_keys_written(
+  cmd: &str,
+  args: &[Bytes],
+  snapshots: &mut [BatchRollbackFrame],
+) {
+  let Some(info) = command::lookup(cmd) else {
+    return;
+  };
+  if !info.flags.contains(&"write") {
+    return;
+  }
+  let indices = command::key_indices(&info, args.len() + 1);
+  for idx in indices {
+    if idx == 0 {
+      continue;
+    }
+    let arr_idx = idx - 1;
+    if arr_idx >= args.len() {
+      continue;
+    }
+    let key = args[arr_idx].as_ref();
+    for frame in snapshots.iter_mut() {
+      if frame.key.as_slice() == key {
+        frame.written = true;
+      }
+    }
+  }
+}
+
+fn batch_command_failure_message(result: &Result<RespValue>) -> Option<String> {
+  match result {
+    Err(err) => Some(format_batch_exec_error(err)),
+    Ok(RespValue::Error(msg)) => Some(msg.clone()),
+    _ => None,
+  }
+}
+
+fn format_batch_exec_error(err: &Error) -> String {
+  match err {
+    Error::Protocol(s) => format!("Protocol error: {s}"),
+    Error::Command(s) => s.clone(),
+    Error::Storage(s) => format!("Internal storage error: {s}"),
+    Error::Config(s) => format!("CONFIG error: {s}"),
+    #[cfg(feature = "cluster")]
+    Error::Cluster(s) => format!("CLUSTER error: {s}"),
+    Error::Io(e) => format!("IO error: {e}"),
+  }
+}
+
+fn detect_duplicate_batch_keys(commands: &[(String, Vec<Bytes>)]) -> Option<String> {
+  let mut seen = HashSet::new();
+  for (cmd, args) in commands {
+    for key in collect_command_keys(cmd, args) {
+      if !seen.insert(key) {
+        return Some("ERR duplicate key in batch".into());
+      }
+    }
+  }
+  None
+}
+
+fn collect_command_keys(cmd: &str, args: &[Bytes]) -> Vec<Vec<u8>> {
+  let Some(info) = command::lookup(cmd) else {
+    return Vec::new();
+  };
+  command::key_indices(&info, args.len() + 1)
+    .into_iter()
+    .filter_map(|idx| {
+      if idx == 0 {
+        return None;
+      }
+      let arr_idx = idx - 1;
+      (arr_idx < args.len()).then(|| args[arr_idx].to_vec())
+    })
+    .collect()
+}
+
+fn parse_json_batch_commands(
+  json_arg: &Bytes,
+) -> std::result::Result<Vec<(String, Vec<Bytes>)>, String> {
+  let value: serde_json::Value =
+    serde_json::from_slice(json_arg).map_err(|e| format!("ERR invalid JSON batch: {e}"))?;
+  let rows = value
+    .as_array()
+    .ok_or_else(|| "ERR invalid JSON batch: expected array of arrays".to_string())?;
+  let mut commands = Vec::with_capacity(rows.len());
+  for row in rows {
+    let items = row
+      .as_array()
+      .ok_or_else(|| "ERR invalid JSON batch: expected array of arrays".to_string())?;
+    if items.len() < 2 {
+      return Err("ERR invalid command in batch".into());
+    }
+    let cmd_name = json_batch_arg_string(&items[0])?;
+    let mut args = Vec::with_capacity(items.len().saturating_sub(1));
+    for item in &items[1..] {
+      args.push(Bytes::from(json_batch_arg_string(item)?));
+    }
+    commands.push((cmd_name, args));
+  }
+  Ok(commands)
+}
+
+fn json_batch_arg_string(value: &serde_json::Value) -> std::result::Result<String, String> {
+  match value {
+    serde_json::Value::String(s) => Ok(s.clone()),
+    serde_json::Value::Number(n) => Ok(n.to_string()),
+    serde_json::Value::Bool(b) => Ok(b.to_string()),
+    serde_json::Value::Null => Ok(String::new()),
+    _ => Err("ERR invalid JSON batch: command arguments must be scalars".into()),
+  }
+}
+
+fn extract_bulk(value: &RespValue) -> Option<Bytes> {
+  match value {
+    RespValue::BulkString(Some(b)) => Some(b.clone()),
+    RespValue::BulkString(None) => Some(Bytes::new()),
+    _ => None,
+  }
+}
+
+fn is_fatal_protocol(err: &Error) -> bool {
+  match err {
+    Error::Protocol(msg) => {
+      msg.contains("depth")
+        || msg.contains("too large")
+        || msg.contains("buffer size")
+        || msg.contains("line too long")
+    }
+    _ => false,
+  }
 }

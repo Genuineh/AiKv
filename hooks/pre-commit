@@ -1,0 +1,21 @@
+#!/bin/bash
+set -euo pipefail
+
+echo "=== pre-commit: aikv ==="
+
+cargo fmt --check || {
+    echo "ERROR: Format check failed. Run 'cargo fmt' to fix."
+    exit 1
+}
+
+cargo clippy --all-targets -- -D warnings || {
+    echo "ERROR: Clippy found issues."
+    exit 1
+}
+
+cargo test --workspace || {
+    echo "ERROR: Tests failed."
+    exit 1
+}
+
+echo "All pre-commit checks passed."

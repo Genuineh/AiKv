@@ -1,106 +1,88 @@
-use crate::error::{AikvError, Result};
-use crate::protocol::RespValue;
-use crate::storage::StorageEngine;
+//! Database 命令
+
+use std::sync::Arc;
+
 use bytes::Bytes;
 
-/// Database command handler
+use crate::command::router;
+use crate::error::{Error, Result};
+use crate::protocol::RespValue;
+use crate::storage::types::DB_COUNT;
+use crate::storage::KvStorage;
+
 pub struct DatabaseCommands {
-    storage: StorageEngine,
+  storage: Arc<dyn KvStorage>,
 }
 
 impl DatabaseCommands {
-    pub fn new(storage: StorageEngine) -> Self {
-        Self {
-            storage,
-        }
+  pub fn new(storage: Arc<dyn KvStorage>) -> Self {
+    Self { storage }
+  }
+
+  pub async fn select(&self, args: &[Bytes], db: &mut usize) -> Result<RespValue> {
+    router::require_args("SELECT", args, 1)?;
+    let index = parse_db_index(&args[0])?;
+    if index >= DB_COUNT {
+      return Err(Error::Command("ERR DB index is out of range".into()));
     }
+    *db = index;
+    Ok(router::ok())
+  }
 
-    /// SELECT index - Select database by index
-    pub fn select(&self, args: &[Bytes], current_db: &mut usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("SELECT".to_string()));
-        }
+  pub async fn dbsize(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("DBSIZE", args, 0)?;
+    let n = self.storage.len(db).await?;
+    Ok(router::integer(n as i64))
+  }
 
-        let index_str = String::from_utf8_lossy(&args[0]);
-        let index = index_str
-            .parse::<usize>()
-            .map_err(|_| AikvError::InvalidArgument("ERR invalid DB index".to_string()))?;
+  pub async fn flushdb(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("FLUSHDB", args, 0)?;
+    self.storage.clear(db).await?;
+    Ok(router::ok())
+  }
 
-        if index >= 16 {
-            // Redis default is 16 databases
-            return Err(AikvError::InvalidArgument(
-                "ERR DB index is out of range".to_string(),
-            ));
-        }
+  pub async fn flushall(&self, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("FLUSHALL", args, 0)?;
+    self.storage.clear_all().await?;
+    Ok(router::ok())
+  }
 
-        *current_db = index;
-        Ok(RespValue::ok())
+  pub async fn swapdb(&self, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("SWAPDB", args, 2)?;
+    let a = parse_db_index(&args[0])?;
+    let b = parse_db_index(&args[1])?;
+    if a >= DB_COUNT || b >= DB_COUNT {
+      return Err(Error::Command("ERR DB index is out of range".into()));
     }
+    self.storage.swap_db(a, b).await?;
+    Ok(router::ok())
+  }
 
-    /// DBSIZE - Get the number of keys in current database
-    pub fn dbsize(&self, _args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        let size = self.storage.dbsize_in_db(current_db)?;
-        Ok(RespValue::integer(size as i64))
+  pub async fn move_key(&self, src_db: usize, args: &[Bytes]) -> Result<RespValue> {
+    router::require_args("MOVE", args, 2)?;
+    let key = &args[0];
+    let target = parse_db_index(&args[1])?;
+    if target >= DB_COUNT {
+      return Err(Error::Command("ERR DB index is out of range".into()));
     }
-
-    /// FLUSHDB - Clear current database
-    pub fn flushdb(&self, _args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        self.storage.flush_db(current_db)?;
-        Ok(RespValue::ok())
+    if src_db == target {
+      return Ok(router::integer(0));
     }
-
-    /// FLUSHALL - Clear all databases
-    pub fn flushall(&self, _args: &[Bytes]) -> Result<RespValue> {
-        self.storage.flush_all()?;
-        Ok(RespValue::ok())
+    let Some(value) = self.storage.get_typed(src_db, key).await? else {
+      return Ok(router::integer(0));
+    };
+    if self.storage.get_typed(target, key).await?.is_some() {
+      return Ok(router::integer(0));
     }
+    self.storage.set_typed(target, key, value).await?;
+    self.storage.delete(src_db, key).await?;
+    Ok(router::integer(1))
+  }
+}
 
-    /// SWAPDB db1 db2 - Swap two databases
-    pub fn swapdb(&self, args: &[Bytes]) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("SWAPDB".to_string()));
-        }
-
-        let db1_str = String::from_utf8_lossy(&args[0]);
-        let db2_str = String::from_utf8_lossy(&args[1]);
-
-        let db1 = db1_str
-            .parse::<usize>()
-            .map_err(|_| AikvError::InvalidArgument("ERR invalid first DB index".to_string()))?;
-        let db2 = db2_str
-            .parse::<usize>()
-            .map_err(|_| AikvError::InvalidArgument("ERR invalid second DB index".to_string()))?;
-
-        if db1 >= 16 || db2 >= 16 {
-            return Err(AikvError::InvalidArgument(
-                "ERR DB index is out of range".to_string(),
-            ));
-        }
-
-        self.storage.swap_db(db1, db2)?;
-        Ok(RespValue::ok())
-    }
-
-    /// MOVE key db - Move key to another database
-    pub fn move_key(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("MOVE".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let db_str = String::from_utf8_lossy(&args[1]);
-
-        let dest_db = db_str
-            .parse::<usize>()
-            .map_err(|_| AikvError::InvalidArgument("ERR invalid DB index".to_string()))?;
-
-        if dest_db >= 16 {
-            return Err(AikvError::InvalidArgument(
-                "ERR DB index is out of range".to_string(),
-            ));
-        }
-
-        let moved = self.storage.move_key(current_db, dest_db, &key)?;
-        Ok(RespValue::integer(if moved { 1 } else { 0 }))
-    }
+fn parse_db_index(b: &Bytes) -> Result<usize> {
+  let s =
+    std::str::from_utf8(b).map_err(|_| Error::Command("ERR value is not an integer".into()))?;
+  s.parse::<usize>()
+    .map_err(|_| Error::Command("ERR value is not an integer".into()))
 }
