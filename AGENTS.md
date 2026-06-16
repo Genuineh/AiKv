@@ -26,9 +26,21 @@ Redis Client → TCP/RESP/CommandRouter/ClusterRouter
 - 存在性 / 删除等语义须走 AiDb `DB::get` 与 tombstone 规则, 不在 storage adapter 绕过.
 - 同一 codebase; 开发与 CI 以 `--features cluster` 为主.
 
+## 技术栈与参考
+
+| 层级 / 领域 | 本项目 | 可参考 (设计/实现, 非直接依赖) |
+|-------------|--------|--------------------------------|
+| **客户端 RESP** | 自研 `src/protocol/` (RESP2/3, pipeline, 安全边界); **未** 使用 `resp-rs` crate | [Redis RESP 规范](https://redis.io/docs/reference/protocol-spec/); `resp-rs` 的零拷贝/API 设计 |
+| **Redis 类型 → KV** | `StoredValue` / `ValueType` 序列化后写入 AiDb 扁平 key (`{db_index}:{user_key}`) | Kvrocks、Pika/BlackWidow 的编码与兼容性思路 |
+| **Cluster 协议** | MOVED/ASK、16384 slot、CLUSTER 子命令、slot 迁移状态机 | Redis Cluster 行为与客户端约定 |
+| **Gossip** | **轻量** `GossipState`: 刷新 CLUSTER NODES 展示; **故障判定走 MetaRaft**, 非 Serf 级 SWIM | Redis Cluster 的 gossip 语义; 完整 Serf/Cassandra 式 gossip 未引入 |
+| **共识 / RPC / LSM** | 委托 **AiDb** (OpenRaft + tonic + 自研 LSM) | 见 AiDb `AGENTS.md` |
+
+协议栈: **RESP (aikv) → 命令/存储适配 → gRPC+Raft+LSM (aidb)**.
+
 ## 开发与 CI
 
-流程见 `[.github/README.md](.github/README.md)`.
+流程见 [`.github/README.md`](.github/README.md).
 
 ```bash
 # 确保 ../aidb 存在
