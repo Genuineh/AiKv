@@ -15,5 +15,5 @@ mod commands;
 pub use commands::*;
 
 // Re-export AiDb cluster utilities used by examples and external code.
-pub use config_auto_save::ConfigAutoSave;
 pub use aidb::cluster::{extract_hash_tag, key_to_slot};
+pub use config_auto_save::ConfigAutoSave;

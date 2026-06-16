@@ -4,257 +4,257 @@ use super::helpers::{assert_int, b, router};
 
 #[tokio::test]
 async fn test_lpush_rpush_llen() {
-  let r = router();
-  let mut db = 0;
-  assert_int(
-    r.execute("LPUSH", &[b("mylist"), b("a"), b("b")], &mut db)
-      .await
-      .unwrap(),
-    2,
-  );
-  assert_int(
-    r.execute("RPUSH", &[b("mylist"), b("c")], &mut db)
-      .await
-      .unwrap(),
-    3,
-  );
-  assert_int(r.execute("LLEN", &[b("mylist")], &mut db).await.unwrap(), 3);
+    let r = router();
+    let mut db = 0;
+    assert_int(
+        r.execute("LPUSH", &[b("mylist"), b("a"), b("b")], &mut db)
+            .await
+            .unwrap(),
+        2,
+    );
+    assert_int(
+        r.execute("RPUSH", &[b("mylist"), b("c")], &mut db)
+            .await
+            .unwrap(),
+        3,
+    );
+    assert_int(r.execute("LLEN", &[b("mylist")], &mut db).await.unwrap(), 3);
 }
 
 #[tokio::test]
 async fn test_lpop_rpop() {
-  let r = router();
-  let mut db = 0;
-  r.execute("RPUSH", &[b("l"), b("1"), b("2"), b("3")], &mut db)
-    .await
-    .unwrap();
-  let left = r.execute("LPOP", &[b("l")], &mut db).await.unwrap();
-  assert_eq!(left, RespValue::BulkString(Some(b("1"))));
-  let right = r.execute("RPOP", &[b("l")], &mut db).await.unwrap();
-  assert_eq!(right, RespValue::BulkString(Some(b("3"))));
-  assert_int(r.execute("LLEN", &[b("l")], &mut db).await.unwrap(), 1);
+    let r = router();
+    let mut db = 0;
+    r.execute("RPUSH", &[b("l"), b("1"), b("2"), b("3")], &mut db)
+        .await
+        .unwrap();
+    let left = r.execute("LPOP", &[b("l")], &mut db).await.unwrap();
+    assert_eq!(left, RespValue::BulkString(Some(b("1"))));
+    let right = r.execute("RPOP", &[b("l")], &mut db).await.unwrap();
+    assert_eq!(right, RespValue::BulkString(Some(b("3"))));
+    assert_int(r.execute("LLEN", &[b("l")], &mut db).await.unwrap(), 1);
 }
 
 #[tokio::test]
 async fn test_lrange() {
-  let r = router();
-  let mut db = 0;
-  r.execute("RPUSH", &[b("l"), b("a"), b("b"), b("c"), b("d")], &mut db)
-    .await
-    .unwrap();
-  let resp = r
-    .execute("LRANGE", &[b("l"), b("1"), b("2")], &mut db)
-    .await
-    .unwrap();
-  let RespValue::Array(Some(items)) = resp else {
-    panic!("expected array");
-  };
-  assert_eq!(items.len(), 2);
-  assert_eq!(items[0], RespValue::BulkString(Some(b("b"))));
-  assert_eq!(items[1], RespValue::BulkString(Some(b("c"))));
+    let r = router();
+    let mut db = 0;
+    r.execute("RPUSH", &[b("l"), b("a"), b("b"), b("c"), b("d")], &mut db)
+        .await
+        .unwrap();
+    let resp = r
+        .execute("LRANGE", &[b("l"), b("1"), b("2")], &mut db)
+        .await
+        .unwrap();
+    let RespValue::Array(Some(items)) = resp else {
+        panic!("expected array");
+    };
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0], RespValue::BulkString(Some(b("b"))));
+    assert_eq!(items[1], RespValue::BulkString(Some(b("c"))));
 }
 
 #[tokio::test]
 async fn test_wrong_type_list() {
-  let r = router();
-  let mut db = 0;
-  r.execute("SET", &[b("s"), b("v")], &mut db).await.unwrap();
-  let err = r
-    .execute("LPUSH", &[b("s"), b("x")], &mut db)
-    .await
-    .unwrap_err();
-  assert!(err.to_string().contains("WRONGTYPE"));
+    let r = router();
+    let mut db = 0;
+    r.execute("SET", &[b("s"), b("v")], &mut db).await.unwrap();
+    let err = r
+        .execute("LPUSH", &[b("s"), b("x")], &mut db)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("WRONGTYPE"));
 }
 
 #[tokio::test]
 async fn test_linsert_before_after() {
-  let r = router();
-  let mut db = 0;
-  r.execute("RPUSH", &[b("l"), b("a"), b("b"), b("c")], &mut db)
-    .await
-    .unwrap();
-  assert_int(
-    r.execute("LINSERT", &[b("l"), b("BEFORE"), b("b"), b("x")], &mut db)
-      .await
-      .unwrap(),
-    4,
-  );
-  let resp = r
-    .execute("LRANGE", &[b("l"), b("0"), b("-1")], &mut db)
-    .await
-    .unwrap();
-  let RespValue::Array(Some(items)) = resp else {
-    panic!("expected array");
-  };
-  assert_eq!(items[0], RespValue::BulkString(Some(b("a"))));
-  assert_eq!(items[1], RespValue::BulkString(Some(b("x"))));
-  assert_eq!(items[2], RespValue::BulkString(Some(b("b"))));
-  assert_eq!(items[3], RespValue::BulkString(Some(b("c"))));
+    let r = router();
+    let mut db = 0;
+    r.execute("RPUSH", &[b("l"), b("a"), b("b"), b("c")], &mut db)
+        .await
+        .unwrap();
+    assert_int(
+        r.execute("LINSERT", &[b("l"), b("BEFORE"), b("b"), b("x")], &mut db)
+            .await
+            .unwrap(),
+        4,
+    );
+    let resp = r
+        .execute("LRANGE", &[b("l"), b("0"), b("-1")], &mut db)
+        .await
+        .unwrap();
+    let RespValue::Array(Some(items)) = resp else {
+        panic!("expected array");
+    };
+    assert_eq!(items[0], RespValue::BulkString(Some(b("a"))));
+    assert_eq!(items[1], RespValue::BulkString(Some(b("x"))));
+    assert_eq!(items[2], RespValue::BulkString(Some(b("b"))));
+    assert_eq!(items[3], RespValue::BulkString(Some(b("c"))));
 
-  assert_int(
-    r.execute("LINSERT", &[b("l"), b("AFTER"), b("b"), b("y")], &mut db)
-      .await
-      .unwrap(),
-    5,
-  );
-  let resp = r
-    .execute("LRANGE", &[b("l"), b("0"), b("-1")], &mut db)
-    .await
-    .unwrap();
-  let RespValue::Array(Some(items)) = resp else {
-    panic!("expected array");
-  };
-  assert_eq!(items[3], RespValue::BulkString(Some(b("y"))));
+    assert_int(
+        r.execute("LINSERT", &[b("l"), b("AFTER"), b("b"), b("y")], &mut db)
+            .await
+            .unwrap(),
+        5,
+    );
+    let resp = r
+        .execute("LRANGE", &[b("l"), b("0"), b("-1")], &mut db)
+        .await
+        .unwrap();
+    let RespValue::Array(Some(items)) = resp else {
+        panic!("expected array");
+    };
+    assert_eq!(items[3], RespValue::BulkString(Some(b("y"))));
 }
 
 #[tokio::test]
 async fn test_linsert_pivot_not_found() {
-  let r = router();
-  let mut db = 0;
-  r.execute("RPUSH", &[b("l"), b("a"), b("b")], &mut db)
-    .await
-    .unwrap();
-  assert_int(
-    r.execute(
-      "LINSERT",
-      &[b("l"), b("BEFORE"), b("missing"), b("z")],
-      &mut db,
-    )
-    .await
-    .unwrap(),
-    -1,
-  );
+    let r = router();
+    let mut db = 0;
+    r.execute("RPUSH", &[b("l"), b("a"), b("b")], &mut db)
+        .await
+        .unwrap();
+    assert_int(
+        r.execute(
+            "LINSERT",
+            &[b("l"), b("BEFORE"), b("missing"), b("z")],
+            &mut db,
+        )
+        .await
+        .unwrap(),
+        -1,
+    );
 }
 
 #[tokio::test]
 async fn test_linsert_before_after_case() {
-  let r = router();
-  let mut db = 0;
-  r.execute("RPUSH", &[b("l"), b("a"), b("b")], &mut db)
-    .await
-    .unwrap();
-  assert_int(
-    r.execute("LINSERT", &[b("l"), b("before"), b("b"), b("x")], &mut db)
-      .await
-      .unwrap(),
-    3,
-  );
-  assert_int(
-    r.execute("LINSERT", &[b("l"), b("After"), b("b"), b("y")], &mut db)
-      .await
-      .unwrap(),
-    4,
-  );
+    let r = router();
+    let mut db = 0;
+    r.execute("RPUSH", &[b("l"), b("a"), b("b")], &mut db)
+        .await
+        .unwrap();
+    assert_int(
+        r.execute("LINSERT", &[b("l"), b("before"), b("b"), b("x")], &mut db)
+            .await
+            .unwrap(),
+        3,
+    );
+    assert_int(
+        r.execute("LINSERT", &[b("l"), b("After"), b("b"), b("y")], &mut db)
+            .await
+            .unwrap(),
+        4,
+    );
 }
 
 #[tokio::test]
 async fn test_lmove_diff_key() {
-  let r = router();
-  let mut db = 0;
-  r.execute("RPUSH", &[b("src"), b("a"), b("b"), b("c")], &mut db)
-    .await
-    .unwrap();
-  let moved = r
-    .execute(
-      "LMOVE",
-      &[b("src"), b("dst"), b("LEFT"), b("RIGHT")],
-      &mut db,
-    )
-    .await
-    .unwrap();
-  assert_eq!(moved, RespValue::BulkString(Some(b("a"))));
+    let r = router();
+    let mut db = 0;
+    r.execute("RPUSH", &[b("src"), b("a"), b("b"), b("c")], &mut db)
+        .await
+        .unwrap();
+    let moved = r
+        .execute(
+            "LMOVE",
+            &[b("src"), b("dst"), b("LEFT"), b("RIGHT")],
+            &mut db,
+        )
+        .await
+        .unwrap();
+    assert_eq!(moved, RespValue::BulkString(Some(b("a"))));
 
-  let src = r
-    .execute("LRANGE", &[b("src"), b("0"), b("-1")], &mut db)
-    .await
-    .unwrap();
-  let RespValue::Array(Some(src_items)) = src else {
-    panic!("expected array");
-  };
-  assert_eq!(src_items.len(), 2);
-  assert_eq!(src_items[0], RespValue::BulkString(Some(b("b"))));
+    let src = r
+        .execute("LRANGE", &[b("src"), b("0"), b("-1")], &mut db)
+        .await
+        .unwrap();
+    let RespValue::Array(Some(src_items)) = src else {
+        panic!("expected array");
+    };
+    assert_eq!(src_items.len(), 2);
+    assert_eq!(src_items[0], RespValue::BulkString(Some(b("b"))));
 
-  let dst = r
-    .execute("LRANGE", &[b("dst"), b("0"), b("-1")], &mut db)
-    .await
-    .unwrap();
-  let RespValue::Array(Some(dst_items)) = dst else {
-    panic!("expected array");
-  };
-  assert_eq!(dst_items.len(), 1);
-  assert_eq!(dst_items[0], RespValue::BulkString(Some(b("a"))));
+    let dst = r
+        .execute("LRANGE", &[b("dst"), b("0"), b("-1")], &mut db)
+        .await
+        .unwrap();
+    let RespValue::Array(Some(dst_items)) = dst else {
+        panic!("expected array");
+    };
+    assert_eq!(dst_items.len(), 1);
+    assert_eq!(dst_items[0], RespValue::BulkString(Some(b("a"))));
 }
 
 #[tokio::test]
 async fn test_lmove_same_key() {
-  let r = router();
-  let mut db = 0;
-  r.execute("RPUSH", &[b("l"), b("a"), b("b"), b("c")], &mut db)
-    .await
-    .unwrap();
-  let moved = r
-    .execute("LMOVE", &[b("l"), b("l"), b("LEFT"), b("RIGHT")], &mut db)
-    .await
-    .unwrap();
-  assert_eq!(moved, RespValue::BulkString(Some(b("a"))));
+    let r = router();
+    let mut db = 0;
+    r.execute("RPUSH", &[b("l"), b("a"), b("b"), b("c")], &mut db)
+        .await
+        .unwrap();
+    let moved = r
+        .execute("LMOVE", &[b("l"), b("l"), b("LEFT"), b("RIGHT")], &mut db)
+        .await
+        .unwrap();
+    assert_eq!(moved, RespValue::BulkString(Some(b("a"))));
 
-  let resp = r
-    .execute("LRANGE", &[b("l"), b("0"), b("-1")], &mut db)
-    .await
-    .unwrap();
-  let RespValue::Array(Some(items)) = resp else {
-    panic!("expected array");
-  };
-  assert_eq!(items.len(), 3);
-  assert_eq!(items[0], RespValue::BulkString(Some(b("b"))));
-  assert_eq!(items[1], RespValue::BulkString(Some(b("c"))));
-  assert_eq!(items[2], RespValue::BulkString(Some(b("a"))));
+    let resp = r
+        .execute("LRANGE", &[b("l"), b("0"), b("-1")], &mut db)
+        .await
+        .unwrap();
+    let RespValue::Array(Some(items)) = resp else {
+        panic!("expected array");
+    };
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[0], RespValue::BulkString(Some(b("b"))));
+    assert_eq!(items[1], RespValue::BulkString(Some(b("c"))));
+    assert_eq!(items[2], RespValue::BulkString(Some(b("a"))));
 }
 
 #[tokio::test]
 async fn test_lmove_dest_wrong_type() {
-  let r = router();
-  let mut db = 0;
-  r.execute("SET", &[b("dst"), b("v")], &mut db)
-    .await
-    .unwrap();
-  r.execute("RPUSH", &[b("src"), b("a")], &mut db)
-    .await
-    .unwrap();
-  let err = r
-    .execute(
-      "LMOVE",
-      &[b("src"), b("dst"), b("LEFT"), b("RIGHT")],
-      &mut db,
-    )
-    .await
-    .unwrap_err();
-  assert!(err.to_string().contains("WRONGTYPE"));
+    let r = router();
+    let mut db = 0;
+    r.execute("SET", &[b("dst"), b("v")], &mut db)
+        .await
+        .unwrap();
+    r.execute("RPUSH", &[b("src"), b("a")], &mut db)
+        .await
+        .unwrap();
+    let err = r
+        .execute(
+            "LMOVE",
+            &[b("src"), b("dst"), b("LEFT"), b("RIGHT")],
+            &mut db,
+        )
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("WRONGTYPE"));
 }
 
 #[tokio::test]
 async fn test_lpos_basic() {
-  let r = router();
-  let mut db = 0;
-  r.execute("RPUSH", &[b("l"), b("a"), b("b"), b("c"), b("b")], &mut db)
-    .await
-    .unwrap();
-  assert_int(
-    r.execute("LPOS", &[b("l"), b("b")], &mut db).await.unwrap(),
-    1,
-  );
+    let r = router();
+    let mut db = 0;
+    r.execute("RPUSH", &[b("l"), b("a"), b("b"), b("c"), b("b")], &mut db)
+        .await
+        .unwrap();
+    assert_int(
+        r.execute("LPOS", &[b("l"), b("b")], &mut db).await.unwrap(),
+        1,
+    );
 }
 
 #[tokio::test]
 async fn test_lpos_rank_zero() {
-  let r = router();
-  let mut db = 0;
-  r.execute("RPUSH", &[b("l"), b("a"), b("b")], &mut db)
-    .await
-    .unwrap();
-  let err = r
-    .execute("LPOS", &[b("l"), b("b"), b("RANK"), b("0")], &mut db)
-    .await
-    .unwrap_err();
-  assert!(err.to_string().contains("RANK can't be zero"));
+    let r = router();
+    let mut db = 0;
+    r.execute("RPUSH", &[b("l"), b("a"), b("b")], &mut db)
+        .await
+        .unwrap();
+    let err = r
+        .execute("LPOS", &[b("l"), b("b"), b("RANK"), b("0")], &mut db)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("RANK can't be zero"));
 }

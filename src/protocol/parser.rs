@@ -16,601 +16,600 @@ const DEFAULT_MAX_LINE_LEN: usize = 1024 * 1024;
 /// RESP 帧解析器
 #[derive(Debug)]
 pub struct RespParser {
-  buffer: BytesMut,
-  max_bulk_len: usize,
-  max_buffer_size: usize,
-  max_parse_depth: u8,
-  max_array_len: usize,
-  max_line_len: usize,
-}
-
-impl RespParser {
-  pub fn new() -> Self {
-    Self {
-      buffer: BytesMut::with_capacity(8192),
-      max_bulk_len: DEFAULT_MAX_BULK_LEN,
-      max_buffer_size: DEFAULT_MAX_BUFFER_SIZE,
-      max_parse_depth: DEFAULT_MAX_PARSE_DEPTH,
-      max_array_len: DEFAULT_MAX_ARRAY_LEN,
-      max_line_len: DEFAULT_MAX_LINE_LEN,
-    }
-  }
-
-  pub fn with_limits(
+    buffer: BytesMut,
     max_bulk_len: usize,
     max_buffer_size: usize,
     max_parse_depth: u8,
     max_array_len: usize,
     max_line_len: usize,
-  ) -> Self {
-    Self {
-      buffer: BytesMut::with_capacity(8192),
-      max_bulk_len,
-      max_buffer_size,
-      max_parse_depth,
-      max_array_len,
-      max_line_len,
+}
+
+impl RespParser {
+    pub fn new() -> Self {
+        Self {
+            buffer: BytesMut::with_capacity(8192),
+            max_bulk_len: DEFAULT_MAX_BULK_LEN,
+            max_buffer_size: DEFAULT_MAX_BUFFER_SIZE,
+            max_parse_depth: DEFAULT_MAX_PARSE_DEPTH,
+            max_array_len: DEFAULT_MAX_ARRAY_LEN,
+            max_line_len: DEFAULT_MAX_LINE_LEN,
+        }
     }
-  }
 
-  pub fn feed(&mut self, data: &[u8]) {
-    self.buffer.extend_from_slice(data);
-  }
-
-  pub fn buffer_len(&self) -> usize {
-    self.buffer.len()
-  }
-
-  pub fn max_buffer_size(&self) -> usize {
-    self.max_buffer_size
-  }
-
-  /// 尝试从 buffer 头部解析一个完整帧
-  pub fn parse(&mut self) -> Result<Option<RespValue>> {
-    if self.buffer.is_empty() {
-      return Ok(None);
+    pub fn with_limits(
+        max_bulk_len: usize,
+        max_buffer_size: usize,
+        max_parse_depth: u8,
+        max_array_len: usize,
+        max_line_len: usize,
+    ) -> Self {
+        Self {
+            buffer: BytesMut::with_capacity(8192),
+            max_bulk_len,
+            max_buffer_size,
+            max_parse_depth,
+            max_array_len,
+            max_line_len,
+        }
     }
-    let start_len = self.buffer.len();
-    let mut cursor = Cursor::new(&self.buffer[..]);
-    match parse_value(&mut cursor, 0, self) {
-      Ok(Some(value)) => {
-        let consumed = cursor.position() as usize;
-        self.buffer.advance(consumed);
-        Ok(Some(value))
-      }
-      Ok(None) => Ok(None),
-      Err(e) if is_recoverable(&e) => {
-        self.buffer.advance(1);
-        Err(e)
-      }
-      Err(e) => {
-        let _ = start_len;
-        Err(e)
-      }
+
+    pub fn feed(&mut self, data: &[u8]) {
+        self.buffer.extend_from_slice(data);
     }
-  }
+
+    pub fn buffer_len(&self) -> usize {
+        self.buffer.len()
+    }
+
+    pub fn max_buffer_size(&self) -> usize {
+        self.max_buffer_size
+    }
+
+    /// 尝试从 buffer 头部解析一个完整帧
+    pub fn parse(&mut self) -> Result<Option<RespValue>> {
+        if self.buffer.is_empty() {
+            return Ok(None);
+        }
+        let start_len = self.buffer.len();
+        let mut cursor = Cursor::new(&self.buffer[..]);
+        match parse_value(&mut cursor, 0, self) {
+            Ok(Some(value)) => {
+                let consumed = cursor.position() as usize;
+                self.buffer.advance(consumed);
+                Ok(Some(value))
+            }
+            Ok(None) => Ok(None),
+            Err(e) if is_recoverable(&e) => {
+                self.buffer.advance(1);
+                Err(e)
+            }
+            Err(e) => {
+                let _ = start_len;
+                Err(e)
+            }
+        }
+    }
 }
 
 impl Default for RespParser {
-  fn default() -> Self {
-    Self::new()
-  }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 fn is_recoverable(err: &Error) -> bool {
-  match err {
-    Error::Protocol(msg) => {
-      !msg.contains("depth")
-        && !msg.contains("too large")
-        && !msg.contains("buffer size")
-        && !msg.contains("line too long")
-        && !msg.contains("length overflow")
-        && !msg.contains("invalid bulk length")
-        && !msg.contains("invalid array length")
-        && !msg.contains("invalid map length")
-        && !msg.contains("invalid set length")
-        && !msg.contains("invalid push length")
-        && !msg.contains("invalid attribute length")
-        && !msg.contains("invalid verbatim length")
-        && !msg.contains("invalid bulk error length")
-        && !msg.contains("length mismatch")
-        && !msg.contains("malformed verbatim")
+    match err {
+        Error::Protocol(msg) => {
+            !msg.contains("depth")
+                && !msg.contains("too large")
+                && !msg.contains("buffer size")
+                && !msg.contains("line too long")
+                && !msg.contains("length overflow")
+                && !msg.contains("invalid bulk length")
+                && !msg.contains("invalid array length")
+                && !msg.contains("invalid map length")
+                && !msg.contains("invalid set length")
+                && !msg.contains("invalid push length")
+                && !msg.contains("invalid attribute length")
+                && !msg.contains("invalid verbatim length")
+                && !msg.contains("invalid bulk error length")
+                && !msg.contains("length mismatch")
+                && !msg.contains("malformed verbatim")
+        }
+        _ => false,
     }
-    _ => false,
-  }
 }
 
 fn parse_value(
-  cursor: &mut Cursor<&[u8]>,
-  depth: u8,
-  parser: &RespParser,
+    cursor: &mut Cursor<&[u8]>,
+    depth: u8,
+    parser: &RespParser,
 ) -> Result<Option<RespValue>> {
-  if depth > parser.max_parse_depth {
-    return Err(Error::Protocol("parse depth exceeded".into()));
-  }
-
-  let pos = cursor.position() as usize;
-  let slice = cursor.get_ref();
-  if pos >= slice.len() {
-    return Ok(None);
-  }
-
-  let marker = slice[pos];
-  cursor.set_position((pos + 1) as u64);
-
-  match marker {
-    b'+' => read_line(cursor, parser).map(|o| o.map(RespValue::SimpleString)),
-    b'-' => read_line(cursor, parser).map(|o| o.map(RespValue::Error)),
-    b':' => read_line(cursor, parser).and_then(|o| match o {
-      None => Ok(None),
-      Some(s) => s
-        .parse::<i64>()
-        .map(RespValue::Integer)
-        .map(Some)
-        .map_err(|_| Error::Protocol(format!("invalid integer: {s}"))),
-    }),
-    b'$' => parse_dollar(cursor, depth, parser),
-    b'*' => parse_array(cursor, depth, parser),
-    b'_' => read_crlf(cursor).map(|o| o.map(|()| RespValue::Null)),
-    b'#' => parse_boolean(cursor),
-    b',' => parse_double(cursor, parser),
-    b'(' => read_line(cursor, parser).map(|o| o.map(RespValue::BigNumber)),
-    b'!' => parse_bulk_error(cursor, parser).map(|o| o.map(RespValue::BulkError)),
-    b'=' => parse_verbatim_string(cursor, parser),
-    b'%' => parse_map(cursor, depth, parser),
-    b'~' => parse_set(cursor, depth, parser),
-    b'>' => parse_push(cursor, depth, parser),
-    b'|' => parse_attribute(cursor, depth, parser),
-    b';' => Err(Error::Protocol("unexpected streamed chunk marker".into())),
-    _ => Err(Error::Protocol(format!("unknown type marker: {marker}"))),
-  }
-}
-
-fn read_line(cursor: &mut Cursor<&[u8]>, parser: &RespParser) -> Result<Option<String>> {
-  let start = cursor.position() as usize;
-  let slice = cursor.get_ref();
-  if start >= slice.len() {
-    return Ok(None);
-  }
-  let remaining = &slice[start..];
-  match remaining.iter().position(|&b| b == b'\r') {
-    Some(cr_pos) if cr_pos + 1 < remaining.len() && remaining[cr_pos + 1] == b'\n' => {
-      if cr_pos > parser.max_line_len {
-        return Err(Error::Protocol("line too long".into()));
-      }
-      let line = std::str::from_utf8(&remaining[..cr_pos])
-        .map_err(|_| Error::Protocol("invalid utf-8 in line".into()))?
-        .to_string();
-      cursor.set_position((start + cr_pos + 2) as u64);
-      Ok(Some(line))
+    if depth > parser.max_parse_depth {
+        return Err(Error::Protocol("parse depth exceeded".into()));
     }
-    Some(_) => {
-      cursor.set_position(start as u64);
-      Ok(None)
-    }
-    None => {
-      if remaining.len() > parser.max_line_len {
-        return Err(Error::Protocol("line too long".into()));
-      }
-      cursor.set_position(start as u64);
-      Ok(None)
-    }
-  }
-}
 
-fn read_crlf(cursor: &mut Cursor<&[u8]>) -> Result<Option<()>> {
-  let start = cursor.position() as usize;
-  let slice = cursor.get_ref();
-  if start + 2 > slice.len() {
-    cursor.set_position(start as u64);
-    return Ok(None);
-  }
-  if slice[start] == b'\r' && slice[start + 1] == b'\n' {
-    cursor.set_position((start + 2) as u64);
-    Ok(Some(()))
-  } else {
-    Err(Error::Protocol("expected CRLF".into()))
-  }
-}
-
-fn parse_length(cursor: &mut Cursor<&[u8]>, parser: &RespParser) -> Result<Option<i64>> {
-  let line = match read_line(cursor, parser)? {
-    Some(l) => l,
-    None => return Ok(None),
-  };
-  line
-    .parse::<i64>()
-    .map(Some)
-    .map_err(|_| Error::Protocol("length overflow".into()))
-}
-
-fn parse_bulk(
-  cursor: &mut Cursor<&[u8]>,
-  len: usize,
-  parser: &RespParser,
-) -> Result<Option<Bytes>> {
-  if len > parser.max_bulk_len {
-    return Err(Error::Protocol("bulk string too large".into()));
-  }
-  let start = cursor.position() as usize;
-  let slice = cursor.get_ref();
-  if start + len + 2 > slice.len() {
-    cursor.set_position(start as u64);
-    return Ok(None);
-  }
-  if slice[start + len] != b'\r' || slice[start + len + 1] != b'\n' {
-    return Err(Error::Protocol("bulk string length mismatch".into()));
-  }
-  let data = Bytes::copy_from_slice(&slice[start..start + len]);
-  cursor.set_position((start + len + 2) as u64);
-  Ok(Some(data))
-}
-
-fn parse_dollar(
-  cursor: &mut Cursor<&[u8]>,
-  _depth: u8,
-  parser: &RespParser,
-) -> Result<Option<RespValue>> {
-  let marker_pos = cursor.position() as usize - 1;
-  let slice = cursor.get_ref();
-  let after_dollar = marker_pos + 1;
-  if after_dollar < slice.len() && slice[after_dollar] == b'?' {
-    cursor.set_position((after_dollar + 1) as u64);
-    if read_crlf(cursor)?.is_none() {
-      cursor.set_position(marker_pos as u64);
-      return Ok(None);
-    }
-    return parse_streamed_string(cursor, parser);
-  }
-
-  let saved = cursor.position();
-  let len = match parse_length(cursor, parser)? {
-    Some(l) => l,
-    None => {
-      cursor.set_position(marker_pos as u64);
-      return Ok(None);
-    }
-  };
-
-  if len == -1 {
-    return Ok(Some(RespValue::BulkString(None)));
-  }
-  if len < -1 {
-    return Err(Error::Protocol(format!("invalid bulk length: {len}")));
-  }
-  let len = len as usize;
-  match parse_bulk(cursor, len, parser)? {
-    Some(data) => Ok(Some(RespValue::BulkString(Some(data)))),
-    None => {
-      cursor.set_position(saved - 1);
-      Ok(None)
-    }
-  }
-}
-
-fn parse_streamed_string(
-  cursor: &mut Cursor<&[u8]>,
-  parser: &RespParser,
-) -> Result<Option<RespValue>> {
-  let mut chunks = Vec::new();
-  loop {
     let pos = cursor.position() as usize;
     let slice = cursor.get_ref();
     if pos >= slice.len() {
-      return Ok(None);
+        return Ok(None);
     }
-    if slice[pos] != b';' {
-      return Err(Error::Protocol("expected streamed chunk".into()));
-    }
+
+    let marker = slice[pos];
     cursor.set_position((pos + 1) as u64);
+
+    match marker {
+        b'+' => read_line(cursor, parser).map(|o| o.map(RespValue::SimpleString)),
+        b'-' => read_line(cursor, parser).map(|o| o.map(RespValue::Error)),
+        b':' => read_line(cursor, parser).and_then(|o| match o {
+            None => Ok(None),
+            Some(s) => s
+                .parse::<i64>()
+                .map(RespValue::Integer)
+                .map(Some)
+                .map_err(|_| Error::Protocol(format!("invalid integer: {s}"))),
+        }),
+        b'$' => parse_dollar(cursor, depth, parser),
+        b'*' => parse_array(cursor, depth, parser),
+        b'_' => read_crlf(cursor).map(|o| o.map(|()| RespValue::Null)),
+        b'#' => parse_boolean(cursor),
+        b',' => parse_double(cursor, parser),
+        b'(' => read_line(cursor, parser).map(|o| o.map(RespValue::BigNumber)),
+        b'!' => parse_bulk_error(cursor, parser).map(|o| o.map(RespValue::BulkError)),
+        b'=' => parse_verbatim_string(cursor, parser),
+        b'%' => parse_map(cursor, depth, parser),
+        b'~' => parse_set(cursor, depth, parser),
+        b'>' => parse_push(cursor, depth, parser),
+        b'|' => parse_attribute(cursor, depth, parser),
+        b';' => Err(Error::Protocol("unexpected streamed chunk marker".into())),
+        _ => Err(Error::Protocol(format!("unknown type marker: {marker}"))),
+    }
+}
+
+fn read_line(cursor: &mut Cursor<&[u8]>, parser: &RespParser) -> Result<Option<String>> {
+    let start = cursor.position() as usize;
+    let slice = cursor.get_ref();
+    if start >= slice.len() {
+        return Ok(None);
+    }
+    let remaining = &slice[start..];
+    match remaining.iter().position(|&b| b == b'\r') {
+        Some(cr_pos) if cr_pos + 1 < remaining.len() && remaining[cr_pos + 1] == b'\n' => {
+            if cr_pos > parser.max_line_len {
+                return Err(Error::Protocol("line too long".into()));
+            }
+            let line = std::str::from_utf8(&remaining[..cr_pos])
+                .map_err(|_| Error::Protocol("invalid utf-8 in line".into()))?
+                .to_string();
+            cursor.set_position((start + cr_pos + 2) as u64);
+            Ok(Some(line))
+        }
+        Some(_) => {
+            cursor.set_position(start as u64);
+            Ok(None)
+        }
+        None => {
+            if remaining.len() > parser.max_line_len {
+                return Err(Error::Protocol("line too long".into()));
+            }
+            cursor.set_position(start as u64);
+            Ok(None)
+        }
+    }
+}
+
+fn read_crlf(cursor: &mut Cursor<&[u8]>) -> Result<Option<()>> {
+    let start = cursor.position() as usize;
+    let slice = cursor.get_ref();
+    if start + 2 > slice.len() {
+        cursor.set_position(start as u64);
+        return Ok(None);
+    }
+    if slice[start] == b'\r' && slice[start + 1] == b'\n' {
+        cursor.set_position((start + 2) as u64);
+        Ok(Some(()))
+    } else {
+        Err(Error::Protocol("expected CRLF".into()))
+    }
+}
+
+fn parse_length(cursor: &mut Cursor<&[u8]>, parser: &RespParser) -> Result<Option<i64>> {
+    let line = match read_line(cursor, parser)? {
+        Some(l) => l,
+        None => return Ok(None),
+    };
+    line.parse::<i64>()
+        .map(Some)
+        .map_err(|_| Error::Protocol("length overflow".into()))
+}
+
+fn parse_bulk(
+    cursor: &mut Cursor<&[u8]>,
+    len: usize,
+    parser: &RespParser,
+) -> Result<Option<Bytes>> {
+    if len > parser.max_bulk_len {
+        return Err(Error::Protocol("bulk string too large".into()));
+    }
+    let start = cursor.position() as usize;
+    let slice = cursor.get_ref();
+    if start + len + 2 > slice.len() {
+        cursor.set_position(start as u64);
+        return Ok(None);
+    }
+    if slice[start + len] != b'\r' || slice[start + len + 1] != b'\n' {
+        return Err(Error::Protocol("bulk string length mismatch".into()));
+    }
+    let data = Bytes::copy_from_slice(&slice[start..start + len]);
+    cursor.set_position((start + len + 2) as u64);
+    Ok(Some(data))
+}
+
+fn parse_dollar(
+    cursor: &mut Cursor<&[u8]>,
+    _depth: u8,
+    parser: &RespParser,
+) -> Result<Option<RespValue>> {
+    let marker_pos = cursor.position() as usize - 1;
+    let slice = cursor.get_ref();
+    let after_dollar = marker_pos + 1;
+    if after_dollar < slice.len() && slice[after_dollar] == b'?' {
+        cursor.set_position((after_dollar + 1) as u64);
+        if read_crlf(cursor)?.is_none() {
+            cursor.set_position(marker_pos as u64);
+            return Ok(None);
+        }
+        return parse_streamed_string(cursor, parser);
+    }
+
+    let saved = cursor.position();
     let len = match parse_length(cursor, parser)? {
-      Some(l) => l,
-      None => {
-        cursor.set_position(pos as u64);
-        return Ok(None);
-      }
+        Some(l) => l,
+        None => {
+            cursor.set_position(marker_pos as u64);
+            return Ok(None);
+        }
     };
-    if len < 0 {
-      return Err(Error::Protocol("invalid streamed chunk length".into()));
+
+    if len == -1 {
+        return Ok(Some(RespValue::BulkString(None)));
     }
-    if len == 0 {
-      return Ok(Some(RespValue::StreamedString(chunks)));
+    if len < -1 {
+        return Err(Error::Protocol(format!("invalid bulk length: {len}")));
     }
-    let chunk = match parse_bulk(cursor, len as usize, parser)? {
-      Some(c) => c,
-      None => {
-        cursor.set_position(pos as u64);
-        return Ok(None);
-      }
-    };
-    chunks.push(chunk);
-  }
+    let len = len as usize;
+    match parse_bulk(cursor, len, parser)? {
+        Some(data) => Ok(Some(RespValue::BulkString(Some(data)))),
+        None => {
+            cursor.set_position(saved - 1);
+            Ok(None)
+        }
+    }
+}
+
+fn parse_streamed_string(
+    cursor: &mut Cursor<&[u8]>,
+    parser: &RespParser,
+) -> Result<Option<RespValue>> {
+    let mut chunks = Vec::new();
+    loop {
+        let pos = cursor.position() as usize;
+        let slice = cursor.get_ref();
+        if pos >= slice.len() {
+            return Ok(None);
+        }
+        if slice[pos] != b';' {
+            return Err(Error::Protocol("expected streamed chunk".into()));
+        }
+        cursor.set_position((pos + 1) as u64);
+        let len = match parse_length(cursor, parser)? {
+            Some(l) => l,
+            None => {
+                cursor.set_position(pos as u64);
+                return Ok(None);
+            }
+        };
+        if len < 0 {
+            return Err(Error::Protocol("invalid streamed chunk length".into()));
+        }
+        if len == 0 {
+            return Ok(Some(RespValue::StreamedString(chunks)));
+        }
+        let chunk = match parse_bulk(cursor, len as usize, parser)? {
+            Some(c) => c,
+            None => {
+                cursor.set_position(pos as u64);
+                return Ok(None);
+            }
+        };
+        chunks.push(chunk);
+    }
 }
 
 fn parse_array(
-  cursor: &mut Cursor<&[u8]>,
-  depth: u8,
-  parser: &RespParser,
+    cursor: &mut Cursor<&[u8]>,
+    depth: u8,
+    parser: &RespParser,
 ) -> Result<Option<RespValue>> {
-  let saved = cursor.position() - 1;
-  let len = match parse_length(cursor, parser)? {
-    Some(l) => l,
-    None => {
-      cursor.set_position(saved);
-      return Ok(None);
+    let saved = cursor.position() - 1;
+    let len = match parse_length(cursor, parser)? {
+        Some(l) => l,
+        None => {
+            cursor.set_position(saved);
+            return Ok(None);
+        }
+    };
+    if len == -1 {
+        return Ok(Some(RespValue::Array(None)));
     }
-  };
-  if len == -1 {
-    return Ok(Some(RespValue::Array(None)));
-  }
-  if len < -1 {
-    return Err(Error::Protocol(format!("invalid array length: {len}")));
-  }
-  let len = len as usize;
-  if len > parser.max_array_len {
-    return Err(Error::Protocol("array too large".into()));
-  }
-  let mut items = Vec::with_capacity(len.min(1024));
-  for _ in 0..len {
-    match parse_value(cursor, depth + 1, parser)? {
-      Some(v) => items.push(v),
-      None => {
-        cursor.set_position(saved);
-        return Ok(None);
-      }
+    if len < -1 {
+        return Err(Error::Protocol(format!("invalid array length: {len}")));
     }
-  }
-  Ok(Some(RespValue::Array(Some(items))))
+    let len = len as usize;
+    if len > parser.max_array_len {
+        return Err(Error::Protocol("array too large".into()));
+    }
+    let mut items = Vec::with_capacity(len.min(1024));
+    for _ in 0..len {
+        match parse_value(cursor, depth + 1, parser)? {
+            Some(v) => items.push(v),
+            None => {
+                cursor.set_position(saved);
+                return Ok(None);
+            }
+        }
+    }
+    Ok(Some(RespValue::Array(Some(items))))
 }
 
 fn parse_map(
-  cursor: &mut Cursor<&[u8]>,
-  depth: u8,
-  parser: &RespParser,
+    cursor: &mut Cursor<&[u8]>,
+    depth: u8,
+    parser: &RespParser,
 ) -> Result<Option<RespValue>> {
-  let saved = cursor.position() - 1;
-  let len = match parse_length(cursor, parser)? {
-    Some(l) => l,
-    None => {
-      cursor.set_position(saved);
-      return Ok(None);
+    let saved = cursor.position() - 1;
+    let len = match parse_length(cursor, parser)? {
+        Some(l) => l,
+        None => {
+            cursor.set_position(saved);
+            return Ok(None);
+        }
+    };
+    if len < 0 {
+        return Err(Error::Protocol(format!("invalid map length: {len}")));
     }
-  };
-  if len < 0 {
-    return Err(Error::Protocol(format!("invalid map length: {len}")));
-  }
-  let len = len as usize;
-  if len > parser.max_array_len {
-    return Err(Error::Protocol("map too large".into()));
-  }
-  let mut pairs = Vec::with_capacity(len.min(1024));
-  for _ in 0..len {
-    let key = match parse_value(cursor, depth + 1, parser)? {
-      Some(v) => v,
-      None => {
-        cursor.set_position(saved);
-        return Ok(None);
-      }
-    };
-    let val = match parse_value(cursor, depth + 1, parser)? {
-      Some(v) => v,
-      None => {
-        cursor.set_position(saved);
-        return Ok(None);
-      }
-    };
-    pairs.push((key, val));
-  }
-  Ok(Some(RespValue::Map(pairs)))
+    let len = len as usize;
+    if len > parser.max_array_len {
+        return Err(Error::Protocol("map too large".into()));
+    }
+    let mut pairs = Vec::with_capacity(len.min(1024));
+    for _ in 0..len {
+        let key = match parse_value(cursor, depth + 1, parser)? {
+            Some(v) => v,
+            None => {
+                cursor.set_position(saved);
+                return Ok(None);
+            }
+        };
+        let val = match parse_value(cursor, depth + 1, parser)? {
+            Some(v) => v,
+            None => {
+                cursor.set_position(saved);
+                return Ok(None);
+            }
+        };
+        pairs.push((key, val));
+    }
+    Ok(Some(RespValue::Map(pairs)))
 }
 
 fn parse_set(
-  cursor: &mut Cursor<&[u8]>,
-  depth: u8,
-  parser: &RespParser,
+    cursor: &mut Cursor<&[u8]>,
+    depth: u8,
+    parser: &RespParser,
 ) -> Result<Option<RespValue>> {
-  let saved = cursor.position() - 1;
-  let len = match parse_length(cursor, parser)? {
-    Some(l) => l,
-    None => {
-      cursor.set_position(saved);
-      return Ok(None);
+    let saved = cursor.position() - 1;
+    let len = match parse_length(cursor, parser)? {
+        Some(l) => l,
+        None => {
+            cursor.set_position(saved);
+            return Ok(None);
+        }
+    };
+    if len < 0 {
+        return Err(Error::Protocol(format!("invalid set length: {len}")));
     }
-  };
-  if len < 0 {
-    return Err(Error::Protocol(format!("invalid set length: {len}")));
-  }
-  let len = len as usize;
-  if len > parser.max_array_len {
-    return Err(Error::Protocol("set too large".into()));
-  }
-  let mut items = Vec::with_capacity(len.min(1024));
-  for _ in 0..len {
-    match parse_value(cursor, depth + 1, parser)? {
-      Some(v) => items.push(v),
-      None => {
-        cursor.set_position(saved);
-        return Ok(None);
-      }
+    let len = len as usize;
+    if len > parser.max_array_len {
+        return Err(Error::Protocol("set too large".into()));
     }
-  }
-  Ok(Some(RespValue::Set(items)))
+    let mut items = Vec::with_capacity(len.min(1024));
+    for _ in 0..len {
+        match parse_value(cursor, depth + 1, parser)? {
+            Some(v) => items.push(v),
+            None => {
+                cursor.set_position(saved);
+                return Ok(None);
+            }
+        }
+    }
+    Ok(Some(RespValue::Set(items)))
 }
 
 fn parse_push(
-  cursor: &mut Cursor<&[u8]>,
-  depth: u8,
-  parser: &RespParser,
+    cursor: &mut Cursor<&[u8]>,
+    depth: u8,
+    parser: &RespParser,
 ) -> Result<Option<RespValue>> {
-  let saved = cursor.position() - 1;
-  let len = match parse_length(cursor, parser)? {
-    Some(l) => l,
-    None => {
-      cursor.set_position(saved);
-      return Ok(None);
+    let saved = cursor.position() - 1;
+    let len = match parse_length(cursor, parser)? {
+        Some(l) => l,
+        None => {
+            cursor.set_position(saved);
+            return Ok(None);
+        }
+    };
+    if len < 0 {
+        return Err(Error::Protocol(format!("invalid push length: {len}")));
     }
-  };
-  if len < 0 {
-    return Err(Error::Protocol(format!("invalid push length: {len}")));
-  }
-  let len = len as usize;
-  if len > parser.max_array_len {
-    return Err(Error::Protocol("push too large".into()));
-  }
-  let mut items = Vec::with_capacity(len.min(1024));
-  for _ in 0..len {
-    match parse_value(cursor, depth + 1, parser)? {
-      Some(v) => items.push(v),
-      None => {
-        cursor.set_position(saved);
-        return Ok(None);
-      }
+    let len = len as usize;
+    if len > parser.max_array_len {
+        return Err(Error::Protocol("push too large".into()));
     }
-  }
-  Ok(Some(RespValue::Push(items)))
+    let mut items = Vec::with_capacity(len.min(1024));
+    for _ in 0..len {
+        match parse_value(cursor, depth + 1, parser)? {
+            Some(v) => items.push(v),
+            None => {
+                cursor.set_position(saved);
+                return Ok(None);
+            }
+        }
+    }
+    Ok(Some(RespValue::Push(items)))
 }
 
 fn parse_attribute(
-  cursor: &mut Cursor<&[u8]>,
-  depth: u8,
-  parser: &RespParser,
+    cursor: &mut Cursor<&[u8]>,
+    depth: u8,
+    parser: &RespParser,
 ) -> Result<Option<RespValue>> {
-  let saved = cursor.position() - 1;
-  let len = match parse_length(cursor, parser)? {
-    Some(l) => l,
-    None => {
-      cursor.set_position(saved);
-      return Ok(None);
-    }
-  };
-  if len < 0 {
-    return Err(Error::Protocol(format!("invalid attribute length: {len}")));
-  }
-  let len = len as usize;
-  if len > parser.max_array_len {
-    return Err(Error::Protocol("attribute too large".into()));
-  }
-  let mut attrs = Vec::with_capacity(len.min(1024));
-  for _ in 0..len {
-    let key = match parse_value(cursor, depth + 1, parser)? {
-      Some(v) => v,
-      None => {
-        cursor.set_position(saved);
-        return Ok(None);
-      }
+    let saved = cursor.position() - 1;
+    let len = match parse_length(cursor, parser)? {
+        Some(l) => l,
+        None => {
+            cursor.set_position(saved);
+            return Ok(None);
+        }
     };
-    let val = match parse_value(cursor, depth + 1, parser)? {
-      Some(v) => v,
-      None => {
-        cursor.set_position(saved);
-        return Ok(None);
-      }
-    };
-    attrs.push((key, val));
-  }
-  let data = match parse_value(cursor, depth + 1, parser)? {
-    Some(v) => v,
-    None => {
-      cursor.set_position(saved);
-      return Ok(None);
+    if len < 0 {
+        return Err(Error::Protocol(format!("invalid attribute length: {len}")));
     }
-  };
-  Ok(Some(RespValue::Attribute {
-    attributes: attrs,
-    data: Box::new(data),
-  }))
+    let len = len as usize;
+    if len > parser.max_array_len {
+        return Err(Error::Protocol("attribute too large".into()));
+    }
+    let mut attrs = Vec::with_capacity(len.min(1024));
+    for _ in 0..len {
+        let key = match parse_value(cursor, depth + 1, parser)? {
+            Some(v) => v,
+            None => {
+                cursor.set_position(saved);
+                return Ok(None);
+            }
+        };
+        let val = match parse_value(cursor, depth + 1, parser)? {
+            Some(v) => v,
+            None => {
+                cursor.set_position(saved);
+                return Ok(None);
+            }
+        };
+        attrs.push((key, val));
+    }
+    let data = match parse_value(cursor, depth + 1, parser)? {
+        Some(v) => v,
+        None => {
+            cursor.set_position(saved);
+            return Ok(None);
+        }
+    };
+    Ok(Some(RespValue::Attribute {
+        attributes: attrs,
+        data: Box::new(data),
+    }))
 }
 
 fn parse_boolean(cursor: &mut Cursor<&[u8]>) -> Result<Option<RespValue>> {
-  let start = cursor.position() as usize;
-  let slice = cursor.get_ref();
-  if start + 3 > slice.len() {
-    cursor.set_position(start as u64);
-    return Ok(None);
-  }
-  let val = match &slice[start..start + 3] {
-    b"t\r\n" => true,
-    b"f\r\n" => false,
-    _ => return Err(Error::Protocol("invalid boolean".into())),
-  };
-  cursor.set_position((start + 3) as u64);
-  Ok(Some(RespValue::Boolean(val)))
+    let start = cursor.position() as usize;
+    let slice = cursor.get_ref();
+    if start + 3 > slice.len() {
+        cursor.set_position(start as u64);
+        return Ok(None);
+    }
+    let val = match &slice[start..start + 3] {
+        b"t\r\n" => true,
+        b"f\r\n" => false,
+        _ => return Err(Error::Protocol("invalid boolean".into())),
+    };
+    cursor.set_position((start + 3) as u64);
+    Ok(Some(RespValue::Boolean(val)))
 }
 
 fn parse_double(cursor: &mut Cursor<&[u8]>, parser: &RespParser) -> Result<Option<RespValue>> {
-  let line = match read_line(cursor, parser)? {
-    Some(l) => l,
-    None => return Ok(None),
-  };
-  let d = match line.as_str() {
-    "nan" => f64::NAN,
-    "inf" => f64::INFINITY,
-    "-inf" => f64::NEG_INFINITY,
-    s => s
-      .parse::<f64>()
-      .map_err(|_| Error::Protocol(format!("invalid double: {line}")))?,
-  };
-  Ok(Some(RespValue::Double(d)))
+    let line = match read_line(cursor, parser)? {
+        Some(l) => l,
+        None => return Ok(None),
+    };
+    let d = match line.as_str() {
+        "nan" => f64::NAN,
+        "inf" => f64::INFINITY,
+        "-inf" => f64::NEG_INFINITY,
+        s => s
+            .parse::<f64>()
+            .map_err(|_| Error::Protocol(format!("invalid double: {line}")))?,
+    };
+    Ok(Some(RespValue::Double(d)))
 }
 
 fn parse_bulk_error(cursor: &mut Cursor<&[u8]>, parser: &RespParser) -> Result<Option<String>> {
-  let saved = cursor.position() - 1;
-  let len = match parse_length(cursor, parser)? {
-    Some(l) => l,
-    None => {
-      cursor.set_position(saved);
-      return Ok(None);
+    let saved = cursor.position() - 1;
+    let len = match parse_length(cursor, parser)? {
+        Some(l) => l,
+        None => {
+            cursor.set_position(saved);
+            return Ok(None);
+        }
+    };
+    if len < 0 {
+        return Err(Error::Protocol(format!("invalid bulk error length: {len}")));
     }
-  };
-  if len < 0 {
-    return Err(Error::Protocol(format!("invalid bulk error length: {len}")));
-  }
-  let data = match parse_bulk(cursor, len as usize, parser)? {
-    Some(d) => d,
-    None => {
-      cursor.set_position(saved);
-      return Ok(None);
-    }
-  };
-  Ok(Some(
-    std::str::from_utf8(&data)
-      .map_err(|_| Error::Protocol("invalid utf-8 in bulk error".into()))?
-      .to_string(),
-  ))
+    let data = match parse_bulk(cursor, len as usize, parser)? {
+        Some(d) => d,
+        None => {
+            cursor.set_position(saved);
+            return Ok(None);
+        }
+    };
+    Ok(Some(
+        std::str::from_utf8(&data)
+            .map_err(|_| Error::Protocol("invalid utf-8 in bulk error".into()))?
+            .to_string(),
+    ))
 }
 
 fn parse_verbatim_string(
-  cursor: &mut Cursor<&[u8]>,
-  parser: &RespParser,
+    cursor: &mut Cursor<&[u8]>,
+    parser: &RespParser,
 ) -> Result<Option<RespValue>> {
-  let saved = cursor.position() - 1;
-  let len = match parse_length(cursor, parser)? {
-    Some(l) => l,
-    None => {
-      cursor.set_position(saved);
-      return Ok(None);
+    let saved = cursor.position() - 1;
+    let len = match parse_length(cursor, parser)? {
+        Some(l) => l,
+        None => {
+            cursor.set_position(saved);
+            return Ok(None);
+        }
+    };
+    if len < 0 {
+        return Err(Error::Protocol(format!("invalid verbatim length: {len}")));
     }
-  };
-  if len < 0 {
-    return Err(Error::Protocol(format!("invalid verbatim length: {len}")));
-  }
-  let data = match parse_bulk(cursor, len as usize, parser)? {
-    Some(d) => d,
-    None => {
-      cursor.set_position(saved);
-      return Ok(None);
+    let data = match parse_bulk(cursor, len as usize, parser)? {
+        Some(d) => d,
+        None => {
+            cursor.set_position(saved);
+            return Ok(None);
+        }
+    };
+    let s = std::str::from_utf8(&data)
+        .map_err(|_| Error::Protocol("invalid utf-8 in verbatim string".into()))?;
+    let Some((format, rest)) = s.split_once(':') else {
+        return Err(Error::Protocol("malformed verbatim string".into()));
+    };
+    if format.len() != 3 {
+        return Err(Error::Protocol("malformed verbatim string format".into()));
     }
-  };
-  let s = std::str::from_utf8(&data)
-    .map_err(|_| Error::Protocol("invalid utf-8 in verbatim string".into()))?;
-  let Some((format, rest)) = s.split_once(':') else {
-    return Err(Error::Protocol("malformed verbatim string".into()));
-  };
-  if format.len() != 3 {
-    return Err(Error::Protocol("malformed verbatim string format".into()));
-  }
-  Ok(Some(RespValue::VerbatimString {
-    format: format.to_string(),
-    data: Bytes::copy_from_slice(rest.as_bytes()),
-  }))
+    Ok(Some(RespValue::VerbatimString {
+        format: format.to_string(),
+        data: Bytes::copy_from_slice(rest.as_bytes()),
+    }))
 }

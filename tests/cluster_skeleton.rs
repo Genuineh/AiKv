@@ -2,5 +2,5 @@
 #[test]
 #[cfg(feature = "cluster")]
 fn cluster_module_exists() {
-  let _ = aikv::cluster::state::CLUSTER_STATE_MGR.get();
+    let _ = aikv::cluster::state::CLUSTER_STATE_MGR.get();
 }

@@ -9,179 +9,173 @@ use crate::storage::{now_ms, KvStorage, StoredValue, ValueType, WRONGTYPE};
 
 #[derive(Debug, Clone)]
 pub enum ExtendedBatchOp {
-  SetString(Vec<u8>),
-  SetList(VecDeque<Vec<u8>>),
-  SetHash(HashMap<Vec<u8>, Vec<u8>>),
-  SetSet(HashSet<Vec<u8>>),
-  SetZSet(BTreeMap<Vec<u8>, f64>),
-  Delete,
+    SetString(Vec<u8>),
+    SetList(VecDeque<Vec<u8>>),
+    SetHash(HashMap<Vec<u8>, Vec<u8>>),
+    SetSet(HashSet<Vec<u8>>),
+    SetZSet(BTreeMap<Vec<u8>, f64>),
+    Delete,
 }
 
 pub struct ScriptTransaction {
-  pub db_index: usize,
-  write_buffer: HashMap<Vec<u8>, ExtendedBatchOp>,
-  /// 显式 TTL 更新: Some(ts) = 过期时间; None = 清除 TTL
-  expire_at: HashMap<Vec<u8>, Option<u64>>,
+    pub db_index: usize,
+    write_buffer: HashMap<Vec<u8>, ExtendedBatchOp>,
+    /// 显式 TTL 更新: Some(ts) = 过期时间; None = 清除 TTL
+    expire_at: HashMap<Vec<u8>, Option<u64>>,
 }
 
 impl ScriptTransaction {
-  pub fn new(db_index: usize) -> Self {
-    Self {
-      db_index,
-      write_buffer: HashMap::new(),
-      expire_at: HashMap::new(),
+    pub fn new(db_index: usize) -> Self {
+        Self {
+            db_index,
+            write_buffer: HashMap::new(),
+            expire_at: HashMap::new(),
+        }
     }
-  }
 
-  pub fn set_string(&mut self, key: Vec<u8>, value: Vec<u8>) {
-    self
-      .write_buffer
-      .insert(key, ExtendedBatchOp::SetString(value));
-  }
-
-  pub fn set_list(&mut self, key: Vec<u8>, list: VecDeque<Vec<u8>>) {
-    self
-      .write_buffer
-      .insert(key, ExtendedBatchOp::SetList(list));
-  }
-
-  pub fn set_hash(&mut self, key: Vec<u8>, hash: HashMap<Vec<u8>, Vec<u8>>) {
-    self
-      .write_buffer
-      .insert(key, ExtendedBatchOp::SetHash(hash));
-  }
-
-  pub fn set_set(&mut self, key: Vec<u8>, set: HashSet<Vec<u8>>) {
-    self.write_buffer.insert(key, ExtendedBatchOp::SetSet(set));
-  }
-
-  pub fn set_zset(&mut self, key: Vec<u8>, zset: BTreeMap<Vec<u8>, f64>) {
-    self
-      .write_buffer
-      .insert(key, ExtendedBatchOp::SetZSet(zset));
-  }
-
-  pub fn delete(&mut self, key: Vec<u8>) {
-    self.write_buffer.insert(key, ExtendedBatchOp::Delete);
-  }
-
-  pub fn set_expire_at(&mut self, key: Vec<u8>, expires_at: Option<u64>) {
-    self.expire_at.insert(key, expires_at);
-  }
-
-  pub async fn get(&self, storage: &dyn KvStorage, key: &[u8]) -> Result<Option<Vec<u8>>> {
-    if let Some(op) = self.write_buffer.get(key) {
-      return match op {
-        ExtendedBatchOp::SetString(v) => Ok(Some(v.clone())),
-        ExtendedBatchOp::Delete => Ok(None),
-        _ => Err(Error::Command(WRONGTYPE.into())),
-      };
+    pub fn set_string(&mut self, key: Vec<u8>, value: Vec<u8>) {
+        self.write_buffer
+            .insert(key, ExtendedBatchOp::SetString(value));
     }
-    storage.get(self.db_index, key).await
-  }
 
-  pub async fn get_value(
-    &self,
-    storage: &dyn KvStorage,
-    key: &[u8],
-  ) -> Result<Option<StoredValue>> {
-    if let Some(op) = self.write_buffer.get(key) {
-      return match op {
-        ExtendedBatchOp::Delete => Ok(None),
-        _ => Ok(Some(op_to_stored(op)?)),
-      };
+    pub fn set_list(&mut self, key: Vec<u8>, list: VecDeque<Vec<u8>>) {
+        self.write_buffer
+            .insert(key, ExtendedBatchOp::SetList(list));
     }
-    storage.get_typed(self.db_index, key).await
-  }
 
-  pub async fn exists(&self, storage: &dyn KvStorage, key: &[u8]) -> Result<bool> {
-    if let Some(op) = self.write_buffer.get(key) {
-      return Ok(!matches!(op, ExtendedBatchOp::Delete));
+    pub fn set_hash(&mut self, key: Vec<u8>, hash: HashMap<Vec<u8>, Vec<u8>>) {
+        self.write_buffer
+            .insert(key, ExtendedBatchOp::SetHash(hash));
     }
-    storage.exists(self.db_index, key).await
-  }
 
-  async fn resolve_expires_at(&self, storage: &dyn KvStorage, key: &[u8]) -> Result<Option<u64>> {
-    if let Some(exp) = self.expire_at.get(key) {
-      return Ok(*exp);
+    pub fn set_set(&mut self, key: Vec<u8>, set: HashSet<Vec<u8>>) {
+        self.write_buffer.insert(key, ExtendedBatchOp::SetSet(set));
     }
-    Ok(
-      storage
-        .get_typed(self.db_index, key)
-        .await?
-        .and_then(|s| s.expires_at),
-    )
-  }
 
-  pub async fn commit(self, storage: &dyn KvStorage) -> Result<()> {
-    let mut keys: HashSet<Vec<u8>> = self.write_buffer.keys().cloned().collect();
-    keys.extend(self.expire_at.keys().cloned());
+    pub fn set_zset(&mut self, key: Vec<u8>, zset: BTreeMap<Vec<u8>, f64>) {
+        self.write_buffer
+            .insert(key, ExtendedBatchOp::SetZSet(zset));
+    }
 
-    for key in keys {
-      if let Some(op) = self.write_buffer.get(&key) {
-        match op {
-          ExtendedBatchOp::Delete => {
-            storage.delete(self.db_index, &key).await?;
-          }
-          ExtendedBatchOp::SetString(value) => {
-            let exp = self.resolve_expires_at(storage, &key).await?;
-            if let Some(at) = exp {
-              storage.set_with_ttl(self.db_index, &key, value, at).await?;
-            } else {
-              storage.set(self.db_index, &key, value).await?;
+    pub fn delete(&mut self, key: Vec<u8>) {
+        self.write_buffer.insert(key, ExtendedBatchOp::Delete);
+    }
+
+    pub fn set_expire_at(&mut self, key: Vec<u8>, expires_at: Option<u64>) {
+        self.expire_at.insert(key, expires_at);
+    }
+
+    pub async fn get(&self, storage: &dyn KvStorage, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        if let Some(op) = self.write_buffer.get(key) {
+            return match op {
+                ExtendedBatchOp::SetString(v) => Ok(Some(v.clone())),
+                ExtendedBatchOp::Delete => Ok(None),
+                _ => Err(Error::Command(WRONGTYPE.into())),
+            };
+        }
+        storage.get(self.db_index, key).await
+    }
+
+    pub async fn get_value(
+        &self,
+        storage: &dyn KvStorage,
+        key: &[u8],
+    ) -> Result<Option<StoredValue>> {
+        if let Some(op) = self.write_buffer.get(key) {
+            return match op {
+                ExtendedBatchOp::Delete => Ok(None),
+                _ => Ok(Some(op_to_stored(op)?)),
+            };
+        }
+        storage.get_typed(self.db_index, key).await
+    }
+
+    pub async fn exists(&self, storage: &dyn KvStorage, key: &[u8]) -> Result<bool> {
+        if let Some(op) = self.write_buffer.get(key) {
+            return Ok(!matches!(op, ExtendedBatchOp::Delete));
+        }
+        storage.exists(self.db_index, key).await
+    }
+
+    async fn resolve_expires_at(&self, storage: &dyn KvStorage, key: &[u8]) -> Result<Option<u64>> {
+        if let Some(exp) = self.expire_at.get(key) {
+            return Ok(*exp);
+        }
+        Ok(storage
+            .get_typed(self.db_index, key)
+            .await?
+            .and_then(|s| s.expires_at))
+    }
+
+    pub async fn commit(self, storage: &dyn KvStorage) -> Result<()> {
+        let mut keys: HashSet<Vec<u8>> = self.write_buffer.keys().cloned().collect();
+        keys.extend(self.expire_at.keys().cloned());
+
+        for key in keys {
+            if let Some(op) = self.write_buffer.get(&key) {
+                match op {
+                    ExtendedBatchOp::Delete => {
+                        storage.delete(self.db_index, &key).await?;
+                    }
+                    ExtendedBatchOp::SetString(value) => {
+                        let exp = self.resolve_expires_at(storage, &key).await?;
+                        if let Some(at) = exp {
+                            storage.set_with_ttl(self.db_index, &key, value, at).await?;
+                        } else {
+                            storage.set(self.db_index, &key, value).await?;
+                        }
+                    }
+                    _ => {
+                        let mut stored = op_to_stored(op)?;
+                        stored.expires_at = self.resolve_expires_at(storage, &key).await?;
+                        storage.set_typed(self.db_index, &key, stored).await?;
+                    }
+                }
+            } else if self.expire_at.contains_key(&key) {
+                if let Some(mut stored) = storage.get_typed(self.db_index, &key).await? {
+                    stored.expires_at = self.expire_at.get(&key).copied().flatten();
+                    storage.set_typed(self.db_index, &key, stored).await?;
+                }
             }
-          }
-          _ => {
-            let mut stored = op_to_stored(op)?;
-            stored.expires_at = self.resolve_expires_at(storage, &key).await?;
-            storage.set_typed(self.db_index, &key, stored).await?;
-          }
         }
-      } else if self.expire_at.contains_key(&key) {
-        if let Some(mut stored) = storage.get_typed(self.db_index, &key).await? {
-          stored.expires_at = self.expire_at.get(&key).copied().flatten();
-          storage.set_typed(self.db_index, &key, stored).await?;
-        }
-      }
-    }
 
-    // 批量 Delete/Put 无 TTL 的 string 已通过上面逐 key 处理
-    Ok(())
-  }
+        // 批量 Delete/Put 无 TTL 的 string 已通过上面逐 key 处理
+        Ok(())
+    }
 }
 
 fn op_to_stored(op: &ExtendedBatchOp) -> Result<StoredValue> {
-  match op {
-    ExtendedBatchOp::SetString(v) => Ok(StoredValue::string(v.clone())),
-    ExtendedBatchOp::SetList(list) => Ok(StoredValue::new_list(list.clone())),
-    ExtendedBatchOp::SetHash(hash) => Ok(StoredValue {
-      value: ValueType::Hash(hash.clone()),
-      expires_at: None,
-    }),
-    ExtendedBatchOp::SetSet(set) => Ok(StoredValue::new_set(set.clone())),
-    ExtendedBatchOp::SetZSet(zset) => Ok(StoredValue::new_zset(zset.clone())),
-    ExtendedBatchOp::Delete => Err(Error::Command("ERR internal delete op".into())),
-  }
+    match op {
+        ExtendedBatchOp::SetString(v) => Ok(StoredValue::string(v.clone())),
+        ExtendedBatchOp::SetList(list) => Ok(StoredValue::new_list(list.clone())),
+        ExtendedBatchOp::SetHash(hash) => Ok(StoredValue {
+            value: ValueType::Hash(hash.clone()),
+            expires_at: None,
+        }),
+        ExtendedBatchOp::SetSet(set) => Ok(StoredValue::new_set(set.clone())),
+        ExtendedBatchOp::SetZSet(zset) => Ok(StoredValue::new_zset(zset.clone())),
+        ExtendedBatchOp::Delete => Err(Error::Command("ERR internal delete op".into())),
+    }
 }
 
 pub fn parse_i64_arg(b: &Bytes, label: &str) -> Result<i64> {
-  let s =
-    std::str::from_utf8(b).map_err(|_| Error::Command(format!("ERR {label} is not an integer")))?;
-  s.parse::<i64>()
-    .map_err(|_| Error::Command(format!("ERR {label} is not an integer")))
+    let s = std::str::from_utf8(b)
+        .map_err(|_| Error::Command(format!("ERR {label} is not an integer")))?;
+    s.parse::<i64>()
+        .map_err(|_| Error::Command(format!("ERR {label} is not an integer")))
 }
 
 pub fn parse_f64_arg(b: &Bytes, label: &str) -> Result<f64> {
-  let s =
-    std::str::from_utf8(b).map_err(|_| Error::Command(format!("ERR {label} is not a float")))?;
-  s.parse::<f64>()
-    .map_err(|_| Error::Command(format!("ERR {label} is not a float")))
+    let s = std::str::from_utf8(b)
+        .map_err(|_| Error::Command(format!("ERR {label} is not a float")))?;
+    s.parse::<f64>()
+        .map_err(|_| Error::Command(format!("ERR {label} is not a float")))
 }
 
 pub fn expire_seconds_to_at(seconds: i64) -> Option<u64> {
-  if seconds <= 0 {
-    None
-  } else {
-    Some(now_ms().saturating_add(seconds as u64 * 1000))
-  }
+    if seconds <= 0 {
+        None
+    } else {
+        Some(now_ms().saturating_add(seconds as u64 * 1000))
+    }
 }
