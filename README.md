@@ -131,8 +131,8 @@ cargo build --release
 ## 设计文档
 
 - [ARCHITECTURE.md](ARCHITECTURE.md)
+- [DESIGN.md](DESIGN.md)
 - [DEPLOYMENT.md](DEPLOYMENT.md)
-- [docs/superpowers/](docs/superpowers/)
 
 ## 许可
 
