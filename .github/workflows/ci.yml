@@ -1,5 +1,9 @@
 name: CI
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main, new/main, new/wiqun]
@@ -38,7 +42,9 @@ jobs:
       - name: Test
         run: cargo test --workspace --features cluster
 
-  ignored:
+  slow-tests:
+    name: Slow tests (#[ignore])
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,7 +60,7 @@ jobs:
       - name: Link AiDb for path dependency
         run: ln -sf $PWD/.aidb ../aidb
 
-      - name: Test ignored (slow tests)
+      - name: Run #[ignore] tests
         run: cargo test --features cluster -- --ignored --test-threads=1
 
   e2e:

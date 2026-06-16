@@ -15,6 +15,25 @@ src/
 └── cluster/         # Redis 集群协议
 ```
 
+## 工具链与依赖布局
+
+- [`rust-toolchain.toml`](rust-toolchain.toml): stable + clippy/rustfmt, 与 CI 一致.
+- **path 依赖**: `Cargo.toml` 中 `aidb = { path = "../aidb" }`, 本地目录需为 sibling 布局:
+
+```text
+parent/
+├── aidb/    # wiqun/AiDb
+└── aikv/    # wiqun/AiKv
+```
+
+CI 会 checkout 同名分支的 `wiqun/AiDb` 并 `ln -sf` 到 `../aidb`; 只改 aikv 时, 远程也应有对应分支的 AiDb.
+
+推送前安装 pre-commit (fmt + cluster clippy; 不含 test):
+
+```bash
+./install-hooks.sh
+```
+
 ## 构建与测试
 
 ```bash
@@ -44,8 +63,18 @@ cargo build --release
 1. **TDD**: 先写测试 (RED) → 实现 (GREEN) → 重构 (IMPROVE)
 2. **覆盖率**: 保持 80%+
 3. **提交格式**: `type: description` — feat, fix, refactor, test, docs, chore, perf
-4. **PR**: CI 必须通过
+4. **PR**: CI 必须通过 (`ci.yml` + `security.yml`)
 5. **E2E**: 发版前运行 `e2e/test_*.sh`
+
+### CI 任务说明
+
+| Job | 说明 |
+|-----|------|
+| `test` | fmt → clippy (cluster) → 常规测试 |
+| `slow-tests` | `cargo test -- --ignored` — 仅跑带 `#[ignore]` 的慢测/压测 (见 [`tests/README.md`](tests/README.md)) |
+| `e2e` | release 构建 + `e2e/test_cluster_*.sh` (依赖 `test` 通过) |
+
+`#[ignore]` 测试默认被 `cargo test` 跳过; job 名 `slow-tests` 表示用途, 旧 id `ignored` 即 Cargo 的 `--ignored` 标志.
 
 ## 命令参考
 

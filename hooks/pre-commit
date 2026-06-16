@@ -3,6 +3,12 @@ set -euo pipefail
 
 echo "=== pre-commit: aikv ==="
 
+if [[ ! -f ../aidb/Cargo.toml ]]; then
+  echo "ERROR: path dependency ../aidb not found."
+  echo "Clone AiDb as sibling: .../aidb and .../aikv, or: ln -sf /path/to/aidb ../aidb"
+  exit 1
+fi
+
 cargo fmt --check || {
   echo "ERROR: Format check failed. Run 'cargo fmt' to fix."
   exit 1

@@ -39,4 +39,8 @@
 - `test_tcp_malicious_slow_send`
 - `test_tcp_pipeline_large_buffer`
 
-CI 默认跳过; 本地: `cargo test --test server -- --ignored --test-threads=1`
+CI 默认 `test` job 跳过; `slow-tests` job 单独跑 `--ignored`. 本地:
+
+```bash
+cargo test --test server -- --ignored --test-threads=1
+```
