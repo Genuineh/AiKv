@@ -34,13 +34,17 @@
 - `tcp.rs` — PING/ECHO/HELLO + Phase 9 SET/GET/MGET/EXPIRE/SELECT/HSET
 - `observability.rs` — 连接 metrics
 
-## 可选 (#[ignore])
+## 可选慢测 (#[ignore])
 
-- `test_tcp_malicious_slow_send`
-- `test_tcp_pipeline_large_buffer`
+| 测试 | test target | CI job |
+|------|-------------|--------|
+| `test_tcp_malicious_slow_send` | `server` | `test-server-stress` |
+| `test_tcp_pipeline_large_buffer` | `server` | `test-server-stress` |
+| `test_px_expiry_real_wait` | `commands` | `test-commands-slow` |
 
-CI 默认 `test` job 跳过; `slow-tests` job 单独跑 `--ignored`. 本地:
+`test-cluster` 默认跳过上述用例. 本地:
 
 ```bash
-cargo test --test server -- --ignored --test-threads=1
+cargo test --test server --features cluster -- --ignored --test-threads=1
+cargo test --test commands --features cluster -- --ignored --test-threads=1
 ```

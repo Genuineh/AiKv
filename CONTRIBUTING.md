@@ -70,11 +70,12 @@ cargo build --release
 
 | Job | 说明 |
 |-----|------|
-| `test` | fmt → clippy (cluster) → 常规测试 |
-| `slow-tests` | `cargo test -- --ignored` — 仅跑带 `#[ignore]` 的慢测/压测 (见 [`tests/README.md`](tests/README.md)) |
-| `e2e` | release 构建 + `e2e/test_cluster_*.sh` (依赖 `test` 通过) |
+| `test-cluster` | fmt → clippy (cluster) → 常规测试 |
+| `test-server-stress` | `--test server -- --ignored` — TCP 慢发送 / 大 pipeline 压测 |
+| `test-commands-slow` | `--test commands -- --ignored` — 真实等待的 TTL 慢测 |
+| `e2e` | release 构建 + `e2e/test_cluster_*.sh` (依赖 `test-cluster` 通过) |
 
-`#[ignore]` 测试默认被 `cargo test` 跳过; job 名 `slow-tests` 表示用途, 旧 id `ignored` 即 Cargo 的 `--ignored` 标志.
+带 `#[ignore]` 的用例默认不进 `test-cluster`; 上表两个 job 按 test target 补跑, 命名与 aidb 的 `test-default` / `test-cluster` 同一思路.
 
 ## 命令参考
 
