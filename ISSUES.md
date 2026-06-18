@@ -126,7 +126,7 @@
 - **旧文档**: `aikv-oldmain/docs/development/api/02-cluster-api.md`, `03-cluster.md` §METARAFT
 - **oldmain 代码**: `aikv-oldmain/src/server/connection.rs` — ADDLEARNER/PROMOTE/MEMBERS/STATUS/SETSTATUS
 - **现象**: 重构后 MetaRaft 运维不在 aikv CLUSTER 子命令暴露; 由 aidb gRPC/内部 API 承担
-- **影响**: module 一行指向 [aidb cluster.md](../../aidb/docs/modules/cluster.md); 勿写 aikv 支持 METARAFT
+- **影响**: module 一行指向 [aidb cluster.md](../aidb/docs/modules/cluster.md); 勿写 aikv 支持 METARAFT
 - **下一步**: doc-only
 
 ### ISSUE-014: GossipState 后台刷新但未接入 CLUSTER NODES

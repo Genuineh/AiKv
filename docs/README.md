@@ -7,7 +7,7 @@
 - **首次了解** — [README.md](../README.md) → [ARCHITECTURE.md](../ARCHITECTURE.md) → 按需打开下方 modules
 - **改某域代码** — 查 [按域阅读](#按域阅读-modules) WHEN → 对应 module; 跨域边界见 module 内「不覆盖」
 - **构建 / 测试 / PR** — [DEPLOYMENT.md](../DEPLOYMENT.md) + [CONTRIBUTING.md](../CONTRIBUTING.md); AI 助手速览见 [AGENTS.md](../AGENTS.md)
-- **底层 LSM / Raft** — 存储与共识在 sibling [AiDb](../aidb/docs/README.md); AiKv 侧重 RESP 与命令层
+- **底层 LSM / Raft** — 存储与共识在 sibling [AiDb](../../aidb/docs/README.md); AiKv 侧重 RESP 与命令层
 
 ## 汇总文档
 

@@ -5,7 +5,7 @@ description: AiKv Prometheus aikv_* metric catalog and INFO field cross-referenc
 
 # AiKv Observability Reference
 
-> 主文档: [observability.md](observability.md). `aidb_*` → [aidb observability.md](../../aidb/docs/modules/observability.md).
+> 主文档: [observability.md](observability.md). `aidb_*` → [aidb observability.md](../../../aidb/docs/modules/observability.md).
 
 ## aikv_* 指标 (`Metrics`, monitoring + 可选 cluster)
 

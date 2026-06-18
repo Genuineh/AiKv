@@ -13,7 +13,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 - **不覆盖**: TCP 连接循环与内联命令 → [server.md](server.md)
 - **不覆盖**: INFO/SLOWLOG/LATENCY/COMMAND **命令 dispatch** → [commands-extended.md](commands-extended.md)
 - **不覆盖**: MOVED/ASK、CLUSTER 子命令语义 → [cluster.md](cluster.md) (本章只写 metrics/INFO 段写入点)
-- **不覆盖**: `aidb_*` / `aidb_raft_*` 定义与引擎 span → [aidb observability.md](../../aidb/docs/modules/observability.md)
+- **不覆盖**: `aidb_*` / `aidb_raft_*` 定义与引擎 span → [aidb observability.md](../../../aidb/docs/modules/observability.md)
 - **构建**: `--features monitoring` 启用 Prometheus HTTP + OTel; 默认 **不** 启用
 
 ## 架构: 单一数据源 + 可选 Prometheus 镜像

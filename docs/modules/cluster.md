@@ -10,7 +10,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 - 改 `src/cluster/*`、`main.rs` 的 `init_cluster`, 或 `command/router.rs` 的 `cluster_route`
 - 排查 MOVED/ASK/CROSSSLOT/CLUSTERDOWN、slot 迁移 (SETSLOT/MIGRATE)、failover、节点 MEET/FORGET
 - 理解 aikv 与 aidb 在集群上的分工
-- **不覆盖**: MetaRaft/MultiRaft/Router 实现、slot 迁移状态机、gRPC → [aidb cluster.md](../../aidb/docs/modules/cluster.md)
+- **不覆盖**: MetaRaft/MultiRaft/Router 实现、slot 迁移状态机、gRPC → [aidb cluster.md](../../../aidb/docs/modules/cluster.md)
 - **不覆盖**: 数据面 `propose_group` / `ClusterDataAdapter` → [storage.md](storage.md)
 - **不覆盖**: 命令分发骨架 / CROSSSLOT 前置插入点 → [commands-core.md](commands-core.md)
 - **不覆盖**: MIGRATE TCP/RESTORE → [commands-extended.md](commands-extended.md)

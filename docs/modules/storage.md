@@ -10,8 +10,8 @@ description: AiKv storage layer — KvStorage trait, MemoryEngine, StorageAdapte
 - 改 `src/storage/*` 或排查 memory / aidb 引擎、TTL、多 DB、`StoredValue` 编解码
 - 理解命令层如何持有 `Arc<dyn KvStorage>` (见 [commands-core.md](commands-core.md))
 - 排查 cluster 模式下 **数据面** 写是否经 Raft (IMPORTING / slot 已分配)
-- **不覆盖**: AiDb LSM 内核 (WAL/MemTable/SSTable) → [aidb engine.md](../../aidb/docs/modules/engine.md) / [engine-storage.md](../../aidb/docs/modules/engine-storage.md)
-- **不覆盖**: MetaRaft/MultiRaft/Router → [aidb cluster.md](../../aidb/docs/modules/cluster.md)
+- **不覆盖**: AiDb LSM 内核 (WAL/MemTable/SSTable) → [aidb engine.md](../../../aidb/docs/modules/engine.md) / [engine-storage.md](../../../aidb/docs/modules/engine-storage.md)
+- **不覆盖**: MetaRaft/MultiRaft/Router → [aidb cluster.md](../../../aidb/docs/modules/cluster.md)
 - **不覆盖**: MOVED/ASK / CLUSTER 子命令 → [cluster.md](cluster.md) (步 11)
 - **不覆盖**: SAVE/BGSAVE/RESTORE 命令语义 → [commands-extended.md](commands-extended.md); INFO/metrics 渲染 → [observability.md](observability.md)
 
@@ -178,14 +178,14 @@ RESTORE 校验 version; 失败 → `ERR DUMP payload version or checksum error`.
 1. 确认 `--engine aidb --data-dir` 指向持久目录
 2. 查 `AiDbEngine::open` 是否同一 path
 3. cluster 模式: 用户数据在 **group SM**, 不单靠 local `AiDbEngine` 单库
-4. LSM 恢复细节 → [aidb engine.md](../../aidb/docs/modules/engine.md)
+4. LSM 恢复细节 → [aidb engine.md](../../../aidb/docs/modules/engine.md)
 
 ### 调试 cluster 写成功读为空
 
 1. 确认 `CLUSTER_STATE_MGR` 已初始化且 slot Assigned
 2. 查 `ClusterDataAdapter::should_use_local_engine` — 已分配 slot **不应** fallback local
 3. 查 `route_write` / IMPORTING 是否写到 target group
-4. 控制面/MOVED → [cluster.md](cluster.md); Raft → [aidb cluster.md](../../aidb/docs/modules/cluster.md)
+4. 控制面/MOVED → [cluster.md](cluster.md); Raft → [aidb cluster.md](../../../aidb/docs/modules/cluster.md)
 
 ### 调试 TTL / keyspace stats
 
