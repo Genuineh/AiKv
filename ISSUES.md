@@ -264,11 +264,10 @@
 
 ### ISSUE-003: GETRANGE/SETRANGE oldmain 有、现码未实现
 
-- **状态**: open
+- **状态**: closed
 - **发现于**: PROGRESS 步 7 / 章节 `docs/modules/commands-core.md`
-- **相关 src**: (无) — `registry`/`router`/`string.rs` 均无
-- **旧文档**: `aikv-oldmain/docs/development/api/01-commands.md` §GETRANGE
+- **相关 src**: `src/command/string.rs`, `registry.rs`, `router.rs`
 - **oldmain 代码**: `aikv-oldmain/src/command/string.rs`, `mod.rs` match
-- **现象**: 重构线 (aikv/wiqun-kv) 移除; oldmain 测试 `data_types_test.rs` 仍覆盖
-- **影响**: module「已知限制」; Redis 客户端 substring 命令不可用
-- **下一步**: 待核实是否刻意裁剪或遗漏
+- **现象**: 重构线移除; 客户端发 GETRANGE/SETRANGE → `ERR unknown command`
+- **定案**: 恢复实现 — 对齐 Redis 7 / oldmain (负索引、越界、空 key、SETRANGE `\0` 填充)
+- **收尾**: `string.rs` handler + registry/router + `tests/modules/command/string.rs`

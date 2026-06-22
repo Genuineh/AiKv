@@ -35,6 +35,8 @@ static COMMAND_TABLE: &[CommandInfo] = &[
     cmd!("DEL", -2, &["write"], 1, -1, 1),
     cmd!("EXISTS", -2, &["readonly", "fast"], 1, -1, 1),
     cmd!("STRLEN", 2, &["readonly", "fast"], 1, 1, 1),
+    cmd!("GETRANGE", 4, &["readonly", "fast"], 1, 1, 1),
+    cmd!("SETRANGE", 4, &["write", "denyoom"], 1, 1, 1),
     cmd!("SETBIT", 4, &["write", "denyoom"], 1, 1, 1),
     cmd!("GETBIT", 3, &["readonly", "fast"], 1, 1, 1),
     cmd!("APPEND", 3, &["write", "denyoom", "fast"], 1, 1, 1),

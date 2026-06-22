@@ -268,3 +268,136 @@ async fn test_setbit_returns_previous_and_clears() {
         0,
     );
 }
+
+#[tokio::test]
+async fn test_getrange_setrange_basic() {
+    let r = router();
+    let mut db = 0;
+    assert_ok(
+        r.execute("SET", &[b("mykey"), b("Hello World")], &mut db)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        r.execute("GETRANGE", &[b("mykey"), b("0"), b("4")], &mut db)
+            .await
+            .unwrap(),
+        RespValue::BulkString(Some(b("Hello")))
+    );
+    assert_eq!(
+        r.execute("GETRANGE", &[b("mykey"), b("-5"), b("-1")], &mut db)
+            .await
+            .unwrap(),
+        RespValue::BulkString(Some(b("World")))
+    );
+    assert_int(
+        r.execute("SETRANGE", &[b("mykey"), b("6"), b("Redis")], &mut db)
+            .await
+            .unwrap(),
+        11,
+    );
+    assert_eq!(
+        r.execute("GET", &[b("mykey")], &mut db).await.unwrap(),
+        RespValue::BulkString(Some(b("Hello Redis")))
+    );
+}
+
+#[tokio::test]
+async fn test_getrange_missing_key_returns_empty_string() {
+    let r = router();
+    let mut db = 0;
+    assert_eq!(
+        r.execute("GETRANGE", &[b("missing"), b("0"), b("4")], &mut db)
+            .await
+            .unwrap(),
+        RespValue::BulkString(Some(b("")))
+    );
+}
+
+#[tokio::test]
+async fn test_getrange_inverted_range_returns_empty() {
+    let r = router();
+    let mut db = 0;
+    r.execute("SET", &[b("k"), b("abc")], &mut db)
+        .await
+        .unwrap();
+    assert_eq!(
+        r.execute("GETRANGE", &[b("k"), b("5"), b("3")], &mut db)
+            .await
+            .unwrap(),
+        RespValue::BulkString(Some(b("")))
+    );
+}
+
+#[tokio::test]
+async fn test_getrange_full_string_with_negative_end() {
+    let r = router();
+    let mut db = 0;
+    r.execute("SET", &[b("k"), b("foo")], &mut db)
+        .await
+        .unwrap();
+    assert_eq!(
+        r.execute("GETRANGE", &[b("k"), b("0"), b("-1")], &mut db)
+            .await
+            .unwrap(),
+        RespValue::BulkString(Some(b("foo")))
+    );
+}
+
+#[tokio::test]
+async fn test_getrange_wrong_type() {
+    let r = router();
+    let mut db = 0;
+    r.execute("HSET", &[b("h"), b("f"), b("v")], &mut db)
+        .await
+        .unwrap();
+    assert!(r
+        .execute("GETRANGE", &[b("h"), b("0"), b("0")], &mut db)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("WRONGTYPE"));
+}
+
+#[tokio::test]
+async fn test_setrange_creates_key_with_null_padding() {
+    let r = router();
+    let mut db = 0;
+    assert_int(
+        r.execute("SETRANGE", &[b("new"), b("2"), b("hi")], &mut db)
+            .await
+            .unwrap(),
+        4,
+    );
+    let resp = r.execute("GET", &[b("new")], &mut db).await.unwrap();
+    let RespValue::BulkString(Some(bytes)) = resp else {
+        panic!("expected bulk string");
+    };
+    assert_eq!(bytes, vec![0, 0, b'h', b'i']);
+}
+
+#[tokio::test]
+async fn test_setrange_negative_offset_errors() {
+    let r = router();
+    let mut db = 0;
+    let err = r
+        .execute("SETRANGE", &[b("k"), b("-1"), b("x")], &mut db)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("offset is out of range"));
+}
+
+#[tokio::test]
+async fn test_setrange_wrong_type() {
+    let r = router();
+    let mut db = 0;
+    r.execute("HSET", &[b("h"), b("f"), b("v")], &mut db)
+        .await
+        .unwrap();
+    assert!(r
+        .execute("SETRANGE", &[b("h"), b("0"), b("x")], &mut db)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("WRONGTYPE"));
+}

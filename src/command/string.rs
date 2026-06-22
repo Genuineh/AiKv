@@ -129,6 +129,35 @@ impl StringCommands {
         }
     }
 
+    pub async fn getrange(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("GETRANGE", args, 3)?;
+        let start = parse_i64_arg(&args[1], "GETRANGE")?;
+        let end = parse_i64_arg(&args[2], "GETRANGE")?;
+        match self.storage.get(db, &args[0]).await? {
+            None => Ok(router::bulk(Vec::new())),
+            Some(value) => Ok(router::bulk(string_range_slice(&value, start, end))),
+        }
+    }
+
+    pub async fn setrange(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("SETRANGE", args, 3)?;
+        let key = &args[0];
+        let offset = parse_setrange_offset(&args[1])?;
+        let patch = &args[2];
+        let _lock = self.key_lock.lock(key).await;
+        let mut current = self.storage.get(db, key).await?.unwrap_or_default();
+        let end = offset
+            .checked_add(patch.len())
+            .ok_or_else(|| Error::Command("ERR offset is out of range".into()))?;
+        if end > current.len() {
+            current.resize(end, 0);
+        }
+        current[offset..end].copy_from_slice(patch);
+        let len = current.len() as i64;
+        self.storage.set(db, key, &current).await?;
+        Ok(router::integer(len))
+    }
+
     pub async fn setbit(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("SETBIT", args, 3)?;
         let key = &args[0];
@@ -489,6 +518,41 @@ fn write_bit(data: &mut Vec<u8>, offset: u64, bit: u8) {
     } else {
         data[byte_idx] &= !mask;
     }
+}
+
+/// Redis GETRANGE inclusive byte range (negative indices count from end).
+fn string_range_slice(value: &[u8], start: i64, end: i64) -> Vec<u8> {
+    let len = value.len() as i64;
+    if len == 0 {
+        return Vec::new();
+    }
+
+    let start_idx = if start < 0 {
+        (len + start).max(0)
+    } else {
+        start.min(len)
+    } as usize;
+    let end_idx = if end < 0 {
+        (len + end).max(0)
+    } else {
+        end.min(len - 1)
+    } as usize;
+
+    if start_idx > end_idx || start_idx >= value.len() {
+        Vec::new()
+    } else {
+        value[start_idx..=end_idx].to_vec()
+    }
+}
+
+fn parse_setrange_offset(b: &[u8]) -> Result<usize> {
+    let s = std::str::from_utf8(b)
+        .map_err(|_| Error::Command("ERR offset is out of range".into()))?;
+    if s.starts_with('-') {
+        return Err(Error::Command("ERR offset is out of range".into()));
+    }
+    s.parse::<usize>()
+        .map_err(|_| Error::Command("ERR offset is out of range".into()))
 }
 
 fn parse_bit_offset(b: &[u8]) -> Result<u64> {

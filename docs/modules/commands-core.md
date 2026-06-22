@@ -158,7 +158,7 @@ pub struct CommandInfo {
 
 | 域 | 文件 | 代表命令 | 备注 |
 |----|------|----------|------|
-| String | `string.rs` | GET/SET/MGET/MSET, INCR*, SETBIT, SETEX, GETEX | DEL/EXISTS 在此文件 |
+| String | `string.rs` | GET/SET/MGET/MSET, GETRANGE/SETRANGE, INCR*, SETBIT, SETEX, GETEX | DEL/EXISTS 在此文件 |
 | Hash | `hash.rs` | HSET/HGET/HSCAN, HINCRBY(FLOAT) | `scan_util` 分页 |
 | List | `list.rs` | LPUSH/LRANGE/LMOVE, BLPOP/BRPOP/BLMOVE | 阻塞链 extended |
 | Set | `set.rs` | SADD/SINTER/SUNION/SDIFF*, SMOVE, SSCAN | store 类多 key 读不加锁 |
@@ -215,13 +215,8 @@ cargo test --test commands
 
 ## 已知限制
 
-- **GETRANGE/SETRANGE**: 未实现 (oldmain 曾有).
 - **DUMP/RESTORE**: 内部 bincode 格式, 与 Redis 不互操作.
 - **HSCAN/SSCAN/ZSCAN**: 内存全量分页, 大 key 开销高.
 - **OBJECT ENCODING**: 固定 embstr/raw/listpack, 非真实探测.
 - **KEYS**: 直调 `storage.keys`, 无 oldmain 60s 线程超时.
 - **MSETNX**: 未实现 (oldmain 亦无); 单 key 用 `SETNX`; 客户端发 MSETNX → `ERR unknown command`.
-
-## 待核实
-
-- 见 [ISSUES.md](../../ISSUES.md#ISSUE-003) — GETRANGE/SETRANGE 是否刻意裁剪.

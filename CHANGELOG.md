@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **ISSUE-003**: 恢复 `GETRANGE`/`SETRANGE` String 子串命令 (对齐 Redis 7 / oldmain); registry + router + 回归测.
+
 ### Changed
 
 - **ISSUE-004**: doc-only 关闭 — MSETNX 刻意不实现 (oldmain 亦无); 移除 `cluster_route` 不可达 `msetnx` 引用; module 已知限制注明.

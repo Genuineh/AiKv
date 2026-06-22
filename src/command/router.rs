@@ -415,6 +415,8 @@ impl CommandRouter {
                 self.string.exists(*db, args).await
             }
             "STRLEN" => self.string.strlen(*db, args).await,
+            "GETRANGE" => self.string.getrange(*db, args).await,
+            "SETRANGE" => self.string.setrange(*db, args).await,
             "SETBIT" => self.string.setbit(*db, args).await,
             "GETBIT" => self.string.getbit(*db, args).await,
             "APPEND" => self.string.append(*db, args).await,
