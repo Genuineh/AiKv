@@ -294,7 +294,7 @@ impl KeyCommands {
 
         let mut copy = false;
         let mut replace = false;
-        let mut auth_password: Option<&[u8]> = None;
+        let mut auth: Option<migrate::RestoreAuth<'_>> = None;
         let mut batch_keys: Vec<&[u8]> = Vec::new();
         let mut i = 5;
         while i < args.len() {
@@ -304,11 +304,20 @@ impl KeyCommands {
             } else if eq_ignore_case(&args[i], b"REPLACE") {
                 replace = true;
                 i += 1;
+            } else if eq_ignore_case(&args[i], b"AUTH2") {
+                if i + 2 >= args.len() {
+                    return Err(router::wrong_args("MIGRATE", ""));
+                }
+                auth = Some(migrate::RestoreAuth::Acl {
+                    username: &args[i + 1],
+                    password: &args[i + 2],
+                });
+                i += 3;
             } else if eq_ignore_case(&args[i], b"AUTH") {
                 if i + 1 >= args.len() {
                     return Err(router::wrong_args("MIGRATE", ""));
                 }
-                auth_password = Some(&args[i + 1]);
+                auth = Some(migrate::RestoreAuth::LegacyPassword(&args[i + 1]));
                 i += 2;
             } else if eq_ignore_case(&args[i], b"KEYS") {
                 if i + 1 >= args.len() {
@@ -319,6 +328,7 @@ impl KeyCommands {
                     if eq_ignore_case(&args[i], b"COPY")
                         || eq_ignore_case(&args[i], b"REPLACE")
                         || eq_ignore_case(&args[i], b"AUTH")
+                        || eq_ignore_case(&args[i], b"AUTH2")
                     {
                         break;
                     }
@@ -347,7 +357,7 @@ impl KeyCommands {
                     ttl_ms,
                     payload: &payload,
                     replace,
-                    auth_password,
+                    auth,
                 })
                 .await?;
                 if !copy {
@@ -374,7 +384,7 @@ impl KeyCommands {
             ttl_ms,
             payload: &payload,
             replace,
-            auth_password,
+            auth,
         })
         .await?;
 

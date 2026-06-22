@@ -196,13 +196,13 @@
 
 ### ISSUE-010: MIGRATE 无 AUTH2 (username+password)
 
-- **状态**: open
+- **状态**: closed
 - **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 2)
-- **相关 src**: `src/command/key.rs` (`migrate`), `src/command/migrate.rs` (`send_restore` — 仅 AUTH password)
+- **相关 src**: `src/command/key.rs` (`migrate`), `src/command/migrate.rs` (`send_restore`, `RestoreAuth`)
 - **oldmain 代码**: `aikv-oldmain/src/command/key.rs` — AUTH2 user/pass 分支
 - **现象**: 目标需 ACL username+password 时现码无法 MIGRATE
-- **影响**: 集群/多租户迁移场景; module 一行引用
-- **下一步**: 待核实 — 补 AUTH2 或文档声明不支持
+- **修复**: 解析 `AUTH2 username password`; TCP 发 `AUTH user pass` (对齐 Redis 7 / oldmain); `KEYS` 列表遇 `AUTH2` 停止; `AUTH2` 优先于 `AUTH`
+- **测试**: `tests/modules/command/key.rs` — `test_migrate_auth2`, `test_migrate_keys_stops_at_auth2`, `test_migrate_auth2_precedence_over_auth`, `test_migrate_auth2_syntax_error`
 
 ### ISSUE-009: Lua redis.call JSON.MGET 未实现
 

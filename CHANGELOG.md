@@ -10,6 +10,7 @@
 ### Added
 
 - **ISSUE-009**: 实现 `JSON.MGET` — 顶层 + Lua `redis.call`; 多 key 单 path batch 读; 对齐 Redis 7 (missing → null, wrong-type 与 `JSON.GET` 一致).
+- **ISSUE-010**: `MIGRATE AUTH2 username password` — 解析 + TCP `AUTH user pass`; `KEYS` 遇 `AUTH2` 停止; `AUTH2` 优先于 `AUTH` (对齐 Redis 7 / oldmain).
 - **ISSUE-003**: 恢复 `GETRANGE`/`SETRANGE` String 子串命令 (对齐 Redis 7 / oldmain); registry + router + 回归测.
 
 ### Changed
@@ -22,7 +23,7 @@
 - **ISSUE-001**: `MGET` 对齐 Redis 7 — non-String / missing key per-key 返回 `nil`, memory 与 aidb 双引擎一致; `KvStorageAdapter::mget` 不再经 `get()` 抛 WRONGTYPE.
 - **ISSUE-012**: EVAL/EVALSHA 声明 key 的 `KeyLock` 恢复 30s 锁等待超时 (`lock_keys_sorted_with_timeout`); 超时 `ERR Lock acquisition timeout after 30s`.
 - **ISSUE-016**: `CLUSTER RESET` 明确返回不支持 ERR (非 unknown subcommand); doc-only 关闭 — 替代步骤见 `docs/modules/cluster.md`.
-- **ISSUE-006**: `MIGRATE … KEYS` 批量路径尊重 `COPY` (源 key 保留); KEYS 列表解析不再把 trailing `COPY`/`REPLACE`/`AUTH` 当作 key 名.
+- **ISSUE-006**: `MIGRATE … KEYS` 批量路径尊重 `COPY` (源 key 保留); KEYS 列表解析不再把 trailing `COPY`/`REPLACE`/`AUTH`/`AUTH2` 当作 key 名.
 - **ISSUE-013**: `CLUSTER INFO` 恢复动态 `cluster_state:ok`/`fail` (16384 slot 全覆盖 + group leader + 映射一致).
 - **ISSUE-002**: CLI `--engine aidb` 与 cluster lifecycle 使用生产 `Options::default()` preset (`server_db_options`); 单测改 `open_for_testing()`; 新增 `--sync-wal`.
 

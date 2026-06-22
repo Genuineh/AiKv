@@ -44,6 +44,16 @@ fn ensure_ok(resp: RespValue) -> Result<()> {
     }
 }
 
+/// MIGRATE 目标端认证 (AUTH password 或 AUTH2 → TCP `AUTH user pass`)
+#[derive(Clone, Copy)]
+pub enum RestoreAuth<'a> {
+    LegacyPassword(&'a [u8]),
+    Acl {
+        username: &'a [u8],
+        password: &'a [u8],
+    },
+}
+
 /// RESTORE 目标连接参数
 pub struct RestoreTarget<'a> {
     pub host: &'a str,
@@ -54,7 +64,7 @@ pub struct RestoreTarget<'a> {
     pub ttl_ms: i64,
     pub payload: &'a [u8],
     pub replace: bool,
-    pub auth_password: Option<&'a [u8]>,
+    pub auth: Option<RestoreAuth<'a>>,
 }
 
 /// 向目标 aikv 发送 SELECT (如需) 与 RESTORE.
@@ -68,7 +78,7 @@ pub async fn send_restore(target: RestoreTarget<'_>) -> Result<()> {
         ttl_ms,
         payload,
         replace,
-        auth_password,
+        auth,
     } = target;
     let addr = if host.contains(':') && !host.starts_with('[') {
         format!("[{host}]:{port}")
@@ -81,8 +91,13 @@ pub async fn send_restore(target: RestoreTarget<'_>) -> Result<()> {
         .map_err(|_| Error::Command("ERR timeout".into()))?
         .map_err(|e| Error::Command(format!("ERR {e}")))?;
 
-    if let Some(password) = auth_password {
-        let auth_frame = encode_command(&[b"AUTH", password]);
+    if let Some(creds) = auth {
+        let auth_frame = match creds {
+            RestoreAuth::LegacyPassword(password) => encode_command(&[b"AUTH", password]),
+            RestoreAuth::Acl { username, password } => {
+                encode_command(&[b"AUTH", username, password])
+            }
+        };
         stream.write_all(&auth_frame).await?;
         ensure_ok(read_one_response(&mut stream, dur).await?)?;
     }

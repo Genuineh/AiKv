@@ -136,10 +136,10 @@ sequenceDiagram
 
 ### MIGRATE
 
-1. `key.rs::migrate` 解析 host/port/key/dest_db/timeout + COPY/REPLACE/AUTH/KEYS.
-2. `KEYS` 子命令: 先收集 key 列表 (遇 trailing COPY/REPLACE/AUTH 停止), 再与单 key 路径共用 RESTORE 逻辑; 非 COPY → 源端 `delete`.
+1. `key.rs::migrate` 解析 host/port/key/dest_db/timeout + COPY/REPLACE/AUTH/AUTH2/KEYS.
+2. `KEYS` 子命令: 先收集 key 列表 (遇 trailing COPY/REPLACE/AUTH/AUTH2 停止), 再与单 key 路径共用 RESTORE 逻辑; 非 COPY → 源端 `delete`.
 3. 单 key: `get_typed` → `dump_encode` → `migrate::send_restore` → 非 COPY 时 `delete`.
-4. TCP: 可选 AUTH → 非 0 库 SELECT → `#[cfg(cluster)] ASKING` → RESTORE.
+4. TCP: 可选 AUTH (password) 或 AUTH2 → `AUTH username password` → 非 0 库 SELECT → `#[cfg(cluster)] ASKING` → RESTORE.
 
 ### SAVE / BGSAVE
 
@@ -247,7 +247,6 @@ cargo test --test commands
 - **JSON**: 全文档 RMW, 无 RedisJSON 内存优化; 非 String key → WRONGTYPE/解析失败.
 - **Lua**: 无 SCRIPT KILL; 命令子集小于 Redis.
 - **Lua pcall**: Redis `{err}` 表 (非 oldmain Nil).
-- **MIGRATE**: 无 AUTH2 (ISSUE-010).
 - **BGSAVE 重入**: 第二次返回 **ERR** (非 oldmain SimpleString OK).
 - **SHUTDOWN**: 仅 Default/SAVE/NOSAVE; 未知 mode → ERR.
 - **OBJECT**: REFCOUNT/IDLETIME/FREQ 固定 stub.
@@ -257,4 +256,3 @@ cargo test --test commands
 ## 待核实
 
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-005) — BlockingRegistry evict_expired 无调用.
-- 见 [ISSUES.md](../../ISSUES.md#ISSUE-010) — MIGRATE 无 AUTH2.

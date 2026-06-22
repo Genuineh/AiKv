@@ -482,6 +482,173 @@ async fn test_migrate_auth() {
 }
 
 #[tokio::test]
+async fn test_migrate_auth2() {
+    use super::helpers::start_ephemeral_server;
+
+    let (target_addr, _handle) = start_ephemeral_server().await;
+    let port = target_addr.port().to_string();
+
+    let r = router();
+    let mut db = 0;
+    r.execute("SET", &[b("auth2_key"), b("secret")], &mut db)
+        .await
+        .unwrap();
+
+    let result = r
+        .execute(
+            "MIGRATE",
+            &[
+                b("127.0.0.1"),
+                b(&port),
+                b("auth2_key"),
+                b("0"),
+                b("5000"),
+                b("AUTH2"),
+                b("myuser"),
+                b("mypass"),
+                b("REPLACE"),
+            ],
+            &mut db,
+        )
+        .await;
+    match result {
+        Err(e) => {
+            assert!(
+                !e.to_string().contains("wrong number"),
+                "should not be a parsing error: {e}"
+            );
+            let resp = r.execute("GET", &[b("auth2_key")], &mut db).await.unwrap();
+            assert_ne!(resp, aikv::protocol::RespValue::BulkString(None));
+        }
+        Ok(resp) => {
+            assert_ok(resp);
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_migrate_keys_stops_at_auth2() {
+    use super::helpers::start_ephemeral_server;
+
+    let (target_addr, _handle) = start_ephemeral_server().await;
+    let port = target_addr.port().to_string();
+
+    let r = router();
+    let mut db = 0;
+    r.execute("SET", &[b("k1"), b("v1")], &mut db)
+        .await
+        .unwrap();
+
+    // AUTH2 trailing KEYS must be parsed as auth, not as key names.
+    let result = r
+        .execute(
+            "MIGRATE",
+            &[
+                b("127.0.0.1"),
+                b(&port),
+                b(""),
+                b("0"),
+                b("5000"),
+                b("KEYS"),
+                b("k1"),
+                b("AUTH2"),
+                b("myuser"),
+                b("mypass"),
+                b("COPY"),
+            ],
+            &mut db,
+        )
+        .await;
+    assert!(
+        result.is_err(),
+        "AUTH2 should run TCP AUTH and fail on no-ACL server: {:?}",
+        result
+    );
+    assert!(
+        !result
+            .unwrap_err()
+            .to_string()
+            .contains("wrong number"),
+        "should not be a parsing error"
+    );
+    assert_eq!(
+        r.execute("GET", &[b("k1")], &mut db).await.unwrap(),
+        aikv::protocol::RespValue::BulkString(Some(b("v1")))
+    );
+}
+
+#[tokio::test]
+async fn test_migrate_auth2_precedence_over_auth() {
+    use super::helpers::start_ephemeral_server;
+
+    let (target_addr, _handle) = start_ephemeral_server().await;
+    let port = target_addr.port().to_string();
+
+    let r = router();
+    let mut db = 0;
+    r.execute("SET", &[b("prec_key"), b("v")], &mut db)
+        .await
+        .unwrap();
+
+    // AUTH then AUTH2: later AUTH2 wins (oldmain / Redis ACL path).
+    let result = r
+        .execute(
+            "MIGRATE",
+            &[
+                b("127.0.0.1"),
+                b(&port),
+                b("prec_key"),
+                b("0"),
+                b("5000"),
+                b("AUTH"),
+                b("legacy-only"),
+                b("AUTH2"),
+                b("acluser"),
+                b("aclpass"),
+                b("REPLACE"),
+            ],
+            &mut db,
+        )
+        .await;
+    match result {
+        Err(e) => {
+            assert!(
+                !e.to_string().contains("wrong number"),
+                "should not be a parsing error: {e}"
+            );
+        }
+        Ok(resp) => assert_ok(resp),
+    }
+}
+
+#[tokio::test]
+async fn test_migrate_auth2_syntax_error() {
+    let r = router();
+    let mut db = 0;
+    let err = r
+        .execute(
+            "MIGRATE",
+            &[
+                b("127.0.0.1"),
+                b("6379"),
+                b("k"),
+                b("0"),
+                b("5000"),
+                b("AUTH2"),
+                b("only-user"),
+            ],
+            &mut db,
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("wrong number") || err.contains("syntax"),
+        "missing AUTH2 password should error: {err}"
+    );
+}
+
+#[tokio::test]
 async fn test_migrate_keys() {
     use super::helpers::start_ephemeral_server;
 
