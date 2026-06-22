@@ -52,7 +52,8 @@ cluster 包装 **仅 aidb 路径**; memory 不经 `StorageAdapter`.
 | `storage/types.rs` | 命令层契约 | `KvStorage`, `StoredValue`, `ValueType`, `WriteOp`, `StorageEngineKind` |
 | `storage/memory.rs` | 内存引擎; 直 impl `KvStorage` | `MemoryEngine::new`, `glob_match` |
 | `storage/adapter.rs` | 扁平 KV → 多 DB 语义 | `StorageAdapter`, `KvStorageAdapter`, `AdapterWriteOp` |
-| `storage/aidb.rs` | sync `aidb::DB` 的 async 包装 | `AiDbEngine::open`, `encode_key` / `decode_key` |
+| `storage/aidb.rs` | sync `aidb::DB` 的 async 包装 | `AiDbEngine::open`, `open_for_testing`, `encode_key` / `decode_key` |
+| `storage/aidb_options.rs` | CLI / 单测 Options 构建 | `server_db_options`, `testing_db_options` |
 | `storage/cluster_adapter.rs` | 数据面 Raft 包装 (`#[cfg(feature = "cluster")]`) | `ClusterDataAdapter::new` |
 | `storage/dump.rs` | 内部 DUMP 格式 | `encode` / `decode`, `DUMP_VERSION` |
 | `storage/observation.rs` | 过期 key 计数 (INFO/metrics) | `StorageObservation` |
@@ -147,7 +148,7 @@ AiDbEngine::decode_key(encoded)        // Option<(db, user_key)>
 AiDbEngine::prefix_end(prefix)         // range scan 上界
 ```
 
-`open(path)`: `Options::for_testing()`, `create_if_missing`, `sync_wal: true`; 所有 DB 操作为 `spawn_blocking`.
+`open(path)`: 生产 preset (`server_db_options`, 对齐 `Options::default()`); `open_for_testing()` 供单测; `open_with_options` 可显式传入. CLI 经 `--sync-wal` 控制 fsync. 所有 DB 操作为 `spawn_blocking`.
 
 ### DUMP (内部格式, 非 Redis)
 
@@ -199,6 +200,7 @@ RESTORE 校验 version; 失败 → `ERR DUMP payload version or checksum error`.
 |----|------|------|
 | `--engine memory\|aidb` | `main.rs` | 选择装配链 |
 | `--data-dir` | `main.rs` | aidb 必填 |
+| `--sync-wal` | `main.rs` | aidb 每条写后 fsync (默认 false) |
 | `feature = "cluster"` | `cluster_adapter.rs`, `main.rs` | 插入 `ClusterDataAdapter` |
 | `DB_COUNT` (=16) | `types.rs` | 逻辑 DB 数量 |
 | `StorageObservation` | `main.rs` → engine | 可选注入, 两路径均支持 |
@@ -217,6 +219,7 @@ cargo test --test storage memory aidb types -- --test-threads=1
 | memory | `tests/modules/storage/memory.rs` | TTL, rename, scan, WRONGTYPE |
 | aidb | `tests/modules/storage/aidb.rs` | encode_key, adapter 读写 |
 | compat | `tests/modules/storage/compat.rs` | **双引擎行为一致** |
+| prod_options | `tests/modules/storage/prod_options.rs` | **生产 Options** (B1.3) |
 | dump | `storage/dump.rs` unit | version + roundtrip |
 | cluster checkpoint | `cluster_adapter.rs` unit | `checkpoint_group_storages` |
 
@@ -228,9 +231,7 @@ cargo test --test storage memory aidb types -- --test-threads=1
 - **DUMP/RESTORE**: AiKv 内部格式, **不兼容** Redis DUMP.
 - **`glob_match`**: 仅 `*`/`?`; 无 `[abc]` 字符类.
 - **`random_key`**: memory 用 `rand`; adapter 用 `unix_nanos % len` — 分布不同.
-- **`AiDbEngine::open`**: 当前 `Options::for_testing()` — 见 ISSUE-002.
 
 ## 待核实
 
 - 见 [ISSUES.md](../../ISSUES.md#issue-001-memoryengine-mget-对非-string-key-静默返回-none) — `mget` 在 memory 与 aidb 路径对 wrong-type key 行为不一致.
-- 见 [ISSUES.md](../../ISSUES.md#issue-002-aidbengineopen-固定-optionsfortesting) — 生产 Options 是否待收敛.

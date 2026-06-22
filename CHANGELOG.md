@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **ISSUE-002**: CLI `--engine aidb` 与 cluster lifecycle 使用生产 `Options::default()` preset (`server_db_options`); 单测改 `open_for_testing()`; 新增 `--sync-wal`.
+
+### Added
+
+- **B1.3**: `tests/modules/storage/prod_options.rs` — 生产 Options 非 `for_testing()` 回归测.
+
 ## [0.10.5] - 2026-06-10
 
 ### Added

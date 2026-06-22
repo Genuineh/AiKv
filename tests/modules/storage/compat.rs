@@ -16,7 +16,7 @@ fn mem() -> Arc<dyn KvStorage> {
 }
 
 fn aidb(dir: &TempDir) -> Arc<dyn KvStorage> {
-    let engine = AiDbEngine::open(dir.path()).expect("open aidb");
+    let engine = AiDbEngine::open_for_testing(dir.path()).expect("open aidb");
     KvStorageAdapter::new(engine)
 }
 

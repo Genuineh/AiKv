@@ -12,7 +12,7 @@ use tokio::time;
 use super::helpers::{assert_err_contains, b, router_with_shared};
 
 fn aidb_router(dir: &TempDir) -> (Arc<CommandRouter>, Arc<ServerSharedState>) {
-    let engine = AiDbEngine::open(dir.path()).expect("open aidb");
+    let engine = AiDbEngine::open_for_testing(dir.path()).expect("open aidb");
     let storage: Arc<dyn KvStorage> = KvStorageAdapter::new(engine);
     let shared = ServerSharedState::new_with_engine(
         ConnectionConfig::default(),
@@ -152,7 +152,7 @@ async fn test_info_persistence_section() {
 #[tokio::test]
 async fn test_shutdown_nosave_exits_server() {
     let dir = TempDir::new().unwrap();
-    let engine = AiDbEngine::open(dir.path()).unwrap();
+    let engine = AiDbEngine::open_for_testing(dir.path()).unwrap();
     let storage: Arc<dyn KvStorage> = KvStorageAdapter::new(engine);
     let state = ServerSharedState::new_with_engine(
         ConnectionConfig {
@@ -210,7 +210,7 @@ async fn test_bgsave_restore() {
     .await
     .expect("bgsave did not finish");
 
-    let restored = AiDbEngine::open(&shared.backup_dir).unwrap();
+    let restored = AiDbEngine::open_for_testing(&shared.backup_dir).unwrap();
     let storage: Arc<dyn KvStorage> = KvStorageAdapter::new(restored);
     let resp = storage.get(0, b"persist").await.unwrap();
     assert_eq!(resp, Some(b"yes".to_vec()));
@@ -227,7 +227,7 @@ async fn test_bgsave_restore_smoke() {
         .unwrap();
     router.execute("SAVE", &[], &mut db).await.unwrap();
 
-    let restored = AiDbEngine::open(&shared.backup_dir).unwrap();
+    let restored = AiDbEngine::open_for_testing(&shared.backup_dir).unwrap();
     let storage: Arc<dyn KvStorage> = KvStorageAdapter::new(restored);
     let resp = storage.get(0, b"persist").await.unwrap();
     assert_eq!(resp, Some(b"yes".to_vec()));

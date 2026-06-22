@@ -96,6 +96,7 @@ database/
 | `--bind` | `127.0.0.1:6379` | 始终 | RESP 客户端 TCP |
 | `--engine` | `memory` | 始终 | `memory` \| `aidb` |
 | `--data-dir` | — | 始终 | **`aidb` 必填**; **cluster 必填** |
+| `--sync-wal` | `false` | `aidb` / cluster | 每条写后 fsync WAL (强持久, 低吞吐) |
 | `--backup-dir` | `{data_dir}/backup` | 可选 | SAVE/BGSAVE checkpoint 目标 |
 | `--cluster-node-id` | — | `cluster` | u64 节点 ID |
 | `--cluster-rpc-addr` | — | `cluster` | MetaRaft gRPC `host:port` |

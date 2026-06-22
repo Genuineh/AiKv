@@ -4,7 +4,7 @@ use aikv::storage::{AiDbEngine, KvStorage, KvStorageAdapter, StoredValue, ValueT
 use tempfile::TempDir;
 
 fn adapter(dir: &TempDir) -> Arc<dyn KvStorage> {
-    let engine = AiDbEngine::open(dir.path()).expect("open aidb");
+    let engine = AiDbEngine::open_for_testing(dir.path()).expect("open aidb");
     KvStorageAdapter::new(engine)
 }
 

@@ -16,7 +16,8 @@ use std::path::Path;
 use aikv::cluster::state::DEFAULT_DATA_PORT_OFFSET;
 use aikv::server::{ConnectionConfig, Server, ServerSharedState};
 use aikv::storage::{
-    AiDbEngine, KvStorage, KvStorageAdapter, MemoryEngine, StorageEngineKind, StorageObservation,
+    server_db_options, AiDbEngine, KvStorage, KvStorageAdapter, MemoryEngine, StorageEngineKind,
+    StorageObservation,
 };
 use clap::{Parser as ClapParser, ValueEnum};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter, Registry};
@@ -42,6 +43,10 @@ struct Args {
     /// AiDb 数据目录 (--engine aidb 时必填)
     #[arg(long)]
     data_dir: Option<PathBuf>,
+
+    /// 每条写后 fsync WAL (强持久, 低吞吐; 默认 false)
+    #[arg(long, default_value_t = false)]
+    sync_wal: bool,
 
     /// BGSAVE 目标目录 (默认 {data_dir}/backup/)
     #[arg(long)]
@@ -140,7 +145,8 @@ fn build_storage(args: &Args, observation: Arc<StorageObservation>) -> StorageBu
                 .data_dir
                 .as_ref()
                 .ok_or_else(|| "--data-dir required for aidb engine".to_string())?;
-            let engine = AiDbEngine::open(path).map_err(|e| e.to_string())?;
+            let engine = AiDbEngine::open_with_options(path, server_db_options(args.sync_wal))
+                .map_err(|e| e.to_string())?;
             let db = engine.db.clone();
             let adapter: Arc<dyn aikv::storage::StorageAdapter> = engine;
             #[cfg(feature = "cluster")]
@@ -223,6 +229,7 @@ async fn init_cluster(
     gossip_interval: u64,
     config_auto_save_ms: u64,
     cluster_data_port_offset: u16,
+    sync_wal: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::net::SocketAddr as NetAddr;
 
@@ -239,10 +246,7 @@ async fn init_cluster(
     let db = match cluster_db {
         Some(db) => db,
         None => {
-            let opts = aidb::config::Options {
-                use_wal: true,
-                ..Default::default()
-            };
+            let opts = server_db_options(sync_wal);
             aidb::DB::open(data_dir, opts)?
         }
     };
@@ -379,7 +383,7 @@ async fn init_cluster(
     let lifecycle_cfg = aidb::cluster::multi_raft_node::LifecycleConfig {
         data_dir: data_dir.to_path_buf(),
         raft_node_config: raft_config,
-        options: aidb::config::Options::default(),
+        options: server_db_options(sync_wal),
     };
     let _lifecycle_shutdown = multi_raft.start_lifecycle_with_data(lifecycle_cfg);
 
@@ -657,6 +661,7 @@ async fn main() {
             args.gossip_interval,
             args.config_auto_save_ms,
             args.cluster_data_port_offset,
+            args.sync_wal,
         )
         .await
         {

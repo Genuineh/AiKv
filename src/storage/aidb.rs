@@ -47,10 +47,20 @@ impl AiDbEngine {
         None
     }
 
+    /// 生产 / CLI 默认: `Options::default()` preset.
     pub fn open(path: impl AsRef<Path>) -> Result<Arc<Self>> {
-        let mut opts = Options::for_testing();
+        Self::open_with_options(path, crate::storage::aidb_options::server_db_options(false))
+    }
+
+    /// 单测 preset: 小 memtable、关 background_compaction.
+    pub fn open_for_testing(path: impl AsRef<Path>) -> Result<Arc<Self>> {
+        Self::open_with_options(path, crate::storage::aidb_options::testing_db_options())
+    }
+
+    pub fn open_with_options(path: impl AsRef<Path>, mut opts: Options) -> Result<Arc<Self>> {
         opts.create_if_missing = true;
-        opts.sync_wal = true;
+        opts.validate()
+            .map_err(|e| Error::Storage(e.to_string()))?;
         let db = DB::open(path, opts).map_err(|e| Error::Storage(e.to_string()))?;
         Ok(Arc::new(Self { db }))
     }

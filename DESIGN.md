@@ -115,7 +115,6 @@ Assigned slot 写 **必须** `propose_group` → Raft apply; **禁止** local fa
 
 ### 已知限制 (摘要)
 
-- `AiDbEngine::open` → `Options::for_testing()` + `sync_wal: true` — 见 [ISSUES.md#ISSUE-002](ISSUES.md#issue-002-aidbengineopen-固定-optionsfortesting).
 - MGET 对 non-String key: memory 静默 nil vs aidb WRONGTYPE — 见 [ISSUES.md#ISSUE-001](ISSUES.md#issue-001-memoryengine-mget-对非-string-key-静默返回-none).
 - aidb 路径 `scan`/`keys` 全量 sort; memory `write_batch` 非原子.
 
@@ -269,7 +268,6 @@ Redis Cluster 协议: 服务器返回 `MOVED`/`ASK` 字符串, smart client 重�
 
 ## 已知限制 (根文档摘要)
 
-- AiDb 打开参数未收敛生产 preset — [ISSUES.md#ISSUE-002](ISSUES.md#issue-002-aidbengineopen-固定-optionsfortesting).
 - 双引擎 MGET wrong-type 语义不一致 — [ISSUES.md#ISSUE-001](ISSUES.md#issue-001-memoryengine-mget-对非-string-key-静默返回-none).
 - 集群 CLUSTER INFO / Gossip 与 oldmain 行为差异 — [ISSUES.md](ISSUES.md) (ISSUE-013/014 等).
 

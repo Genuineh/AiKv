@@ -151,14 +151,14 @@
 
 ### ISSUE-002: AiDbEngine::open 固定 Options::for_testing()
 
-- **状态**: open
+- **状态**: closed
 - **发现于**: PROGRESS 步 6 / 章节 `docs/modules/storage.md`
-- **相关 src**: `src/storage/aidb.rs` (`open`)
+- **相关 src**: `src/storage/aidb.rs`, `src/storage/aidb_options.rs`, `src/main.rs`
 - **旧文档**: WiQunTools `06-persistence.md` — 「生产 Options 待收敛」
 - **oldmain 代码**: `aikv-oldmain/src/storage/aidb_adapter.rs` — `Options::default()`, `sync_wal(false)`
-- **现象**: 现码 `Options::for_testing()` + `sync_wal: true`; 无 CLI/配置切换生产 Options. wiqun-kv `wiqun_db.rs` 同形.
-- **影响**: module 已知限制已记录; 生产调优是否 intentional 待确认.
-- **下一步**: 待核实是否暴露生产 preset 或保留 testing defaults.
+- **现象**: 曾固定 `Options::for_testing()` + `sync_wal: true`; CLI 与 lifecycle 不一致.
+- **修复**: `open()` / CLI 走 `server_db_options()` (`Options::default` preset); 单测 `open_for_testing()`; 可选 `--sync-wal`; `init_cluster` lifecycle 共用同一 builder.
+- **下一步**: —
 
 ### ISSUE-001: MemoryEngine mget 对非 String key 静默返回 None
 
