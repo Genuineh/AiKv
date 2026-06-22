@@ -166,9 +166,9 @@ Redis 官方脚本语言; 零系统 lua 依赖; 沙箱裁 StdLib. **放弃** rha
 |------|------|
 | Redis 16379 gossip 共识 | **不采用** — 成员/slot 变更无强一致保证 |
 | **MetaRaft + MultiRaft (aidb)** | **选用** — 权威拓扑与数据复制 |
-| aikv **轻量 Gossip** | 从 MetaRaft 刷新 `GossipState` + metrics; **无** PING/PONG bus |
+| aikv **轻量拓扑 tick** | 周期性 `ClusterStateManager::refresh()` + gossip metrics; **无** PING/PONG bus; NODES 读 MetaRaft |
 
-WiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障与成员变更以 Raft 为准. 勿将 Gossip 写作 NODES 权威源 — 见 [ISSUES.md#ISSUE-014](ISSUES.md#issue-014-gossipstate-后台刷新但未接入-cluster-nodes).
+WiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障与成员变更以 Raft 为准. `CLUSTER NODES` 权威源为 MetaRaft, 非 gossip tick.
 
 ### 为什么 MOVED/ASK 由客户端处理?
 

@@ -18,7 +18,7 @@ AiKv 是用 Rust 实现的 **Redis RESP 兼容 KV 服务** (bin + lib). 对外�
 | 持久化 | `SAVE`/`BGSAVE` → `Checkpoint` (aidb 路径) | WAL, flush, `Checkpoint::create` |
 | 指标 | HTTP `/metrics`, `aikv_*`; `aidb::metrics::register_into` | `aidb_*` 库内系列 |
 
-**分工原则**: Redis 协议与命令在 AiKv; LSM 写路径、Raft 状态机、slot 表与 gRPC 在 AiDb. Gossip 在 AiKv 侧为 **轻量拓扑刷新** (CLUSTER NODES 展示); 故障判定走 MetaRaft, 非 Redis 16379 gossip 共识.
+**分工原则**: Redis 协议与命令在 AiKv; LSM 写路径、Raft 状态机、slot 表与 gRPC 在 AiDb. AiKv 侧 **拓扑 tick** 刷新 leader 路由缓存与 gossip metrics; `CLUSTER NODES` 读 MetaRaft; 故障判定走 MetaRaft, 非 Redis 16379 gossip 共识.
 
 本地开发需 sibling 布局 `../aidb`; CI checkout 同名分支 AiDb 并 link.
 

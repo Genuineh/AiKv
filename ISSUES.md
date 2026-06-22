@@ -131,13 +131,14 @@
 
 ### ISSUE-014: GossipState 后台刷新但未接入 CLUSTER NODES
 
-- **状态**: open
+- **状态**: closed
 - **发现于**: PROGRESS 步 11 / 章节 `docs/modules/cluster.md` (步 2–3)
 - **相关 src**: `src/cluster/gossip.rs`, `src/main.rs`, `src/cluster/commands.rs` (`cluster_nodes`)
-- **旧文档**: WiQunTools `07-cluster-protocol.md` — Gossip 供 NODES timestamps; `AGENTS.md` 称刷新 NODES 展示
-- **现象**: `start_background_refresh` 更新 `GossipState` + metrics; `cluster_nodes()` 只读 MetaRaft, 不读 gossip; 无 PING/PONG 网络
-- **影响**: 文档勿称「Gossip 驱动 NODES」; 可能是 dead code 或未完成 wiring
-- **下一步**: 待核实 — 接入 NODES ping 字段或删 unused GossipState 读路径/简化模块
+- **旧文档**: WiQunTools `07-cluster-protocol.md` — Gossip 供 NODES timestamps; `AGENTS.md` 曾称刷新 NODES 展示
+- **现象**: `start_background_refresh` 曾写 unused `GossipState`; `cluster_nodes()` 只读 MetaRaft; 无 PING/PONG 网络
+- **修复**: 移除 dead `GossipState` 缓存; tick 保留 leader 路由缓存 + gossip metrics; `CLUSTER NODES` 继续读 MetaRaft, link-state 恢复 `NodeStatus` → connected/disconnected; ping/pong 仍为 `0 0` (与 oldmain 一致)
+- **测试**: `cluster_nodes_link_state_from_meta_status`
+- **下一步**: —
 
 ### ISSUE-013: CLUSTER INFO 恒输出 cluster_state:ok
 

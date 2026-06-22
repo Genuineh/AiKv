@@ -106,7 +106,7 @@ database/
 | `--raft-rpc-timeout-ms` | `500` | `cluster` | 须 < `election_timeout_min` |
 | `--raft-heartbeat-interval` | `300` | `cluster` | 须 < `election_timeout_min` |
 | `--lifecycle-tick-ms` | `1000` | `cluster` | LifecycleManager tick |
-| `--gossip-interval` | `1` | `cluster` | 秒; CLUSTER NODES 刷新 |
+| `--gossip-interval` | `1` | `cluster` | 秒; 拓扑 tick (leader 缓存 + gossip metrics) |
 | `--config-auto-save-ms` | `2000` | `cluster` | 集群配置自动保存 |
 | `--cluster-data-port-offset` | `10000` | `cluster` | `data_port = rpc_port + offset`; 全集群一致 |
 | `--metrics-port` | `9191` | CLI 始终 | HTTP 仅 `[monitoring]` |

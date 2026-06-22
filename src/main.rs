@@ -432,10 +432,8 @@ async fn init_cluster(
     let state_mgr = Arc::new(state_mgr);
     let _ = aikv::cluster::state::CLUSTER_STATE_MGR.set(state_mgr);
 
-    // 16. 启动 Gossip 后台刷新循环
-    let gossip = Arc::new(aikv::cluster::gossip::GossipState::new());
-    let _gossip_handle = aikv::cluster::gossip::start_background_refresh(
-        gossip,
+    // 16. 启动拓扑后台刷新 (leader 缓存 + gossip metrics)
+    let _topology_refresh_handle = aikv::cluster::gossip::start_background_refresh(
         aikv::cluster::state::CLUSTER_STATE_MGR
             .get()
             .unwrap()

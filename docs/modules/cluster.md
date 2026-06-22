@@ -65,7 +65,7 @@ flowchart TB
 | `cluster/connection.rs` | 每连接 asking/readonly | `ClusterConnectionState` |
 | `cluster/announce.rs` | MOVED/SLOTS 客户端地址; 内部转发 TCP 地址 | `AnnounceResolver`, `AnnounceMode` |
 | `cluster/commands.rs` | CLUSTER 子命令 + `dispatch_cluster` | `cluster_meet`, `cluster_set_slot`, … |
-| `cluster/gossip.rs` | 从 MetaRaft 刷新 GossipState (metrics) | `start_background_refresh` |
+| `cluster/gossip.rs` | 拓扑 tick: leader 缓存 + gossip metrics | `start_background_refresh` |
 | `cluster/config_auto_save.rs` | MetaRaft version → `nodes.conf` | `ConfigAutoSave::run` |
 | `cluster/replication.rs` | HELLO/INFO role 标签 | `node_replication_role` |
 | `command/router.rs` | 普通命令 cluster 前置 + `CLUSTER` dispatch | `cluster_route`, `execute_with_client` |
@@ -96,7 +96,7 @@ flowchart TB
 4. `Router` + `LifecycleManager` + `MultiRaftNode::start_lifecycle_with_data`
 5. 数据面 gRPC: `rpc_port + cluster_data_port_offset` (默认 +10000)
 6. `MembershipCoordinator` + `SlotMigrationManager` 注入 `ClusterStateManager` → `CLUSTER_STATE_MGR.set`
-7. 后台: Gossip tick、`LeaderChangeWatcher` → `apply_observed_group_leader`、`ConfigAutoSave` → `nodes.conf`
+7. 后台: 拓扑 tick (leader 缓存 + metrics)、LeaderChangeWatcher → `apply_observed_group_leader`、`ConfigAutoSave` → `nodes.conf`
 
 `build_storage` (aidb 路径): `StorageAdapter` → `ClusterDataAdapter` → `KvStorageAdapter`.
 
@@ -190,7 +190,7 @@ NotLeader (MetaRaft propose): `map_propose_error` → `MOVED 0 <addr>` 或 CLUST
 | `--cluster-data-port-offset` | `main.rs` CLI | 默认 10000 |
 | `AIKV_CLIENT_ADDR` | env | 写入 MetaRaft `client_addr` |
 | `AIKV_CLUSTER_ANNOUNCE_MODE` | env | `unknown` (默认) / `fixed` |
-| gossip / lifecycle / autosave 间隔 | `main.rs` CLI | 传入 `init_cluster` |
+| gossip / lifecycle / autosave 间隔 | `main.rs` CLI | 拓扑 tick / lifecycle / autosave 间隔 |
 
 ## 常见任务
 
@@ -198,7 +198,7 @@ NotLeader (MetaRaft propose): `map_propose_error` → `MOVED 0 <addr>` 或 CLUST
 
 1. 目标节点 `CLUSTER NODES` 中 `client_addr` 是否可达 (`AIKV_CLIENT_ADDR`)
 2. `AIKV_CLUSTER_ANNOUNCE_MODE=fixed` 是否更适合 LAN
-3. `LeaderChangeWatcher` / Gossip tick 是否刷新 router (`apply_observed_group_leader`)
+3. `LeaderChangeWatcher` / 拓扑 tick 是否刷新 router (`apply_observed_group_leader`)
 4. 对比 aidb Router slot 表: `CLUSTER SLOTS` vs MetaRaft
 
 ### 手动 failover
@@ -266,9 +266,13 @@ cargo test --features cluster -p aikv --test cluster_creategroup
 
 ## Gossip (轻量)
 
-`GossipState` 后台从 MetaRaft 刷新节点列表并计 metrics; **不** 发送 PING/PONG, **不** 决策 PFAIL/FAIL. `cluster_nodes()` 直接读 MetaRaft, 不读 GossipState (见 ISSUE-014). 故障检测与成员变更以 MetaRaft/Raft 为准.
+**无 Redis cluster bus PING/PONG**; 成员与 slot 权威拓扑来自 MetaRaft. `cluster/gossip.rs` 的 `start_background_refresh` 仅周期性:
+
+- 调用 `ClusterStateManager::refresh()` 更新本地 group leader 路由缓存
+- 递增 `CLUSTER INFO` 的 `cluster_stats_messages_*` (metrics 语义, 非真实 gossip 报文)
+
+`CLUSTER NODES` **直接读 MetaRaft** (`cluster_nodes()`); ping-sent/pong-recv 恒 `0 0` (与 oldmain 一致). link-state 来自 `NodeInfo.status` (`Online`/`Draining` → `connected`, `Offline` → `disconnected`). 故障检测与成员变更以 MetaRaft/Raft 为准.
 
 ## 待核实
 
-- 见 [ISSUES.md](../../ISSUES.md#ISSUE-014) — GossipState 未接入 NODES.
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-004) — cluster_route 预留 msetnx dead branch.

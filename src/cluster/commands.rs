@@ -8,6 +8,7 @@ use crate::error::Error;
 use crate::protocol::RespValue;
 use aidb::cluster::membership_coordinator;
 use aidb::cluster::meta_types::ClusterMeta;
+use aidb::cluster::meta_types::NodeStatus;
 use aidb::cluster::meta_types::SlotMigrationState;
 use aidb::cluster::meta_types::SlotStatus;
 use aidb::cluster::meta_types::SlotTable;
@@ -190,6 +191,14 @@ pub fn cluster_info() -> Result<String, String> {
 // CLUSTER NODES
 // ---------------------------------------------------------------------------
 
+/// Redis CLUSTER NODES link-state from MetaRaft node status.
+fn cluster_nodes_link_state(status: &NodeStatus) -> &'static str {
+    match status {
+        NodeStatus::Offline => "disconnected",
+        NodeStatus::Online | NodeStatus::Draining => "connected",
+    }
+}
+
 /// Redis CLUSTER NODES 的 master/slave 标签 (与 primary_id 一致, 看分片 group 而非 MetaRaft NodeRole).
 ///
 /// 副本在 ADD_REPLICA 后常为 Voter (参与 MultiRaft), 若用 `NodeRole::Voter` 会误显示为 master.
@@ -341,9 +350,10 @@ pub fn cluster_nodes() -> Result<String, String> {
             .router
             .get_node_addr(*nid)
             .unwrap_or_else(|| node.rpc_addr.clone());
+        let link_state = cluster_nodes_link_state(&node.status);
         let line = format!(
-            "{:040x} {}@{} {} {} 0 0 {} connected{}\n",
-            nid, addr, cport, flags, display_primary_id, meta.version, slot_ranges_str,
+            "{:040x} {}@{} {} {} 0 0 {} {}{}\n",
+            nid, addr, cport, flags, display_primary_id, meta.version, link_state, slot_ranges_str,
         );
         lines.push(line);
     }
@@ -1938,6 +1948,22 @@ mod cluster_nodes_role_tests {
             registered_at: 0,
             tags: HashMap::new(),
         }
+    }
+
+    #[test]
+    fn cluster_nodes_link_state_from_meta_status() {
+        assert_eq!(
+            super::cluster_nodes_link_state(&NodeStatus::Online),
+            "connected"
+        );
+        assert_eq!(
+            super::cluster_nodes_link_state(&NodeStatus::Draining),
+            "connected"
+        );
+        assert_eq!(
+            super::cluster_nodes_link_state(&NodeStatus::Offline),
+            "disconnected"
+        );
     }
 
     #[test]
