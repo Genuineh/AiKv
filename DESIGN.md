@@ -193,7 +193,6 @@ Redis Cluster 协议: 服务器返回 `MOVED`/`ASK` 字符串, smart client 重�
 
 ### 已知限制 (摘要)
 
-- CLUSTER INFO 恒 `cluster_state:ok` — [ISSUES.md#ISSUE-013](ISSUES.md#issue-013-cluster-info-恒输出-cluster_stateok).
 - 无 CLUSTER RESET; FAILOVER 仅 FORCE/TAKEOVER — ISSUE-016/018.
 - SET-CONFIG-EPOCH / COUNT-FAILURE-REPORTS stub — ISSUE-019.
 
@@ -269,9 +268,9 @@ Redis Cluster 协议: 服务器返回 `MOVED`/`ASK` 字符串, smart client 重�
 ## 已知限制 (根文档摘要)
 
 - 双引擎 MGET wrong-type 语义不一致 — [ISSUES.md#ISSUE-001](ISSUES.md#issue-001-memoryengine-mget-对非-string-key-静默返回-none).
-- 集群 CLUSTER INFO / Gossip 与 oldmain 行为差异 — [ISSUES.md](ISSUES.md) (ISSUE-013/014 等).
+- 集群 Gossip 与 oldmain 行为差异 — [ISSUES.md](ISSUES.md) (ISSUE-014 等).
 
 ## 待核实
 
-- 集群 failover / stub 子命令 — 见 [ISSUES.md](ISSUES.md) (ISSUE-013~016, ISSUE-019; modules 一行引用).
+- 集群 failover / stub 子命令 — 见 [ISSUES.md](ISSUES.md) (ISSUE-016, ISSUE-019; modules 一行引用).
 - 可观测性默认与 metrics 刷新 — 见 [ISSUES.md](ISSUES.md) (ISSUE-020~023).

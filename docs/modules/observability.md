@@ -140,7 +140,7 @@ sequenceDiagram
 
 `memory`: 优先 `KvStorage::memory_usage_bytes()`; fallback `ServerMetrics.used_memory_bytes`.
 
-`CLUSTER INFO` 文本在 `cluster/commands.rs::cluster_info`, 读 `ServerMetrics.cluster_messages_*` (状态字段见 ISSUE-013).
+`CLUSTER INFO` 文本在 `cluster/commands.rs::cluster_info`; `cluster_state` 按 slot 覆盖与 group leader 动态 ok/fail; gossip 计数读 `ServerMetrics.cluster_messages_*`.
 
 ### INFO ↔ Prometheus (P0 不变式)
 
@@ -282,4 +282,3 @@ cargo test -p aikv --features cluster gossip_refresh -- --test-threads=1
 - 见 [ISSUES.md](../../ISSUES.md#issue-021) — refresh 仅 monitoring 后台 tick
 - 见 [ISSUES.md](../../ISSUES.md#issue-022) — refresh 周期 15s vs spec 1s
 - 见 [ISSUES.md](../../ISSUES.md#issue-023) — slowlog 默认阈值 100ms
-- 见 [ISSUES.md](../../ISSUES.md#issue-013) — CLUSTER INFO cluster_state 恒 ok

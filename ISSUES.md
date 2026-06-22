@@ -141,13 +141,14 @@
 
 ### ISSUE-013: CLUSTER INFO 恒输出 cluster_state:ok
 
-- **状态**: open
+- **状态**: closed
 - **发现于**: PROGRESS 步 11 / 章节 `docs/modules/cluster.md` (步 3)
-- **相关 src**: `src/cluster/commands.rs` (`cluster_info`)
+- **相关 src**: `src/cluster/commands.rs` (`cluster_info`, `compute_cluster_state`)
 - **oldmain 代码**: `aikv-oldmain/src/cluster/commands.rs` — slot 未满 16384 或无 leader 时 `cluster_state:fail`
-- **现象**: 现码硬编码 `cluster_state:ok\n`; wiqun-kv 同形
-- **影响**: `redis-cli --cluster check` / 排障可能误判; 与 oldmain 行为回归
-- **下一步**: 待核实 — 恢复 oldmain 判定逻辑或文档声明 intentional
+- **现象**: 曾硬编码 `cluster_state:ok\n`; wiqun-kv 同形
+- **修复**: 恢复动态 `ok`/`fail` — 16384 slot 全覆盖 (含 Migrating) + 持有 slot 的 group 有 leader (MetaRaft `is_leader` + 本地 MultiRaft metrics) + slot 映射指向已知 group
+- **测试**: `cluster_info_state_tests` (partial slots / no leader / healthy / orphan / migrating)
+- **下一步**: —
 
 ### ISSUE-002: AiDbEngine::open 固定 Options::for_testing()
 

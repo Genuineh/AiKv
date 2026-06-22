@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use crate::cluster::state::ClusterStateManager;
@@ -7,8 +7,11 @@ use crate::cluster::state::DEFAULT_DATA_PORT_OFFSET;
 use crate::error::Error;
 use crate::protocol::RespValue;
 use aidb::cluster::membership_coordinator;
+use aidb::cluster::meta_types::ClusterMeta;
 use aidb::cluster::meta_types::SlotMigrationState;
 use aidb::cluster::meta_types::SlotStatus;
+use aidb::cluster::meta_types::SlotTable;
+use aidb::cluster::meta_types::SLOT_COUNT;
 use aidb::cluster::router::key_to_slot;
 use aidb::cluster::types::ClusterError;
 use aidb::cluster::ReplicaAllocator;
@@ -80,6 +83,63 @@ pub fn cluster_myid() -> Result<String, String> {
 // ---------------------------------------------------------------------------
 // CLUSTER INFO
 // ---------------------------------------------------------------------------
+
+/// 解析 group leader (CLUSTER INFO 健康判定; 不用 Router 的 first-node 回退).
+fn resolve_group_leader_for_info(
+    mgr: &ClusterStateManager,
+    meta: &ClusterMeta,
+    group_id: u64,
+) -> Option<u64> {
+    if let Some(group) = meta.groups.get(&group_id) {
+        if let Some(replica) = group.replicas.iter().find(|r| r.is_leader) {
+            return Some(replica.node_id);
+        }
+    }
+    if let Some(node) = mgr.multi_raft.get_groups().read().get(&group_id) {
+        return node.raft().metrics().borrow().current_leader;
+    }
+    None
+}
+
+/// 动态 `cluster_state:ok` / `fail` (对齐 oldmain: slot 满 + leader + 映射一致).
+fn compute_cluster_state<F>(slot_table: &SlotTable, meta: &ClusterMeta, resolve_leader: F) -> &'static str
+where
+    F: Fn(u64) -> Option<u64>,
+{
+    let covered = slot_table
+        .iter()
+        .filter(|s| !matches!(s, SlotStatus::Unallocated))
+        .count();
+    if covered != SLOT_COUNT {
+        return "fail";
+    }
+
+    let slots_map_to_known_groups = slot_table.iter().all(|status| match status {
+        SlotStatus::Unallocated => true,
+        SlotStatus::Assigned(gid) | SlotStatus::Migrating(gid) => meta.groups.contains_key(gid),
+    });
+    if !slots_map_to_known_groups {
+        return "fail";
+    }
+
+    let groups_with_slots: HashSet<u64> = slot_table
+        .iter()
+        .filter_map(|status| match status {
+            SlotStatus::Assigned(gid) | SlotStatus::Migrating(gid) => Some(*gid),
+            SlotStatus::Unallocated => None,
+        })
+        .collect();
+
+    if !groups_with_slots
+        .iter()
+        .all(|gid| resolve_leader(*gid).is_some())
+    {
+        return "fail";
+    }
+
+    "ok"
+}
+
 #[tracing::instrument(name = "cmd_cluster_info", skip_all)]
 pub fn cluster_info() -> Result<String, String> {
     let mgr = CLUSTER_STATE_MGR
@@ -105,22 +165,24 @@ pub fn cluster_info() -> Result<String, String> {
         .as_ref()
         .map(|m| (m.cluster_messages_sent(), m.cluster_messages_received()))
         .unwrap_or((0, 0));
+    let cluster_state = compute_cluster_state(&slot_table, &meta, |gid| {
+        resolve_group_leader_for_info(mgr, &meta, gid)
+    });
 
     Ok(format!(
-        "cluster_state:ok\n\
-         cluster_slots_assigned:{}\n\
-         cluster_slots_ok:{}\n\
+        "cluster_state:{cluster_state}\n\
+         cluster_slots_assigned:{assigned}\n\
+         cluster_slots_ok:{ok_count}\n\
          cluster_slots_pfail:0\n\
          cluster_slots_fail:0\n\
-         cluster_slots_migrating:{}\n\
-         cluster_known_nodes:{}\n\
-         cluster_size:{}\n\
-         cluster_current_epoch:{}\n\
-         cluster_my_epoch:{}\n\
+         cluster_slots_migrating:{migrating}\n\
+         cluster_known_nodes:{known_nodes}\n\
+         cluster_size:{group_count}\n\
+         cluster_current_epoch:{epoch}\n\
+         cluster_my_epoch:{epoch}\n\
          cluster_stats_messages_sent:{msgs_sent}\n\
          cluster_stats_messages_received:{msgs_received}\n\
          total_cluster_connections_buffer_size:0\n",
-        assigned, ok_count, migrating, known_nodes, group_count, epoch, epoch,
     ))
 }
 
@@ -1891,5 +1953,79 @@ mod cluster_nodes_role_tests {
         };
         assert_eq!(cluster_node_role_label(&meta, 1), "master");
         assert_eq!(cluster_node_role_label(&meta, 2), "slave");
+    }
+}
+
+#[cfg(test)]
+mod cluster_info_state_tests {
+    use super::compute_cluster_state;
+    use aidb::cluster::meta_types::{
+        default_slot_table, ClusterMeta, GroupMeta, ReplicaInfo, SlotStatus,
+    };
+    use std::collections::HashMap;
+
+    fn meta_with_group(group_id: u64, has_leader: bool) -> ClusterMeta {
+        ClusterMeta {
+            groups: HashMap::from([(
+                group_id,
+                GroupMeta {
+                    group_id,
+                    replicas: vec![ReplicaInfo {
+                        node_id: group_id,
+                        is_leader: has_leader,
+                    }],
+                    slot_ranges: vec![],
+                    config_version: 1,
+                },
+            )]),
+            ..ClusterMeta::default()
+        }
+    }
+
+    fn full_slot_table(group_id: u64) -> Vec<SlotStatus> {
+        let mut table = default_slot_table();
+        for slot in table.iter_mut() {
+            *slot = SlotStatus::Assigned(group_id);
+        }
+        table
+    }
+
+    #[test]
+    fn cluster_state_fail_partial_slots() {
+        let mut table = default_slot_table();
+        for slot in 0..5 {
+            table[slot] = SlotStatus::Assigned(1);
+        }
+        let meta = meta_with_group(1, true);
+        assert_eq!(compute_cluster_state(&table, &meta, |_| Some(1)), "fail");
+    }
+
+    #[test]
+    fn cluster_state_fail_no_leader() {
+        let table = full_slot_table(1);
+        let meta = meta_with_group(1, false);
+        assert_eq!(compute_cluster_state(&table, &meta, |_| None), "fail");
+    }
+
+    #[test]
+    fn cluster_state_ok_healthy() {
+        let table = full_slot_table(1);
+        let meta = meta_with_group(1, true);
+        assert_eq!(compute_cluster_state(&table, &meta, |_| Some(1)), "ok");
+    }
+
+    #[test]
+    fn cluster_state_fail_orphan_slot() {
+        let table = full_slot_table(99);
+        let meta = meta_with_group(1, true);
+        assert_eq!(compute_cluster_state(&table, &meta, |_| Some(99)), "fail");
+    }
+
+    #[test]
+    fn cluster_state_ok_counts_migrating_as_covered() {
+        let mut table = full_slot_table(1);
+        table[0] = SlotStatus::Migrating(1);
+        let meta = meta_with_group(1, true);
+        assert_eq!(compute_cluster_state(&table, &meta, |_| Some(1)), "ok");
     }
 }

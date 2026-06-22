@@ -151,7 +151,7 @@ sequenceDiagram
 | 子命令 | 入口 | 说明 |
 |--------|------|------|
 | KEYSLOT, MYID | `cluster_keyslot`, `cluster_myid` | |
-| INFO, NODES, SLOTS, SHARDS, MYSHARDID | `cluster_*` | NODES 用 group leader 判 master/slave |
+| INFO, NODES, SLOTS, SHARDS, MYSHARDID | `cluster_*` | INFO: `cluster_state` 按 slot 覆盖 + group leader 动态 ok/fail |
 | COUNTKEYSINSLOT, GETKEYSINSLOT | scan 本地 group SM | |
 | MEET, FORGET [FORCE] | `MembershipCoordinator` | MEET NotLeader 退避重试 |
 | ADDSLOTS [NODE id], DELSLOTS | MetaRaft `AssignSlots`/`UnassignSlots` | 无 group 时 ADDSLOTS 可自动 CreateGroup |
@@ -241,7 +241,6 @@ cargo test --features cluster -p aikv --test cluster_creategroup
 - **REPLICATE/FAILOVER**: 手动模型; replica 不自动服务写; 非 Redis 全自动 failover.
 - **无 CLUSTER RESET / METARAFT RESP 子命令**.
 - **无 ADDSLOTSRANGE** (redis-cli 常用 ADDSLOTS 仍可用).
-- **CLUSTER INFO** 当前恒 `cluster_state:ok` (见 ISSUE-013).
 - **透明转发**: 仅 server 侧; smart client (`redis-cli -c`) 仍靠 MOVED/ASK 字符串.
 
 ## Gossip (轻量)
@@ -250,7 +249,6 @@ cargo test --features cluster -p aikv --test cluster_creategroup
 
 ## 待核实
 
-- 见 [ISSUES.md](../../ISSUES.md#ISSUE-013) — CLUSTER INFO 恒 ok.
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-014) — GossipState 未接入 NODES.
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-016) — CLUSTER RESET 未实现.
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-004) — cluster_route 预留 msetnx dead branch.

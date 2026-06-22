@@ -293,8 +293,8 @@ mod tests {
         assert!(info.is_ok(), "cluster_info should work after init");
         let info_str = info.unwrap();
         assert!(
-            info_str.contains("cluster_state:ok"),
-            "missing cluster_state"
+            info_str.contains("cluster_state:fail"),
+            "partial slot assignment should report fail: {info_str}"
         );
         assert!(
             info_str.contains("cluster_slots_assigned:"),

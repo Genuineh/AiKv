@@ -284,5 +284,5 @@ AiDb 侧总览: [aidb/ARCHITECTURE.md](../aidb/ARCHITECTURE.md).
 
 ## 待核实
 
-- 集群 failover / stub 子命令等待核实项 — 见 [ISSUES.md](ISSUES.md) (ISSUE-013~016, ISSUE-019 等, 详情在 modules 一行引用).
+- 集群 failover / stub 子命令等待核实项 — 见 [ISSUES.md](ISSUES.md) (ISSUE-014/016, ISSUE-019 等, 详情在 modules 一行引用).
 - 可观测性默认与 metrics 刷新 — 见 [ISSUES.md](ISSUES.md) (ISSUE-020~023).
