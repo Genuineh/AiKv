@@ -173,7 +173,7 @@ sequenceDiagram
 | 子命令 | 行为 |
 |--------|------|
 | CLUSTER RESET | **不支持** — 返回 ERR; 见下方 [重置集群](#重置集群无-cluster-reset) |
-| CLUSTER METARAFT * | 不在 aikv; 见 aidb cluster |
+| CLUSTER METARAFT * | 不在 aikv; 见 [aidb cluster.md](../../../aidb/docs/modules/cluster.md) |
 | SET-CONFIG-EPOCH | 恒 OK |
 | COUNT-FAILURE-REPORTS | 恒 0 |
 

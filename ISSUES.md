@@ -40,32 +40,32 @@
 
 ### ISSUE-023: Slowlog 默认阈值 100ms vs Redis/oldmain 10ms
 
-- **状态**: doc-only
+- **状态**: closed (doc-only)
 - **发现于**: PROGRESS 步 12 / 章节 `docs/modules/observability.md` (步 3)
 - **相关 src**: `src/server/slowlog.rs` (`DEFAULT_SLOWLOG_THRESHOLD_US = 100_000`)
 - **oldmain 代码**: `aikv-oldmain/src/observability/logging.rs` — 默认 10_000 µs (10ms, 近 Redis)
 - **现象**: 现默认 100ms; Redis `slowlog-log-slower-than` 默认 10000 µs; CONFIG GET 返回 100000
-- **影响**: 新部署记录的慢查询更少; module 写实际默认
-- **下一步**: doc-only; 是否改默认另开开发任务
+- **修复**: doc-only — module 写实际默认 100ms; 改默认另开开发任务
+- **影响**: 新部署记录的慢查询更少
 
 ### ISSUE-022: metrics refresh 周期 15s vs 设计 spec 1s
 
-- **状态**: doc-only
+- **状态**: closed (doc-only)
 - **发现于**: PROGRESS 步 12 / 章节 `docs/modules/observability.md` (步 2)
 - **相关 src**: `src/main.rs` (15s interval), `src/server/config.rs` (`refresh_runtime_metrics`)
 - **旧文档**: `backup/aikv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md` §R4 写 1s
 - **现象**: 设计 spec 要求 refresh 与 ops/sec 窗口 1s; 现 `tokio::time::interval(Duration::from_secs(15))`
-- **影响**: `instantaneous_ops_per_sec` 采样粒度粗于 spec; module 以代码 15s 为准
-- **下一步**: doc-only
+- **修复**: doc-only — module 以代码 15s 为准
+- **影响**: `instantaneous_ops_per_sec` 采样粒度粗于 spec
 
 ### ISSUE-021: `refresh_runtime_metrics` 仅 monitoring 后台 tick
 
-- **状态**: doc-only
+- **状态**: closed (doc-only)
 - **发现于**: PROGRESS 步 12 / 章节 `docs/modules/observability.md` (步 2)
 - **相关 src**: `src/main.rs` (`#[cfg(feature = "monitoring")]` 15s loop), `src/server/config.rs` (`refresh_runtime_metrics`)
 - **现象**: 无 `monitoring` feature 时不启后台 refresh; `StorageObservation` drain、ops/sec sample、Prometheus gauge 同步不自动运行
+- **修复**: doc-only — module 写 refresh 条件 (`monitoring` feature + 15s tick)
 - **影响**: 无 monitoring 构建下 INFO `stats.expired_keys` / `instantaneous_ops_per_sec` 可能滞后; memory/keyspace 段仍可直接查 `KvStorage`
-- **下一步**: doc-only — module 写 refresh 条件
 
 ### ISSUE-020: `blocked_clients` 无写入点
 
@@ -79,34 +79,34 @@
 
 ### ISSUE-019: SET-CONFIG-EPOCH / COUNT-FAILURE-REPORTS 为 stub
 
-- **状态**: doc-only
+- **状态**: closed (doc-only)
 - **发现于**: PROGRESS 步 11 / 章节 `docs/modules/cluster.md` (步 2–3)
 - **相关 src**: `src/cluster/commands.rs` (`dispatch_cluster`)
 - **oldmain 代码**: `aikv-oldmain/src/cluster/commands.rs` — `SET-CONFIG-EPOCH` 有实现; `COUNT-FAILURE-REPORTS` 部分逻辑
 - **现象**: 现码 `SET-CONFIG-EPOCH` 恒 OK; `COUNT-FAILURE-REPORTS` 恒 0
-- **影响**: module「已知限制」; redis-cli 部分检查路径可能跳过
-- **下一步**: doc-only — 文档注明 stub; 按需补实现
+- **修复**: doc-only — stub 表与「未实现 / stub」节见 [cluster.md](docs/modules/cluster.md)
+- **影响**: redis-cli 部分检查路径可能跳过
 
 ### ISSUE-018: CLUSTER FAILOVER 仅 FORCE/TAKEOVER 手动升主
 
-- **状态**: doc-only
+- **状态**: closed (doc-only)
 - **发现于**: PROGRESS 步 11 / 章节 `docs/modules/cluster.md` (步 2–3)
 - **相关 src**: `src/cluster/commands.rs` (`cluster_failover`)
 - **旧文档**: `aikv-oldmain/docs/development/api/02-cluster-api.md` — 称 openraft 自动故障切换
 - **oldmain 代码**: `FailoverMode::Default|Force|Takeover`; 部分路径经 MetaRaft leader 转发
 - **现象**: 现码仅 `FORCE|TAKEOVER`; replica 上 `change_group_membership` 升主; 无 Redis 标准选举等待
-- **影响**: module 说明手动 failover 模型; 与 Redis 全兼容 FAILOVER 语义不同
-- **下一步**: doc-only
+- **修复**: doc-only — 手动 failover 模型见 [cluster.md](docs/modules/cluster.md#手动-failover)
+- **影响**: 与 Redis 全兼容 FAILOVER 语义不同
 
 ### ISSUE-017: CLUSTER REPLICATE 仅本地 ReplicationRole 元数据
 
-- **状态**: doc-only
+- **状态**: closed (doc-only)
 - **发现于**: PROGRESS 步 11 / 章节 `docs/modules/cluster.md` (步 2–3)
 - **相关 src**: `src/cluster/commands.rs` (`cluster_replicate`, `cluster_failover`)
 - **oldmain 代码**: oldmain `cluster_replicate` 调 membership/MultiRaft 路径更完整
 - **现象**: 现码只写 `ReplicationRole::Replica { primary_id }`; 注释声明 replicas 不服务数据读取
-- **影响**: FAILOVER 前需 REPLICATE; replica 读依赖 `READONLY` + 本地 group; module 已知限制
-- **下一步**: doc-only — 与 storage/cluster_adapter 读路径一并描述
+- **修复**: doc-only — REPLICATE 仅本地元数据; replica 读依赖 `READONLY` + 本地 group, 见 [cluster.md](docs/modules/cluster.md)
+- **影响**: FAILOVER 前需 REPLICATE
 
 ### ISSUE-016: CLUSTER RESET 未实现
 
@@ -120,14 +120,14 @@
 
 ### ISSUE-015: CLUSTER METARAFT * 子命令已移除
 
-- **状态**: doc-only
+- **状态**: closed (doc-only)
 - **发现于**: PROGRESS 步 11 / 章节 `docs/modules/cluster.md` (步 2–3)
 - **相关 src**: (无 aikv RESP 层)
 - **旧文档**: `aikv-oldmain/docs/development/api/02-cluster-api.md`, `03-cluster.md` §METARAFT
 - **oldmain 代码**: `aikv-oldmain/src/server/connection.rs` — ADDLEARNER/PROMOTE/MEMBERS/STATUS/SETSTATUS
 - **现象**: 重构后 MetaRaft 运维不在 aikv CLUSTER 子命令暴露; 由 aidb gRPC/内部 API 承担
-- **影响**: module 一行指向 [aidb cluster.md](../aidb/docs/modules/cluster.md); 勿写 aikv 支持 METARAFT
-- **下一步**: doc-only
+- **修复**: doc-only — METARAFT 运维见 [aidb cluster.md](../aidb/docs/modules/cluster.md); aikv 无 RESP 子命令
+- **影响**: 勿写 aikv 支持 METARAFT
 
 ### ISSUE-014: GossipState 后台刷新但未接入 CLUSTER NODES
 
@@ -185,13 +185,13 @@
 
 ### ISSUE-011: SHUTDOWN NOW/FORCE/ABORT 未实现
 
-- **状态**: doc-only
+- **状态**: closed (doc-only)
 - **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 2)
 - **相关 src**: `src/command/persistence.rs` (`parse_shutdown_mode` — 仅 Default/SAVE/NOSAVE)
 - **旧文档**: `aikv-oldmain/docs/development/api/01-commands.md` §SHUTDOWN
 - **现象**: oldmain API 文档列 NOW/FORCE/ABORT; 现码仅 SAVE/NOSAVE; 未知 mode → ERR
-- **影响**: module「已知限制」; Redis 全兼容客户端可能发未支持 flag
-- **下一步**: doc-only — 文档注明; 或按需补实现
+- **修复**: doc-only — 仅 Default/SAVE/NOSAVE; 未知 mode → ERR, 见 [commands-extended.md](docs/modules/commands-extended.md)
+- **影响**: Redis 全兼容客户端可能发未支持 flag
 
 ### ISSUE-010: MIGRATE 无 AUTH2 (username+password)
 
@@ -214,22 +214,22 @@
 
 ### ISSUE-008: SAVE 日志 target 为 bgsave.complete
 
-- **状态**: doc-only
+- **状态**: closed (doc-only)
 - **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 1)
 - **相关 src**: `src/command/persistence.rs` (`save` — `tracing::info!(target: "persist", …, "bgsave.complete")`)
 - **现象**: 同步 SAVE 成功日志复用 BGSAVE 事件名
-- **影响**: 日志检索/告警可能混淆; 行为无影响
-- **下一步**: doc-only 或改 log message
+- **修复**: doc-only — 同步 SAVE 成功日志事件名 `bgsave.complete` (target `persist`); 行为无影响
+- **影响**: 日志检索/告警可能混淆
 
 ### ISSUE-007: SCRIPT KILL 恒 NOTBUSY
 
-- **状态**: doc-only
+- **状态**: closed (doc-only)
 - **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 2)
 - **相关 src**: `src/command/script.rs` (`script_kill`)
 - **旧文档**: `aikv-oldmain/docs/development/architecture/05-lua-scripting.md` Limitations — 已承认不可用
 - **现象**: 无运行中脚本跟踪; 始终 `NOTBUSY No scripts in execution right now.`
-- **影响**: module「已知限制」; `backup/aikv/README.md` 标 SCRIPT KILL ✅ 与事实不符
-- **下一步**: doc-only
+- **修复**: doc-only — stub, 恒 NOTBUSY; 见 [commands-extended.md](docs/modules/commands-extended.md) Lua 节
+- **影响**: `backup/aikv/README.md` 标 SCRIPT KILL ✅ 与事实不符 (不在本仓维护范围)
 
 ### ISSUE-006: MIGRATE KEYS 忽略 COPY, 批量路径始终 delete
 

@@ -172,7 +172,7 @@ JSONPath 能力 (`jsonpath.rs`): `$`, `.`, `$.field`, `$[N]`, `[*]`, 多字段�
 | 沙箱 StdLib | TABLE, STRING, MATH, UTF8; Nil: load/require/rawget/rawset/… |
 | SCRIPT LOAD | SHA1 hex; LRU 256 |
 | SCRIPT EXISTS / FLUSH | 标准语义 |
-| SCRIPT KILL | 恒 NOTBUSY (见 ISSUE-007) |
+| SCRIPT KILL | 恒 NOTBUSY (stub, 无运行中脚本跟踪) |
 
 **`redis.call` 支持子集** (`execute.rs`, 按域): String (GET/SET/INCR*/APPEND/STRLEN…), Hash, List, Set, ZSet 常用读写, EXPIRE, JSON.* (9 条 via `json_exec`; **无 JSON.MGET** — ISSUE-009).
 
@@ -248,16 +248,13 @@ cargo test --test commands
 - **Lua pcall**: Redis `{err}` 表 (非 oldmain Nil).
 - **MIGRATE**: 无 AUTH2 (ISSUE-010).
 - **BGSAVE 重入**: 第二次返回 **ERR** (非 oldmain SimpleString OK).
-- **SHUTDOWN**: 仅 Default/SAVE/NOSAVE (ISSUE-011).
+- **SHUTDOWN**: 仅 Default/SAVE/NOSAVE; 未知 mode → ERR.
 - **OBJECT**: REFCOUNT/IDLETIME/FREQ 固定 stub.
 - **BlockingRegistry**: `evict_expired` 无后台任务 (ISSUE-005).
-- **SAVE 日志**: 成功事件名 `bgsave.complete` (ISSUE-008).
+- **SAVE 日志**: 同步 SAVE 成功事件名 `bgsave.complete` (target `persist`).
 
 ## 待核实
 
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-005) — BlockingRegistry evict_expired 无调用.
-- 见 [ISSUES.md](../../ISSUES.md#ISSUE-007) — SCRIPT KILL stub.
-- 见 [ISSUES.md](../../ISSUES.md#ISSUE-008) — SAVE 日志 target 命名.
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-009) — Lua JSON.MGET 未实现.
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-010) — MIGRATE 无 AUTH2.
-- 见 [ISSUES.md](../../ISSUES.md#ISSUE-011) — SHUTDOWN NOW/FORCE/ABORT.

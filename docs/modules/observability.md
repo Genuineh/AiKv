@@ -54,7 +54,7 @@ flowchart TB
 
 - **热路径**: `ServerMetrics` (atomic + `commands_total` Mutex) 为 INFO 与业务计数唯一源
 - **冷路径**: `[monitoring]` 下 `main` 每 **15s** 调 `refresh_runtime_metrics` + `refresh_process_metrics`
-- **无 monitoring**: slowlog/latency/INFO/`ServerMetrics` 仍可用; **无** HTTP `/metrics`、无 OTel layer、**无** 自动 refresh (见 ISSUE-021)
+- **无 monitoring**: slowlog/latency/INFO/`ServerMetrics` 仍可用; **无** HTTP `/metrics`、无 OTel layer、**无** 自动 refresh
 - **内部命令**: 含 `.` 的伪命令 (`GOSSIP.tick`, `JSON.get`, `CLUSTER.redirect.moved`) **不** 进 INFO `commandstats`
 
 ## 代码地图
@@ -179,7 +179,7 @@ Golden 字段: `tests/fixtures/redis7_info_p0_fields.txt`.
 
 ### `SlowQueryLog`
 
-- 默认阈值 **100ms** (`DEFAULT_SLOWLOG_THRESHOLD_US = 100_000`; 见 ISSUE-023)
+- 默认阈值 **100ms** (`DEFAULT_SLOWLOG_THRESHOLD_US = 100_000`)
 - 默认容量 128; CONFIG 键 `slowlog-log-slower-than`, `slowlog-max-len`
 
 ### `MetricsServer`
@@ -216,7 +216,7 @@ redis-cli CONFIG SET slowlog-log-slower-than 10000
 redis-cli SLOWLOG GET 10
 ```
 
-或改 `SlowQueryLog` 默认值 (见 ISSUE-023).
+或改 `SlowQueryLog` 默认值.
 
 ### 排查 INFO 与 /metrics 不一致
 
@@ -268,9 +268,9 @@ cargo test -p aikv --features cluster gossip_refresh -- --test-threads=1
 ## 已知限制
 
 - **`blocked_clients` 恒 0** — BlockingRegistry 未同步 (ISSUE-020)
-- **无 monitoring 时无自动 refresh** — `expired_keys` / `instantaneous_ops_per_sec` 可能滞后 (ISSUE-021)
-- **refresh 周期 15s** — 非设计 spec 1s (ISSUE-022)
-- **Slowlog 默认 100ms** — Redis/oldmain 为 10ms (ISSUE-023)
+- **无 monitoring 时无自动 refresh** — `expired_keys` / `instantaneous_ops_per_sec` 可能滞后
+- **refresh 周期 15s** — 非设计 spec 1s
+- **Slowlog 默认 100ms** — Redis/oldmain 为 10ms
 - **`evicted_keys` 恒 0** — 无 maxmemory eviction
 - **无 `CONFIG SET loglevel`** — oldmain `LoggingManager` 已移除
 - **Grafana 旧面板** 可能仍用 `wiqun_kv_*` PromQL — 现 scrape 为 `aikv_*`
@@ -279,6 +279,3 @@ cargo test -p aikv --features cluster gossip_refresh -- --test-threads=1
 ## 待核实
 
 - 见 [ISSUES.md](../../ISSUES.md#issue-020) — blocked_clients 无写入点
-- 见 [ISSUES.md](../../ISSUES.md#issue-021) — refresh 仅 monitoring 后台 tick
-- 见 [ISSUES.md](../../ISSUES.md#issue-022) — refresh 周期 15s vs spec 1s
-- 见 [ISSUES.md](../../ISSUES.md#issue-023) — slowlog 默认阈值 100ms
