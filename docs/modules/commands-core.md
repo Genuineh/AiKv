@@ -187,7 +187,7 @@ pub struct CommandInfo {
 
 1. 确认 key 上实际 `ValueType` (`TYPE` 或 `get_typed`).
 2. String 命令误用 `get`/`set` 访问 Hash 等 → 预期 WRONGTYPE.
-3. MGET 遇非 String: 见 ISSUE-001 (memory nil vs aidb WRONGTYPE).
+3. MGET 遇非 String: 对齐 Redis 7, per-key 返回 `nil` (非 WRONGTYPE); 见 [storage.md](storage.md) invariant.
 
 ### 排查命令 unknown
 
@@ -223,6 +223,5 @@ cargo test --test commands
 
 ## 待核实
 
-- 见 [ISSUES.md](../../ISSUES.md#ISSUE-001) — MGET 非 String 时 memory vs aidb 语义不一致.
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-003) — GETRANGE/SETRANGE 是否刻意裁剪.
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-004) — MSETNX cluster dead branch.

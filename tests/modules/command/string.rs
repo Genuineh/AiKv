@@ -61,6 +61,29 @@ async fn test_mget_mset() {
 }
 
 #[tokio::test]
+async fn test_mget_wrongtype_returns_nil() {
+    let r = router();
+    let mut db = 0;
+    r.execute("SET", &[b("s"), b("hello")], &mut db)
+        .await
+        .unwrap();
+    r.execute("HSET", &[b("h"), b("f"), b("v")], &mut db)
+        .await
+        .unwrap();
+    let resp = r
+        .execute("MGET", &[b("s"), b("h"), b("missing")], &mut db)
+        .await
+        .unwrap();
+    let RespValue::Array(Some(items)) = resp else {
+        panic!("expected array");
+    };
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[0], RespValue::BulkString(Some(b("hello"))));
+    assert_eq!(items[1], RespValue::BulkString(None));
+    assert_eq!(items[2], RespValue::BulkString(None));
+}
+
+#[tokio::test]
 async fn test_mget_mset_param_validation() {
     let r = router();
     let mut db = 0;

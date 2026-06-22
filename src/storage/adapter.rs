@@ -242,7 +242,14 @@ impl KvStorage for KvStorageAdapter {
     async fn mget(&self, db: usize, keys: &[Vec<u8>]) -> Result<Vec<Option<Vec<u8>>>> {
         let mut out = Vec::with_capacity(keys.len());
         for key in keys {
-            out.push(self.get(db, key).await?);
+            let stored = self.load_typed(db, key).await?;
+            out.push(match stored {
+                None => None,
+                Some(s) => match s.value {
+                    ValueType::String(v) => Some(v),
+                    _ => None,
+                },
+            });
         }
         Ok(out)
     }

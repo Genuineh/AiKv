@@ -163,13 +163,14 @@
 
 ### ISSUE-001: MemoryEngine mget 对非 String key 静默返回 None
 
-- **状态**: open
+- **状态**: closed
 - **发现于**: PROGRESS 步 6 / 章节 `docs/modules/storage.md`
-- **相关 src**: `src/storage/memory.rs` (`mget`), `src/storage/adapter.rs` (`mget` → `get`)
+- **相关 src**: `src/storage/memory.rs` (`mget`), `src/storage/adapter.rs` (`mget`)
 - **oldmain 代码**: `memory_adapter.rs` `get_from_db` → WRONGTYPE; `aidb_adapter.rs` `get_from_db` → 非 String 返回 `None`
-- **现象**: `MemoryEngine::mget` 遇 Hash/List 等返回 `None` (等同 key 不存在); `KvStorageAdapter::mget` 调 `get` → 整命令 **WRONGTYPE**. oldmain memory MGET 失败 WRONGTYPE, aidb MGET 静默 nil — **重构后与 oldmain 两侧均不完全一致**.
-- **影响**: `--engine memory` vs `aidb` 下 MGET wrong-type 语义不同; `compat.rs` 未覆盖.
-- **下一步**: 对照 Redis 7 语义; 统一 `mget` 实现; 补 compat 测试.
+- **现象**: 曾 `MemoryEngine::mget` 遇 Hash/List 返回 `None`; `KvStorageAdapter::mget` 调 `get` → 整命令 WRONGTYPE; 双引擎不一致.
+- **修复**: 对齐 Redis 7 — MGET 对 non-String / missing key 均 per-key 返回 `nil`, 命令不失败; `KvStorageAdapter::mget` 改 `load_typed` + String 提取 (与 memory 一致).
+- **测试**: `compat::test_compat_mget_wrongtype`, `memory`/`aidb`/`command/string` 回归测.
+- **下一步**: —
 
 ### ISSUE-012: EVAL 声明 key 的 KeyLock 无超时 (oldmain 30s)
 

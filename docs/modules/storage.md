@@ -64,6 +64,7 @@ cluster 包装 **仅 aidb 路径**; memory 不经 `StorageAdapter`.
 ## 关键 invariant (勿破坏)
 
 - **String `get`/`set`**: `get`/`set` 仅 String; 非 String → `WRONGTYPE`. Hash/List/Set/ZSet 必须 `get_typed`/`set_typed`.
+- **MGET wrong-type**: 对齐 Redis 7 — 非 String 或 missing key 对该位返回 `nil`, 整命令不失败 (与 `GET` 的 WRONGTYPE 不同).
 - **两套 WriteOp**: `storage::WriteOp` (命令/Lua batch) ≠ `AdapterWriteOp` (扁平 KV). 转换在 `KvStorageAdapter::write_batch`.
 - **AiDb key 编码**: 物理 key = `{db_index}:{user_key}` (ASCII). `clear`/`keys`/`scan` 依赖 `db_prefix` + `prefix_end`.
 - **bincode 值**: aidb 路径 blob = `bincode(StoredValue)`; 与 `dump.rs` 同类型, DUMP 多 1 字节 version 前缀.
@@ -234,4 +235,4 @@ cargo test --test storage memory aidb types -- --test-threads=1
 
 ## 待核实
 
-- 见 [ISSUES.md](../../ISSUES.md#issue-001-memoryengine-mget-对非-string-key-静默返回-none) — `mget` 在 memory 与 aidb 路径对 wrong-type key 行为不一致.
+(无 storage 层 open 条目)

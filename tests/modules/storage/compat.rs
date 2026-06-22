@@ -73,6 +73,40 @@ async fn test_compat_exists() {
 }
 
 #[tokio::test]
+async fn test_compat_mget_wrongtype() {
+    let dir = TempDir::new().unwrap();
+    for (label, storage) in [("memory", mem()), ("aidb", aidb(&dir))] {
+        storage.set(0, b"s", b"hello").await.unwrap();
+        storage
+            .set_typed(
+                0,
+                b"h",
+                StoredValue {
+                    value: ValueType::Hash(HashMap::new()),
+                    expires_at: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        let vals = storage
+            .mget(
+                0,
+                &[
+                    b"s".to_vec(),
+                    b"h".to_vec(),
+                    b"missing".to_vec(),
+                ],
+            )
+            .await
+            .unwrap();
+        assert_eq!(vals[0], Some(b"hello".to_vec()), "{label}: MGET string");
+        assert_eq!(vals[1], None, "{label}: MGET hash → nil");
+        assert_eq!(vals[2], None, "{label}: MGET missing");
+    }
+}
+
+#[tokio::test]
 async fn test_compat_mget_mset() {
     let dir = TempDir::new().unwrap();
     for (label, storage) in [("memory", mem()), ("aidb", aidb(&dir))] {

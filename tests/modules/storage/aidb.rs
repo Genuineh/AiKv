@@ -22,6 +22,34 @@ async fn test_aidb_engine_roundtrip() {
 }
 
 #[tokio::test]
+async fn test_aidb_mget_wrongtype_nil() {
+    use std::collections::HashMap;
+
+    let dir = TempDir::new().unwrap();
+    let storage = adapter(&dir);
+    storage.set(0, b"s", b"hello").await.unwrap();
+    storage
+        .set_typed(
+            0,
+            b"h",
+            StoredValue {
+                value: ValueType::Hash(HashMap::new()),
+                expires_at: None,
+            },
+        )
+        .await
+        .unwrap();
+
+    let vals = storage
+        .mget(0, &[b"s".to_vec(), b"h".to_vec(), b"missing".to_vec()])
+        .await
+        .unwrap();
+    assert_eq!(vals[0], Some(b"hello".to_vec()));
+    assert_eq!(vals[1], None);
+    assert_eq!(vals[2], None);
+}
+
+#[tokio::test]
 async fn test_aidb_restart_survives() {
     let dir = TempDir::new().unwrap();
     {
