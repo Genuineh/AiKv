@@ -9,6 +9,7 @@
 
 ### Added
 
+- **ISSUE-009**: 实现 `JSON.MGET` — 顶层 + Lua `redis.call`; 多 key 单 path batch 读; 对齐 Redis 7 (missing → null, wrong-type 与 `JSON.GET` 一致).
 - **ISSUE-003**: 恢复 `GETRANGE`/`SETRANGE` String 子串命令 (对齐 Redis 7 / oldmain); registry + router + 回归测.
 
 ### Changed

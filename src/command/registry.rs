@@ -52,6 +52,7 @@ static COMMAND_TABLE: &[CommandInfo] = &[
     cmd!("PSETEX", 4, &["write", "denyoom"], 1, 1, 1),
     // JSON
     cmd!("JSON.GET", -2, &["readonly"], 1, 1, 1),
+    cmd!("JSON.MGET", -2, &["readonly"], 1, -2, 1),
     cmd!("JSON.SET", -4, &["write", "denyoom"], 1, 1, 1),
     cmd!("JSON.DEL", -2, &["write"], 1, 1, 1),
     cmd!("JSON.TYPE", -2, &["readonly"], 1, 1, 1),

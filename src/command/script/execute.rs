@@ -62,8 +62,15 @@ fn command_key_indices(cmd: &str, argc: usize) -> Vec<usize> {
                 vec![]
             }
         }
+        "JSON.MGET" => {
+            if argc >= 2 {
+                (0..argc - 1).collect()
+            } else {
+                vec![]
+            }
+        }
         "JSON.SET" | "JSON.GET" | "JSON.DEL" | "JSON.TYPE" | "JSON.STRLEN" | "JSON.ARRAPPEND"
-        | "JSON.NUMINCRBY" | "JSON.OBJLEN" | "JSON.ARRLEN" | "JSON.MGET" => {
+        | "JSON.NUMINCRBY" | "JSON.OBJLEN" | "JSON.ARRLEN" => {
             if argc > 0 {
                 vec![0]
             } else {
@@ -209,6 +216,7 @@ async fn dispatch(
         "ZCARD" => exec_zcard(storage, txn, args).await,
         "EXPIRE" => exec_expire(storage, txn, args).await,
         "JSON.GET" => json_exec::exec_json_get(storage, txn, args).await,
+        "JSON.MGET" => json_exec::exec_json_mget(storage, txn, args).await,
         "JSON.SET" => json_exec::exec_json_set(storage, txn, args).await,
         "JSON.DEL" => json_exec::exec_json_del(storage, txn, args).await,
         "JSON.TYPE" => json_exec::exec_json_type(storage, txn, args).await,

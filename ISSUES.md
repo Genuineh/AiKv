@@ -206,12 +206,12 @@
 
 ### ISSUE-009: Lua redis.call JSON.MGET 未实现
 
-- **状态**: open
+- **状态**: closed
 - **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 1–2)
-- **相关 src**: `src/command/script/execute.rs` (`command_key_indices` 含 `JSON.MGET`; dispatch match 无)
-- **现象**: 脚本内 `redis.call('JSON.MGET', …)` → unknown command; 顶层也无 `JSON.MGET` Redis 命令
-- **影响**: Lua JSON 子集不完整; key_indices 表误导
-- **下一步**: 待核实 — 实现 exec_json_mget 或从 key_indices 移除
+- **相关 src**: `src/command/json.rs`, `src/command/script/json_exec.rs`, `src/command/script/execute.rs`, `registry.rs`, `router.rs`
+- **现象**: `command_key_indices` 含 `JSON.MGET` 但 dispatch 无; 顶层亦无 `JSON.MGET`
+- **修复**: 实现 `JSON.MGET key [key ...] path` — 顶层 + Lua `redis.call`; 修正 Lua KEYS 校验 (全部 key 除末尾 path); missing key/path → null; wrong-type → 整命令 WRONGTYPE (与 `JSON.GET` 一致)
+- **测试**: `tests/modules/command/json.rs`, `script.rs` — `json_mget` / `script_json_mget` 回归测
 
 ### ISSUE-008: SAVE 日志 target 为 bgsave.complete
 

@@ -55,6 +55,45 @@ pub async fn exec_json_get(
     Ok(router::bulk(json_string.into_bytes()))
 }
 
+pub async fn exec_json_mget(
+    storage: &dyn KvStorage,
+    txn: &ScriptTransaction,
+    args: &[Bytes],
+) -> Result<RespValue> {
+    if args.len() < 2 {
+        return Err(router::wrong_args("JSON.MGET", ""));
+    }
+    let path = String::from_utf8_lossy(&args[args.len() - 1]).to_string();
+    let keys = &args[..args.len() - 1];
+
+    let mut out = Vec::with_capacity(keys.len());
+    for key in keys {
+        let raw = match txn.get(storage, key).await? {
+            Some(v) => v,
+            None => {
+                out.push(RespValue::Null);
+                continue;
+            }
+        };
+        let json_val: JsonValue = serde_json::from_slice(&raw).map_err(invalid_json)?;
+        let extracted = if path == "$" || path == "." {
+            json_val
+        } else {
+            let engine = JsonPathEngine;
+            match engine.extract(&json_val, &path) {
+                Ok(v) => v,
+                Err(_) => {
+                    out.push(RespValue::Null);
+                    continue;
+                }
+            }
+        };
+        let json_string = serde_json::to_string(&extracted).map_err(invalid_json)?;
+        out.push(router::bulk(json_string.into_bytes()));
+    }
+    Ok(RespValue::Array(Some(out)))
+}
+
 pub async fn exec_json_set(
     storage: &dyn KvStorage,
     txn: &mut ScriptTransaction,

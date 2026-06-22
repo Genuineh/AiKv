@@ -142,6 +142,48 @@ impl JsonCommands {
     }
 
     #[instrument(
+    name = "cmd_json_mget",
+    skip(self, args),
+    fields(cmd.name = "JSON.MGET", key_count = tracing::field::Empty, path = tracing::field::Empty)
+  )]
+    pub async fn json_mget(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_min_args("JSON.MGET", args, 2)?;
+        let path = String::from_utf8_lossy(&args[args.len() - 1]).to_string();
+        let keys = &args[..args.len() - 1];
+        tracing::Span::current().record("key_count", keys.len());
+        Self::record_span_path(&path);
+        Self::debug_cmd("mget", &args[0], Some(&path));
+
+        let result = async {
+            let mut out = Vec::with_capacity(keys.len());
+            for key in keys {
+                let Some(json_val) = self.load_json(db, key).await? else {
+                    out.push(RespValue::Null);
+                    continue;
+                };
+                let extracted = if path == "$" || path == "." {
+                    json_val
+                } else {
+                    match self.path_engine.extract(&json_val, &path) {
+                        Ok(v) => v,
+                        Err(_) => {
+                            out.push(RespValue::Null);
+                            continue;
+                        }
+                    }
+                };
+                let json_string = serde_json::to_string(&extracted).map_err(Self::invalid_json)?;
+                out.push(router::bulk(json_string.into_bytes()));
+            }
+            Ok(RespValue::Array(Some(out)))
+        }
+        .await;
+
+        self.record("mget", result.is_ok());
+        result
+    }
+
+    #[instrument(
     name = "cmd_json_set",
     skip(self, args),
     fields(cmd.name = "JSON.SET", key = tracing::field::Empty, path = tracing::field::Empty)

@@ -817,3 +817,95 @@ async fn test_json_metrics_recorded() {
     assert!(shared.metrics.json_command_ok_count("set") >= 1);
     assert!(shared.metrics.json_command_ok_count("get") >= 1);
 }
+
+#[tokio::test]
+async fn test_json_mget_basic() {
+    let r = router();
+    let mut db = 0;
+    assert_ok(
+        r.execute(
+            "JSON.SET",
+            &[b("d1"), b("$"), b(r#"{"a":1,"nested":{"a":3}}"#)],
+            &mut db,
+        )
+        .await
+        .unwrap(),
+    );
+    assert_ok(
+        r.execute(
+            "JSON.SET",
+            &[b("d2"), b("$"), b(r#"{"a":4,"nested":{"a":6}}"#)],
+            &mut db,
+        )
+        .await
+        .unwrap(),
+    );
+
+    let RespValue::Array(Some(items)) = r
+        .execute("JSON.MGET", &[b("d1"), b("d2"), b("missing"), b("$.a")], &mut db)
+        .await
+        .unwrap()
+    else {
+        panic!("expected array");
+    };
+    assert_eq!(items.len(), 3);
+    assert_eq!(bulk_json(items[0].clone()), serde_json::json!(1));
+    assert_eq!(bulk_json(items[1].clone()), serde_json::json!(4));
+    assert_eq!(items[2], RespValue::Null);
+}
+
+#[tokio::test]
+async fn test_json_mget_missing_path() {
+    let r = router();
+    let mut db = 0;
+    assert_ok(
+        r.execute(
+            "JSON.SET",
+            &[b("k"), b("$"), b(r#"{"name":"Alice"}"#)],
+            &mut db,
+        )
+        .await
+        .unwrap(),
+    );
+    let RespValue::Array(Some(items)) = r
+        .execute("JSON.MGET", &[b("k"), b("$.age")], &mut db)
+        .await
+        .unwrap()
+    else {
+        panic!("expected array");
+    };
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0], RespValue::Null);
+}
+
+#[tokio::test]
+async fn test_json_mget_wrongtype() {
+    let r = router();
+    let mut db = 0;
+    assert_ok(
+        r.execute("JSON.SET", &[b("j"), b("$"), b(r#"{"x":1}"#)], &mut db)
+            .await
+            .unwrap(),
+    );
+    r.execute("HSET", &[b("h"), b("f"), b("v")], &mut db)
+        .await
+        .unwrap();
+    assert_err_contains(
+        r.execute("JSON.MGET", &[b("j"), b("h"), b("$")], &mut db)
+            .await
+            .unwrap_err(),
+        "WRONGTYPE",
+    );
+}
+
+#[tokio::test]
+async fn test_json_mget_arg_validation() {
+    let r = router();
+    let mut db = 0;
+    assert_err_contains(
+        r.execute("JSON.MGET", &[b("k")], &mut db)
+            .await
+            .unwrap_err(),
+        "wrong number of arguments",
+    );
+}

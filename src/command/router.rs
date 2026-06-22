@@ -533,6 +533,7 @@ impl CommandRouter {
             "MIGRATE" => self.key_cmds.migrate(*db, args).await,
             "JSON.SET" => self.json.json_set(*db, args).await,
             "JSON.GET" => self.json.json_get(*db, args).await,
+            "JSON.MGET" => self.json.json_mget(*db, args).await,
             "JSON.DEL" => self.json.json_del(*db, args).await,
             "JSON.TYPE" => self.json.json_type(*db, args).await,
             "JSON.STRLEN" => self.json.json_strlen(*db, args).await,
@@ -777,7 +778,7 @@ fn classify_command(cmd: &str) -> crate::cluster::router::CommandType {
         "get" | "exists" | "hget" | "hgetall" | "hkeys" | "hvals" | "hlen" | "hexists"
         | "lrange" | "lindex" | "llen" | "smembers" | "scard" | "sismember" | "zrange"
         | "zcard" | "zscore" | "zrank" | "type" | "ttl" | "pttl" | "strlen" | "getbit"
-        | "getrange" | "mget" | "json.get" => crate::cluster::router::CommandType::Read,
+        | "getrange" | "mget" | "json.get" | "json.mget" => crate::cluster::router::CommandType::Read,
         _ => crate::cluster::router::CommandType::Write,
     }
 }

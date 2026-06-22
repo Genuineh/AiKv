@@ -55,7 +55,7 @@ flowchart TB
 
 | 路径 | 职责 | 入口 |
 |------|------|------|
-| `command/json.rs` | 11 条 `JSON.*` | `JsonCommands::{json_set, json_get, …}` |
+| `command/json.rs` | 12 条 `JSON.*` | `JsonCommands::{json_set, json_get, json_mget, …}` |
 | `command/jsonpath.rs` | JSONPath extract/set/delete/incr/append | `JsonPathEngine` |
 | `command/jsonpath_util.rs` | 表达式拆分、JSON 比较 | `split_top_level`, `json_compare` |
 | `command/script.rs` | EVAL / EVALSHA / SCRIPT | `ScriptCommands::{eval, evalsha, script}` |
@@ -152,6 +152,7 @@ sequenceDiagram
 | 命令 | 写 | KeyLock | 要点 |
 |------|:--:|:-------:|------|
 | JSON.GET | | | path 默认 `$`; 无 key → nil bulk |
+| JSON.MGET | | | `key [key ...] path`; 缺 key/path → null; wrong-type → WRONGTYPE |
 | JSON.SET | ✓ | ✓ | NX/XX/XE/TTL; 根路径 `$`/`.` |
 | JSON.DEL | ✓ | ✓ | 根路径 delete key; 子路径 path delete |
 | JSON.TYPE / STRLEN / ARRLEN / OBJLEN | | | 只读; path 可选 |
@@ -174,7 +175,7 @@ JSONPath 能力 (`jsonpath.rs`): `$`, `.`, `$.field`, `$[N]`, `[*]`, 多字段�
 | SCRIPT EXISTS / FLUSH | 标准语义 |
 | SCRIPT KILL | 恒 NOTBUSY (stub, 无运行中脚本跟踪) |
 
-**`redis.call` 支持子集** (`execute.rs`, 按域): String (GET/SET/INCR*/APPEND/STRLEN…), Hash, List, Set, ZSet 常用读写, EXPIRE, JSON.* (9 条 via `json_exec`; **无 JSON.MGET** — ISSUE-009).
+**`redis.call` 支持子集** (`execute.rs`, 按域): String (GET/SET/INCR*/APPEND/STRLEN…), Hash, List, Set, ZSet 常用读写, EXPIRE, JSON.* (10 条 via `json_exec`, 含 JSON.MGET).
 
 ## Server 命令 (handler + router dispatch)
 
@@ -192,7 +193,7 @@ JSONPath 能力 (`jsonpath.rs`): `$`, `.`, `$.field`, `$[N]`, `[*]`, 多字段�
 
 ## CommandRouter 扩展分支 (索引)
 
-`execute_inner` match: `JSON.*` (11), `EVAL`/`EVALSHA`/`SCRIPT`, `INFO`/`TIME`/`CONFIG`/`CLIENT`/`SLOWLOG`/`LATENCY`/`COMMAND`, `SAVE`/`BGSAVE`/`LASTSAVE`/`SHUTDOWN`, `MIGRATE` → `key_cmds`. `CLUSTER` → cluster (步 11).
+`execute_inner` match: `JSON.*` (12), `EVAL`/`EVALSHA`/`SCRIPT`, `INFO`/`TIME`/`CONFIG`/`CLIENT`/`SLOWLOG`/`LATENCY`/`COMMAND`, `SAVE`/`BGSAVE`/`LASTSAVE`/`SHUTDOWN`, `MIGRATE` → `key_cmds`. `CLUSTER` → cluster (步 11).
 
 ## 常见任务
 
@@ -244,7 +245,7 @@ cargo test --test commands
 ## 已知限制
 
 - **JSON**: 全文档 RMW, 无 RedisJSON 内存优化; 非 String key → WRONGTYPE/解析失败.
-- **Lua**: 无 SCRIPT KILL; 无 JSON.MGET in script; 命令子集小于 Redis.
+- **Lua**: 无 SCRIPT KILL; 命令子集小于 Redis.
 - **Lua pcall**: Redis `{err}` 表 (非 oldmain Nil).
 - **MIGRATE**: 无 AUTH2 (ISSUE-010).
 - **BGSAVE 重入**: 第二次返回 **ERR** (非 oldmain SimpleString OK).
@@ -256,5 +257,4 @@ cargo test --test commands
 ## 待核实
 
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-005) — BlockingRegistry evict_expired 无调用.
-- 见 [ISSUES.md](../../ISSUES.md#ISSUE-009) — Lua JSON.MGET 未实现.
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-010) — MIGRATE 无 AUTH2.
