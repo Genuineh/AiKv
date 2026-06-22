@@ -1,7 +1,10 @@
 use aikv::protocol::RespValue;
 use bytes::Bytes;
+use std::sync::Arc;
+use std::time::Duration;
 
 use super::helpers::{assert_err_contains, assert_int, assert_nil, b, router, router_with_shared};
+use aikv::command::KeyLock;
 
 #[tokio::test]
 async fn test_script_eval_basic() {
@@ -339,6 +342,95 @@ async fn test_key_lock_parallel_different_keys() {
     let r2 = h2.await.unwrap().unwrap();
     assert_eq!(r1, RespValue::BulkString(Some(b("v1"))));
     assert_eq!(r2, RespValue::BulkString(Some(b("v2"))));
+}
+
+#[tokio::test]
+async fn test_script_eval_same_key_serialized() {
+    let (r, _shared) = router_with_shared();
+    let script = r#"
+    redis.call('SET', KEYS[1], ARGV[1])
+    return redis.call('GET', KEYS[1])
+  "#;
+    let h1 = tokio::spawn({
+        let r = r.clone();
+        async move {
+            let mut db = 0;
+            r.execute("EVAL", &[b(script), b("1"), b("hotkey"), b("v1")], &mut db)
+                .await
+        }
+    });
+    let h2 = tokio::spawn({
+        let r = r.clone();
+        async move {
+            let mut db = 0;
+            r.execute("EVAL", &[b(script), b("1"), b("hotkey"), b("v2")], &mut db)
+                .await
+        }
+    });
+    let r1 = h1.await.unwrap().unwrap();
+    let r2 = h2.await.unwrap().unwrap();
+    assert_eq!(r1, RespValue::BulkString(Some(b("v1"))));
+    assert_eq!(r2, RespValue::BulkString(Some(b("v2"))));
+}
+
+#[tokio::test]
+async fn test_script_lock_timeout_returns_err() {
+    let key_lock = Arc::new(KeyLock::new(1024));
+    let key = b"lock-timeout-key";
+
+    let holder = key_lock.clone();
+    let holder_task = tokio::spawn(async move {
+        let _guard = holder.lock(key).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let err = match key_lock
+        .lock_keys_sorted_with_timeout(&[key.as_slice()], Duration::from_millis(100))
+        .await
+    {
+        Err(e) => e,
+        Ok(_) => panic!("expected lock acquisition timeout"),
+    };
+    assert_err_contains(err, "Lock acquisition timeout");
+
+    holder_task.await.unwrap();
+}
+
+#[tokio::test]
+async fn test_script_lock_timeout_releases_partial_locks() {
+    let key_lock = Arc::new(KeyLock::new(1024));
+    let k_free = b"partial-lock-a-free";
+    let k_held = b"partial-lock-b-held";
+
+    let holder = key_lock.clone();
+    let holder_task = tokio::spawn(async move {
+        let _guard = holder.lock(k_held).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let err = match key_lock
+        .lock_keys_sorted_with_timeout(
+            &[k_free.as_slice(), k_held.as_slice()],
+            Duration::from_millis(100),
+        )
+        .await
+    {
+        Err(e) => e,
+        Ok(_) => panic!("expected lock acquisition timeout"),
+    };
+    assert_err_contains(err, "Lock acquisition timeout");
+
+    let acquired = tokio::time::timeout(Duration::from_millis(200), key_lock.lock(k_free)).await;
+    assert!(
+        acquired.is_ok(),
+        "k_free should be released after timed multi-key lock attempt"
+    );
+
+    holder_task.await.unwrap();
 }
 
 fn assert_ok(resp: RespValue) {

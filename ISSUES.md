@@ -174,13 +174,14 @@
 
 ### ISSUE-012: EVAL 声明 key 的 KeyLock 无超时 (oldmain 30s)
 
-- **状态**: open
+- **状态**: closed
 - **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 3)
-- **相关 src**: `src/command/script.rs` (`lock_keys_sorted`); `src/command/router.rs` (`KeyLock`)
+- **相关 src**: `src/command/script.rs` (`lock_keys_sorted_with_timeout`); `src/command/router.rs` (`KeyLock`)
 - **oldmain 代码**: `aikv-oldmain/src/command/script.rs` — `KeyLockManager` 默认 30s, 超时 `script_lock_timeouts` + ERR
-- **现象**: 现码 `KeyLock` 无 script 专用超时; 同 key 长时间脚本或死锁可能永久占桶
-- **影响**: 与 oldmain 行为不同; 高并发同 key EVAL 风险
-- **下一步**: 待核实 — 恢复 script 锁超时或文档声明 intentional
+- **现象**: 曾 `KeyLock::lock_keys_sorted` 无 script 专用超时; 同 key 并发 EVAL 可能永久等待
+- **修复**: EVAL/EVALSHA 改 `lock_keys_sorted_with_timeout` (默认 30s); 超时返回 `ERR Lock acquisition timeout after 30s`; JSON.MSET 等仍用无超时 `lock_keys_sorted`
+- **测试**: `script.rs` — 同 key 并发 EVAL、锁超时 ERR、多 key 部分持锁回滚
+- **下一步**: —
 
 ### ISSUE-011: SHUTDOWN NOW/FORCE/ABORT 未实现
 

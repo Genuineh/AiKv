@@ -149,7 +149,8 @@ pub struct CommandInfo {
 |-----|------|
 | `lock(key)` | 单 key 写 |
 | `lock_two(a, b)` | RENAME、LMOVE、SMOVE、COPY (双 key) |
-| `lock_keys_sorted(keys)` | 多 key 字典序 (Lua/JSON.MSET 等) |
+| `lock_keys_sorted(keys)` | 多 key 字典序 (JSON.MSET 等; 无超时) |
+| `lock_keys_sorted_with_timeout(keys, timeout)` | 多 key 字典序 (EVAL/EVALSHA; 默认 30s) |
 
 分桶 `DefaultHasher(key) % 1024`; 避免同 key Mutex 重入死锁.
 

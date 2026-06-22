@@ -3,6 +3,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use tokio::sync::Mutex;
@@ -68,6 +69,40 @@ impl KeyLock {
         }
         KeyLocksGuard { locks: guards }
     }
+
+    /// 多 key 字典序加锁, 带总超时; 超时或部分失败时已持有锁随 guard drop 释放.
+    pub async fn lock_keys_sorted_with_timeout<'a>(
+        &'a self,
+        keys: &[&[u8]],
+        timeout: Duration,
+    ) -> Result<KeyLocksGuard<'a>> {
+        let mut unique: Vec<&[u8]> = keys.to_vec();
+        unique.sort();
+        unique.dedup();
+        if unique.is_empty() {
+            return Ok(KeyLocksGuard { locks: Vec::new() });
+        }
+
+        let deadline = Instant::now() + timeout;
+        let mut guards = Vec::with_capacity(unique.len());
+        for k in unique {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(script_lock_timeout_err(timeout));
+            }
+            match tokio::time::timeout(remaining, self.lock(k)).await {
+                Ok(guard) => guards.push(guard),
+                Err(_) => return Err(script_lock_timeout_err(timeout)),
+            }
+        }
+        Ok(KeyLocksGuard { locks: guards })
+    }
+}
+
+fn script_lock_timeout_err(timeout: Duration) -> Error {
+    Error::Command(format!(
+        "ERR Lock acquisition timeout after {timeout:?}"
+    ))
 }
 
 /// 多 key 锁 RAII guard; Vec 逆序 drop 释放锁

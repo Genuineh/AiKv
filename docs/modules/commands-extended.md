@@ -118,7 +118,7 @@ sequenceDiagram
   participant T as ScriptTransaction
   participant K as KvStorage
 
-  S->>L: lock_keys_sorted(KEYS)
+  S->>L: lock_keys_sorted_with_timeout(KEYS, 30s)
   S->>VM: sandbox + hook timeout
   S->>VM: load(script)
   VM->>E: redis.call(...)
@@ -167,6 +167,7 @@ JSONPath 能力 (`jsonpath.rs`): `$`, `.`, `$.field`, `$[N]`, `[*]`, 多字段�
 | 项 | 值 / 行为 |
 |----|-----------|
 | 默认超时 | 5s (`DEFAULT_SCRIPT_TIMEOUT`) |
+| **KeyLock 等待超时** | **30s** (`lock_keys_sorted_with_timeout`; 对齐 oldmain) |
 | 内存上限 | 128MB (`DEFAULT_MEMORY_LIMIT`) |
 | 沙箱 StdLib | TABLE, STRING, MATH, UTF8; Nil: load/require/rawget/rawset/… |
 | SCRIPT LOAD | SHA1 hex; LRU 256 |
@@ -245,7 +246,6 @@ cargo test --test commands
 - **JSON**: 全文档 RMW, 无 RedisJSON 内存优化; 非 String key → WRONGTYPE/解析失败.
 - **Lua**: 无 SCRIPT KILL; 无 JSON.MGET in script; 命令子集小于 Redis.
 - **Lua pcall**: Redis `{err}` 表 (非 oldmain Nil).
-- **KeyLock (script)**: 无 oldmain 30s 锁超时 (ISSUE-012).
 - **MIGRATE**: 无 AUTH2 (ISSUE-010).
 - **BGSAVE 重入**: 第二次返回 **ERR** (非 oldmain SimpleString OK).
 - **SHUTDOWN**: 仅 Default/SAVE/NOSAVE (ISSUE-011).
@@ -261,4 +261,3 @@ cargo test --test commands
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-009) — Lua JSON.MGET 未实现.
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-010) — MIGRATE 无 AUTH2.
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-011) — SHUTDOWN NOW/FORCE/ABORT.
-- 见 [ISSUES.md](../../ISSUES.md#ISSUE-012) — EVAL KeyLock 无超时.

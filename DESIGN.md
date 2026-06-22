@@ -128,7 +128,7 @@ Assigned slot 写 **必须** `propose_group` → Raft apply; **禁止** local fa
 
 ### 为什么 KeyLock 字典序?
 
-单 key `lock`; 双 key `lock_two` (a<b); Lua `lock_keys_sorted` 去重排序. **避免** 交叉死锁. 1024 桶 `tokio::Mutex` — 与 oldmain `KeyLockManager` + Condvar **不同**; 现 **无** script 专用锁超时 — 见 [ISSUES.md#ISSUE-012](ISSUES.md#issue-012-eval-声明-key-的-keylock-无超时-oldmain-30s).
+单 key `lock`; 双 key `lock_two` (a<b); Lua `lock_keys_sorted_with_timeout` 去重排序 (30s 等待超时). **避免** 交叉死锁. 1024 桶 `tokio::Mutex` — 与 oldmain per-key `KeyLockManager` + Condvar 不同; EVAL 路径已恢复 30s 锁等待超时.
 
 ### 为什么 JSON 存 `ValueType::String`?
 

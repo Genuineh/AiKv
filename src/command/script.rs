@@ -29,6 +29,7 @@ use crate::server::ServerMetrics;
 use crate::storage::KvStorage;
 
 const DEFAULT_SCRIPT_TIMEOUT: Duration = Duration::from_secs(5);
+const DEFAULT_SCRIPT_LOCK_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_MEMORY_LIMIT: usize = 128 * 1024 * 1024;
 
 pub struct ScriptCommands {
@@ -164,7 +165,11 @@ impl ScriptCommands {
         let _guard = if keys.is_empty() {
             None
         } else {
-            Some(self.key_lock.lock_keys_sorted(&key_refs).await)
+            Some(
+                self.key_lock
+                    .lock_keys_sorted_with_timeout(&key_refs, DEFAULT_SCRIPT_LOCK_TIMEOUT)
+                    .await?,
+            )
         };
 
         let declared: HashSet<Vec<u8>> = keys.iter().map(|k| k.to_vec()).collect();
