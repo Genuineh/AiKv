@@ -254,12 +254,13 @@
 
 ### ISSUE-004: cluster_route 预留 MSETNX 但命令未注册/未实现
 
-- **状态**: open
+- **状态**: closed (doc-only)
 - **发现于**: PROGRESS 步 7 / 章节 `docs/modules/commands-core.md`
-- **相关 src**: `src/command/router.rs` (`cluster_route` `is_mset` 含 `msetnx`); `src/command/registry.rs` 无 `MSETNX`
-- **现象**: CROSSSLOT 分支引用不存在的命令; 客户端发 MSETNX → `ERR unknown command`
-- **影响**: cluster 多 key 语义文档需注明 dead branch; 或补实现/删注释
-- **下一步**: 待核实 — 实现 MSETNX 或从 cluster 注释移除 `msetnx`
+- **相关 src**: `src/command/router.rs` (`cluster_route` 曾含不可达 `msetnx` 分支); `src/command/registry.rs` 无 `MSETNX`
+- **oldmain 代码**: 无 MSETNX (全仓无实现)
+- **现象**: `cluster_route` 注释引用未注册命令; 客户端发 MSETNX → `ERR unknown command`
+- **定案**: 刻意不实现 — oldmain 亦无; 单 key 用 `SETNX`; 多 key 原子 NX 按需再开 issue
+- **收尾**: 移除 `router.rs` dead `msetnx` 引用; module 已知限制注明
 
 ### ISSUE-003: GETRANGE/SETRANGE oldmain 有、现码未实现
 

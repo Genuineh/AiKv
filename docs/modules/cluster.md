@@ -263,6 +263,7 @@ cargo test --features cluster -p aikv --test cluster_creategroup
 - **无 CLUSTER METARAFT RESP 子命令**.
 - **无 ADDSLOTSRANGE** (redis-cli 常用 ADDSLOTS 仍可用).
 - **透明转发**: 仅 server 侧; smart client (`redis-cli -c`) 仍靠 MOVED/ASK 字符串.
+- **MSETNX**: 未实现; 非 cluster 特有限制 — 见 [commands-core.md](commands-core.md).
 
 ## Gossip (轻量)
 
@@ -272,7 +273,3 @@ cargo test --features cluster -p aikv --test cluster_creategroup
 - 递增 `CLUSTER INFO` 的 `cluster_stats_messages_*` (metrics 语义, 非真实 gossip 报文)
 
 `CLUSTER NODES` **直接读 MetaRaft** (`cluster_nodes()`); ping-sent/pong-recv 恒 `0 0` (与 oldmain 一致). link-state 来自 `NodeInfo.status` (`Online`/`Draining` → `connected`, `Offline` → `disconnected`). 故障检测与成员变更以 MetaRaft/Raft 为准.
-
-## 待核实
-
-- 见 [ISSUES.md](../../ISSUES.md#ISSUE-004) — cluster_route 预留 msetnx dead branch.

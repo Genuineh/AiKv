@@ -291,8 +291,8 @@ impl CommandRouter {
         }
         // Multi-key CROSSSLOT check
         if args.len() > 1 && is_multi_key_cmd(cmd) {
-            // MSET/MSETNX args are [key, val, key, val, ...] — only odd indices are keys.
-            let is_mset = matches!(cmd.to_ascii_lowercase().as_str(), "mset" | "msetnx");
+            // MSET args are [key, val, key, val, ...] — only even indices are keys.
+            let is_mset = cmd.eq_ignore_ascii_case("mset");
             let key_bytes: Vec<&[u8]> = if is_mset {
                 args.iter().step_by(2).map(|a| a.as_ref()).collect()
             } else {

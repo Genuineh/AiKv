@@ -220,9 +220,8 @@ cargo test --test commands
 - **HSCAN/SSCAN/ZSCAN**: 内存全量分页, 大 key 开销高.
 - **OBJECT ENCODING**: 固定 embstr/raw/listpack, 非真实探测.
 - **KEYS**: 直调 `storage.keys`, 无 oldmain 60s 线程超时.
-- **MSETNX**: 未实现; cluster 注释预留 (ISSUE-004).
+- **MSETNX**: 未实现 (oldmain 亦无); 单 key 用 `SETNX`; 客户端发 MSETNX → `ERR unknown command`.
 
 ## 待核实
 
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-003) — GETRANGE/SETRANGE 是否刻意裁剪.
-- 见 [ISSUES.md](../../ISSUES.md#ISSUE-004) — MSETNX cluster dead branch.

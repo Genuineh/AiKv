@@ -148,7 +148,7 @@ Redis 官方脚本语言; 零系统 lua 依赖; 沙箱裁 StdLib. **放弃** rha
 
 ### 已知限制 (摘要)
 
-- GETRANGE/SETRANGE、MSETNX (cluster dead branch) — ISSUE-003/004.
+- GETRANGE/SETRANGE — ISSUE-003; MSETNX 未实现 (oldmain 亦无, doc-only ISSUE-004).
 - Lua 无 SCRIPT KILL; MIGRATE 无 AUTH2 — ISSUE-007/010.
 - SHUTDOWN 仅 SAVE/NOSAVE — ISSUE-011.
 

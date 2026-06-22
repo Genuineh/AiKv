@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **ISSUE-004**: doc-only 关闭 — MSETNX 刻意不实现 (oldmain 亦无); 移除 `cluster_route` 不可达 `msetnx` 引用; module 已知限制注明.
+
 ### Fixed
 
 - **ISSUE-014**: 移除 unused `GossipState` 缓存; 拓扑 tick 保留 leader 路由刷新 + gossip metrics; `CLUSTER NODES` 继续读 MetaRaft, link-state 恢复 `NodeStatus` → connected/disconnected.
