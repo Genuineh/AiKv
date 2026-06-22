@@ -134,11 +134,11 @@ sequenceDiagram
 2. **Wake**: `LPUSH`/`RPUSH`/`ZADD` 成功后 `notify(key, OK)`.
 3. **Timeout**: `timeout=0` → 立即 nil Array; `timeout<0` → 300s 上限.
 
-### MIGRATE (单 key)
+### MIGRATE
 
 1. `key.rs::migrate` 解析 host/port/key/dest_db/timeout + COPY/REPLACE/AUTH/KEYS.
-2. `get_typed` → `dump_encode` → `migrate::send_restore`.
-3. 非 COPY → 源端 `delete`.
+2. `KEYS` 子命令: 先收集 key 列表 (遇 trailing COPY/REPLACE/AUTH 停止), 再与单 key 路径共用 RESTORE 逻辑; 非 COPY → 源端 `delete`.
+3. 单 key: `get_typed` → `dump_encode` → `migrate::send_restore` → 非 COPY 时 `delete`.
 4. TCP: 可选 AUTH → 非 0 库 SELECT → `#[cfg(cluster)] ASKING` → RESTORE.
 
 ### SAVE / BGSAVE
@@ -246,7 +246,7 @@ cargo test --test commands
 - **Lua**: 无 SCRIPT KILL; 无 JSON.MGET in script; 命令子集小于 Redis.
 - **Lua pcall**: Redis `{err}` 表 (非 oldmain Nil).
 - **KeyLock (script)**: 无 oldmain 30s 锁超时 (ISSUE-012).
-- **MIGRATE**: 无 AUTH2; KEYS 批量忽略 COPY (ISSUE-006/010).
+- **MIGRATE**: 无 AUTH2 (ISSUE-010).
 - **BGSAVE 重入**: 第二次返回 **ERR** (非 oldmain SimpleString OK).
 - **SHUTDOWN**: 仅 Default/SAVE/NOSAVE (ISSUE-011).
 - **OBJECT**: REFCOUNT/IDLETIME/FREQ 固定 stub.
@@ -256,7 +256,6 @@ cargo test --test commands
 ## 待核实
 
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-005) — BlockingRegistry evict_expired 无调用.
-- 见 [ISSUES.md](../../ISSUES.md#ISSUE-006) — MIGRATE KEYS 忽略 COPY.
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-007) — SCRIPT KILL stub.
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-008) — SAVE 日志 target 命名.
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-009) — Lua JSON.MGET 未实现.

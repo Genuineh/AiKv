@@ -295,6 +295,7 @@ impl KeyCommands {
         let mut copy = false;
         let mut replace = false;
         let mut auth_password: Option<&[u8]> = None;
+        let mut batch_keys: Vec<&[u8]> = Vec::new();
         let mut i = 5;
         while i < args.len() {
             if eq_ignore_case(&args[i], b"COPY") {
@@ -313,30 +314,47 @@ impl KeyCommands {
                 if i + 1 >= args.len() {
                     return Err(router::wrong_args("MIGRATE", ""));
                 }
-                for key in &args[i + 1..] {
-                    let Some(stored) = self.storage.get_typed(db, key).await? else {
-                        continue;
-                    };
-                    let payload = dump_encode(&stored)?;
-                    let ttl_ms = migrate_ttl_ms(&stored);
-                    migrate::send_restore(migrate::RestoreTarget {
-                        host,
-                        port,
-                        timeout_ms,
-                        dest_db,
-                        key,
-                        ttl_ms,
-                        payload: &payload,
-                        replace,
-                        auth_password,
-                    })
-                    .await?;
-                    self.storage.delete(db, key).await?;
+                i += 1;
+                while i < args.len() {
+                    if eq_ignore_case(&args[i], b"COPY")
+                        || eq_ignore_case(&args[i], b"REPLACE")
+                        || eq_ignore_case(&args[i], b"AUTH")
+                    {
+                        break;
+                    }
+                    batch_keys.push(&args[i]);
+                    i += 1;
                 }
-                return Ok(router::ok());
+                continue;
             } else {
                 return Err(router::wrong_args("MIGRATE", ""));
             }
+        }
+
+        if !batch_keys.is_empty() {
+            for key in batch_keys {
+                let Some(stored) = self.storage.get_typed(db, key).await? else {
+                    continue;
+                };
+                let payload = dump_encode(&stored)?;
+                let ttl_ms = migrate_ttl_ms(&stored);
+                migrate::send_restore(migrate::RestoreTarget {
+                    host,
+                    port,
+                    timeout_ms,
+                    dest_db,
+                    key,
+                    ttl_ms,
+                    payload: &payload,
+                    replace,
+                    auth_password,
+                })
+                .await?;
+                if !copy {
+                    self.storage.delete(db, key).await?;
+                }
+            }
+            return Ok(router::ok());
         }
 
         let _lock = self.key_lock.lock(key).await;

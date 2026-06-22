@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- **ISSUE-006**: `MIGRATE … KEYS` 批量路径尊重 `COPY` (源 key 保留); KEYS 列表解析不再把 trailing `COPY`/`REPLACE`/`AUTH` 当作 key 名.
 - **ISSUE-002**: CLI `--engine aidb` 与 cluster lifecycle 使用生产 `Options::default()` preset (`server_db_options`); 单测改 `open_for_testing()`; 新增 `--sync-wal`.
 
 ### Added

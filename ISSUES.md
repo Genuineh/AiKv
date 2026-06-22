@@ -230,13 +230,13 @@
 
 ### ISSUE-006: MIGRATE KEYS 忽略 COPY, 批量路径始终 delete
 
-- **状态**: open
+- **状态**: closed
 - **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 1–2)
-- **相关 src**: `src/command/key.rs` (`migrate` KEYS 分支 L334 无条件 delete)
+- **相关 src**: `src/command/key.rs` (`migrate` KEYS 分支)
 - **oldmain 代码**: `aikv-oldmain/src/command/key.rs` L990 `if !copy { delete }`
-- **现象**: 单 key 路径尊重 COPY; `MIGRATE … KEYS k1 k2 COPY` 仍删源 key; wiqun-kv 同形
-- **影响**: 与 Redis/oldmain 语义偏离; 批量 COPY 迁移不可用
-- **下一步**: 待核实 — 修 KEYS 分支或文档声明
+- **现象**: 单 key 路径尊重 COPY; `MIGRATE … KEYS k1 k2` 批量路径曾无条件 delete; KEYS 列表曾吞掉 trailing COPY
+- **修复**: KEYS 批量路径 `if !copy { delete }`; KEYS 列表解析遇 COPY/REPLACE/AUTH 停止并继续解析选项; 回归测 `test_migrate_keys_copy`
+- **下一步**: —
 
 ### ISSUE-005: BlockingRegistry evict_expired 无后台调用
 

@@ -525,6 +525,62 @@ async fn test_migrate_keys() {
     assert_nil(r.execute("GET", &[b("k3")], &mut db).await.unwrap());
 }
 
+#[tokio::test]
+async fn test_migrate_keys_copy() {
+    use super::helpers::{start_ephemeral_server, tcp_get};
+
+    let (target_addr, _handle) = start_ephemeral_server().await;
+    let port = target_addr.port().to_string();
+
+    let r = router();
+    let mut db = 0;
+    r.execute("SET", &[b("k1"), b("v1")], &mut db)
+        .await
+        .unwrap();
+    r.execute("SET", &[b("k2"), b("v2")], &mut db)
+        .await
+        .unwrap();
+
+    assert_ok(
+        r.execute(
+            "MIGRATE",
+            &[
+                b("127.0.0.1"),
+                b(&port),
+                b(""),
+                b("0"),
+                b("5000"),
+                b("COPY"),
+                b("KEYS"),
+                b("k1"),
+                b("k2"),
+                b("REPLACE"),
+            ],
+            &mut db,
+        )
+        .await
+        .unwrap(),
+    );
+
+    assert_eq!(
+        r.execute("GET", &[b("k1")], &mut db).await.unwrap(),
+        aikv::protocol::RespValue::BulkString(Some(b("v1")))
+    );
+    assert_eq!(
+        r.execute("GET", &[b("k2")], &mut db).await.unwrap(),
+        aikv::protocol::RespValue::BulkString(Some(b("v2")))
+    );
+
+    for (key, val) in [("k1", "v1"), ("k2", "v2")] {
+        let resp = tcp_get(target_addr, key).await;
+        assert!(
+            resp.windows(val.len()).any(|w| w == val.as_bytes()),
+            "target should have {key}, got {:?}",
+            String::from_utf8_lossy(&resp)
+        );
+    }
+}
+
 // ── SCAN 游标一致性测试 ────────────────────────────────────────────────────────
 
 /// 辅助：执行 SCAN 一次，返回 (next_cursor_bytes, keys)
