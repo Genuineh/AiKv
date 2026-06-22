@@ -110,13 +110,13 @@
 
 ### ISSUE-016: CLUSTER RESET 未实现
 
-- **状态**: open
+- **状态**: closed (doc-only)
 - **发现于**: PROGRESS 步 11 / 章节 `docs/modules/cluster.md` (步 2)
-- **相关 src**: (无) — `dispatch_cluster` 无 RESET 分支
+- **相关 src**: `src/cluster/commands.rs` (`dispatch_cluster` RESET arm)
 - **旧文档**: `aikv-oldmain/docs/development/architecture/03-cluster.md` §排障 — `CLUSTER RESET SOFT`
-- **现象**: oldmain 排障脚本依赖 RESET; 现码 unknown subcommand
-- **影响**: 运维重置集群需手动清数据目录或 aidb 工具; redis-cli 工作流不兼容
-- **下一步**: 待核实 — 实现 SOFT/HARD 或文档声明不支持 + 替代步骤
+- **现象**: MetaRaft 架构下集群元数据为共识状态, 单节点 RESET 无法等价 Redis 语义; oldmain `cluster_reset()` 亦未接入 dispatch (SOFT 空操作, HARD 仅部分清 slot)
+- **修复**: doc-only — `CLUSTER RESET` 返回明确 ERR + 替代运维步骤见 [cluster.md](docs/modules/cluster.md#重置集群无-cluster-reset)
+- **影响**: redis-cli / 旧脚本需改用停服 + 清 `data_dir` 重搭 (e2e 同模式)
 
 ### ISSUE-015: CLUSTER METARAFT * 子命令已移除
 

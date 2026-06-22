@@ -172,7 +172,7 @@ sequenceDiagram
 
 | 子命令 | 行为 |
 |--------|------|
-| CLUSTER RESET | 未实现 |
+| CLUSTER RESET | **不支持** — 返回 ERR; 见下方 [重置集群](#重置集群无-cluster-reset) |
 | CLUSTER METARAFT * | 不在 aikv; 见 aidb cluster |
 | SET-CONFIG-EPOCH | 恒 OK |
 | COUNT-FAILURE-REPORTS | 恒 0 |
@@ -213,6 +213,26 @@ NotLeader (MetaRaft propose): `map_propose_error` → `MOVED 0 <addr>` 或 CLUST
 2. `MIGRATE` (源) → 目标 RESTORE (自动 ASKING)
 3. 双方 `SETSLOT STABLE`
 
+### 重置集群 (无 CLUSTER RESET)
+
+AiKv 集群元数据由 **MetaRaft 共识** 维护, 非 Redis 式每节点本地 `nodes.conf`. 单节点 `CLUSTER RESET` **不支持** (ISSUE-016, doc-only): 命令返回明确 ERR, 不会清 MetaRaft / MultiRaft 状态.
+
+**为何不支持**: 忘记节点、清空 slot、改 node ID 等需 MetaRaft propose 或删持久化目录; 运行中假 OK 比 explicit ERR 更易造成运维误判. oldmain 虽有 `cluster_reset()` 但未接入 dispatch, SOFT 为空操作.
+
+| 场景 | 替代步骤 |
+|------|----------|
+| 单节点重初始化 | 停进程 → `rm -rf <data_dir>/*` → 重启 (bootstrap: `--cluster-peers` 空; join: 带 peers) |
+| 全集群重搭 | 所有节点停服 → 各节点清 `data_dir` → 按 e2e 流程 MEET + ADDSLOTS (参考 `e2e/test_cluster_formation.sh`) |
+| slot 冲突 / 重复分配 | MetaRaft leader 上 `CLUSTER DELSLOTS` / `FORGET`; 严重则全量清 data_dir |
+| 仅清连接 ephemeral | 重启进程 (清 `importing_slots`、ASKING 等) |
+
+```bash
+# 单节点示例 (停服后)
+rm -rf /var/lib/aikv/node1/*
+aikv --features cluster --engine aidb --data-dir /var/lib/aikv/node1 \
+  --cluster-node-id 1 --cluster-rpc-addr 127.0.0.1:5001 --bind 127.0.0.1:7001
+```
+
 ### 新增 CLUSTER 子命令
 
 1. 在 `cluster/commands.rs` 实现 handler
@@ -239,7 +259,8 @@ cargo test --features cluster -p aikv --test cluster_creategroup
 
 - **非 Redis Gossip**: 无 cluster bus PING/PONG; 拓扑靠 MetaRaft + MEET (见 Gossip 节).
 - **REPLICATE/FAILOVER**: 手动模型; replica 不自动服务写; 非 Redis 全自动 failover.
-- **无 CLUSTER RESET / METARAFT RESP 子命令**.
+- **无 CLUSTER RESET**: MetaRaft 共识; 停服清 `data_dir` 重搭 — 见上方排障节.
+- **无 CLUSTER METARAFT RESP 子命令**.
 - **无 ADDSLOTSRANGE** (redis-cli 常用 ADDSLOTS 仍可用).
 - **透明转发**: 仅 server 侧; smart client (`redis-cli -c`) 仍靠 MOVED/ASK 字符串.
 
@@ -250,5 +271,4 @@ cargo test --features cluster -p aikv --test cluster_creategroup
 ## 待核实
 
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-014) — GossipState 未接入 NODES.
-- 见 [ISSUES.md](../../ISSUES.md#ISSUE-016) — CLUSTER RESET 未实现.
 - 见 [ISSUES.md](../../ISSUES.md#ISSUE-004) — cluster_route 预留 msetnx dead branch.

@@ -193,7 +193,7 @@ Redis Cluster 协议: 服务器返回 `MOVED`/`ASK` 字符串, smart client 重�
 
 ### 已知限制 (摘要)
 
-- 无 CLUSTER RESET; FAILOVER 仅 FORCE/TAKEOVER — ISSUE-016/018.
+- 不支持 CLUSTER RESET (MetaRaft 共识; 停服清 data_dir 替代) — ISSUE-016 closed doc-only; FAILOVER 仅 FORCE/TAKEOVER — ISSUE-018.
 - SET-CONFIG-EPOCH / COUNT-FAILURE-REPORTS stub — ISSUE-019.
 
 ---

@@ -1903,6 +1903,19 @@ pub async fn dispatch_cluster(
             let msg = cluster_rebalance().await.map_err(Error::Command)?;
             Ok(RespValue::BulkString(Some(Bytes::from(msg))))
         }
+        Some("reset") | Some("RESET") => {
+            if let Some(mode) = args.get(1) {
+                let mode_str = bytes_to_str(mode)?;
+                if !mode_str.eq_ignore_ascii_case("soft") && !mode_str.eq_ignore_ascii_case("hard") {
+                    return Err(Error::Command(format!(
+                        "ERR unknown RESET option '{mode_str}'"
+                    )));
+                }
+            }
+            Err(Error::Command(
+                "ERR CLUSTER RESET is not supported; stop the node and clear data_dir (see docs/modules/cluster.md)".into(),
+            ))
+        }
         _ => Err(Error::Command("ERR unknown CLUSTER subcommand".into())),
     }
 }
@@ -2027,5 +2040,49 @@ mod cluster_info_state_tests {
         table[0] = SlotStatus::Migrating(1);
         let meta = meta_with_group(1, true);
         assert_eq!(compute_cluster_state(&table, &meta, |_| Some(1)), "ok");
+    }
+}
+
+#[cfg(test)]
+mod cluster_reset_dispatch_tests {
+    use super::dispatch_cluster;
+    use bytes::Bytes;
+
+    fn b(s: &str) -> Bytes {
+        Bytes::from(s.to_owned())
+    }
+
+    #[tokio::test]
+    async fn reset_soft_returns_explicit_err() {
+        let err = dispatch_cluster(Some("RESET"), &[b("RESET"), b("SOFT")])
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("not supported"));
+        assert!(msg.contains("data_dir"));
+    }
+
+    #[tokio::test]
+    async fn reset_default_mode_returns_explicit_err() {
+        let err = dispatch_cluster(Some("RESET"), &[b("RESET")])
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("not supported"));
+    }
+
+    #[tokio::test]
+    async fn reset_hard_returns_explicit_err() {
+        let err = dispatch_cluster(Some("RESET"), &[b("RESET"), b("HARD")])
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("not supported"));
+    }
+
+    #[tokio::test]
+    async fn reset_unknown_option() {
+        let err = dispatch_cluster(Some("RESET"), &[b("RESET"), b("WTF")])
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("unknown RESET option"));
     }
 }
