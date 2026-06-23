@@ -673,3 +673,112 @@ async fn info_metrics_consistency_after_commands() {
         ops as i64
     );
 }
+
+#[tokio::test]
+async fn blocked_clients_increments_during_blpop() {
+    use bytes::Bytes;
+    use std::sync::Arc;
+
+    use aikv::server::{ConnectionConfig, ServerSharedState};
+    use aikv::storage::{KvStorage, MemoryEngine};
+
+    fn b(s: &str) -> Bytes {
+        Bytes::copy_from_slice(s.as_bytes())
+    }
+
+    let storage: Arc<dyn KvStorage> = MemoryEngine::new(16);
+    let shared = Arc::new(ServerSharedState::new(
+        ConnectionConfig::default(),
+        storage,
+        6379,
+    ));
+    let metrics = shared.metrics();
+    let router = shared.router();
+
+    assert_eq!(metrics.blocked_clients(), 0);
+
+    let router_wait = shared.router();
+    let wait = tokio::spawn(async move {
+        let mut db = 0;
+        router_wait
+            .execute("BLPOP", &[b("q"), b("5")], &mut db)
+            .await
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(metrics.blocked_clients(), 1);
+
+    let mut db = 0;
+    router
+        .execute("LPUSH", &[b("q"), b("v")], &mut db)
+        .await
+        .unwrap();
+
+    wait.await.unwrap().unwrap();
+    assert_eq!(metrics.blocked_clients(), 0);
+}
+
+#[tokio::test]
+async fn blocked_clients_multi_key_blpop_counts_one_client() {
+    use bytes::Bytes;
+    use std::sync::Arc;
+
+    use aikv::server::{ConnectionConfig, ServerSharedState};
+    use aikv::storage::{KvStorage, MemoryEngine};
+
+    fn b(s: &str) -> Bytes {
+        Bytes::copy_from_slice(s.as_bytes())
+    }
+
+    let storage: Arc<dyn KvStorage> = MemoryEngine::new(16);
+    let shared = Arc::new(ServerSharedState::new(
+        ConnectionConfig::default(),
+        storage,
+        6379,
+    ));
+    let metrics = shared.metrics();
+    let router_wait = shared.router();
+    let wait = tokio::spawn(async move {
+        let mut db = 0;
+        router_wait
+            .execute("BLPOP", &[b("a"), b("b"), b("c"), b("5")], &mut db)
+            .await
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(metrics.blocked_clients(), 1);
+
+    let router = shared.router();
+    let mut db = 0;
+    router
+        .execute("LPUSH", &[b("b"), b("v")], &mut db)
+        .await
+        .unwrap();
+
+    wait.await.unwrap().unwrap();
+    assert_eq!(metrics.blocked_clients(), 0);
+}
+
+#[tokio::test]
+async fn blocked_clients_zero_timeout_does_not_block() {
+    use bytes::Bytes;
+    use std::sync::Arc;
+
+    use aikv::server::{ConnectionConfig, ServerSharedState};
+    use aikv::storage::{KvStorage, MemoryEngine};
+
+    fn b(s: &str) -> Bytes {
+        Bytes::copy_from_slice(s.as_bytes())
+    }
+
+    let storage: Arc<dyn KvStorage> = MemoryEngine::new(16);
+    let shared = ServerSharedState::new(ConnectionConfig::default(), storage, 6379);
+    let router = shared.router();
+    let mut db = 0;
+
+    router
+        .execute("BLPOP", &[b("missing"), b("0")], &mut db)
+        .await
+        .unwrap();
+    assert_eq!(shared.metrics().blocked_clients(), 0);
+}

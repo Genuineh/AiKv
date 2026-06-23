@@ -19,6 +19,7 @@
 
 ### Fixed
 
+- **ISSUE-020**: `blocked_clients` 在 BLPOP/BRPOP/BLMOVE/BZPOP* 阻塞等待期间 +1, 返回时 -1; INFO / `aikv_blocked_clients` 与 `ServerMetrics` 对齐.
 - **ISSUE-005**: `BlockingRegistry` 后台 1s tick 调 `evict_expired` — 清理超时 dead waiter 与 notify 后空槽; 不依赖 `monitoring` feature.
 - **ISSUE-014**: 移除 unused `GossipState` 缓存; 拓扑 tick 保留 leader 路由刷新 + gossip metrics; `CLUSTER NODES` 继续读 MetaRaft, link-state 恢复 `NodeStatus` → connected/disconnected.
 - **ISSUE-001**: `MGET` 对齐 Redis 7 — non-String / missing key per-key 返回 `nil`, memory 与 aidb 双引擎一致; `KvStorageAdapter::mget` 不再经 `get()` 抛 WRONGTYPE.

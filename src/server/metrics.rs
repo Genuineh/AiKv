@@ -111,6 +111,24 @@ impl ServerMetrics {
         }
     }
 
+    /// 客户端进入阻塞命令等待 (BLPOP 等).
+    pub fn on_client_blocked(&self) {
+        self.blocked_clients.fetch_add(1, Ordering::Relaxed);
+        #[cfg(feature = "monitoring")]
+        if let Some(ref p) = self.prom {
+            p.kv_blocked_clients.inc();
+        }
+    }
+
+    /// 客户端离开阻塞命令等待.
+    pub fn on_client_unblocked(&self) {
+        self.blocked_clients.fetch_sub(1, Ordering::Relaxed);
+        #[cfg(feature = "monitoring")]
+        if let Some(ref p) = self.prom {
+            p.kv_blocked_clients.dec();
+        }
+    }
+
     pub fn on_command(&self, command: &str, ok: bool) {
         let mut map = self.commands_total.lock().unwrap();
         let entry = map.entry(command.to_ascii_uppercase()).or_default();

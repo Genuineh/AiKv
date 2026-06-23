@@ -166,9 +166,17 @@ impl CommandRouter {
         Self {
             string: string::StringCommands::new(storage.clone(), key_lock.clone()),
             hash: hash::HashCommands::new(storage.clone(), key_lock.clone()),
-            list: list::ListCommands::new(storage.clone(), key_lock.clone()),
+            list: list::ListCommands::with_metrics(
+                storage.clone(),
+                key_lock.clone(),
+                shared.metrics.clone(),
+            ),
             set: set::SetCommands::new(storage.clone(), key_lock.clone()),
-            zset: zset::ZSetCommands::new(storage.clone(), key_lock.clone()),
+            zset: zset::ZSetCommands::with_metrics(
+                storage.clone(),
+                key_lock.clone(),
+                shared.metrics.clone(),
+            ),
             json: json::JsonCommands::with_metrics(
                 storage.clone(),
                 key_lock.clone(),

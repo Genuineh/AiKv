@@ -282,7 +282,7 @@ export AIKV_CLUSTER_ANNOUNCE_MODE=fixed   # LAN/GUI; 默认 unknown 适合单种
 | `aikv_command_duration_seconds` | 延迟直方图 | p99 关注 |
 | `aikv_slow_queries_total` | 慢查询 | 突增 |
 | `aikv_cluster_redirects_total` | MOVED/ASK | 突增可能路由/迁移问题 |
-| `aikv_blocked_clients` | 阻塞客户端 | **恒 0** — 见 ISSUES |
+| `aikv_blocked_clients` | 阻塞客户端 (BLPOP 等) | 突增可能客户端堆积 |
 
 ## 备份与持久化运维
 
@@ -330,6 +330,5 @@ CMD ["aikv", "--bind", "0.0.0.0:6379", "--engine", "aidb", \
 
 ## 待核实
 
-- `aikv_blocked_clients` 恒 0 — 见 [ISSUES.md#ISSUE-020](ISSUES.md#issue-020-blocked_clients-无写入点).
 - 无 `[monitoring]` 时 runtime metrics 不自动 refresh — 见 [ISSUES.md#ISSUE-021](ISSUES.md#issue-021-refresh_runtime_metrics-仅-monitoring-后台-tick).
 - metrics 后台 tick **15s** (非 1s spec) — 见 [ISSUES.md#ISSUE-022](ISSUES.md#issue-022-metrics-refresh-周期-15s-vs-设计-spec-1s).

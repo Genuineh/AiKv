@@ -23,7 +23,7 @@ description: AiKv Prometheus aikv_* metric catalog and INFO field cross-referenc
 | `aikv_expired_keys_total` | Counter | — | `record_expired_keys` |
 | `aikv_evicted_keys_total` | Counter | — | (恒 0) |
 | `aikv_instantaneous_ops_per_sec` | Gauge | — | `sample_instantaneous_ops` |
-| `aikv_blocked_clients` | Gauge | — | `sync_redis_aligned_gauges` (恒 0) |
+| `aikv_blocked_clients` | Gauge | — | `on_client_blocked` / guard Drop |
 | `aikv_db_keys` | GaugeVec | db | `set_db_key_count` |
 | `aikv_net_input_bytes_total` | Counter | — | `on_net_input_bytes` |
 | `aikv_net_output_bytes_total` | Counter | — | `on_net_output_bytes` |

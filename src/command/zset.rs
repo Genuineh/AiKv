@@ -8,22 +8,40 @@ use bytes::Bytes;
 use tokio::sync::oneshot;
 use tracing::instrument;
 
-use crate::command::blocking::{self, BlockingRegistry};
+use crate::command::blocking::{self, BlockedClientGuard, BlockingRegistry};
 use crate::command::router::{self, KeyLock};
 use crate::command::scan_util;
 use crate::error::{Error, Result};
 use crate::protocol::RespValue;
+use crate::server::ServerMetrics;
 use crate::storage::memory::glob_match;
 use crate::storage::{KvStorage, StoredValue, ValueType};
 
 pub struct ZSetCommands {
     storage: Arc<dyn KvStorage>,
     key_lock: Arc<KeyLock>,
+    metrics: Option<Arc<ServerMetrics>>,
 }
 
 impl ZSetCommands {
     pub fn new(storage: Arc<dyn KvStorage>, key_lock: Arc<KeyLock>) -> Self {
-        Self { storage, key_lock }
+        Self {
+            storage,
+            key_lock,
+            metrics: None,
+        }
+    }
+
+    pub fn with_metrics(
+        storage: Arc<dyn KvStorage>,
+        key_lock: Arc<KeyLock>,
+        metrics: Arc<ServerMetrics>,
+    ) -> Self {
+        Self {
+            storage,
+            key_lock,
+            metrics: Some(metrics),
+        }
     }
 
     #[instrument(name = "cmd_zset", skip(self, args), fields(cmd.name = "ZADD"))]
@@ -521,6 +539,7 @@ impl ZSetCommands {
         } else {
             Duration::from_secs(300)
         };
+        let _blocked = BlockedClientGuard::enter(&self.metrics);
         let registry = BlockingRegistry::global();
         let deadline = Instant::now() + dur;
         let mut rx: Vec<oneshot::Receiver<RespValue>> = keys

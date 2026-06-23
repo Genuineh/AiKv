@@ -150,7 +150,7 @@ sequenceDiagram
 | `keyspace_hits` / `keyspace_misses` | `aikv_keyspace_*_total` | counter 当前值 |
 | `instantaneous_ops_per_sec` | `aikv_instantaneous_ops_per_sec` | gauge |
 | `expired_keys` | `aikv_expired_keys_total` | 需 refresh drain |
-| `blocked_clients` | `aikv_blocked_clients` | 当前恒 0 (ISSUE-020) |
+| `blocked_clients` | `aikv_blocked_clients` | `BlockedClientGuard` (BLPOP 等阻塞等待) |
 | `evicted_keys` | `aikv_evicted_keys_total` | 无 maxmemory eviction, 恒 0 |
 
 Golden 字段: `tests/fixtures/redis7_info_p0_fields.txt`.
@@ -174,6 +174,7 @@ Golden 字段: `tests/fixtures/redis7_info_p0_fields.txt`.
 | `on_keyspace_hit` / `on_keyspace_miss` | GET 类命中 |
 | `on_gossip_refresh` / `on_failover` / `on_cluster_redirect` | 集群 metrics |
 | `on_json_command` / `on_lua_*` | 扩展命令 |
+| `on_client_blocked` / `on_client_unblocked` | 阻塞命令 (BLPOP 等) |
 | `client_command_totals()` | INFO commandstats/errorstats |
 | `[monitoring] with_prometheus` | 双写 Prometheus |
 
@@ -267,7 +268,6 @@ cargo test -p aikv --features cluster gossip_refresh -- --test-threads=1
 
 ## 已知限制
 
-- **`blocked_clients` 恒 0** — BlockingRegistry 未同步 (ISSUE-020)
 - **无 monitoring 时无自动 refresh** — `expired_keys` / `instantaneous_ops_per_sec` 可能滞后
 - **refresh 周期 15s** — 非设计 spec 1s
 - **Slowlog 默认 100ms** — Redis/oldmain 为 10ms
@@ -278,4 +278,4 @@ cargo test -p aikv --features cluster gossip_refresh -- --test-threads=1
 
 ## 待核实
 
-- 见 [ISSUES.md](../../ISSUES.md#issue-020) — blocked_clients 无写入点
+- (无)

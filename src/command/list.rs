@@ -8,20 +8,38 @@ use bytes::Bytes;
 use tokio::sync::oneshot;
 use tracing::instrument;
 
-use crate::command::blocking::{self, BlockingRegistry};
+use crate::command::blocking::{self, BlockedClientGuard, BlockingRegistry};
 use crate::command::router::{self, KeyLock};
 use crate::error::{Error, Result};
 use crate::protocol::RespValue;
+use crate::server::ServerMetrics;
 use crate::storage::{KvStorage, StoredValue, ValueType};
 
 pub struct ListCommands {
     storage: Arc<dyn KvStorage>,
     key_lock: Arc<KeyLock>,
+    metrics: Option<Arc<ServerMetrics>>,
 }
 
 impl ListCommands {
     pub fn new(storage: Arc<dyn KvStorage>, key_lock: Arc<KeyLock>) -> Self {
-        Self { storage, key_lock }
+        Self {
+            storage,
+            key_lock,
+            metrics: None,
+        }
+    }
+
+    pub fn with_metrics(
+        storage: Arc<dyn KvStorage>,
+        key_lock: Arc<KeyLock>,
+        metrics: Arc<ServerMetrics>,
+    ) -> Self {
+        Self {
+            storage,
+            key_lock,
+            metrics: Some(metrics),
+        }
     }
 
     #[instrument(name = "cmd_list", skip(self, args), fields(cmd.name = "LPUSH"))]
@@ -440,6 +458,8 @@ impl ListCommands {
             Duration::from_secs(300)
         };
 
+        let _blocked = BlockedClientGuard::enter(&self.metrics);
+
         let registry = BlockingRegistry::global();
         let mut receivers: Vec<oneshot::Receiver<RespValue>> = keys
             .iter()
@@ -495,6 +515,8 @@ impl ListCommands {
         } else {
             Duration::from_secs(300)
         };
+
+        let _blocked = BlockedClientGuard::enter(&self.metrics);
 
         let registry = BlockingRegistry::global();
         let deadline = Instant::now() + dur;

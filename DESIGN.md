@@ -224,7 +224,7 @@ Redis Cluster 协议: 服务器返回 `MOVED`/`ASK` 字符串, smart client 重�
 | slowlog 阈值 | **100ms** (`100_000` µs) | Redis/oldmain 10ms — ISSUE-023 |
 | metrics refresh | **15s** (`main` 后台 tick) | design spec 1s — ISSUE-022 |
 | 无 `monitoring` | 无自动 refresh | stats 可能滞后 — ISSUE-021 |
-| `blocked_clients` / `evicted_keys` | 恒 0 | 无 maxmemory eviction — ISSUE-020 |
+| `evicted_keys` | 恒 0 | 无 maxmemory eviction |
 
 指标前缀: **`aikv_*`** (非历史 `wiqun_kv_*`). `aidb_*` 不进 Redis INFO, 仅 `/metrics`.
 

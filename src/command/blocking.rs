@@ -2,13 +2,14 @@
 //!
 //! key 上无等待者时 notify 开销为一次 DashMap 查找。
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use tokio::sync::oneshot;
 
 use crate::protocol::RespValue;
+use crate::server::ServerMetrics;
 
 /// 后台清理过期 waiter 的 tick 间隔
 const EVICTION_INTERVAL: Duration = Duration::from_secs(1);
@@ -109,6 +110,30 @@ pub fn nil_blocking_response() -> RespValue {
     RespValue::Array(None)
 }
 
+/// 阻塞等待期间保持 `blocked_clients` +1, Drop 时 -1.
+pub struct BlockedClientGuard {
+    metrics: Option<Arc<ServerMetrics>>,
+}
+
+impl BlockedClientGuard {
+    pub fn enter(metrics: &Option<Arc<ServerMetrics>>) -> Self {
+        if let Some(m) = metrics {
+            m.on_client_blocked();
+        }
+        Self {
+            metrics: metrics.clone(),
+        }
+    }
+}
+
+impl Drop for BlockedClientGuard {
+    fn drop(&mut self) {
+        if let Some(m) = &self.metrics {
+            m.on_client_unblocked();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,6 +173,22 @@ mod tests {
 
         registry.evict_expired();
         assert_eq!(registry.entry_count(), 0);
+    }
+
+    #[test]
+    fn blocked_client_guard_balances_metrics() {
+        use std::sync::Arc;
+
+        use crate::server::ServerMetrics;
+
+        let metrics = Arc::new(ServerMetrics::default());
+        assert_eq!(metrics.blocked_clients(), 0);
+
+        {
+            let _guard = super::BlockedClientGuard::enter(&Some(Arc::clone(&metrics)));
+            assert_eq!(metrics.blocked_clients(), 1);
+        }
+        assert_eq!(metrics.blocked_clients(), 0);
     }
 
     #[test]

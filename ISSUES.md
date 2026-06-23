@@ -69,13 +69,12 @@
 
 ### ISSUE-020: `blocked_clients` 无写入点
 
-- **状态**: open
+- **状态**: closed
 - **发现于**: PROGRESS 步 12 / 章节 `docs/modules/observability.md` (步 2)
-- **相关 src**: `src/server/metrics.rs` (`blocked_clients`), `src/command/blocking.rs` (BlockingRegistry)
-- **旧文档**: `WiQunTools/docs/wiqun-kv-inventory/08-observability.md` — 「无 BLPOP 时为 0」
+- **相关 src**: `src/server/metrics.rs` (`blocked_clients`), `src/command/blocking.rs` (`BlockedClientGuard`), `src/command/list.rs`, `src/command/zset.rs`
 - **现象**: `AtomicUsize blocked_clients` 仅 default 0; BlockingRegistry 等待/唤醒未同步计数
-- **影响**: INFO clients / `aikv_blocked_clients` 恒 0; 实现阻塞命令后仍可能不准
-- **下一步**: doc-only 先描述现状; 接 blocking 时修代码
+- **修复**: `BlockedClientGuard` 在阻塞命令 handler 进入等待时 +1, Drop 时 -1; `ListCommands`/`ZSetCommands` 经 router 接入 `ServerMetrics`
+- **影响**: INFO clients / `aikv_blocked_clients` 反映当前阻塞客户端数
 
 ### ISSUE-019: SET-CONFIG-EPOCH / COUNT-FAILURE-REPORTS 为 stub
 
