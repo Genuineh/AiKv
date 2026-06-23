@@ -97,7 +97,7 @@ flowchart TB
 ### 启动 (`main.rs`)
 
 1. `init_logging()` — `RUST_LOG`; JSON 默认开 (`AIKV_JSON_LOG`, 默认 `true`)
-2. `[monitoring]` + `AIKV_OTLP_ENDPOINT` → OTel layer (`service.name=aikv`)
+2. `[monitoring]` + `AIKV_OTLP_ENDPOINT` → OTel traces + metrics (`service.name`, `host.name`, `node_id`)
 3. `StorageObservation::new()` → `build_storage` → `ServerSharedState::new_with_backup_dir`
 4. `[monitoring]` spawn `MetricsServer` (`--metrics-addr` + `--metrics-port`, 默认 `127.0.0.1:9191`)
 5. `[monitoring]` 15s loop: `refresh_runtime_metrics` + `refresh_process_metrics`
@@ -241,7 +241,9 @@ redis-cli SLOWLOG GET 10
 | `cluster` | 叠加 | `aikv_cluster_redirects_total`, gossip/failover counters |
 | `--metrics-port` / `--metrics-addr` | `main.rs` CLI | 默认 9191 / 127.0.0.1 |
 | `AIKV_JSON_LOG` | env | 默认 true → JSON tracing |
-| `AIKV_OTLP_ENDPOINT` | env | `[monitoring]` OTel exporter |
+| `AIKV_OTLP_ENDPOINT` | env | `[monitoring]` traces + metrics OTLP |
+| `AIKV_HOST_LABEL` | env | Resource `host.name` (与 Alloy HOST_LABEL 对齐) |
+| `AIKV_NODE_ID` | env | Resource `node_id` (或 `--cluster-node-id`) |
 | `RUST_LOG` | env | tracing filter |
 
 运维 scrape/OTLP/Loki 部署流程 → 阶段 2 `DEPLOYMENT.md` (提炼自 wiqun-factory); 旧 env 名 `WIQUN_*` 已改为 `AIKV_*`.
@@ -252,8 +254,8 @@ redis-cli SLOWLOG GET 10
 # 基础 (无 monitoring)
 cargo test -p aikv observability info_alignment info_golden -- --test-threads=1
 
-# Prometheus HTTP
-cargo test -p aikv --features monitoring test_metrics_endpoint -- --test-threads=1
+# Prometheus HTTP + C2 契约
+cargo test -p aikv --features monitoring observability -- --test-threads=1
 
 # 集群 metrics
 cargo test -p aikv --features cluster gossip_refresh -- --test-threads=1
@@ -261,7 +263,7 @@ cargo test -p aikv --features cluster gossip_refresh -- --test-threads=1
 
 | 测试 | 覆盖 |
 |------|------|
-| `tests/modules/server/observability.rs` | 连接计数、/metrics、INFO↔Prom 对齐 |
+| `tests/modules/server/observability.rs` | 连接计数、/metrics、INFO↔Prom 对齐; C2 指标 catalog + OTel/Prom counter 双写 parity |
 | `tests/modules/command/info_golden.rs` | Redis 7 P0 字段 |
 | `tests/modules/command/info_alignment.rs` | memory 非 placeholder、stats 字段 |
 | `tests/modules/cluster/observability.rs` | gossip → cluster_messages |
@@ -273,7 +275,7 @@ cargo test -p aikv --features cluster gossip_refresh -- --test-threads=1
 - **Slowlog 默认 100ms** — Redis/oldmain 为 10ms
 - **`evicted_keys` 恒 0** — 无 maxmemory eviction
 - **无 `CONFIG SET loglevel`** — oldmain `LoggingManager` 已移除
-- **Grafana 旧面板** 可能仍用 `wiqun_kv_*` PromQL — 现 scrape 为 `aikv_*`
+- **Grafana 面板** 见 AiFactory [`monitor/config/grafana/dashboards/README.md`](../../../AiFactory/monitor/config/grafana/dashboards/README.md) (PromQL: `aikv_*` / `aidb_*`)
 - **`aidb_*` 不映射 Redis INFO** — 仅 `/metrics`
 
 ## 待核实

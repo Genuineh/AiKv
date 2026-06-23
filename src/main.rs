@@ -503,7 +503,10 @@ async fn init_cluster(
     Ok(())
 }
 
-fn init_logging() {
+fn init_logging(
+    #[cfg(feature = "cluster")] cluster_node_id: Option<u64>,
+    #[cfg(not(feature = "cluster"))] cluster_node_id: Option<u64>,
+) {
     let json_enabled = std::env::var("AIKV_JSON_LOG")
         .ok()
         .and_then(|v| v.parse::<bool>().ok())
@@ -513,28 +516,29 @@ fn init_logging() {
         .with_default_directive("info".parse().unwrap())
         .from_env_lossy();
 
-    // 尝试初始化 OTel tracer；若成功则将其 layer 加入 tracing subscriber
     #[cfg(feature = "monitoring")]
-    if let Some(tracer) = create_otel_tracer() {
-        let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer.clone());
-        let _ = Box::leak(Box::new(tracer));
-        let base = Registry::default().with(otel_layer);
-        let subscriber = if json_enabled {
-            base.with(
-                fmt::layer()
-                    .json()
-                    .flatten_event(false)
-                    .with_current_span(true)
-                    .with_span_list(true)
-                    .boxed(),
-            )
-            .with(filter)
-        } else {
-            base.with(fmt::layer().compact().with_target(true).boxed())
+    if let Some(config) = aikv::server::otel::otel_config_from_env(cluster_node_id) {
+        if let Some(tracer) = aikv::server::otel::init_otel(&config) {
+            let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer.clone());
+            let _ = Box::leak(Box::new(tracer));
+            let base = Registry::default().with(otel_layer);
+            let subscriber = if json_enabled {
+                base.with(
+                    fmt::layer()
+                        .json()
+                        .flatten_event(false)
+                        .with_current_span(true)
+                        .with_span_list(true)
+                        .boxed(),
+                )
                 .with(filter)
-        };
-        let _ = subscriber.try_init();
-        return;
+            } else {
+                base.with(fmt::layer().compact().with_target(true).boxed())
+                    .with(filter)
+            };
+            let _ = subscriber.try_init();
+            return;
+        }
     }
 
     // 无 OTel 时只初始化 fmt subscriber
@@ -559,46 +563,15 @@ fn init_logging() {
     }
 }
 
-/// 创建 OTel tracer provider (仅 `monitoring` feature)。
-/// 通过 `AIKV_OTLP_ENDPOINT` 环境变量启用。
-#[cfg(feature = "monitoring")]
-fn create_otel_tracer() -> Option<opentelemetry_sdk::trace::Tracer> {
-    use opentelemetry_otlp::WithExportConfig;
-
-    let endpoint = std::env::var("AIKV_OTLP_ENDPOINT")
-        .ok()
-        .filter(|v| !v.is_empty())?;
-    let exporter = opentelemetry_otlp::new_exporter()
-        .tonic()
-        .with_endpoint(endpoint.clone());
-    match opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_exporter(exporter)
-        .with_trace_config(opentelemetry_sdk::trace::config().with_resource(
-            opentelemetry_sdk::Resource::new(vec![
-                opentelemetry::KeyValue::new("service.name", "aikv"),
-                opentelemetry::KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
-            ]),
-        ))
-        .install_batch(opentelemetry_sdk::runtime::Tokio)
-    {
-        Ok(tracer) => {
-            // subscriber 尚未 init, tracing::info 会丢失, 用 stderr 确认 OTel 已启用
-            eprintln!("info: OTel exporter initialized (endpoint={endpoint})");
-            Some(tracer)
-        }
-        Err(e) => {
-            eprintln!("warn: OTel initialization failed: {e}");
-            None
-        }
-    }
-}
-
 #[tokio::main]
 async fn main() {
-    init_logging();
-
     let args = Args::parse();
+    init_logging(
+        #[cfg(feature = "cluster")]
+        args.cluster_node_id,
+        #[cfg(not(feature = "cluster"))]
+        None,
+    );
     if matches!(args.engine, EngineKind::Memory) {
         eprintln!(
       "WARN: engine=memory — data is NOT persisted; use --engine aidb --data-dir for production"

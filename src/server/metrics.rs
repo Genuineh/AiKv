@@ -100,6 +100,7 @@ impl ServerMetrics {
         if let Some(ref p) = self.prom {
             p.kv_connections_total.inc();
             p.kv_connected_clients.inc();
+            p.otel.on_connect();
         }
     }
 
@@ -108,6 +109,7 @@ impl ServerMetrics {
         #[cfg(feature = "monitoring")]
         if let Some(ref p) = self.prom {
             p.kv_connected_clients.dec();
+            p.otel.on_disconnect();
         }
     }
 
@@ -117,6 +119,7 @@ impl ServerMetrics {
         #[cfg(feature = "monitoring")]
         if let Some(ref p) = self.prom {
             p.kv_blocked_clients.inc();
+            p.otel.on_client_blocked();
         }
     }
 
@@ -126,6 +129,7 @@ impl ServerMetrics {
         #[cfg(feature = "monitoring")]
         if let Some(ref p) = self.prom {
             p.kv_blocked_clients.dec();
+            p.otel.on_client_unblocked();
         }
     }
 
@@ -143,6 +147,7 @@ impl ServerMetrics {
             p.kv_commands_total
                 .with_label_values(&[&command.to_ascii_uppercase(), status])
                 .inc();
+            p.otel.on_command(command, ok);
         }
     }
 
@@ -152,6 +157,7 @@ impl ServerMetrics {
         #[cfg(feature = "monitoring")]
         if let Some(ref p) = self.prom {
             p.kv_lua_scripts_total.inc();
+            p.otel.on_lua_scripts();
         }
     }
 
@@ -161,8 +167,9 @@ impl ServerMetrics {
         self.lua_execution_count.fetch_add(1, Ordering::Relaxed);
         #[cfg(feature = "monitoring")]
         if let Some(ref p) = self.prom {
-            p.kv_lua_execution_duration_seconds
-                .observe(duration_us as f64 / 1_000_000.0);
+            let secs = duration_us as f64 / 1_000_000.0;
+            p.kv_lua_execution_duration_seconds.observe(secs);
+            p.otel.on_lua_execution(secs);
         }
     }
 
@@ -191,9 +198,22 @@ impl ServerMetrics {
         #[cfg(feature = "monitoring")]
         if let Some(ref p) = self.prom {
             let status = if ok { "ok" } else { "error" };
+            let secs = duration_us as f64 / 1_000_000.0;
             p.kv_command_duration_seconds
                 .with_label_values(&[&command.to_ascii_uppercase(), status])
-                .observe(duration_us as f64 / 1_000_000.0);
+                .observe(secs);
+        }
+    }
+
+    /// OTel histogram (含 exemplar), 须在 active span 内调用.
+    #[cfg(feature = "monitoring")]
+    pub fn on_command_duration_otel(&self, command: &str, duration_us: u64, ok: bool) {
+        if let Some(ref p) = self.prom {
+            p.otel.on_command_duration(
+                command,
+                duration_us as f64 / 1_000_000.0,
+                ok,
+            );
         }
     }
 
@@ -204,6 +224,7 @@ impl ServerMetrics {
             p.kv_slow_queries_total
                 .with_label_values(&[&command.to_ascii_uppercase()])
                 .inc();
+            p.otel.on_slow_query(command);
         }
     }
 
@@ -264,6 +285,7 @@ impl ServerMetrics {
     pub fn set_uptime_secs(&self, secs: u64) {
         if let Some(ref p) = self.prom {
             p.kv_uptime_seconds.set(secs as i64);
+            p.otel.set_uptime_secs(secs);
         }
     }
 
@@ -282,6 +304,8 @@ impl ServerMetrics {
             if current as i64 > prom_peak {
                 p.kv_used_memory_peak_bytes.set(current as i64);
             }
+            let peak = p.kv_used_memory_peak_bytes.get().max(0) as u64;
+            p.otel.set_memory_bytes(current, peak);
         }
     }
 
@@ -291,6 +315,7 @@ impl ServerMetrics {
         self.expired_keys.fetch_add(1, Ordering::Relaxed);
         if let Some(ref p) = self.prom {
             p.kv_expired_keys_total.inc();
+            p.otel.on_expired_key();
         }
     }
 
@@ -300,6 +325,7 @@ impl ServerMetrics {
         self.rejected_connections.fetch_add(1, Ordering::Relaxed);
         if let Some(ref p) = self.prom {
             p.kv_rejected_connections_total.inc();
+            p.otel.on_rejected_connection();
         }
     }
 
@@ -312,6 +338,7 @@ impl ServerMetrics {
         self.expired_keys.fetch_add(count, Ordering::Relaxed);
         if let Some(ref p) = self.prom {
             p.kv_expired_keys_total.inc_by(count);
+            p.otel.record_expired_keys(count);
         }
     }
 
@@ -334,6 +361,7 @@ impl ServerMetrics {
             #[cfg(feature = "monitoring")]
             if let Some(ref p) = self.prom {
                 p.kv_instantaneous_ops_per_sec.set(ops as i64);
+                p.otel.set_instantaneous_ops(ops);
             }
         }
     }
@@ -357,6 +385,7 @@ impl ServerMetrics {
         self.net_input_bytes.fetch_add(bytes, Ordering::Relaxed);
         if let Some(ref p) = self.prom {
             p.kv_net_input_bytes_total.inc_by(bytes);
+            p.otel.on_net_input_bytes(bytes);
         }
     }
 
@@ -368,6 +397,7 @@ impl ServerMetrics {
         };
         if let Some(bytes) = crate::server::process_metrics::read_resident_memory_bytes() {
             p.kv_process_resident_memory_bytes.set(bytes as i64);
+            p.otel.set_process_rss(bytes);
         }
         if let Some(cpu_secs) = crate::server::process_metrics::read_cpu_seconds() {
             let bits = cpu_secs.to_bits();
@@ -380,6 +410,7 @@ impl ServerMetrics {
                     let delta_ms = ((cpu_secs - prev) * 1000.0).round() as u64;
                     if delta_ms > 0 {
                         p.kv_process_cpu_milliseconds_total.inc_by(delta_ms);
+                        p.otel.add_process_cpu_ms(delta_ms);
                     }
                 }
             }
@@ -389,14 +420,18 @@ impl ServerMetrics {
                 .process_last_read_bytes
                 .swap(read_bytes, Ordering::Relaxed);
             if prev_read > 0 && read_bytes > prev_read {
-                p.kv_process_read_bytes_total.inc_by(read_bytes - prev_read);
+                let delta = read_bytes - prev_read;
+                p.kv_process_read_bytes_total.inc_by(delta);
+                p.otel.add_process_io(delta, 0);
             }
             let prev_write = self
                 .process_last_write_bytes
                 .swap(write_bytes, Ordering::Relaxed);
             if prev_write > 0 && write_bytes > prev_write {
+                let delta = write_bytes - prev_write;
                 p.kv_process_write_bytes_total
-                    .inc_by(write_bytes - prev_write);
+                    .inc_by(delta);
+                p.otel.add_process_io(0, delta);
             }
         }
     }
@@ -410,6 +445,7 @@ impl ServerMetrics {
         self.net_output_bytes.fetch_add(bytes, Ordering::Relaxed);
         if let Some(ref p) = self.prom {
             p.kv_net_output_bytes_total.inc_by(bytes);
+            p.otel.on_net_output_bytes(bytes);
         }
     }
 
@@ -424,6 +460,7 @@ impl ServerMetrics {
         #[cfg(all(feature = "monitoring", feature = "cluster"))]
         if let Some(ref p) = self.prom {
             p.kv_gossip_messages_total.inc();
+            p.otel.on_gossip_message();
         }
     }
 
@@ -433,6 +470,7 @@ impl ServerMetrics {
         #[cfg(all(feature = "monitoring", feature = "cluster"))]
         if let Some(ref p) = self.prom {
             p.kv_failover_total.inc();
+            p.otel.on_failover();
         }
     }
 
@@ -444,6 +482,7 @@ impl ServerMetrics {
             p.kv_json_commands_total
                 .with_label_values(&[&command.to_ascii_uppercase()])
                 .inc();
+            p.otel.on_json_command(command);
         }
     }
 
@@ -456,6 +495,7 @@ impl ServerMetrics {
             p.kv_cluster_redirects_total
                 .with_label_values(&[redirect_type])
                 .inc();
+            p.otel.on_cluster_redirect(redirect_type);
         }
     }
 
@@ -473,6 +513,7 @@ impl ServerMetrics {
         #[cfg(feature = "monitoring")]
         if let Some(ref p) = self.prom {
             p.kv_keyspace_hits_total.inc();
+            p.otel.on_keyspace_hit();
         }
     }
 
@@ -489,6 +530,7 @@ impl ServerMetrics {
         #[cfg(feature = "monitoring")]
         if let Some(ref p) = self.prom {
             p.kv_keyspace_misses_total.inc();
+            p.otel.on_keyspace_miss();
         }
     }
 
@@ -589,6 +631,7 @@ impl ServerMetrics {
     pub fn sync_redis_aligned_gauges(&self) {
         if let Some(ref p) = self.prom {
             p.kv_blocked_clients.set(self.blocked_clients() as i64);
+            p.otel.sync_blocked_clients(self.blocked_clients());
         }
     }
 
@@ -599,9 +642,10 @@ impl ServerMetrics {
 /// 统一的 Prometheus 指标集合。
 /// `monitoring` feature 下启用，通过 `Arc<Metrics>` 在 Connection 间共享。
 #[cfg(feature = "monitoring")]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Metrics {
     pub registry: prometheus::Registry,
+    pub otel: Arc<super::otel_metrics::OtelMetrics>,
     // --- AiKv 指标 ---
     pub kv_commands_total: prometheus::IntCounterVec,
     pub kv_command_duration_seconds: prometheus::HistogramVec,
@@ -784,8 +828,11 @@ impl Metrics {
         // 注册 AiDb 引擎指标到同一 Registry, 使其可通过 /metrics 抓取
         aidb::metrics::register_into(&registry)?;
 
+        let otel = super::otel_metrics::OtelMetrics::new(&opentelemetry::global::meter("aikv"));
+
         Ok(Metrics {
             registry,
+            otel,
             kv_commands_total,
             kv_command_duration_seconds,
             kv_connections_total,
@@ -818,5 +865,12 @@ impl Metrics {
             #[cfg(feature = "cluster")]
             kv_failover_total,
         })
+    }
+}
+
+#[cfg(feature = "monitoring")]
+impl std::fmt::Debug for Metrics {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Metrics").field("registry", &self.registry).finish()
     }
 }

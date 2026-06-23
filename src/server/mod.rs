@@ -8,6 +8,11 @@ pub mod listener;
 pub mod metrics;
 pub mod slowlog;
 
+#[cfg(feature = "monitoring")]
+pub mod otel;
+#[cfg(feature = "monitoring")]
+pub mod otel_metrics;
+
 pub mod process_metrics;
 
 #[cfg(feature = "monitoring")]

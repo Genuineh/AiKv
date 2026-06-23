@@ -242,11 +242,25 @@ impl CommandRouter {
             args_len = args.len(),
             client_id = client_id.unwrap_or(0),
             db = *db,
+            trace_id = tracing::field::Empty,
+            span_id = tracing::field::Empty,
         );
-        let result = self
-            .execute_inner(cmd, args, db, client_id, protocol_version)
-            .instrument(span)
-            .await;
+        let start = Instant::now();
+        let result = async {
+            #[cfg(feature = "monitoring")]
+            crate::server::otel::record_trace_ids_on_span(&tracing::Span::current());
+            let inner = self
+                .execute_inner(cmd, args, db, client_id, protocol_version)
+                .await;
+            let duration_us = start.elapsed().as_micros() as u64;
+            #[cfg(feature = "monitoring")]
+            if let Some(ref metrics) = self.metrics {
+                metrics.on_command_duration_otel(cmd, duration_us, inner.is_ok());
+            }
+            inner
+        }
+        .instrument(span)
+        .await;
         record_command_outcome(&self.metrics, cmd, &result);
         result
     }

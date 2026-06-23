@@ -782,3 +782,60 @@ async fn blocked_clients_zero_timeout_does_not_block() {
         .unwrap();
     assert_eq!(shared.metrics().blocked_clients(), 0);
 }
+
+/// 契约: 核心 aikv_* 指标名与 observability-reference 一致.
+#[cfg(feature = "monitoring")]
+#[test]
+fn test_metric_catalog_contract() {
+    use std::sync::Arc;
+
+    use aikv::server::metrics::{Metrics, ServerMetrics};
+    use aikv::server::otel_metrics::AIKV_METRIC_NAMES;
+
+    let metrics = Arc::new(Metrics::new().expect("metrics registration"));
+    let server_metrics = ServerMetrics::default().with_prometheus(metrics.clone());
+    server_metrics.on_connect();
+    server_metrics.on_command("PING", true);
+    server_metrics.on_command_duration("PING", 1000, true);
+
+    let families = metrics.registry.gather();
+    for name in AIKV_METRIC_NAMES {
+        assert!(
+            families.iter().any(|f| f.get_name() == *name),
+            "missing prometheus metric: {name}"
+        );
+    }
+}
+
+/// 契约: OTel 双写后 counter 与 prometheus 对齐.
+#[cfg(feature = "monitoring")]
+#[test]
+fn test_otel_prometheus_counter_parity() {
+    use std::sync::Arc;
+
+    use aikv::server::metrics::{Metrics, ServerMetrics};
+
+    let prom = Arc::new(Metrics::new().expect("metrics registration"));
+    let server_metrics = ServerMetrics::default().with_prometheus(prom.clone());
+    server_metrics.on_connect();
+    server_metrics.on_keyspace_hit();
+
+    let families = prom.registry.gather();
+    let conns = families
+        .iter()
+        .find(|f| f.get_name() == "aikv_connections_total")
+        .expect("aikv_connections_total")
+        .get_metric()[0]
+        .get_counter()
+        .get_value();
+    assert_eq!(conns, 1.0);
+
+    let hits = families
+        .iter()
+        .find(|f| f.get_name() == "aikv_keyspace_hits_total")
+        .expect("aikv_keyspace_hits_total")
+        .get_metric()[0]
+        .get_counter()
+        .get_value();
+    assert_eq!(hits, 1.0);
+}
