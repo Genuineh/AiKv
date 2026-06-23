@@ -67,3 +67,4 @@ proptest = "1"
 [profile.release]
 lto           = true
 codegen-units = 1
+debug         = 1   # C3.2: line tables for eBPF/Pyroscope flame graphs (AiFactory image 不 strip)

@@ -131,6 +131,17 @@ sequenceDiagram
 - `storage.memory_usage_bytes` → `set_memory_bytes`
 - `storage_observation.drain_expired_keys` → `record_expired_keys`
 
+### Profiles (C3.1, 无应用埋点)
+
+```text
+aikv 进程 (Docker)
+  └─ Alloy pyroscope.ebpf (worker, privileged)
+        └─ push → 115 Pyroscope (:4040)
+              └─ Grafana AiKv Profiles / Explore
+```
+
+标签: `service_name=aikv`, `host` = Alloy `HOST_LABEL` (对齐 OTLP `host.name`). 可读火焰图: C3.2 `[profile.release] debug = 1`.
+
 ### INFO 渲染 (`InfoRenderer`)
 
 | 请求 | 行为 |
@@ -279,7 +290,9 @@ cargo test -p aikv --features cluster gossip_refresh -- --test-threads=1
 - **无 `CONFIG SET loglevel`** — oldmain `LoggingManager` 已移除
 - **Grafana 面板** 见 AiFactory [`monitor/config/grafana/dashboards/README.md`](../../../AiFactory/monitor/config/grafana/dashboards/README.md) (PromQL: `aikv_*` / `aidb_*`, filter `{service_name="aikv"}`)
 - **C2.6**: 生产 metrics 经 OTLP remote write; `/metrics` 保留 debug; `aikv_db_keys` 已 OTel Observable 导出
-- **`aidb_*` 不映射 Redis INFO** — 仅 `/metrics`
+- **C3.1 Profiles**: Alloy `pyroscope.ebpf` → 115 Pyroscope; Grafana **AiKv Profiles**; 无应用内 profiling SDK
+- **C3.2 debug symbols**: `[profile.release] debug = 1` (line tables); AiFactory 镜像不 strip — eBPF 火焰图可读函数名
+- **`aidb_*` 不映射 Redis INFO** — 仅 OTLP/metrics
 
 ## 待核实
 
