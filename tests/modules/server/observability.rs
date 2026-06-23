@@ -797,6 +797,7 @@ fn test_metric_catalog_contract() {
     server_metrics.on_connect();
     server_metrics.on_command("PING", true);
     server_metrics.on_command_duration("PING", 1000, true);
+    server_metrics.set_db_key_count(0, 0);
 
     let families = metrics.registry.gather();
     for name in AIKV_METRIC_NAMES {

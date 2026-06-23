@@ -14,6 +14,12 @@ const CMD_DURATION_BUCKETS: [f64; 14] = [
 const _: [f64; 14] = CMD_DURATION_BUCKETS;
 
 static GLOBAL_OTEL: OnceLock<Arc<OtelMetrics>> = OnceLock::new();
+static KV_DB_KEYS: OnceLock<Arc<prometheus::IntGaugeVec>> = OnceLock::new();
+
+/// 注册 Prometheus `aikv_db_keys` 源, 供 OTel Observable 回调读取.
+pub fn register_kv_db_keys_source(gauge: Arc<prometheus::IntGaugeVec>) {
+    let _ = KV_DB_KEYS.set(gauge);
+}
 
 /// Gauge 类指标快照 (Observable 回调读取).
 #[derive(Default)]
@@ -170,6 +176,7 @@ impl OtelMetrics {
         });
 
         register_aikv_observable_gauges(meter, &gauges);
+        mirror_aikv_db_keys_gauge(meter);
         register_aidb_observable_gauges(meter);
         let _ = GLOBAL_OTEL.set(Arc::clone(&otel));
         install_aidb_histogram_hooks();
@@ -387,6 +394,29 @@ fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {
                 g.process_resident_memory_bytes.load(Ordering::Relaxed),
                 &[],
             );
+        })
+        .init();
+}
+
+fn mirror_aikv_db_keys_gauge(meter: &Meter) {
+    use prometheus::core::Collector;
+
+    meter
+        .i64_observable_gauge("aikv_db_keys")
+        .with_description("Approximate key count per logical DB")
+        .with_callback(|inst| {
+            let Some(gauge) = KV_DB_KEYS.get() else {
+                return;
+            };
+            for mf in gauge.collect() {
+                for m in mf.get_metric() {
+                    let db = label_value(m, "db");
+                    inst.observe(
+                        m.get_gauge().get_value() as i64,
+                        &[KeyValue::new("db", db)],
+                    );
+                }
+            }
         })
         .init();
 }
@@ -616,4 +646,5 @@ pub const AIKV_METRIC_NAMES: &[&str] = &[
     "aikv_used_memory_bytes",
     "aikv_keyspace_hits_total",
     "aikv_uptime_seconds",
+    "aikv_db_keys",
 ];

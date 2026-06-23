@@ -275,7 +275,8 @@ cargo test -p aikv --features cluster gossip_refresh -- --test-threads=1
 - **Slowlog 默认 100ms** — Redis/oldmain 为 10ms
 - **`evicted_keys` 恒 0** — 无 maxmemory eviction
 - **无 `CONFIG SET loglevel`** — oldmain `LoggingManager` 已移除
-- **Grafana 面板** 见 AiFactory [`monitor/config/grafana/dashboards/README.md`](../../../AiFactory/monitor/config/grafana/dashboards/README.md) (PromQL: `aikv_*` / `aidb_*`)
+- **Grafana 面板** 见 AiFactory [`monitor/config/grafana/dashboards/README.md`](../../../AiFactory/monitor/config/grafana/dashboards/README.md) (PromQL: `aikv_*` / `aidb_*`, filter `{service_name="aikv"}`)
+- **C2.6**: 生产 metrics 经 OTLP remote write; `/metrics` 保留 debug; `aikv_db_keys` 已 OTel Observable 导出
 - **`aidb_*` 不映射 Redis INFO** — 仅 `/metrics`
 
 ## 待核实

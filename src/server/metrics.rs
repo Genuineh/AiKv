@@ -828,6 +828,7 @@ impl Metrics {
         // 注册 AiDb 引擎指标到同一 Registry, 使其可通过 /metrics 抓取
         aidb::metrics::register_into(&registry)?;
 
+        super::otel_metrics::register_kv_db_keys_source(Arc::new(kv_db_keys.clone()));
         let otel = super::otel_metrics::OtelMetrics::new(&opentelemetry::global::meter("aikv"));
 
         Ok(Metrics {
