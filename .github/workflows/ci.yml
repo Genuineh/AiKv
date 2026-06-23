@@ -106,7 +106,7 @@ jobs:
       - name: Install redis-cli
         run: sudo apt-get update && sudo apt-get install -y redis-tools
 
-      - name: Run E2E tests (cluster only)
+      - name: Run E2E tests (cluster shell + pytest)
         run: |
           if ls e2e/test_cluster_*.sh 2>/dev/null; then
             for test in e2e/test_cluster_*.sh; do
@@ -116,3 +116,5 @@ jobs:
           else
             echo "No cluster E2E tests found, skipping."
           fi
+          python3 -m pip install -r e2e/requirements.txt
+          pytest e2e/ -v --tb=short -q

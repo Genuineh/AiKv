@@ -59,7 +59,7 @@ flowchart TB
 | `test-cluster` | link aidb → fmt → clippy (cluster) → 常规 test (`--test-threads=1`) |
 | `test-server-stress` | `--test server -- --ignored` (TCP 压测) |
 | `test-commands-slow` | `--test commands -- --ignored` (TTL 慢测) |
-| `e2e` | release 构建 + `e2e/test_cluster_*.sh` (需 redis-cli) |
+| `e2e` | release 构建 + `e2e/test_cluster_*.sh` + `pytest e2e/` (需 redis-cli) |
 
 后三个 job 均 `needs: test-cluster`. 同一分支新 push 会 cancel 未完成的旧 run.
 

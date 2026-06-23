@@ -164,7 +164,16 @@ cargo test --workspace --features cluster -- --test-threads=1
 
 ### E2E
 
-**本地** (需 `redis-cli`; 多数脚本用 memory 引擎):
+**pytest (新用例优先)** — 单节点 memory smoke, 需 `redis-cli` + Python 3.10+:
+
+```bash
+pip install -r e2e/requirements.txt
+pytest e2e/ -v
+```
+
+文件放 `e2e/test_*.py`; 文件头 `# @component aikv-{domain}` (与 testviz B2-v1 一致). 慢/压测用 `@pytest.mark.slow` / `@pytest.mark.stress`. 详见 [e2e/README.md](e2e/README.md).
+
+**shell (存量)** — 本地需 `redis-cli`; 多数脚本用 memory 引擎:
 
 ```bash
 cargo build --release --features cluster
@@ -173,7 +182,12 @@ chmod +x e2e/*.sh
 # … 共 21 个 test_*.sh, 见 e2e/README.md
 ```
 
-**CI `e2e` job** 仅跑 `e2e/test_cluster_*.sh` (9 个): formation, routing, slots, failover, forget, announce, 3node_routing, data_consistency, aidb_persistence.
+**CI `e2e` job**: `e2e/test_cluster_*.sh` (9 个) + `pytest e2e/`. Cluster shell: formation, routing, slots, failover, forget, announce, 3node_routing, data_consistency, aidb_persistence.
+
+| 场景 | 落点 |
+|------|------|
+| 单节点 TCP smoke | `e2e/test_*.py` (pytest) |
+| 多节点集群 / failover | `e2e/test_cluster_*.sh` (shell, 暂不重写) |
 
 Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/README.md](e2e/README.md).
 
