@@ -10,6 +10,9 @@ use tokio::sync::oneshot;
 
 use crate::protocol::RespValue;
 
+/// 后台清理过期 waiter 的 tick 间隔
+const EVICTION_INTERVAL: Duration = Duration::from_secs(1);
+
 /// 阻塞命令类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[allow(dead_code)]
@@ -25,7 +28,6 @@ pub enum BlockingCmd {
 pub struct PendingRequest {
     pub sender: oneshot::Sender<RespValue>,
     /// 过期时间 (被 evict_expired 读取)
-    #[allow(dead_code)]
     pub deadline: Instant,
 }
 
@@ -66,7 +68,6 @@ impl BlockingRegistry {
     }
 
     /// 清理过期请求 (由后台定时器调用)
-    #[allow(dead_code)]
     pub fn evict_expired(&self) {
         let now = Instant::now();
         self.waiters.retain(|_, waiters| {
@@ -80,9 +81,80 @@ impl BlockingRegistry {
         static REGISTRY: OnceLock<BlockingRegistry> = OnceLock::new();
         REGISTRY.get_or_init(BlockingRegistry::new)
     }
+
+    #[cfg(test)]
+    fn entry_count(&self) -> usize {
+        self.waiters.len()
+    }
+
+    #[cfg(test)]
+    fn waiter_count(&self, key: &[u8]) -> usize {
+        self.waiters.get(key).map(|v| v.len()).unwrap_or(0)
+    }
+}
+
+/// 启动后台过期 waiter 清理 (server 启动时调用一次)
+pub fn start_background_eviction() {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(EVICTION_INTERVAL);
+        loop {
+            interval.tick().await;
+            BlockingRegistry::global().evict_expired();
+        }
+    });
 }
 
 /// Redis 阻塞超时返回 nil Array (not nil bulk)
 pub fn nil_blocking_response() -> RespValue {
     RespValue::Array(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    fn fresh_registry() -> Arc<BlockingRegistry> {
+        Arc::new(BlockingRegistry::new())
+    }
+
+    #[test]
+    fn evict_expired_removes_stale_waiters() {
+        let registry = fresh_registry();
+        let _rx = registry.register(b"q".to_vec(), Duration::from_millis(10));
+        assert_eq!(registry.waiter_count(b"q"), 1);
+
+        std::thread::sleep(Duration::from_millis(20));
+        registry.evict_expired();
+
+        assert_eq!(registry.entry_count(), 0);
+    }
+
+    #[test]
+    fn evict_expired_keeps_active_waiters() {
+        let registry = fresh_registry();
+        let _rx = registry.register(b"q".to_vec(), Duration::from_secs(60));
+        registry.evict_expired();
+        assert_eq!(registry.waiter_count(b"q"), 1);
+    }
+
+    #[test]
+    fn evict_expired_removes_empty_entries_after_notify() {
+        let registry = fresh_registry();
+        let _rx = registry.register(b"q".to_vec(), Duration::from_secs(60));
+        registry.notify(b"q", RespValue::SimpleString("OK".into()));
+        assert_eq!(registry.waiter_count(b"q"), 0);
+        assert_eq!(registry.entry_count(), 1);
+
+        registry.evict_expired();
+        assert_eq!(registry.entry_count(), 0);
+    }
+
+    #[test]
+    fn evict_expired_is_idempotent() {
+        let registry = fresh_registry();
+        registry.evict_expired();
+        registry.evict_expired();
+        assert_eq!(registry.entry_count(), 0);
+    }
 }

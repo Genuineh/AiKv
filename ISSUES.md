@@ -244,13 +244,13 @@
 
 ### ISSUE-005: BlockingRegistry evict_expired 无后台调用
 
-- **状态**: open
+- **状态**: closed
 - **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 1)
-- **相关 src**: `src/command/blocking.rs` (`evict_expired`); 全仓库无 caller
+- **相关 src**: `src/command/blocking.rs` (`evict_expired`, `start_background_eviction`); `src/main.rs`
 - **oldmain 代码**: (无 BlockingRegistry — 重构新增)
-- **现象**: 过期 waiter 仅靠 handler poll 超时; `waiters` DashMap 可能滞留至 notify 或进程结束
-- **影响**: 长时间阻塞 + 大量 key 时内存; `deadline` 字段未主动清理
-- **下一步**: 待核实 — 接 server 定时 task 或删除 dead API
+- **现象**: 过期 waiter 仅靠 handler poll 超时; `waiters` DashMap 滞留 dead entry 与 notify 后空槽
+- **修复**: `main.rs` 启动 1s tick 后台 task 调 `BlockingRegistry::global().evict_expired()`; 不依赖 `monitoring` feature
+- **测试**: `blocking.rs` unit tests — 过期清理、保留活跃 waiter、notify 后空槽移除
 
 ### ISSUE-004: cluster_route 预留 MSETNX 但命令未注册/未实现
 

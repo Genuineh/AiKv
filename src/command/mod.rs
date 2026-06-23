@@ -1,6 +1,6 @@
 //! Redis 命令层 (Phase 9–10)
 
-mod blocking;
+pub mod blocking;
 mod database;
 mod hash;
 mod json;

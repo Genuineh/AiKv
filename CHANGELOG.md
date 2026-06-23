@@ -19,6 +19,7 @@
 
 ### Fixed
 
+- **ISSUE-005**: `BlockingRegistry` 后台 1s tick 调 `evict_expired` — 清理超时 dead waiter 与 notify 后空槽; 不依赖 `monitoring` feature.
 - **ISSUE-014**: 移除 unused `GossipState` 缓存; 拓扑 tick 保留 leader 路由刷新 + gossip metrics; `CLUSTER NODES` 继续读 MetaRaft, link-state 恢复 `NodeStatus` → connected/disconnected.
 - **ISSUE-001**: `MGET` 对齐 Redis 7 — non-String / missing key per-key 返回 `nil`, memory 与 aidb 双引擎一致; `KvStorageAdapter::mget` 不再经 `get()` 抛 WRONGTYPE.
 - **ISSUE-012**: EVAL/EVALSHA 声明 key 的 `KeyLock` 恢复 30s 锁等待超时 (`lock_keys_sorted_with_timeout`); 超时 `ERR Lock acquisition timeout after 30s`.

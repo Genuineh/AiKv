@@ -65,7 +65,7 @@ flowchart TB
 | `command/script/json_exec.rs` | Lua 内 JSON 子集 | `exec_json_*` |
 | `command/script/transaction.rs` | 脚本写缓冲 + commit | `ScriptTransaction::commit` |
 | `command/script/convert.rs` | Lua ↔ RESP | `lua_to_resp`, `pcall_error_table` |
-| `command/blocking.rs` | 阻塞等待基础设施 | `BlockingRegistry::{register, notify}` |
+| `command/blocking.rs` | 阻塞等待基础设施 | `BlockingRegistry::{register, notify, evict_expired}`; `start_background_eviction` |
 | `command/migrate.rs` | MIGRATE 目标 TCP 客户端 | `send_restore`, `RestoreTarget` |
 | `command/persistence.rs` | SAVE / BGSAVE / LASTSAVE / SHUTDOWN | `PersistenceCommands` |
 | `command/server.rs` | INFO / TIME / CONFIG / CLIENT / COMMAND / SLOWLOG / LATENCY | `ServerCommands` |
@@ -133,6 +133,7 @@ sequenceDiagram
 1. **Wait**: `list`/`zset` handler 先非阻塞 pop; 失败 → `register(key, timeout)` + poll `try_recv` (10ms).
 2. **Wake**: `LPUSH`/`RPUSH`/`ZADD` 成功后 `notify(key, OK)`.
 3. **Timeout**: `timeout=0` → 立即 nil Array; `timeout<0` → 300s 上限.
+4. **Evict**: `main.rs` 启动 1s tick 后台 task 调 `evict_expired()` — 清理超时 dead waiter 与 notify 后空槽 (不依赖 `monitoring` feature).
 
 ### MIGRATE
 
@@ -221,7 +222,6 @@ JSONPath 能力 (`jsonpath.rs`): `$`, `.`, `$.field`, `$[N]`, `[*]`, 多字段�
 
 1. handler 在 [commands-core.md](commands-core.md) `list.rs`; 本章查 `BlockingRegistry`.
 2. 确认写侧是否 `notify` (LPUSH/ZADD).
-3. 见 ISSUE-005 (`evict_expired` 未接线).
 
 ## 配置与 feature flags
 
@@ -250,9 +250,8 @@ cargo test --test commands
 - **BGSAVE 重入**: 第二次返回 **ERR** (非 oldmain SimpleString OK).
 - **SHUTDOWN**: 仅 Default/SAVE/NOSAVE; 未知 mode → ERR.
 - **OBJECT**: REFCOUNT/IDLETIME/FREQ 固定 stub.
-- **BlockingRegistry**: `evict_expired` 无后台任务 (ISSUE-005).
 - **SAVE 日志**: 同步 SAVE 成功事件名 `bgsave.complete` (target `persist`).
 
 ## 待核实
 
-- 见 [ISSUES.md](../../ISSUES.md#ISSUE-005) — BlockingRegistry evict_expired 无调用.
+- (无 open 条目 — BlockingRegistry evict 见 ISSUE-005 closed)

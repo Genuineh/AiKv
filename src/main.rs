@@ -14,6 +14,7 @@ use std::path::Path;
 
 #[cfg(feature = "cluster")]
 use aikv::cluster::state::DEFAULT_DATA_PORT_OFFSET;
+use aikv::command::blocking;
 use aikv::server::{ConnectionConfig, Server, ServerSharedState};
 use aikv::storage::{
     server_db_options, AiDbEngine, KvStorage, KvStorageAdapter, MemoryEngine, StorageEngineKind,
@@ -698,6 +699,8 @@ async fn main() {
             }
         });
     }
+
+    blocking::start_background_eviction();
 
     if let Err(e) = Server::run(args.bind, state).await {
         tracing::error!(error = %e, "server exited with error");
