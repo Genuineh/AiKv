@@ -57,7 +57,7 @@ AiDb 侧 protoc、LSM 数据目录、库侧 cluster API 见 [aidb/DEPLOYMENT.md]
 export RUSTFLAGS='-D warnings'
 cargo fmt --check
 cargo clippy --all-targets --features cluster
-cargo test --workspace --features cluster
+cargo test --workspace --features cluster -- --test-threads=1
 ```
 
 慢测 (CI 独立 job):

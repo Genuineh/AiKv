@@ -62,7 +62,7 @@ sudo apt-get install -y protobuf-compiler
 | 层级 | 做什么 | 何时失败 |
 |------|--------|----------|
 | pre-commit | fmt + clippy (`--features cluster`) | `git commit` |
-| CI `test-cluster` | link aidb → fmt → clippy (cluster) → `cargo test --workspace --features cluster` | push / PR |
+| CI `test-cluster` | link aidb → fmt → clippy (cluster) → `cargo test --workspace --features cluster -- --test-threads=1` | push / PR |
 | CI `test-server-stress` | `--test server -- --ignored` (TCP 压测) | `test-cluster` 通过后 |
 | CI `test-commands-slow` | `--test commands -- --ignored` (TTL 慢测) | `test-cluster` 通过后 |
 | CI `e2e` | release 构建 + `e2e/test_cluster_*.sh` (需 redis-cli) | `test-cluster` 通过后 |
@@ -124,15 +124,29 @@ cargo test --test cluster_routing --features cluster -- --test-threads=1
 cargo test --test cluster_skeleton --features cluster -- --test-threads=1
 ```
 
-### `#[ignore]` 慢测
+### `#[ignore]` 慢测与压测
 
-| 测试 | test target | CI job |
-|------|-------------|--------|
-| `test_tcp_malicious_slow_send` | `server` | `test-server-stress` |
-| `test_tcp_pipeline_large_buffer` | `server` | `test-server-stress` |
-| `test_px_expiry_real_wait` | `commands` | `test-commands-slow` |
+默认 `cargo test` **跳过** 带 `#[ignore]` 的用例; CI 在独立 job 中通过 `--ignored` 运行. 新增慢/压测须使用统一 reason 前缀:
 
-`test-cluster` 默认跳过上述用例.
+| 前缀 | 含义 | 示例 |
+|------|------|------|
+| `slow:` | 真实等待或长时间 hold (秒~分钟) | TTL `PX` 过期等待 |
+| `stress:` | 大数据集、恶意输入或高吞吐 | TCP 慢 send、大 pipeline |
+
+写法: `#[ignore = "slow: …"]` 或 `#[ignore = "stress: …"]`. **禁止** 裸 `#[ignore]`.
+
+| 测试 | 标签 | test target | CI job |
+|------|------|-------------|--------|
+| `test_tcp_malicious_slow_send` | stress | `server` | `test-server-stress` |
+| `test_tcp_pipeline_large_buffer` | stress | `server` | `test-server-stress` |
+| `test_px_expiry_real_wait` | slow | `commands` | `test-commands-slow` |
+
+`test-cluster` 默认跳过上述用例. 本地:
+
+```bash
+cargo test --test server --features cluster -- --ignored --test-threads=1
+cargo test --test commands --features cluster -- --ignored --test-threads=1
+```
 
 ### Feature 与 CI
 
@@ -176,7 +190,7 @@ Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/
 
 1. **TDD (建议)**: 先写测试 → 实现 → 重构.
 2. **提交格式**: `type: 中文描述` — `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`.
-3. **修 bug**: 同一 PR 在对应 `tests/modules/*` 或 cluster integration test 添加复现用例.
+3. **修 bug (必带回归测)**: 见下节; `docs:` / doc-only 关闭 ISSUE 可豁免.
 4. **用户面向变更**: 更新 [CHANGELOG.md](CHANGELOG.md) 对应版本或 `[Unreleased]`.
 5. **PR**: CI + Security 须绿; 相关文档一并更新.
 
@@ -185,9 +199,34 @@ Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/
 - [ ] `cargo fmt --check` 通过 (或已跑 `./install-hooks.sh`)
 - [ ] `cargo clippy --all-targets --features cluster` 无警告 (`RUSTFLAGS='-D warnings'`)
 - [ ] `cargo test --workspace --features cluster -- --test-threads=1` 通过
+- [ ] 若修 bug: 回归测已添加且本地通过 (见下节)
 - [ ] 若改 TCP 压测/TTL 慢测相关: 对应 `--ignored` job 命令通过
 - [ ] 用户面向 API/行为变更已写 CHANGELOG
 - [ ] 模块文档或根文档已更新 (若适用)
+
+## 回归测试 (必带)
+
+所有 **bugfix PR** (`fix:`、修 ISSUE、行为修正) **必须** 在同一 PR 内附带可复现回归测. **豁免**: 纯文档变更 (`docs:`) 或 doc-only 关闭 ISSUE.
+
+| 规则 | 说明 |
+|------|------|
+| 同一 PR | 测试与修复同 PR; 建议先红后绿 |
+| 注释 | 测试顶部写明 bug 现象、期望行为; 若有 ISSUE 则引用 |
+| `@component` | entry 文件加 `//! @component aikv-{domain}` (与 testviz B2-v1 一致) |
+| 命名 | 描述性 `test_*`; 见 [`tests/README.md`](tests/README.md) |
+
+### 放置决策
+
+| 场景 | 落点 |
+|------|------|
+| 单命令/路由 | `tests/modules/command/{域}.rs` |
+| TCP/server | `tests/modules/server/` |
+| storage/持久化 | `tests/modules/storage/` |
+| 集群协议/路由 | `tests/cluster_*.rs` |
+
+示例 (B1.3): ISSUE-002 生产 Options → [`tests/modules/storage/prod_options.rs`](tests/modules/storage/prod_options.rs).
+
+aikv **无** 独立 `tests/regression/` 入口; 回归测放在对应模块或 cluster integration test 中 (与 aidb L4 分工不同, 见 [aidb CONTRIBUTING](../aidb/CONTRIBUTING.md)).
 
 ## 相关文档
 

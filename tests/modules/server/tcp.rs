@@ -226,7 +226,7 @@ async fn test_tcp_hello_version_switch_in_pipeline() {
 }
 
 #[tokio::test]
-#[ignore = "slow send stress test — optional Phase 8"]
+#[ignore = "stress: TCP slow send (1 byte per ms)"]
 async fn test_tcp_malicious_slow_send() {
     let (addr, _handle) = start_server().await;
     let mut stream = connect(addr).await;
@@ -239,7 +239,7 @@ async fn test_tcp_malicious_slow_send() {
 }
 
 #[tokio::test]
-#[ignore = "large pipeline stress test — optional Phase 8"]
+#[ignore = "stress: large TCP pipeline buffer (1000 PINGs)"]
 async fn test_tcp_pipeline_large_buffer() {
     let (addr, _handle) = start_server().await;
     let mut stream = connect(addr).await;

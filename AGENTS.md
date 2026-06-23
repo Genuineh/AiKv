@@ -48,7 +48,7 @@ Redis Client → TCP/RESP/CommandRouter/ClusterRouter
 export RUSTFLAGS='-D warnings'
 cargo fmt --check
 cargo clippy --all-targets --features cluster
-cargo test --workspace --features cluster
+cargo test --workspace --features cluster -- --test-threads=1
 ```
 
 慢测 (CI: `test-server-stress`, `test-commands-slow`):
@@ -57,6 +57,8 @@ cargo test --workspace --features cluster
 cargo test --test server --features cluster -- --ignored --test-threads=1
 cargo test --test commands --features cluster -- --ignored --test-threads=1
 ```
+
+修 bug **必带** 回归测: 见 [CONTRIBUTING.md §回归测试](CONTRIBUTING.md#回归测试-必带).
 
 ## 已知限制
 

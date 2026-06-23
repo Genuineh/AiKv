@@ -897,9 +897,8 @@ async fn test_scan_delete_mid_scan() {
 // ── TTL 毫秒级真实过期测试 ────────────────────────────────────────────────────
 
 /// SET key PX 100, 等待 200ms, 验证 GET 返回 nil（key 已过期）。
-/// slow test
 #[tokio::test]
-#[ignore]
+#[ignore = "slow: real PX expiry wait (~200ms)"]
 async fn test_px_expiry_real_wait() {
     let r = router();
     let mut db = 0;

@@ -34,13 +34,28 @@
 - `tcp.rs` — PING/ECHO/HELLO + Phase 9 SET/GET/MGET/EXPIRE/SELECT/HSET
 - `observability.rs` — 连接 metrics
 
-## 可选慢测 (#[ignore])
+## 回归测放置
 
-| 测试 | test target | CI job |
-|------|-------------|--------|
-| `test_tcp_malicious_slow_send` | `server` | `test-server-stress` |
-| `test_tcp_pipeline_large_buffer` | `server` | `test-server-stress` |
-| `test_px_expiry_real_wait` | `commands` | `test-commands-slow` |
+bugfix **必带** 回归测; 详见 [CONTRIBUTING.md §回归测试](../CONTRIBUTING.md#回归测试-必带).
+
+| 场景 | 落点 |
+|------|------|
+| 命令/路由 | `tests/modules/command/` |
+| TCP/server | `tests/modules/server/` |
+| storage | `tests/modules/storage/` |
+| 集群 | `tests/cluster_*.rs` |
+
+示例: `prod_options.rs` (ISSUE-002). entry 文件加 `//! @component aikv-{domain}`.
+
+## 慢测与压测 (`#[ignore]`)
+
+前缀: `slow:` (真实等待) / `stress:` (大数据集或恶意输入). 详见 [CONTRIBUTING.md](../CONTRIBUTING.md#ignore-慢测与压测).
+
+| 测试 | 标签 | test target | CI job |
+|------|------|-------------|--------|
+| `test_tcp_malicious_slow_send` | stress | `server` | `test-server-stress` |
+| `test_tcp_pipeline_large_buffer` | stress | `server` | `test-server-stress` |
+| `test_px_expiry_real_wait` | slow | `commands` | `test-commands-slow` |
 
 `test-cluster` 默认跳过上述用例. 本地:
 

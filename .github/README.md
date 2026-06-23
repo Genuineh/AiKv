@@ -56,7 +56,7 @@ flowchart TB
 
 | Job | 说明 |
 |-----|------|
-| `test-cluster` | link aidb → fmt → clippy (cluster) → 常规 test |
+| `test-cluster` | link aidb → fmt → clippy (cluster) → 常规 test (`--test-threads=1`) |
 | `test-server-stress` | `--test server -- --ignored` (TCP 压测) |
 | `test-commands-slow` | `--test commands -- --ignored` (TTL 慢测) |
 | `e2e` | release 构建 + `e2e/test_cluster_*.sh` (需 redis-cli) |
