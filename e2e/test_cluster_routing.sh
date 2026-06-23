@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @component aikv-cluster
 # Cluster E2E: routing — SET/GET, MOVED, CROSSSLOT
 set -euo pipefail
 

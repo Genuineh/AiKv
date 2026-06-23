@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @component aikv-storage
 # E2E: aidb persistence compat — SAVE/BGSAVE/INFO/SHUTDOWN (Phase 11.6′)
 set -euo pipefail
 

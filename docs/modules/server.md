@@ -1,5 +1,7 @@
 ---
 name: aikv-server
+depends_on:
+  - aikv-protocol
 description: AiKv TCP server — Listener accept loop, Connection read/pipeline loop, HELLO negotiation, adapt_for_protocol, CommandRouter dispatch, ATOM transaction. Use when changing src/server/{listener,connection,config}, debugging connection lifecycle, pipeline, protocol negotiation on the wire, or max_clients/shutdown.
 ---
 

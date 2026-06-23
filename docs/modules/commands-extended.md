@@ -1,5 +1,7 @@
 ---
 name: aikv-commands-extended
+depends_on:
+  - aikv-commands-core
 description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, BlockingRegistry, MIGRATE TCP restore, SAVE/BGSAVE/SHUTDOWN, server admin (INFO/CONFIG/CLIENT/COMMAND/OBJECT). Use when changing src/command/{json,jsonpath,script,blocking,migrate,persistence,server}, router extended dispatch, debugging JSONPath/Lua sandbox/MIGRATE/checkpoint, or blocking wait/notify integration.
 ---
 

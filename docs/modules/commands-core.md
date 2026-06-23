@@ -1,5 +1,7 @@
 ---
 name: aikv-commands-core
+depends_on:
+  - aikv-storage
 description: AiKv core Redis commands — String/Hash/List/Set/ZSet/Key/Database handlers, CommandRouter dispatch, registry metadata, KeyLock. Use when changing src/command/{string,hash,list,set,zset,key,database,registry,router}, adding core data-structure commands, debugging WRONGTYPE/routing/key_indices, or cluster CROSSSLOT before handler runs.
 ---
 

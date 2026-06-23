@@ -1,5 +1,7 @@
 ---
 name: aikv-observability-reference
+depends_on:
+  - aikv-observability
 description: AiKv Prometheus aikv_* metric catalog and INFO field cross-reference. Use when looking up metric names, labels, or INFO↔Prometheus mapping for aikv observability.
 ---
 

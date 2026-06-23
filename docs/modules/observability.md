@@ -1,5 +1,7 @@
 ---
 name: aikv-observability
+depends_on:
+  - aikv-server
 description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, InfoRenderer, Prometheus /metrics, tracing/OTel wiring. Use when changing src/server/{slowlog,latency,info,metrics,metrics_server,process_metrics}, storage/observation, main.rs monitoring setup, or debugging INFO/SLOWLOG/LATENCY/metrics alignment.
 ---
 
