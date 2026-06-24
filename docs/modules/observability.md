@@ -268,7 +268,7 @@ redis-cli SLOWLOG GET 10
 | `AIKV_NODE_ID` | env | Resource `node_id` (或 `--cluster-node-id`) |
 | `RUST_LOG` | env | tracing filter |
 
-运维 scrape/OTLP/Loki 部署流程 → 阶段 2 `DEPLOYMENT.md` (提炼自 wiqun-factory); 旧 env 名 `WIQUN_*` 已改为 `AIKV_*`.
+运维 OTLP/Loki 部署流程 → 阶段 2 `DEPLOYMENT.md` (提炼自 wiqun-factory); 旧 env 名 `WIQUN_*` 已改为 `AIKV_*`.
 
 ## 测试
 

@@ -31,7 +31,7 @@
 | [commands-core.md](modules/commands-core.md) | 改核心数据结构命令与 Router; String~ZSet/Key/DB、WRONGTYPE、KeyLock、CROSSSLOT 前路由 |
 | [commands-extended.md](modules/commands-extended.md) | 改 JSON/Lua/阻塞/MIGRATE/SAVE/INFO/CONFIG 等扩展命令与 router extended dispatch |
 | [cluster.md](modules/cluster.md) | 改 `cluster/*`、`init_cluster`; MOVED/ASK、CLUSTER 子命令、slot 迁移/failover (`cluster` feature) |
-| [observability.md](modules/observability.md) | 改 slowlog/latency/info/metrics; INFO/SLOWLOG/LATENCY、`/metrics` (`monitoring`); 指标表 → [observability-reference.md](modules/observability-reference.md) |
+| [observability.md](modules/observability.md) | 改 slowlog/latency/info/metrics; INFO/SLOWLOG/LATENCY、OTLP metrics (`monitoring`); 指标表 → [observability-reference.md](modules/observability-reference.md) |
 
 依赖顺序: protocol → server → storage → commands-core → commands-extended; cluster 依赖 storage + aidb cluster; observability 横切 (INFO 命令 dispatch 仍见 commands-extended).
 

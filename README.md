@@ -25,7 +25,7 @@
 | 能力 | Feature | 说明 |
 |------|---------|------|
 | Redis Cluster | `cluster` | MOVED/ASK, CLUSTER 子命令, slot 迁移; `aidb/cluster` |
-| Prometheus / OTel | `monitoring` | HTTP `/metrics`, tracing 导出; `aidb/monitoring` |
+| OTel / 探活 | `monitoring` | OTLP metrics/traces 导出, `:9191` `/health`; `aidb/monitoring` |
 
 Feature 组合、CLI 全表与集群多节点示例见 [DEPLOYMENT.md](DEPLOYMENT.md).
 
@@ -50,7 +50,7 @@ redis-cli -p 6379 PING
 ./target/release/aikv --bind 127.0.0.1:6379 --engine aidb --data-dir /tmp/aikv-data
 ```
 
-集群部署与 `monitoring` scrape 见 [DEPLOYMENT.md](DEPLOYMENT.md).
+集群部署与 `monitoring` OTLP 见 [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## 示例
 
@@ -95,7 +95,7 @@ cargo run --example basic
 | [docs/modules/commands-core.md](docs/modules/commands-core.md) | 核心数据结构命令, Router |
 | [docs/modules/commands-extended.md](docs/modules/commands-extended.md) | JSON, Lua, SAVE, INFO, MIGRATE |
 | [docs/modules/cluster.md](docs/modules/cluster.md) | MOVED/ASK, CLUSTER 子命令 |
-| [docs/modules/observability.md](docs/modules/observability.md) | slowlog, INFO, `/metrics` |
+| [docs/modules/observability.md](docs/modules/observability.md) | slowlog, INFO, OTLP metrics |
 | [ISSUES.md](ISSUES.md) | 待核实项 |
 
 ## 已知限制

@@ -1,6 +1,6 @@
 # AiKv 部署与运行
 
-本文说明 **如何构建、启用 Cargo feature、启动单机/集群、CLI/端口/环境变量、监控 scrape 与持久化运维**. **是什么、怎么分层** 见 [ARCHITECTURE.md](ARCHITECTURE.md); **设计取舍** 见 [DESIGN.md](DESIGN.md); 命令语义与域实现见 [docs/modules/](docs/modules/).
+本文说明 **如何构建、启用 Cargo feature、启动单机/集群、CLI/端口/环境变量、监控 OTLP 与持久化运维**. **是什么、怎么分层** 见 [ARCHITECTURE.md](ARCHITECTURE.md); **设计取舍** 见 [DESIGN.md](DESIGN.md); 命令语义与域实现见 [docs/modules/](docs/modules/).
 
 AiDb 侧 protoc、LSM 数据目录、库侧 cluster API 见 [aidb/DEPLOYMENT.md](../aidb/DEPLOYMENT.md) — 本文 **不重复** LSM/Raft 运维细节.
 
@@ -10,7 +10,7 @@ AiDb 侧 protoc、LSM 数据目录、库侧 cluster API 见 [aidb/DEPLOYMENT.md]
 |------|------|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 分层、数据流、端口在架构中的角色 |
 | [DESIGN.md](DESIGN.md) | 为何 feature gate、为何无 RDB 主路径等 |
-| **DEPLOYMENT.md (本篇)** | 构建、运行、CLI、端口、集群部署、监控 scrape |
+| **DEPLOYMENT.md (本篇)** | 构建、运行、CLI、端口、集群部署、监控 OTLP |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | CI/hook/贡献流程细节 |
 | [docs/modules/](docs/modules/) | 域级实现 |
 
