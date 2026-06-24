@@ -97,9 +97,22 @@ impl Connection {
         tracing::info!(remote = %conn.remote, client_id, "kv.connection.close");
     }
 
-    #[instrument(name = "kv_connection", skip(self), fields(remote_addr = %self.remote, db_index = 0))]
+    #[instrument(
+        name = "kv_connection",
+        skip(self),
+        fields(
+            otel.kind = "server",
+            remote_addr = %self.remote,
+            client.address = %self.remote.ip(),
+            network.peer.address = %self.remote.ip(),
+            network.peer.port = self.remote.port(),
+            server.port = tracing::field::Empty,
+            db_index = 0,
+        )
+    )]
     async fn run(&mut self) -> Result<()> {
         tracing::Span::current().record("db_index", self.current_db as i64);
+        tracing::Span::current().record("server.port", self.state.tcp_port as i64);
         let config = Arc::clone(&self.state.connection_config);
         let mut buf = vec![0u8; 4096];
 
@@ -392,6 +405,7 @@ impl Connection {
                         args,
                         &mut self.current_db,
                         Some(self.client_id),
+                        Some(self.remote),
                         self.protocol_version,
                         #[cfg(feature = "cluster")]
                         Some(&self.cluster_state),
@@ -576,6 +590,7 @@ impl Connection {
                     &cmd_args,
                     &mut self.current_db,
                     Some(self.client_id),
+                    Some(self.remote),
                     self.protocol_version,
                     #[cfg(feature = "cluster")]
                     Some(&self.cluster_state),
@@ -674,6 +689,7 @@ impl Connection {
                     &cmd_args,
                     &mut self.current_db,
                     Some(self.client_id),
+                    Some(self.remote),
                     self.protocol_version,
                     #[cfg(feature = "cluster")]
                     Some(&self.cluster_state),
@@ -717,6 +733,7 @@ impl Connection {
                 &args,
                 &mut self.current_db,
                 Some(self.client_id),
+                Some(self.remote),
                 self.protocol_version,
                 #[cfg(feature = "cluster")]
                 Some(&self.cluster_state),

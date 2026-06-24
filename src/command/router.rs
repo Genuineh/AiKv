@@ -2,6 +2,7 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -127,6 +128,7 @@ pub struct CommandRouter {
     #[expect(dead_code)]
     key_lock: Arc<KeyLock>,
     metrics: Option<Arc<ServerMetrics>>,
+    tcp_port: u16,
     string: string::StringCommands,
     hash: hash::HashCommands,
     list: list::ListCommands,
@@ -158,10 +160,12 @@ impl CommandRouter {
             metrics: None,
             storage,
             key_lock,
+            tcp_port: 6379,
         }
     }
 
     pub fn new_with_shared(storage: Arc<dyn KvStorage>, shared: Arc<ServerSharedState>) -> Self {
+        let tcp_port = shared.tcp_port;
         let key_lock = Arc::new(KeyLock::new(1024));
         Self {
             string: string::StringCommands::new(storage.clone(), key_lock.clone()),
@@ -197,6 +201,7 @@ impl CommandRouter {
             metrics: Some(Arc::clone(&shared.metrics)),
             storage,
             key_lock,
+            tcp_port,
         }
     }
 
@@ -211,6 +216,7 @@ impl CommandRouter {
             args,
             db,
             None,
+            None,
             ProtocolVersion::Resp2,
             #[cfg(feature = "cluster")]
             None,
@@ -224,6 +230,7 @@ impl CommandRouter {
         args: &[Bytes],
         db: &mut usize,
         client_id: Option<usize>,
+        client_addr: Option<SocketAddr>,
         protocol_version: ProtocolVersion,
         #[cfg(feature = "cluster")] conn_state: Option<
             &crate::cluster::connection::ClusterConnectionState,
@@ -238,13 +245,25 @@ impl CommandRouter {
         }
         let span = tracing::info_span!(
             "kv_command",
+            otel.kind = "server",
             cmd = cmd,
             args_len = args.len(),
             client_id = client_id.unwrap_or(0),
+            client.address = tracing::field::Empty,
+            network.peer.address = tracing::field::Empty,
+            network.peer.port = tracing::field::Empty,
             db = *db,
+            server.port = self.tcp_port,
+            db.system = "redis",
+            db.operation.name = cmd,
             trace_id = tracing::field::Empty,
             span_id = tracing::field::Empty,
         );
+        if let Some(addr) = client_addr {
+            span.record("client.address", tracing::field::display(addr.ip()));
+            span.record("network.peer.address", tracing::field::display(addr.ip()));
+            span.record("network.peer.port", addr.port() as i64);
+        }
         let result = async {
             #[cfg(feature = "monitoring")]
             crate::server::otel::record_trace_ids_on_span(&tracing::Span::current());
@@ -254,6 +273,8 @@ impl CommandRouter {
         .instrument(span)
         .await;
         record_command_outcome(&self.metrics, cmd, &result);
+        #[cfg(feature = "monitoring")]
+        record_command_span_status(&result);
         result
     }
 
@@ -767,6 +788,25 @@ fn record_command_outcome(
         return;
     };
     metrics.on_command(cmd, result.is_ok());
+}
+
+#[cfg(feature = "monitoring")]
+fn record_command_span_status(result: &Result<RespValue>) {
+    if result.is_ok() {
+        return;
+    }
+    let span = tracing::Span::current();
+    span.record("otel.status_code", "ERROR");
+    if let Some(err) = result.as_ref().err() {
+        span.record("otel.status_message", tracing::field::display(err));
+        tracing::event!(
+            parent: &span,
+            tracing::Level::ERROR,
+            exception.type = std::any::type_name::<Error>(),
+            exception.message = %err,
+            "command failed"
+        );
+    }
 }
 
 #[cfg(feature = "cluster")]

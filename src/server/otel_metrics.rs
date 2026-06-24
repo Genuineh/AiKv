@@ -12,6 +12,11 @@ const CMD_DURATION_BUCKETS: [f64; 14] = [
     0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
 ];
 
+const ATTR_COMMAND: &str = "aikv.command.name";
+const ATTR_STATUS: &str = "aikv.command.status";
+const ATTR_DB_INDEX: &str = "aikv.db.index";
+const ATTR_REDIRECT_TYPE: &str = "aikv.cluster.redirect.type";
+
 /// Gauge 类指标快照 (Observable 回调读取).
 #[derive(Default)]
 struct GaugeSnapshot {
@@ -51,6 +56,9 @@ pub struct OtelMetrics {
     gossip_messages_total: Counter<u64>,
     #[cfg(feature = "cluster")]
     failover_total: Counter<u64>,
+    process_cpu_time: Counter<f64>,
+    process_memory_usage: Gauge<f64>,
+    process_disk_io: Counter<u64>,
 }
 
 impl std::fmt::Debug for OtelMetrics {
@@ -90,95 +98,132 @@ impl OtelMetrics {
             db_keys_gauge: meter
                 .f64_gauge("aikv_db_keys")
                 .with_description("Approximate key count per logical DB")
+                .with_unit("1")
                 .build(),
             gauges: Arc::clone(&gauges),
             commands_total: meter
                 .u64_counter("aikv_commands_total")
                 .with_description("Total commands processed, by command name and status")
+                .with_unit("1")
                 .build(),
             command_duration_seconds: meter
                 .f64_histogram("aikv_command_duration_seconds")
                 .with_description("Command duration in seconds")
+                .with_unit("s")
                 .with_boundaries(CMD_DURATION_BUCKETS.to_vec())
                 .build(),
             connections_total: meter
                 .u64_counter("aikv_connections_total")
                 .with_description("Total accepted connections")
+                .with_unit("1")
                 .build(),
             connected_clients: meter
                 .i64_up_down_counter("aikv_connected_clients")
                 .with_description("Current connected clients")
+                .with_unit("1")
                 .build(),
             rejected_connections_total: meter
                 .u64_counter("aikv_rejected_connections_total")
                 .with_description("Total rejected connections")
+                .with_unit("1")
                 .build(),
             keyspace_hits_total: meter
                 .u64_counter("aikv_keyspace_hits_total")
                 .with_description("Total keyspace hits")
+                .with_unit("1")
                 .build(),
             keyspace_misses_total: meter
                 .u64_counter("aikv_keyspace_misses_total")
                 .with_description("Total keyspace misses")
+                .with_unit("1")
                 .build(),
             expired_keys_total: meter
                 .u64_counter("aikv_expired_keys_total")
                 .with_description("Total expired keys")
+                .with_unit("1")
                 .build(),
             evicted_keys_total: meter
                 .u64_counter("aikv_evicted_keys_total")
                 .with_description("Total evicted keys")
+                .with_unit("1")
                 .build(),
             net_input_bytes_total: meter
                 .u64_counter("aikv_net_input_bytes_total")
                 .with_description("Total bytes received from clients")
+                .with_unit("By")
                 .build(),
             net_output_bytes_total: meter
                 .u64_counter("aikv_net_output_bytes_total")
                 .with_description("Total bytes sent to clients")
+                .with_unit("By")
                 .build(),
             slow_queries_total: meter
                 .u64_counter("aikv_slow_queries_total")
                 .with_description("Total slow queries by command")
+                .with_unit("1")
                 .build(),
             process_cpu_milliseconds_total: meter
                 .u64_counter("aikv_process_cpu_milliseconds_total")
                 .with_description("Total process CPU time in milliseconds")
+                .with_unit("ms")
                 .build(),
             process_read_bytes_total: meter
                 .u64_counter("aikv_process_read_bytes_total")
                 .with_description("Total process disk read bytes")
+                .with_unit("By")
                 .build(),
             process_write_bytes_total: meter
                 .u64_counter("aikv_process_write_bytes_total")
                 .with_description("Total process disk write bytes")
+                .with_unit("By")
                 .build(),
             lua_scripts_total: meter
                 .u64_counter("aikv_lua_scripts_total")
                 .with_description("Total Lua script executions")
+                .with_unit("1")
                 .build(),
             lua_execution_duration_seconds: meter
                 .f64_histogram("aikv_lua_execution_duration_seconds")
                 .with_description("Lua script execution duration in seconds")
+                .with_unit("s")
                 .build(),
             json_commands_total: meter
                 .u64_counter("aikv_json_commands_total")
                 .with_description("Total JSON commands by sub-command")
+                .with_unit("1")
                 .build(),
             #[cfg(feature = "cluster")]
             cluster_redirects_total: meter
                 .u64_counter("aikv_cluster_redirects_total")
                 .with_description("Total cluster redirects by type")
+                .with_unit("1")
                 .build(),
             #[cfg(feature = "cluster")]
             gossip_messages_total: meter
                 .u64_counter("aikv_gossip_messages_total")
                 .with_description("Total gossip messages")
+                .with_unit("1")
                 .build(),
             #[cfg(feature = "cluster")]
             failover_total: meter
                 .u64_counter("aikv_failover_total")
                 .with_description("Total failover events")
+                .with_unit("1")
+                .build(),
+            process_cpu_time: meter
+                .f64_counter("process.cpu.time")
+                .with_description("Total CPU seconds")
+                .with_unit("s")
+                .build(),
+            process_memory_usage: meter
+                .f64_gauge("process.memory.usage")
+                .with_description("Process resident memory")
+                .with_unit("By")
+                .build(),
+            process_disk_io: meter
+                .u64_counter("process.disk.io")
+                .with_description("Process disk I/O bytes")
+                .with_unit("By")
                 .build(),
         });
 
@@ -188,15 +233,15 @@ impl OtelMetrics {
 
     fn cmd_attrs(command: &str, status: &str) -> [KeyValue; 2] {
         [
-            KeyValue::new("command", command.to_string()),
-            KeyValue::new("status", status.to_string()),
+            KeyValue::new(ATTR_COMMAND, command.to_string()),
+            KeyValue::new(ATTR_STATUS, status.to_string()),
         ]
     }
 
     pub fn set_db_key_count(&self, db: usize, count: u64) {
         self.db_keys_gauge.record(
             count as f64,
-            &[KeyValue::new("db", db.to_string())],
+            &[KeyValue::new(ATTR_DB_INDEX, db.to_string())],
         );
     }
 
@@ -247,12 +292,12 @@ impl OtelMetrics {
 
     pub fn on_slow_query(&self, command: &str) {
         self.slow_queries_total
-            .add(1, &[KeyValue::new("command", command.to_ascii_uppercase())]);
+            .add(1, &[KeyValue::new(ATTR_COMMAND, command.to_ascii_uppercase())]);
     }
 
     pub fn on_json_command(&self, command: &str) {
         self.json_commands_total
-            .add(1, &[KeyValue::new("command", command.to_ascii_uppercase())]);
+            .add(1, &[KeyValue::new(ATTR_COMMAND, command.to_ascii_uppercase())]);
     }
 
     pub fn on_rejected_connection(&self) {
@@ -314,20 +359,34 @@ impl OtelMetrics {
         self.gauges
             .process_resident_memory_bytes
             .store(bytes as i64, Ordering::Relaxed);
+        self.process_memory_usage.record(
+            bytes as f64,
+            &[KeyValue::new("process.memory.state", "used")],
+        );
     }
 
     pub fn add_process_cpu_ms(&self, delta_ms: u64) {
         if delta_ms > 0 {
             self.process_cpu_milliseconds_total.add(delta_ms, &[]);
+            self.process_cpu_time
+                .add(delta_ms as f64 / 1000.0, &[]);
         }
     }
 
     pub fn add_process_io(&self, read_delta: u64, write_delta: u64) {
         if read_delta > 0 {
             self.process_read_bytes_total.add(read_delta, &[]);
+            self.process_disk_io.add(
+                read_delta,
+                &[KeyValue::new("disk.io.direction", "read")],
+            );
         }
         if write_delta > 0 {
             self.process_write_bytes_total.add(write_delta, &[]);
+            self.process_disk_io.add(
+                write_delta,
+                &[KeyValue::new("disk.io.direction", "write")],
+            );
         }
     }
 
@@ -340,7 +399,7 @@ impl OtelMetrics {
     #[cfg(feature = "cluster")]
     pub fn on_cluster_redirect(&self, redirect_type: &str) {
         self.cluster_redirects_total
-            .add(1, &[KeyValue::new("type", redirect_type.to_string())]);
+            .add(1, &[KeyValue::new(ATTR_REDIRECT_TYPE, redirect_type.to_string())]);
     }
 
     #[cfg(feature = "cluster")]
@@ -358,6 +417,7 @@ fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {
     let g = Arc::clone(gauges);
     meter
         .i64_observable_gauge("aikv_used_memory_bytes")
+        .with_unit("By")
         .with_callback(move |inst| {
             inst.observe(g.used_memory_bytes.load(Ordering::Relaxed), &[]);
         })
@@ -366,6 +426,7 @@ fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {
     let g = Arc::clone(gauges);
     meter
         .i64_observable_gauge("aikv_used_memory_peak_bytes")
+        .with_unit("By")
         .with_callback(move |inst| {
             inst.observe(g.used_memory_peak_bytes.load(Ordering::Relaxed), &[]);
         })
@@ -374,6 +435,7 @@ fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {
     let g = Arc::clone(gauges);
     meter
         .i64_observable_gauge("aikv_instantaneous_ops_per_sec")
+        .with_unit("{request}/s")
         .with_callback(move |inst| {
             inst.observe(g.instantaneous_ops_per_sec.load(Ordering::Relaxed), &[]);
         })
@@ -382,6 +444,7 @@ fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {
     let g = Arc::clone(gauges);
     meter
         .i64_observable_gauge("aikv_blocked_clients")
+        .with_unit("1")
         .with_callback(move |inst| {
             inst.observe(g.blocked_clients.load(Ordering::Relaxed), &[]);
         })
@@ -390,6 +453,7 @@ fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {
     let g = Arc::clone(gauges);
     meter
         .i64_observable_gauge("aikv_uptime_seconds")
+        .with_unit("s")
         .with_callback(move |inst| {
             inst.observe(g.uptime_seconds.load(Ordering::Relaxed), &[]);
         })
@@ -398,6 +462,7 @@ fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {
     let g = Arc::clone(gauges);
     meter
         .i64_observable_gauge("aikv_process_resident_memory_bytes")
+        .with_unit("By")
         .with_callback(move |inst| {
             inst.observe(
                 g.process_resident_memory_bytes.load(Ordering::Relaxed),

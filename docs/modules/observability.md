@@ -263,10 +263,38 @@ redis-cli SLOWLOG GET 10
 | `cluster` | 叠加 | `aikv_cluster_redirects_total`, gossip/failover counters |
 | `--metrics-port` / `--metrics-addr` | `main.rs` CLI | 默认 9191 / 127.0.0.1 |
 | `AIKV_JSON_LOG` | env | 默认 true → JSON tracing |
-| `AIKV_OTLP_ENDPOINT` | env | `[monitoring]` traces + metrics OTLP |
+| `AIKV_OTLP_ENDPOINT` | env | `[monitoring]` traces + metrics OTLP (fallback: `OTEL_EXPORTER_OTLP_ENDPOINT`) |
 | `AIKV_HOST_LABEL` | env | Resource `host.name` (与 Alloy HOST_LABEL 对齐) |
-| `AIKV_NODE_ID` | env | Resource `node_id` (或 `--cluster-node-id`) |
+| `AIKV_NODE_ID` | env | Resource `node_id` + `service.instance.id` (或 `--cluster-node-id`) |
+| `AIKV_DEPLOYMENT_ENV` | env | Resource `deployment.environment` (fallback: `OTEL_DEPLOYMENT_ENVIRONMENT`) |
+| `OTEL_RESOURCE_ATTRIBUTES` | env | 追加 Resource 键值 (`k=v,k2=v2`) |
+| `OTEL_SERVICE_NAME` | env | Resource `service.name` (默认 `aikv`) |
 | `RUST_LOG` | env | tracing filter |
+
+### OTel Resource (OTLP → Prom 标签)
+
+| Resource 属性 | 来源 | Prom remote write 标签 |
+|---------------|------|------------------------|
+| `service.name` | 默认 `aikv`; `OTEL_SERVICE_NAME` 可覆盖 | `service_name` |
+| `service.version` | `CARGO_PKG_VERSION` | (resource) |
+| `service.instance.id` | 集群 `node_id` / `AIKV_NODE_ID`; 否则 `{host.name\|localhost}:{tcp_port}` | `service_instance_id` (若 backend 映射) |
+| `host.name` | `AIKV_HOST_LABEL` | `host_name` |
+| `node_id` | 同上 (兼容 Grafana 变量) | `node_id` |
+| `deployment.environment` | `AIKV_DEPLOYMENT_ENV` 等 | `deployment_environment` |
+
+### Trace span (`kv_command` / `kv_connection`)
+
+| 字段 | 说明 |
+|------|------|
+| `otel.kind` | `server` |
+| `db.system` | `redis` (命令 span) |
+| `db.operation.name` | 命令名 |
+| `server.port` | TCP 服务端口 |
+| `client.address` / `network.peer.*` | 客户端地址 (Connection 传入) |
+| `otel.status_code` | Rust `Err` 时为 `ERROR` |
+| `exception.*` | 命令失败时 exception event (`exception.type`, `exception.message`) |
+
+Collector `transform/traces` 为缺失 `service.namespace` 的 trace resource 补 `aikv`.
 
 运维 OTLP/Loki 部署流程 → 阶段 2 `DEPLOYMENT.md` (提炼自 wiqun-factory); 旧 env 名 `WIQUN_*` 已改为 `AIKV_*`.
 

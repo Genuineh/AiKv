@@ -504,6 +504,7 @@ async fn init_cluster(
 }
 
 fn init_logging(
+    tcp_port: u16,
     #[cfg(feature = "cluster")] cluster_node_id: Option<u64>,
     #[cfg(not(feature = "cluster"))] cluster_node_id: Option<u64>,
 ) {
@@ -517,7 +518,7 @@ fn init_logging(
         .from_env_lossy();
 
     #[cfg(feature = "monitoring")]
-    if let Some(config) = aikv::server::otel::otel_config_from_env(cluster_node_id) {
+    if let Some(config) = aikv::server::otel::otel_config_from_env(tcp_port, cluster_node_id) {
         if aikv::server::otel::init_otel(&config) {
             let tracer = opentelemetry::global::tracer("aikv");
             let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
@@ -567,6 +568,7 @@ fn init_logging(
 async fn main() {
     let args = Args::parse();
     init_logging(
+        args.bind.port(),
         #[cfg(feature = "cluster")]
         args.cluster_node_id,
         #[cfg(not(feature = "cluster"))]
@@ -675,6 +677,11 @@ async fn main() {
 
     if let Err(e) = Server::run(args.bind, state).await {
         tracing::error!(error = %e, "server exited with error");
+        #[cfg(feature = "monitoring")]
+        aikv::server::otel::shutdown_otel();
         std::process::exit(1);
     }
+
+    #[cfg(feature = "monitoring")]
+    aikv::server::otel::shutdown_otel();
 }

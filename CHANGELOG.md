@@ -18,11 +18,13 @@
 
 ### Changed
 
+- **OTel semconv (monitoring)**: Resource (`service.instance.id` fallback, `deployment.environment`, `OTEL_RESOURCE_ATTRIBUTES`); 指标 label 命名空间化; span `otel.kind=server`, `client.address`, exception events; `kv_connection` server span; 双写 `process.*` 标准指标; Grafana PromQL 对齐新 label.
 - **C2 OTel-only metrics (aikv)**: 移除进程内 Prometheus registry 与 `prometheus` 依赖; `ServerMetrics` 经 `with_otel` 单写 `OtelMetrics`; 生产指标仅 OTLP → Collector → Prom remote write; `:9191` 仅 `/health` (与 aidb 对齐).
 - **ISSUE-004**: doc-only 关闭 — MSETNX 刻意不实现 (oldmain 亦无); 移除 `cluster_route` 不可达 `msetnx` 引用; module 已知限制注明.
 
 ### Fixed
 
+- **monitoring OTel init**: metrics exporter 失败时 rollback trace provider; 进程退出 `shutdown_otel()` flush.
 - **ISSUE-020**: `blocked_clients` 在 BLPOP/BRPOP/BLMOVE/BZPOP* 阻塞等待期间 +1, 返回时 -1; INFO / `aikv_blocked_clients` 与 `ServerMetrics` 对齐.
 - **ISSUE-005**: `BlockingRegistry` 后台 1s tick 调 `evict_expired` — 清理超时 dead waiter 与 notify 后空槽; 不依赖 `monitoring` feature.
 - **ISSUE-014**: 移除 unused `GossipState` 缓存; 拓扑 tick 保留 leader 路由刷新 + gossip metrics; `CLUSTER NODES` 继续读 MetaRaft, link-state 恢复 `NodeStatus` → connected/disconnected.
