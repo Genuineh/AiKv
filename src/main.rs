@@ -518,9 +518,9 @@ fn init_logging(
 
     #[cfg(feature = "monitoring")]
     if let Some(config) = aikv::server::otel::otel_config_from_env(cluster_node_id) {
-        if let Some(tracer) = aikv::server::otel::init_otel(&config) {
-            let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer.clone());
-            let _ = Box::leak(Box::new(tracer));
+        if aikv::server::otel::init_otel(&config) {
+            let tracer = opentelemetry::global::tracer("aikv");
+            let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
             let base = Registry::default().with(otel_layer);
             let subscriber = if json_enabled {
                 base.with(
@@ -648,10 +648,8 @@ async fn main() {
         let metrics_addr_str = format!("{}:{}", args.metrics_addr, args.metrics_port);
         match metrics_addr_str.parse::<std::net::SocketAddr>() {
             Ok(metrics_addr) => {
-                let metrics_server = aikv::server::metrics_server::MetricsServer::new(
-                    metrics_addr,
-                    state.prometheus_metrics.clone(),
-                );
+                let metrics_server =
+                    aikv::server::metrics_server::MetricsServer::new(metrics_addr);
                 tokio::spawn(async move {
                     metrics_server.run().await;
                 });

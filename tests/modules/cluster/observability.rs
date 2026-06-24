@@ -2,8 +2,6 @@
 
 #![cfg(feature = "cluster")]
 
-use std::sync::Arc;
-
 use aikv::server::metrics::ServerMetrics;
 
 #[test]
@@ -35,8 +33,11 @@ fn blocked_clients_defaults_to_zero() {
 #[cfg(feature = "monitoring")]
 #[test]
 fn sync_redis_aligned_gauges_exports_blocked_clients() {
-    let prom = Arc::new(aikv::server::metrics::Metrics::new().expect("metrics registration"));
-    let metrics = ServerMetrics::default().with_prometheus(prom.clone());
+    use aikv::server::otel_metrics::testutil;
+
+    let (exporter, otel) = testutil::init_in_memory();
+    let metrics = ServerMetrics::default().with_otel(otel);
+    metrics.on_client_blocked();
     metrics.sync_redis_aligned_gauges();
-    assert_eq!(prom.kv_blocked_clients.get(), 0);
+    assert_eq!(testutil::gauge_value(&exporter, "aikv_blocked_clients"), 1.0);
 }

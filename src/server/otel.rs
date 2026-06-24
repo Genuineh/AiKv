@@ -2,7 +2,11 @@
 
 use std::time::Duration;
 
+use opentelemetry::global;
 use opentelemetry::KeyValue;
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
+use opentelemetry_sdk::trace::SdkTracerProvider;
 use opentelemetry_sdk::Resource;
 
 /// OTel 初始化参数 (Resource 标签).
@@ -14,17 +18,19 @@ pub struct OtelInitConfig {
 }
 
 fn build_resource(config: &OtelInitConfig) -> Resource {
-    let mut kvs = vec![
-        KeyValue::new("service.name", "aikv"),
-        KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
-    ];
+    let mut builder = Resource::builder()
+        .with_service_name("aikv")
+        .with_attribute(KeyValue::new(
+            "service.version",
+            env!("CARGO_PKG_VERSION"),
+        ));
     if let Some(host) = &config.host_label {
-        kvs.push(KeyValue::new("host.name", host.clone()));
+        builder = builder.with_attribute(KeyValue::new("host.name", host.clone()));
     }
     if let Some(node_id) = config.node_id {
-        kvs.push(KeyValue::new("node_id", node_id.to_string()));
+        builder = builder.with_attribute(KeyValue::new("node_id", node_id.to_string()));
     }
-    Resource::new(kvs)
+    builder.build()
 }
 
 /// 从环境变量与 CLI 解析 OTel 配置.
@@ -63,48 +69,53 @@ pub fn record_trace_ids_on_span(span: &tracing::Span) {
     }
 }
 
-/// 初始化 OTel Tracer + Meter (15s metrics export). 失败返回 None.
-pub fn init_otel(config: &OtelInitConfig) -> Option<opentelemetry_sdk::trace::Tracer> {
-    use opentelemetry_otlp::WithExportConfig;
-    use opentelemetry_sdk::trace;
-
+/// 初始化 OTel Tracer + Meter (15s metrics export). 成功返回 true.
+pub fn init_otel(config: &OtelInitConfig) -> bool {
     let resource = build_resource(config);
     let endpoint = config.endpoint.clone();
 
-    let trace_exporter = opentelemetry_otlp::new_exporter()
-        .tonic()
-        .with_endpoint(endpoint.clone());
-    let tracer = match opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_exporter(trace_exporter)
-        .with_trace_config(trace::config().with_resource(resource.clone()))
-        .install_batch(opentelemetry_sdk::runtime::Tokio)
+    let span_exporter = match opentelemetry_otlp::SpanExporter::builder()
+        .with_tonic()
+        .with_endpoint(endpoint.clone())
+        .build()
     {
-        Ok(tracer) => tracer,
+        Ok(exporter) => exporter,
         Err(e) => {
-            eprintln!("warn: OTel trace initialization failed: {e}");
-            return None;
+            eprintln!("warn: OTel trace exporter build failed: {e}");
+            return false;
         }
     };
 
-    let meter_exporter = opentelemetry_otlp::new_exporter()
-        .tonic()
-        .with_endpoint(endpoint.clone());
-    match opentelemetry_otlp::new_pipeline()
-        .metrics(opentelemetry_sdk::runtime::Tokio)
-        .with_exporter(meter_exporter)
-        .with_resource(resource)
-        .with_period(Duration::from_secs(15))
+    let tracer_provider = SdkTracerProvider::builder()
+        .with_batch_exporter(span_exporter)
+        .with_resource(resource.clone())
+        .build();
+    let _ = global::set_tracer_provider(tracer_provider.clone());
+    let _ = Box::leak(Box::new(tracer_provider));
+
+    let metric_exporter = match opentelemetry_otlp::MetricExporter::builder()
+        .with_tonic()
+        .with_endpoint(endpoint.clone())
         .build()
     {
-        Ok(provider) => {
-            let _ = Box::leak(Box::new(provider));
-            eprintln!("info: OTel traces+metrics initialized (endpoint={endpoint})");
-            Some(tracer)
-        }
+        Ok(exporter) => exporter,
         Err(e) => {
-            eprintln!("warn: OTel metrics initialization failed: {e}");
-            Some(tracer)
+            eprintln!("warn: OTel metrics exporter build failed: {e}");
+            return true;
         }
-    }
+    };
+
+    let reader = PeriodicReader::builder(metric_exporter)
+        .with_interval(Duration::from_secs(15))
+        .build();
+    let meter_provider = SdkMeterProvider::builder()
+        .with_reader(reader)
+        .with_resource(resource)
+        .build();
+    let _ = global::set_meter_provider(meter_provider.clone());
+    let _ = Box::leak(Box::new(meter_provider));
+
+    aidb::metrics::init();
+    eprintln!("info: OTel traces+metrics initialized (endpoint={endpoint})");
+    true
 }

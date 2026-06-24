@@ -11,13 +11,14 @@
 
 - **B1.1 + B1.4**: CONTRIBUTING 回归测必带规范; `slow:`/`stress:` 标签 taxonomy; CI `test-cluster` 补 `--test-threads=1`; 标准化 server/commands `#[ignore]` reason.
 
-- **C2.6**: `aikv_db_keys` OTel Observable 导出 — 与 Prometheus `IntGaugeVec` 对齐, 补齐 OTLP remote write 覆盖 (C2.6 移除 scrape 前 blocker).
+- **C2.6**: `aikv_db_keys` OTel labeled gauge — OTLP remote write 覆盖 (C2.6 移除 HTTP scrape).
  实现 `JSON.MGET` — 顶层 + Lua `redis.call`; 多 key 单 path batch 读; 对齐 Redis 7 (missing → null, wrong-type 与 `JSON.GET` 一致).
 - **ISSUE-010**: `MIGRATE AUTH2 username password` — 解析 + TCP `AUTH user pass`; `KEYS` 遇 `AUTH2` 停止; `AUTH2` 优先于 `AUTH` (对齐 Redis 7 / oldmain).
 - **ISSUE-003**: 恢复 `GETRANGE`/`SETRANGE` String 子串命令 (对齐 Redis 7 / oldmain); registry + router + 回归测.
 
 ### Changed
 
+- **C2 OTel-only metrics (aikv)**: 移除进程内 Prometheus registry 与 `prometheus` 依赖; `ServerMetrics` 经 `with_otel` 单写 `OtelMetrics`; 生产指标仅 OTLP → Collector → Prom remote write; `:9191` 仅 `/health` (与 aidb 对齐).
 - **ISSUE-004**: doc-only 关闭 — MSETNX 刻意不实现 (oldmain 亦无); 移除 `cluster_route` 不可达 `msetnx` 引用; module 已知限制注明.
 
 ### Fixed

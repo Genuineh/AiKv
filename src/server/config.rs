@@ -63,8 +63,6 @@ pub struct ServerSharedState {
     pub last_bgsave_status: RwLock<String>,
     pub metrics_port: u16,
     pub metrics_addr: String,
-    #[cfg(feature = "monitoring")]
-    pub prometheus_metrics: Arc<super::metrics::Metrics>,
     next_client_id: AtomicUsize,
     /// 每个 key 的版本计数器，用于 WATCH 乐观锁冲突检测
     pub key_versions: Arc<RwLock<HashMap<Vec<u8>, u64>>>,
@@ -157,13 +155,15 @@ impl ServerSharedState {
                 connection_config.max_clients.to_string(),
             ),
         ])));
-        #[cfg(feature = "monitoring")]
-        let prometheus_metrics =
-            Arc::new(super::metrics::Metrics::new().expect("metrics registration"));
         let metrics = {
             let m = ServerMetrics::default();
             #[cfg(feature = "monitoring")]
-            let m = m.with_prometheus(prometheus_metrics.clone());
+            let m = {
+                let otel = super::otel_metrics::OtelMetrics::init_global(
+                    opentelemetry::global::meter("aikv"),
+                );
+                m.with_otel(otel)
+            };
             Arc::new(m)
         };
         Arc::new(Self {
@@ -188,8 +188,6 @@ impl ServerSharedState {
             last_bgsave_status: RwLock::new("ok".into()),
             metrics_port,
             metrics_addr,
-            #[cfg(feature = "monitoring")]
-            prometheus_metrics,
             next_client_id: AtomicUsize::new(1),
             key_versions: Arc::new(RwLock::new(HashMap::new())),
             storage_observation: storage_observation.unwrap_or_default(),

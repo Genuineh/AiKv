@@ -1,25 +1,16 @@
-//! OTel metrics instruments (与 Prometheus 双写; aidb 经 Observable 读 prometheus).
+//! OTel metrics instruments (`aikv_*` 唯一出口, 经 OTLP 导出).
+//!
+//! TODO(exemplars): metrics↔traces 跳转需 OTel Rust SDK exemplar 采集; 当前 0.32 仍不支持.
 
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
-use opentelemetry::metrics::{Counter, Histogram, Meter, UpDownCounter};
+use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter};
 use opentelemetry::KeyValue;
 
 const CMD_DURATION_BUCKETS: [f64; 14] = [
     0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
 ];
-
-#[allow(dead_code)]
-const _: [f64; 14] = CMD_DURATION_BUCKETS;
-
-static GLOBAL_OTEL: OnceLock<Arc<OtelMetrics>> = OnceLock::new();
-static KV_DB_KEYS: OnceLock<Arc<prometheus::IntGaugeVec>> = OnceLock::new();
-
-/// 注册 Prometheus `aikv_db_keys` 源, 供 OTel Observable 回调读取.
-pub fn register_kv_db_keys_source(gauge: Arc<prometheus::IntGaugeVec>) {
-    let _ = KV_DB_KEYS.set(gauge);
-}
 
 /// Gauge 类指标快照 (Observable 回调读取).
 #[derive(Default)]
@@ -32,154 +23,166 @@ struct GaugeSnapshot {
     process_resident_memory_bytes: AtomicI64,
 }
 
-/// OTel 指标集合, 与 `Metrics` 中 prometheus 字段对应.
+/// OTel 指标集合.
 pub struct OtelMetrics {
     gauges: Arc<GaugeSnapshot>,
-    pub commands_total: Counter<u64>,
-    pub command_duration_seconds: Histogram<f64>,
-    pub connections_total: Counter<u64>,
-    pub connected_clients: UpDownCounter<i64>,
-    pub rejected_connections_total: Counter<u64>,
-    pub keyspace_hits_total: Counter<u64>,
-    pub keyspace_misses_total: Counter<u64>,
-    pub expired_keys_total: Counter<u64>,
-    pub evicted_keys_total: Counter<u64>,
-    pub net_input_bytes_total: Counter<u64>,
-    pub net_output_bytes_total: Counter<u64>,
-    pub slow_queries_total: Counter<u64>,
-    pub process_cpu_milliseconds_total: Counter<u64>,
-    pub process_read_bytes_total: Counter<u64>,
-    pub process_write_bytes_total: Counter<u64>,
-    pub lua_scripts_total: Counter<u64>,
-    pub lua_execution_duration_seconds: Histogram<f64>,
-    pub json_commands_total: Counter<u64>,
-    pub aidb_operation_duration_seconds: Histogram<f64>,
-    pub aidb_flush_duration_seconds: Histogram<f64>,
-    pub aidb_compaction_duration_seconds: Histogram<f64>,
-    pub aidb_backup_duration_seconds: Histogram<f64>,
+    db_keys_gauge: Gauge<f64>,
+    commands_total: Counter<u64>,
+    command_duration_seconds: Histogram<f64>,
+    connections_total: Counter<u64>,
+    connected_clients: UpDownCounter<i64>,
+    rejected_connections_total: Counter<u64>,
+    keyspace_hits_total: Counter<u64>,
+    keyspace_misses_total: Counter<u64>,
+    expired_keys_total: Counter<u64>,
+    evicted_keys_total: Counter<u64>,
+    net_input_bytes_total: Counter<u64>,
+    net_output_bytes_total: Counter<u64>,
+    slow_queries_total: Counter<u64>,
+    process_cpu_milliseconds_total: Counter<u64>,
+    process_read_bytes_total: Counter<u64>,
+    process_write_bytes_total: Counter<u64>,
+    lua_scripts_total: Counter<u64>,
+    lua_execution_duration_seconds: Histogram<f64>,
+    json_commands_total: Counter<u64>,
     #[cfg(feature = "cluster")]
-    pub cluster_redirects_total: Counter<u64>,
+    cluster_redirects_total: Counter<u64>,
     #[cfg(feature = "cluster")]
-    pub gossip_messages_total: Counter<u64>,
+    gossip_messages_total: Counter<u64>,
     #[cfg(feature = "cluster")]
-    pub failover_total: Counter<u64>,
+    failover_total: Counter<u64>,
+}
+
+impl std::fmt::Debug for OtelMetrics {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("OtelMetrics")
+    }
+}
+
+static GLOBAL_OTEL: OnceLock<RwLock<Option<Arc<OtelMetrics>>>> = OnceLock::new();
+
+fn global_otel() -> &'static RwLock<Option<Arc<OtelMetrics>>> {
+    GLOBAL_OTEL.get_or_init(|| RwLock::new(None))
 }
 
 impl OtelMetrics {
-    pub fn new(meter: &Meter) -> Arc<Self> {
+    /// 初始化 global `aikv` meter instruments (幂等).
+    pub fn init_global(meter: Meter) -> Arc<Self> {
+        let cell = global_otel();
+        if let Some(existing) = cell.read().unwrap().as_ref() {
+            return Arc::clone(existing);
+        }
+        let otel = Self::new(meter);
+        *cell.write().unwrap() = Some(Arc::clone(&otel));
+        otel
+    }
+
+    /// 测试用: 用当前 global meter provider 重建 instruments.
+    pub(crate) fn install_global(meter: Meter) -> Arc<Self> {
+        let otel = Self::new(meter);
+        *global_otel().write().unwrap() = Some(Arc::clone(&otel));
+        otel
+    }
+
+    pub(crate) fn new(meter: Meter) -> Arc<Self> {
         let gauges = Arc::new(GaugeSnapshot::default());
         let otel = Arc::new(Self {
+            db_keys_gauge: meter
+                .f64_gauge("aikv_db_keys")
+                .with_description("Approximate key count per logical DB")
+                .build(),
             gauges: Arc::clone(&gauges),
             commands_total: meter
                 .u64_counter("aikv_commands_total")
                 .with_description("Total commands processed, by command name and status")
-                .init(),
+                .build(),
             command_duration_seconds: meter
                 .f64_histogram("aikv_command_duration_seconds")
                 .with_description("Command duration in seconds")
-                .init(),
+                .with_boundaries(CMD_DURATION_BUCKETS.to_vec())
+                .build(),
             connections_total: meter
                 .u64_counter("aikv_connections_total")
                 .with_description("Total accepted connections")
-                .init(),
+                .build(),
             connected_clients: meter
                 .i64_up_down_counter("aikv_connected_clients")
                 .with_description("Current connected clients")
-                .init(),
+                .build(),
             rejected_connections_total: meter
                 .u64_counter("aikv_rejected_connections_total")
                 .with_description("Total rejected connections")
-                .init(),
+                .build(),
             keyspace_hits_total: meter
                 .u64_counter("aikv_keyspace_hits_total")
                 .with_description("Total keyspace hits")
-                .init(),
+                .build(),
             keyspace_misses_total: meter
                 .u64_counter("aikv_keyspace_misses_total")
                 .with_description("Total keyspace misses")
-                .init(),
+                .build(),
             expired_keys_total: meter
                 .u64_counter("aikv_expired_keys_total")
                 .with_description("Total expired keys")
-                .init(),
+                .build(),
             evicted_keys_total: meter
                 .u64_counter("aikv_evicted_keys_total")
                 .with_description("Total evicted keys")
-                .init(),
+                .build(),
             net_input_bytes_total: meter
                 .u64_counter("aikv_net_input_bytes_total")
                 .with_description("Total bytes received from clients")
-                .init(),
+                .build(),
             net_output_bytes_total: meter
                 .u64_counter("aikv_net_output_bytes_total")
                 .with_description("Total bytes sent to clients")
-                .init(),
+                .build(),
             slow_queries_total: meter
                 .u64_counter("aikv_slow_queries_total")
                 .with_description("Total slow queries by command")
-                .init(),
+                .build(),
             process_cpu_milliseconds_total: meter
                 .u64_counter("aikv_process_cpu_milliseconds_total")
                 .with_description("Total process CPU time in milliseconds")
-                .init(),
+                .build(),
             process_read_bytes_total: meter
                 .u64_counter("aikv_process_read_bytes_total")
                 .with_description("Total process disk read bytes")
-                .init(),
+                .build(),
             process_write_bytes_total: meter
                 .u64_counter("aikv_process_write_bytes_total")
                 .with_description("Total process disk write bytes")
-                .init(),
+                .build(),
             lua_scripts_total: meter
                 .u64_counter("aikv_lua_scripts_total")
                 .with_description("Total Lua script executions")
-                .init(),
+                .build(),
             lua_execution_duration_seconds: meter
                 .f64_histogram("aikv_lua_execution_duration_seconds")
                 .with_description("Lua script execution duration in seconds")
-                .init(),
+                .build(),
             json_commands_total: meter
                 .u64_counter("aikv_json_commands_total")
                 .with_description("Total JSON commands by sub-command")
-                .init(),
-            aidb_operation_duration_seconds: meter
-                .f64_histogram("aidb_operation_duration_seconds")
-                .with_description("DB operation duration in seconds")
-                .init(),
-            aidb_flush_duration_seconds: meter
-                .f64_histogram("aidb_flush_duration_seconds")
-                .with_description("MemTable flush duration in seconds")
-                .init(),
-            aidb_compaction_duration_seconds: meter
-                .f64_histogram("aidb_compaction_duration_seconds")
-                .with_description("Compaction phase duration in seconds")
-                .init(),
-            aidb_backup_duration_seconds: meter
-                .f64_histogram("aidb_backup_duration_seconds")
-                .with_description("Backup operation duration in seconds")
-                .init(),
+                .build(),
             #[cfg(feature = "cluster")]
             cluster_redirects_total: meter
                 .u64_counter("aikv_cluster_redirects_total")
                 .with_description("Total cluster redirects by type")
-                .init(),
+                .build(),
             #[cfg(feature = "cluster")]
             gossip_messages_total: meter
                 .u64_counter("aikv_gossip_messages_total")
                 .with_description("Total gossip messages")
-                .init(),
+                .build(),
             #[cfg(feature = "cluster")]
             failover_total: meter
                 .u64_counter("aikv_failover_total")
                 .with_description("Total failover events")
-                .init(),
+                .build(),
         });
 
-        register_aikv_observable_gauges(meter, &gauges);
-        mirror_aikv_db_keys_gauge(meter);
-        register_aidb_observable_gauges(meter);
-        let _ = GLOBAL_OTEL.set(Arc::clone(&otel));
-        install_aidb_histogram_hooks();
+        register_aikv_observable_gauges(&meter, &gauges);
         otel
     }
 
@@ -188,6 +191,13 @@ impl OtelMetrics {
             KeyValue::new("command", command.to_string()),
             KeyValue::new("status", status.to_string()),
         ]
+    }
+
+    pub fn set_db_key_count(&self, db: usize, count: u64) {
+        self.db_keys_gauge.record(
+            count as f64,
+            &[KeyValue::new("db", db.to_string())],
+        );
     }
 
     pub fn on_connect(&self) {
@@ -218,13 +228,12 @@ impl OtelMetrics {
             .add(1, &Self::cmd_attrs(&cmd, status));
     }
 
-    pub fn on_command_duration(&self, command: &str, duration_secs: f64, ok: bool) {
+    pub fn on_command_duration(&self, command: &str, duration_us: u64, ok: bool) {
         let status = if ok { "ok" } else { "error" };
         let cmd = command.to_ascii_uppercase();
-        self.command_duration_seconds.record(
-            duration_secs,
-            &Self::cmd_attrs(&cmd, status),
-        );
+        let secs = duration_us as f64 / 1_000_000.0;
+        self.command_duration_seconds
+            .record(secs, &Self::cmd_attrs(&cmd, status));
     }
 
     pub fn on_lua_scripts(&self) {
@@ -352,7 +361,7 @@ fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {
         .with_callback(move |inst| {
             inst.observe(g.used_memory_bytes.load(Ordering::Relaxed), &[]);
         })
-        .init();
+        .build();
 
     let g = Arc::clone(gauges);
     meter
@@ -360,7 +369,7 @@ fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {
         .with_callback(move |inst| {
             inst.observe(g.used_memory_peak_bytes.load(Ordering::Relaxed), &[]);
         })
-        .init();
+        .build();
 
     let g = Arc::clone(gauges);
     meter
@@ -368,7 +377,7 @@ fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {
         .with_callback(move |inst| {
             inst.observe(g.instantaneous_ops_per_sec.load(Ordering::Relaxed), &[]);
         })
-        .init();
+        .build();
 
     let g = Arc::clone(gauges);
     meter
@@ -376,7 +385,7 @@ fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {
         .with_callback(move |inst| {
             inst.observe(g.blocked_clients.load(Ordering::Relaxed), &[]);
         })
-        .init();
+        .build();
 
     let g = Arc::clone(gauges);
     meter
@@ -384,7 +393,7 @@ fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {
         .with_callback(move |inst| {
             inst.observe(g.uptime_seconds.load(Ordering::Relaxed), &[]);
         })
-        .init();
+        .build();
 
     let g = Arc::clone(gauges);
     meter
@@ -395,246 +404,7 @@ fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {
                 &[],
             );
         })
-        .init();
-}
-
-fn mirror_aikv_db_keys_gauge(meter: &Meter) {
-    use prometheus::core::Collector;
-
-    meter
-        .i64_observable_gauge("aikv_db_keys")
-        .with_description("Approximate key count per logical DB")
-        .with_callback(|inst| {
-            let Some(gauge) = KV_DB_KEYS.get() else {
-                return;
-            };
-            for mf in gauge.collect() {
-                for m in mf.get_metric() {
-                    let db = label_value(m, "db");
-                    inst.observe(
-                        m.get_gauge().get_value() as i64,
-                        &[KeyValue::new("db", db)],
-                    );
-                }
-            }
-        })
-        .init();
-}
-
-pub fn register_aidb_observable_gauges(meter: &Meter) {
-    use aidb::metrics as am;
-
-    meter
-        .f64_observable_gauge("aidb_wal_size_bytes")
-        .with_callback(|inst| inst.observe(am::WAL_SIZE.get(), &[]))
-        .init();
-
-    meter
-        .i64_observable_gauge("aidb_memtable_size_bytes")
-        .with_callback(|inst| {
-            inst.observe(
-                am::MEMTABLE_SIZE.with_label_values(&["active"]).get(),
-                &[KeyValue::new("state", "active")],
-            );
-            inst.observe(
-                am::MEMTABLE_SIZE.with_label_values(&["frozen"]).get(),
-                &[KeyValue::new("state", "frozen")],
-            );
-        })
-        .init();
-
-    meter
-        .i64_observable_gauge("aidb_block_cache_size_bytes")
-        .with_callback(|inst| inst.observe(am::BLOCK_CACHE_SIZE_BYTES.get() as i64, &[]))
-        .init();
-
-    meter
-        .i64_observable_gauge("aidb_sequence")
-        .with_callback(|inst| inst.observe(am::SEQUENCE.get(), &[]))
-        .init();
-
-    meter
-        .i64_observable_gauge("aidb_total_key_count")
-        .with_callback(|inst| inst.observe(am::TOTAL_KEY_COUNT.get(), &[]))
-        .init();
-
-    meter
-        .i64_observable_gauge("aidb_backup_size_bytes")
-        .with_callback(|inst| inst.observe(am::BACKUP_SIZE_BYTES.get(), &[]))
-        .init();
-
-    mirror_aidb_labeled_counters(meter);
-    mirror_aidb_sstable_gauges(meter);
-    mirror_aidb_simple_counters(meter);
-    #[cfg(feature = "cluster")]
-    mirror_aidb_raft_counters(meter);
-}
-
-fn mirror_aidb_simple_counters(meter: &Meter) {
-    use aidb::metrics as am;
-
-    meter
-        .u64_observable_counter("aidb_block_cache_hits_total")
-        .with_callback(|inst| inst.observe(am::BLOCK_CACHE_HITS_TOTAL.get(), &[]))
-        .init();
-
-    meter
-        .u64_observable_counter("aidb_block_cache_misses_total")
-        .with_callback(|inst| inst.observe(am::BLOCK_CACHE_MISSES_TOTAL.get(), &[]))
-        .init();
-
-    meter
-        .u64_observable_counter("aidb_bloom_false_positive_total")
-        .with_callback(|inst| inst.observe(am::BLOOM_FALSE_POSITIVE_TOTAL.get(), &[]))
-        .init();
-
-    meter
-        .u64_observable_counter("aidb_flush_total")
-        .with_callback(|inst| inst.observe(am::FLUSH_TOTAL.get(), &[]))
-        .init();
-}
-
-fn mirror_aidb_labeled_counters(meter: &Meter) {
-    use aidb::metrics as am;
-    use prometheus::core::Collector;
-
-    meter
-        .u64_observable_counter("aidb_operations_total")
-        .with_callback(|inst| {
-            for mf in am::OPERATIONS_TOTAL.collect() {
-                for m in mf.get_metric() {
-                    let op = label_value(m, "op");
-                    inst.observe(m.get_counter().get_value() as u64, &[KeyValue::new("op", op)]);
-                }
-            }
-        })
-        .init();
-
-    meter
-        .u64_observable_counter("aidb_compaction_total")
-        .with_callback(|inst| {
-            for mf in am::COMPACTION_TOTAL.collect() {
-                for m in mf.get_metric() {
-                    let t = label_value(m, "type");
-                    inst.observe(m.get_counter().get_value() as u64, &[KeyValue::new("type", t)]);
-                }
-            }
-        })
-        .init();
-
-    meter
-        .u64_observable_counter("aidb_backup_total")
-        .with_callback(|inst| {
-            for mf in am::BACKUP_TOTAL.collect() {
-                for m in mf.get_metric() {
-                    let op = label_value(m, "op");
-                    inst.observe(m.get_counter().get_value() as u64, &[KeyValue::new("op", op)]);
-                }
-            }
-        })
-        .init();
-}
-
-fn mirror_aidb_sstable_gauges(meter: &Meter) {
-    use aidb::metrics as am;
-    use prometheus::core::Collector;
-
-    meter
-        .i64_observable_gauge("aidb_sstable_count")
-        .with_callback(|inst| {
-            for mf in am::SSTABLE_COUNT.collect() {
-                for m in mf.get_metric() {
-                    let level = label_value(m, "level");
-                    inst.observe(m.get_gauge().get_value() as i64, &[KeyValue::new("level", level)]);
-                }
-            }
-        })
-        .init();
-
-    meter
-        .i64_observable_gauge("aidb_sstable_size_bytes")
-        .with_callback(|inst| {
-            for mf in am::SSTABLE_SIZE_BYTES.collect() {
-                for m in mf.get_metric() {
-                    let level = label_value(m, "level");
-                    inst.observe(m.get_gauge().get_value() as i64, &[KeyValue::new("level", level)]);
-                }
-            }
-        })
-        .init();
-}
-
-#[cfg(feature = "cluster")]
-fn mirror_aidb_raft_counters(meter: &Meter) {
-    use aidb::cluster::metrics as rm;
-    use prometheus::core::Collector;
-
-    meter
-        .u64_observable_counter("aidb_raft_rpc_total")
-        .with_callback(|inst| {
-            for mf in rm::RAFT_RPC_TOTAL.collect() {
-                for m in mf.get_metric() {
-                    let t = label_value(m, "type");
-                    let d = label_value(m, "direction");
-                    inst.observe(
-                        m.get_counter().get_value() as u64,
-                        &[
-                            KeyValue::new("type", t),
-                            KeyValue::new("direction", d),
-                        ],
-                    );
-                }
-            }
-        })
-        .init();
-
-    meter
-        .u64_observable_counter("aidb_raft_log_entries_total")
-        .with_callback(|inst| inst.observe(rm::RAFT_LOG_ENTRIES_TOTAL.get(), &[]))
-        .init();
-}
-
-fn label_value(m: &prometheus::proto::Metric, name: &str) -> String {
-    m.get_label()
-        .iter()
-        .find(|l| l.get_name() == name)
-        .map(|l| l.get_value().to_string())
-        .unwrap_or_default()
-}
-
-fn install_aidb_histogram_hooks() {
-    aidb::metrics::set_otel_histogram_hooks(aidb::metrics::OtelHistogramHooks {
-        operation_duration: Some(hook_aidb_op_duration),
-        flush_duration: Some(hook_aidb_flush_duration),
-        compaction_duration: Some(hook_aidb_compaction_duration),
-        backup_duration: Some(hook_aidb_backup_duration),
-    });
-}
-
-fn hook_aidb_op_duration(op: &str, secs: f64) {
-    if let Some(o) = GLOBAL_OTEL.get() {
-        o.aidb_operation_duration_seconds
-            .record(secs, &[KeyValue::new("op", op.to_string())]);
-    }
-}
-
-fn hook_aidb_flush_duration(secs: f64) {
-    if let Some(o) = GLOBAL_OTEL.get() {
-        o.aidb_flush_duration_seconds.record(secs, &[]);
-    }
-}
-
-fn hook_aidb_compaction_duration(phase: &str, secs: f64) {
-    if let Some(o) = GLOBAL_OTEL.get() {
-        o.aidb_compaction_duration_seconds
-            .record(secs, &[KeyValue::new("phase", phase.to_string())]);
-    }
-}
-
-fn hook_aidb_backup_duration(secs: f64) {
-    if let Some(o) = GLOBAL_OTEL.get() {
-        o.aidb_backup_duration_seconds.record(secs, &[]);
-    }
+        .build();
 }
 
 /// 契约测试: 核心 aikv_* 指标名.
@@ -648,3 +418,92 @@ pub const AIKV_METRIC_NAMES: &[&str] = &[
     "aikv_uptime_seconds",
     "aikv_db_keys",
 ];
+
+#[cfg(feature = "monitoring")]
+pub mod testutil {
+    use std::sync::{Arc, OnceLock};
+
+    use opentelemetry::global;
+    use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData};
+    use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
+
+    use super::OtelMetrics;
+
+    static TEST_EXPORTER: OnceLock<InMemoryMetricExporter> = OnceLock::new();
+    static TEST_PROVIDER: OnceLock<Arc<SdkMeterProvider>> = OnceLock::new();
+
+    pub fn init_in_memory() -> (InMemoryMetricExporter, Arc<OtelMetrics>) {
+        if TEST_EXPORTER.get().is_none() {
+            let exporter = InMemoryMetricExporter::default();
+            let provider = SdkMeterProvider::builder()
+                .with_periodic_exporter(exporter.clone())
+                .build();
+            global::set_meter_provider(provider.clone());
+            let provider = Arc::new(provider);
+            let _ = TEST_PROVIDER.set(Arc::clone(&provider));
+            let _ = TEST_EXPORTER.set(exporter.clone());
+        }
+        let exporter = TEST_EXPORTER.get().unwrap().clone();
+        let otel = OtelMetrics::install_global(global::meter("aikv"));
+        (exporter, otel)
+    }
+
+    fn flush() {
+        if let Some(provider) = TEST_PROVIDER.get() {
+            provider.force_flush().unwrap();
+        }
+    }
+
+    pub fn counter_sum(exporter: &InMemoryMetricExporter, name: &str) -> u64 {
+        flush();
+        let metrics = exporter.get_finished_metrics().unwrap();
+        let mut total = 0u64;
+        for rm in &metrics {
+            for sm in rm.scope_metrics() {
+                for m in sm.metrics() {
+                    if m.name() != name {
+                        continue;
+                    }
+                    if let AggregatedMetrics::U64(MetricData::Sum(sum)) = m.data() {
+                        total += sum.data_points().map(|dp| dp.value()).sum::<u64>();
+                    }
+                }
+            }
+        }
+        total
+    }
+
+    pub fn gauge_value(exporter: &InMemoryMetricExporter, name: &str) -> f64 {
+        flush();
+        let metrics = exporter.get_finished_metrics().unwrap();
+        for rm in &metrics {
+            for sm in rm.scope_metrics() {
+                for m in sm.metrics() {
+                    if m.name() != name {
+                        continue;
+                    }
+                    if let AggregatedMetrics::F64(MetricData::Gauge(g)) = m.data() {
+                        if let Some(dp) = g.data_points().last() {
+                            return dp.value();
+                        }
+                    }
+                    if let AggregatedMetrics::I64(MetricData::Gauge(g)) = m.data() {
+                        if let Some(dp) = g.data_points().last() {
+                            return dp.value() as f64;
+                        }
+                    }
+                }
+            }
+        }
+        0.0
+    }
+
+    pub fn metric_exists(exporter: &InMemoryMetricExporter, name: &str) -> bool {
+        flush();
+        let metrics = exporter.get_finished_metrics().unwrap();
+        metrics.iter().any(|rm| {
+            rm.scope_metrics()
+                .any(|sm| sm.metrics().any(|m| m.name() == name))
+        })
+    }
+}

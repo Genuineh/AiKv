@@ -2,7 +2,7 @@
 name: aikv-observability
 depends_on:
   - aikv-server
-description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, InfoRenderer, Prometheus /metrics, tracing/OTel wiring. Use when changing src/server/{slowlog,latency,info,metrics,metrics_server,process_metrics}, storage/observation, main.rs monitoring setup, or debugging INFO/SLOWLOG/LATENCY/metrics alignment.
+description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, InfoRenderer, OTel metrics/tracing, health HTTP. Use when changing src/server/{slowlog,latency,info,metrics,metrics_server,process_metrics,otel_metrics}, storage/observation, main.rs monitoring setup, or debugging INFO/SLOWLOG/LATENCY/metrics alignment.
 ---
 
 # AiKv Observability (可观测性)
@@ -10,15 +10,15 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 ## 何时读本文
 
 - 改 `server/{slowlog,latency,info,metrics,metrics_server,process_metrics}`、`storage/observation`, 或 `main.rs` tracing/OTel/metrics 装配
-- 排查 INFO 与 Prometheus 数值不一致、慢查询/SLOWLOG、LATENCY 直方图、`/metrics` scrape
+- 排查 INFO 与 OTel/PromQL 数值不一致、慢查询/SLOWLOG、LATENCY 直方图
 - 接集群 gossip/failover/redirect 计数、JSON/Lua 专用 metrics
 - **不覆盖**: TCP 连接循环与内联命令 → [server.md](server.md)
 - **不覆盖**: INFO/SLOWLOG/LATENCY/COMMAND **命令 dispatch** → [commands-extended.md](commands-extended.md)
 - **不覆盖**: MOVED/ASK、CLUSTER 子命令语义 → [cluster.md](cluster.md) (本章只写 metrics/INFO 段写入点)
 - **不覆盖**: `aidb_*` / `aidb_raft_*` 定义与引擎 span → [aidb observability.md](../../../aidb/docs/modules/observability.md)
-- **构建**: `--features monitoring` 启用 Prometheus HTTP + OTel; 默认 **不** 启用
+- **构建**: `--features monitoring` 启用 OTel + health HTTP; 默认 **不** 启用
 
-## 架构: 单一数据源 + 可选 Prometheus 镜像
+## 架构: ServerMetrics atomics + OTel 唯一出口
 
 ```mermaid
 flowchart TB
@@ -29,14 +29,15 @@ flowchart TB
     SO[StorageObservation]
   end
   subgraph mon [monitoring feature]
-    PM[Metrics Registry aikv_*]
-    MS[MetricsServer /metrics]
+    OM[OtelMetrics aikv_*]
+    HS[MetricsServer /health]
     RF[refresh_runtime_metrics 15s]
     PROC[refresh_process_metrics]
   end
   subgraph out [输出]
     INFO[InfoRenderer / CLUSTER INFO 读 metrics]
     TR[tracing JSON / OTel]
+    OTLP[OTLP :4317]
   end
   CONN[Connection] --> SM
   CONN --> SL
@@ -46,30 +47,32 @@ flowchart TB
   SO -->|drain| RF
   RF --> SM
   SM --> INFO
-  SM -->|mirror| PM
-  PM --> MS
-  PM -->|register_into| AIDB[aidb_*]
-  PROC --> PM
+  SM -->|monitoring| OM
+  PROC --> OM
+  OM --> OTLP
+  aidb[aidb OTel Meter] --> OTLP
 ```
 
 要点:
 
 - **热路径**: `ServerMetrics` (atomic + `commands_total` Mutex) 为 INFO 与业务计数唯一源
 - **冷路径**: `[monitoring]` 下 `main` 每 **15s** 调 `refresh_runtime_metrics` + `refresh_process_metrics`
-- **无 monitoring**: slowlog/latency/INFO/`ServerMetrics` 仍可用; **无** HTTP `/metrics`、无 OTel layer、**无** 自动 refresh
+- **无 monitoring**: slowlog/latency/INFO/`ServerMetrics` 仍可用; **无** health HTTP 端口、无 OTel layer、**无** 自动 refresh
+- **生产指标**: 仅 **OTLP** → Collector → Prom remote write; **无** 进程内 Prometheus registry, **无** HTTP `/metrics`
 - **内部命令**: 含 `.` 的伪命令 (`GOSSIP.tick`, `JSON.get`, `CLUSTER.redirect.moved`) **不** 进 INFO `commandstats`
 
 ## 代码地图
 
 | 路径 | 职责 | 入口 |
 |------|------|------|
-| `server/metrics.rs` | `ServerMetrics` 热路径计数; `[monitoring]` `Metrics` + `aikv_*` 注册 | `on_connect`, `on_command`, `Metrics::new` |
+| `server/metrics.rs` | `ServerMetrics` 热路径计数; `[monitoring]` `with_otel` | `on_connect`, `on_command` |
+| `server/otel_metrics.rs` | `OtelMetrics` instruments (`aikv_*`) | `init_global`, `set_db_key_count` |
 | `server/info.rs` | Redis INFO section 渲染 | `InfoRenderer::render`, `redis_mode()` |
 | `server/slowlog.rs` | 慢查询环形缓冲 | `SlowQueryLog::record/get` |
 | `server/latency.rs` | 按命令延迟直方图 + 历史 | `LatencyStats::record/snapshot` |
 | `server/config.rs` | `ServerSharedState` 持有上述组件; refresh | `try_register_connection`, `refresh_runtime_metrics` |
 | `server/connection.rs` | 网络字节; Router 命令 observability 钩子 | `record_command_observability`, `should_track_observability` |
-| `server/metrics_server.rs` | HTTP `/metrics`, `/health`, `/` | `MetricsServer::run` `[monitoring]` |
+| `server/metrics_server.rs` | HTTP `/health`, `/` (生产指标经 OTLP) | `MetricsServer::run` `[monitoring]` |
 | `server/process_metrics.rs` | Linux `/proc` RSS/CPU/IO | `read_*` `[monitoring]` |
 | `storage/observation.rs` | 跨引擎 expired key 计数 | `record_expired_key`, `drain_expired_keys` |
 | `main.rs` | JSON log, OTel, MetricsServer spawn, 15s tick | `init_logging`, `create_otel_tracer` (~L503–696) |
@@ -88,7 +91,7 @@ flowchart TB
 
 ## 关键 invariant (勿破坏)
 
-- **I1 INFO↔Prometheus**: `InfoRenderer` / `CLUSTER INFO` stats 字段须与同期 `ServerMetrics` (及 refresh 后的 gauge) 一致; 禁止独立计数公式
+- **I1 INFO↔ServerMetrics**: `InfoRenderer` / `CLUSTER INFO` stats 字段须与同期 `ServerMetrics` atomics 一致; 禁止独立计数公式
 - **I2 钩子分工**: Router `on_command` 计 calls/err; Connection `on_command_duration` 计 usec/histogram; **勿** 在 INFO 重复累加
 - **I3 跟踪排除**: `PING|ECHO|HELLO|QUIT|MONITOR|SLOWLOG` 不经 `record_command_observability`
 - **I4 客户端 commandstats**: `is_client_command` 过滤含 `.` 的内部 key
@@ -155,10 +158,12 @@ aikv 进程 (Docker)
 
 `CLUSTER INFO` 文本在 `cluster/commands.rs::cluster_info`; `cluster_state` 按 slot 覆盖与 group leader 动态 ok/fail; gossip 计数读 `ServerMetrics.cluster_messages_*`.
 
-### INFO ↔ Prometheus (P0 不变式)
+### INFO ↔ PromQL (P0 不变式)
 
-| INFO 字段 | Prometheus | 备注 |
-|-----------|------------|------|
+INFO 读 `ServerMetrics` atomics; PromQL 读 OTLP 导出的 `aikv_*`. 两者同源, refresh 周期内应对齐:
+
+| INFO 字段 | PromQL (OTLP) | 备注 |
+|-----------|---------------|------|
 | `used_memory` | `aikv_used_memory_bytes` | refresh 周期内相等 |
 | `keyspace_hits` / `keyspace_misses` | `aikv_keyspace_*_total` | counter 当前值 |
 | `instantaneous_ops_per_sec` | `aikv_instantaneous_ops_per_sec` | gauge |
@@ -175,7 +180,8 @@ Golden 字段: `tests/fixtures/redis7_info_p0_fields.txt`.
 - `metrics: Arc<ServerMetrics>`
 - `slow_query_log: Arc<SlowQueryLog>`
 - `latency_stats: Arc<LatencyStats>`
-- `[monitoring] prometheus_metrics: Arc<Metrics>`
+
+(`OtelMetrics` 经 `ServerMetrics::with_otel` 内联, 启动时 `OtelMetrics::init_global`.)
 
 ### `ServerMetrics` (节选 pub 面)
 
@@ -189,7 +195,7 @@ Golden 字段: `tests/fixtures/redis7_info_p0_fields.txt`.
 | `on_json_command` / `on_lua_*` | 扩展命令 |
 | `on_client_blocked` / `on_client_unblocked` | 阻塞命令 (BLPOP 等) |
 | `client_command_totals()` | INFO commandstats/errorstats |
-| `[monitoring] with_prometheus` | 双写 Prometheus |
+| `[monitoring] with_otel` | 关联 `OtelMetrics` 实例 |
 
 ### `SlowQueryLog`
 
@@ -198,21 +204,23 @@ Golden 字段: `tests/fixtures/redis7_info_p0_fields.txt`.
 
 ### `MetricsServer`
 
-- `GET /metrics` — Prometheus text 0.0.4
 - `GET /health` — `200 OK`
+- `GET /` — 简要说明页 (指标经 OTLP)
+- **无** `/metrics` — 生产指标仅 OTLP 出口
 - bind 失败时 error log 并退出 task (不 crash 主进程)
 
 ## 常见任务
 
-### 启用 Prometheus + scrape
+### 启用 monitoring + OTLP
 
 ```bash
 cargo build --features monitoring
+export AIKV_OTLP_ENDPOINT=http://127.0.0.1:4317
 cargo run --features monitoring -- --metrics-addr 0.0.0.0 --metrics-port 9191
-curl -s http://127.0.0.1:9191/metrics | head
+curl -s http://127.0.0.1:9191/health
 ```
 
-`Metrics::new()` 已 `aidb::metrics::register_into`; scrape 同一 Registry 含 `aidb_*` (engine 启用 monitoring 时).
+全部 `aikv_*` / `aidb_*` 经 OTel Meter 直写, OTLP 导出至 Collector (115 Prom remote write).
 
 ### 启用 OTel trace
 
@@ -232,17 +240,18 @@ redis-cli SLOWLOG GET 10
 
 或改 `SlowQueryLog` 默认值.
 
-### 排查 INFO 与 /metrics 不一致
+### 排查 INFO 与 PromQL 不一致
 
 1. 确认 `--features monitoring` 且后台 15s refresh 在跑
 2. 对 memory/expired/ops: 手动 `refresh_runtime_metrics` 后再比 (测试里常用)
 3. 确认比的是 **同名** 字段 (INFO Redis 名 vs `aikv_*`)
-4. scrape 间隔内 counter 允许微小延迟
+4. OTLP export 间隔内 counter 允许微小延迟
+5. 测试可用 `otel_metrics::testutil` (InMemoryMetricExporter)
 
 ### 新增业务 counter
 
 1. 在 `ServerMetrics` 加 atomic 字段 + `on_*` 热路径
-2. `[monitoring]` 在 `on_*` 内 mirror 到 `Metrics` 并 `register`
+2. `[monitoring]` 在 `on_*` 内写入 `OtelMetrics` 对应 instrument
 3. 若 INFO 需暴露: 扩展 `InfoRenderer` 对应 section
 4. 加 `info_alignment` / `observability` 契约测试
 
@@ -250,7 +259,7 @@ redis-cli SLOWLOG GET 10
 
 | 项 | 位置 | 说明 |
 |----|------|------|
-| `monitoring` | `Cargo.toml` | `prometheus`, OTel, hyper; `aidb/monitoring`; 导出 `metrics_server` |
+| `monitoring` | `Cargo.toml` | OTel, hyper, `aidb/monitoring`; 导出 `metrics_server` |
 | `cluster` | 叠加 | `aikv_cluster_redirects_total`, gossip/failover counters |
 | `--metrics-port` / `--metrics-addr` | `main.rs` CLI | 默认 9191 / 127.0.0.1 |
 | `AIKV_JSON_LOG` | env | 默认 true → JSON tracing |
@@ -267,7 +276,7 @@ redis-cli SLOWLOG GET 10
 # 基础 (无 monitoring)
 cargo test -p aikv observability info_alignment info_golden -- --test-threads=1
 
-# Prometheus HTTP + C2 契约
+# OTel testutil + 契约
 cargo test -p aikv --features monitoring observability -- --test-threads=1
 
 # 集群 metrics
@@ -276,7 +285,7 @@ cargo test -p aikv --features cluster gossip_refresh -- --test-threads=1
 
 | 测试 | 覆盖 |
 |------|------|
-| `tests/modules/server/observability.rs` | 连接计数、/metrics、INFO↔Prom 对齐; C2 指标 catalog + OTel/Prom counter 双写 parity |
+| `tests/modules/server/observability.rs` | 连接计数、/health(404 /metrics)、INFO↔atomics; OTel testutil 指标 catalog |
 | `tests/modules/command/info_golden.rs` | Redis 7 P0 字段 |
 | `tests/modules/command/info_alignment.rs` | memory 非 placeholder、stats 字段 |
 | `tests/modules/cluster/observability.rs` | gossip → cluster_messages |
@@ -289,7 +298,8 @@ cargo test -p aikv --features cluster gossip_refresh -- --test-threads=1
 - **`evicted_keys` 恒 0** — 无 maxmemory eviction
 - **无 `CONFIG SET loglevel`** — oldmain `LoggingManager` 已移除
 - **Grafana 面板** 见 AiFactory [`monitor/config/grafana/dashboards/README.md`](../../../AiFactory/monitor/config/grafana/dashboards/README.md) (PromQL: `aikv_*` / `aidb_*`, filter `{service_name="aikv"}`)
-- **C2.6**: 生产 metrics 经 OTLP remote write; `/metrics` 保留 debug; `aikv_db_keys` 已 OTel Observable 导出
+- **C2.6**: 生产 metrics 经 OTLP remote write; `:9191-9196` 仅 `/health`; `aikv_db_keys` 为 OTel labeled gauge
+- **C2.3 Exemplars**: 暂缓; OTel Rust SDK 0.32 仍无 exemplar 采集 — TODO 待 SDK 支持后实现
 - **C3.1 Profiles**: Alloy `pyroscope.ebpf` → 115 Pyroscope; Grafana **AiKv Profiles**; 无应用内 profiling SDK
 - **C3.2 debug symbols**: `[profile.release] debug = 1` (line tables); AiFactory 镜像不 strip — eBPF 火焰图可读函数名
 - **`aidb_*` 不映射 Redis INFO** — 仅 OTLP/metrics
