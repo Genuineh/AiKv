@@ -102,7 +102,7 @@ flowchart TB
 ### 启动 (`main.rs`)
 
 1. `init_logging()` — `RUST_LOG`; JSON 默认开 (`AIKV_JSON_LOG`, 默认 `true`)
-2. `[monitoring]` + `AIKV_OTLP_ENDPOINT` → OTel traces + metrics (`service.name`, `host.name`, `node_id`)
+2. `[monitoring]` + `OTEL_EXPORTER_OTLP_ENDPOINT` (fallback `AIKV_OTLP_ENDPOINT`) → OTel traces + metrics (`service.name`, `host.name`, `node_id`)
 3. `StorageObservation::new()` → `build_storage` → `ServerSharedState::new_with_backup_dir`
 4. `[monitoring]` spawn `MetricsServer` (`--metrics-addr` + `--metrics-port`, 默认 `127.0.0.1:9191`)
 5. `[monitoring]` 15s loop: `refresh_runtime_metrics` + `refresh_process_metrics`
@@ -215,7 +215,7 @@ Golden 字段: `tests/fixtures/redis7_info_p0_fields.txt`.
 
 ```bash
 cargo build --features monitoring
-export AIKV_OTLP_ENDPOINT=http://127.0.0.1:4317
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
 cargo run --features monitoring -- --metrics-addr 0.0.0.0 --metrics-port 9191
 curl -s http://127.0.0.1:9191/health
 ```
@@ -225,7 +225,7 @@ curl -s http://127.0.0.1:9191/health
 ### 启用 OTel trace
 
 ```bash
-export AIKV_OTLP_ENDPOINT=http://127.0.0.1:4317
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
 cargo run --features monitoring
 ```
 
@@ -263,10 +263,12 @@ redis-cli SLOWLOG GET 10
 | `cluster` | 叠加 | `aikv_cluster_redirects_total`, gossip/failover counters |
 | `--metrics-port` / `--metrics-addr` | `main.rs` CLI | 默认 9191 / 127.0.0.1 |
 | `AIKV_JSON_LOG` | env | 默认 true → JSON tracing |
-| `AIKV_OTLP_ENDPOINT` | env | `[monitoring]` traces + metrics OTLP (fallback: `OTEL_EXPORTER_OTLP_ENDPOINT`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | env | `[monitoring]` traces + metrics OTLP (**优先**; fallback: `AIKV_OTLP_ENDPOINT`) |
+| `AIKV_OTLP_ENDPOINT` | env | `OTEL_EXPORTER_OTLP_ENDPOINT` 的 aikv fallback |
 | `AIKV_HOST_LABEL` | env | Resource `host.name` (与 Alloy HOST_LABEL 对齐) |
 | `AIKV_NODE_ID` | env | Resource `node_id` + `service.instance.id` (或 `--cluster-node-id`) |
-| `AIKV_DEPLOYMENT_ENV` | env | Resource `deployment.environment` (fallback: `OTEL_DEPLOYMENT_ENVIRONMENT`) |
+| `OTEL_DEPLOYMENT_ENVIRONMENT` | env | Resource `deployment.environment` (**优先**; fallback: `AIKV_DEPLOYMENT_ENV`) |
+| `AIKV_DEPLOYMENT_ENV` | env | `OTEL_DEPLOYMENT_ENVIRONMENT` 的 aikv fallback |
 | `OTEL_RESOURCE_ATTRIBUTES` | env | 追加 Resource 键值 (`k=v,k2=v2`) |
 | `OTEL_SERVICE_NAME` | env | Resource `service.name` (默认 `aikv`) |
 | `RUST_LOG` | env | tracing filter |
@@ -295,6 +297,8 @@ redis-cli SLOWLOG GET 10
 | `exception.*` | 命令失败时 exception event (`exception.type`, `exception.message`) |
 
 Collector `transform/traces` 为缺失 `service.namespace` 的 trace resource 补 `aikv`.
+
+**Collector tail_sampling** (115 `monitor/.env`): 保留 ERROR; 慢 trace ≥ `TRACE_SLOW_THRESHOLD_MS` (默认 **100ms**, 与 slowlog 对齐); 内部 span (`cmp_*`, `raft_*`, `meta_*`, `tick` 等) 按 `INTERNAL_TRACE_SAMPLE_PCT` (默认 **1%**, 设 **0** 则该 bucket 全 drop). 其余 trace drop. Tempo retention **3d** (`compaction.block_retention: 72h`).
 
 运维 OTLP/Loki 部署流程 → 阶段 2 `DEPLOYMENT.md` (提炼自 wiqun-factory); 旧 env 名 `WIQUN_*` 已改为 `AIKV_*`.
 

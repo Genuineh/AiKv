@@ -18,6 +18,7 @@
 
 ### Changed
 
+- **OTel env 优先级**: `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_DEPLOYMENT_ENVIRONMENT` 优先于 `AIKV_*`; entrypoint 双写 export.
 - **OTel semconv (monitoring)**: Resource (`service.instance.id` fallback, `deployment.environment`, `OTEL_RESOURCE_ATTRIBUTES`); 指标 label 命名空间化; span `otel.kind=server`, `client.address`, exception events; `kv_connection` server span; 双写 `process.*` 标准指标; Grafana PromQL 对齐新 label.
 - **C2 OTel-only metrics (aikv)**: 移除进程内 Prometheus registry 与 `prometheus` 依赖; `ServerMetrics` 经 `with_otel` 单写 `OtelMetrics`; 生产指标仅 OTLP → Collector → Prom remote write; `:9191` 仅 `/health` (与 aidb 对齐).
 - **ISSUE-004**: doc-only 关闭 — MSETNX 刻意不实现 (oldmain 亦无); 移除 `cluster_route` 不可达 `msetnx` 引用; module 已知限制注明.

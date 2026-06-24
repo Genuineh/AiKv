@@ -121,7 +121,10 @@ database/
 |------|-------------|------|
 | `RUST_LOG` | 默认 directive `info` | tracing 过滤 (`EnvFilter`) |
 | `AIKV_JSON_LOG` | 默认 `true` | `true` → JSON 日志; `false` → compact |
-| `AIKV_OTLP_ENDPOINT` | 空则跳过 | `[monitoring]` OTel gRPC exporter |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | 空则跳过 | `[monitoring]` OTel gRPC exporter (**优先**; fallback `AIKV_OTLP_ENDPOINT`) |
+| `OTEL_DEPLOYMENT_ENVIRONMENT` | 空 | Resource `deployment.environment` (**优先**; fallback `AIKV_DEPLOYMENT_ENV`) |
+| `AIKV_OTLP_ENDPOINT` | — | `OTEL_EXPORTER_OTLP_ENDPOINT` 的 aikv fallback |
+| `AIKV_DEPLOYMENT_ENV` | — | `OTEL_DEPLOYMENT_ENVIRONMENT` 的 aikv fallback |
 | `AIKV_CLIENT_ADDR` | 从 rpc host + `--bind` port 推导 | 外部可达 `host:port` → MetaRaft `client_addr` |
 | `AIKV_CLUSTER_ANNOUNCE_MODE` | 默认 `unknown` | `fixed` \| `unknown` — MOVED / CLUSTER SLOTS 通告; 见 [cluster.md](docs/modules/cluster.md) |
 
@@ -257,15 +260,15 @@ export AIKV_CLUSTER_ANNOUNCE_MODE=fixed   # LAN/GUI; 默认 unknown 适合单种
 | Feature | **`monitoring`** 必须启用 |
 | HTTP | `--metrics-addr`:`--metrics-port` (默认 `127.0.0.1:9191`) — 仅 `/health` |
 | 路径 | `/health` (`200 OK`), `/` (说明页) |
-| 生产指标 | **OTLP** (`AIKV_OTLP_ENDPOINT` → Collector → Prom remote write) |
+| 生产指标 | **OTLP** (`OTEL_EXPORTER_OTLP_ENDPOINT` → Collector → Prom remote write) |
 | Tracing | `RUST_LOG`; JSON 默认开 (`AIKV_JSON_LOG`) |
-| OTel | `[monitoring]` + `AIKV_OTLP_ENDPOINT` (gRPC, 如 `http://127.0.0.1:4317`) |
+| OTel | `[monitoring]` + `OTEL_EXPORTER_OTLP_ENDPOINT` (gRPC, 如 `http://127.0.0.1:4317`; fallback `AIKV_OTLP_ENDPOINT`) |
 
 全部 `aikv_*` / `aidb_*` (及 cluster 时 `aidb_raft_*`) 经 OTLP 出口. 指标全表见 [observability-reference.md](docs/modules/observability-reference.md).
 
 ### 外部监控栈对接 (摘要)
 
-1. 构建 `--features cluster,monitoring`; 设 `AIKV_OTLP_ENDPOINT` 指向 115 Collector `:4317`.
+1. 构建 `--features cluster,monitoring`; 设 `OTEL_EXPORTER_OTLP_ENDPOINT` 指向 115 Collector `:4317`.
 2. 115 Prometheus **不 scrape** aikv HTTP; node-exporter / cAdvisor 走经典 scrape.
 3. 验证: `curl -s http://<host>:9191/health`; Prom 存在 `{service_name="aikv"}` 指标.
 4. JSON 日志 (`AIKV_JSON_LOG=true`) 可经 Alloy → Loki; 面板 PromQL 前缀 **`aikv_*`** / **`aidb_*`** (非历史 `wiqun_kv_*`).

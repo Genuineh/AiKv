@@ -88,15 +88,15 @@ pub fn otel_config_from_env(
     #[cfg(feature = "cluster")] cluster_node_id: Option<u64>,
     #[cfg(not(feature = "cluster"))] cluster_node_id: Option<u64>,
 ) -> Option<OtelInitConfig> {
-    let endpoint = env_nonempty("AIKV_OTLP_ENDPOINT")
-        .or_else(|| env_nonempty("OTEL_EXPORTER_OTLP_ENDPOINT"))?;
+    let endpoint = env_nonempty("OTEL_EXPORTER_OTLP_ENDPOINT")
+        .or_else(|| env_nonempty("AIKV_OTLP_ENDPOINT"))?;
     let service_name = env_nonempty("OTEL_SERVICE_NAME").unwrap_or_else(|| "aikv".to_string());
     let host_label = env_nonempty("AIKV_HOST_LABEL");
     let node_id = env_nonempty("AIKV_NODE_ID")
         .and_then(|v| v.parse::<u64>().ok())
         .or(cluster_node_id);
-    let deployment_environment =
-        env_nonempty("AIKV_DEPLOYMENT_ENV").or_else(|| env_nonempty("OTEL_DEPLOYMENT_ENVIRONMENT"));
+    let deployment_environment = env_nonempty("OTEL_DEPLOYMENT_ENVIRONMENT")
+        .or_else(|| env_nonempty("AIKV_DEPLOYMENT_ENV"));
     let extra_resource_attrs = env_nonempty("OTEL_RESOURCE_ATTRIBUTES")
         .map(|raw| parse_resource_attributes(&raw))
         .unwrap_or_default();
