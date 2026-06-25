@@ -219,7 +219,7 @@ WiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障�
 
 ### 为什么 `ServerMetrics` 为 INFO 唯一数据源?
 
-`InfoRenderer` / `CLUSTER INFO` stats 只读 `ServerMetrics` (及 refresh 后 gauge). **OTel `aikv_*` 为 INFO 镜像** (refresh 同步, 语义等价 redis_exporter 解析 INFO). **放弃** INFO 与监控双计数 — invariant 见 [observability.md](docs/modules/observability.md).
+`InfoRenderer` / `CLUSTER INFO` stats 只读 `ServerMetrics` (及 refresh 后 gauge). **OTel `aikv_*` 为 INFO 镜像** — `refresh_runtime_metrics` 经 `info_catalog::sync_otel_from_server_metrics` 对齐 gauge 与 commandstats 不变式 (语义等价 redis_exporter 解析 INFO). **放弃** INFO 与监控双计数 — invariant 见 [observability.md](docs/modules/observability.md).
 
 ### 与 redis_exporter 的关系
 

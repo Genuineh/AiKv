@@ -1,11 +1,11 @@
 # AiKv Redis 对齐: 集群路由 + INFO + OTel
 
 **日期:** 2026-06-25  
-**状态:** Approved — 实现计划 [2026-06-25-redis-alignment-cluster-info-otel.md](../plans/2026-06-25-redis-alignment-cluster-info-otel.md)  
-**版本:** v1.1  
-**关联:** [DESIGN.md](../../../DESIGN.md), `cluster/routing_key.rs`, `command/router.rs`, `server/info.rs`, `docs/modules/observability*.md`
+**状态:** Approved — P0–P2 **Implemented** (P3 sync-only 热路径 optional, 未做)  
+**版本:** v1.2  
+**关联:** [DESIGN.md](../../../DESIGN.md), `cluster/routing_key.rs`, `command/router.rs`, `server/info.rs`, `server/info_catalog.rs`, `docs/modules/observability*.md`
 
-**实现进度:** P0 (集群 MOVED/ASK) + P1 (INFO 8.8 commandstats) **已落地**; P2 (`info_catalog` + OTel sync 对照表) 待做.
+**实现进度:** P0 (集群 MOVED/ASK) + P1 (INFO 8.8 commandstats) + P2 (`info_catalog` sync + mapping 文档) **已落地**; P3 (热路径 OTel 收敛) 可选未做.
 
 **前置决策 (用户确认):**
 

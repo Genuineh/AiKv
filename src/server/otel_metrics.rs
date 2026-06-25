@@ -513,17 +513,19 @@ pub mod testutil {
     static TEST_PROVIDER: OnceLock<Arc<SdkMeterProvider>> = OnceLock::new();
 
     pub fn init_in_memory() -> (InMemoryMetricExporter, Arc<OtelMetrics>) {
-        if TEST_EXPORTER.get().is_none() {
-            let exporter = InMemoryMetricExporter::default();
-            let provider = SdkMeterProvider::builder()
-                .with_periodic_exporter(exporter.clone())
-                .build();
-            global::set_meter_provider(provider.clone());
-            let provider = Arc::new(provider);
-            let _ = TEST_PROVIDER.set(Arc::clone(&provider));
-            let _ = TEST_EXPORTER.set(exporter.clone());
+        if let Some(exporter) = TEST_EXPORTER.get() {
+            if let Some(otel) = super::global_otel().read().unwrap().as_ref() {
+                return (exporter.clone(), Arc::clone(otel));
+            }
         }
-        let exporter = TEST_EXPORTER.get().unwrap().clone();
+        let exporter = InMemoryMetricExporter::default();
+        let provider = SdkMeterProvider::builder()
+            .with_periodic_exporter(exporter.clone())
+            .build();
+        global::set_meter_provider(provider.clone());
+        let provider = Arc::new(provider);
+        let _ = TEST_PROVIDER.set(Arc::clone(&provider));
+        let _ = TEST_EXPORTER.set(exporter.clone());
         let otel = OtelMetrics::install_global(global::meter("aikv"));
         (exporter, otel)
     }
@@ -537,7 +539,9 @@ pub mod testutil {
     pub fn counter_sum(exporter: &InMemoryMetricExporter, name: &str) -> u64 {
         flush();
         let metrics = exporter.get_finished_metrics().unwrap();
-        let mut total = 0u64;
+        use std::collections::HashMap;
+        // Latest cumulative value per attribute set (handles periodic re-export).
+        let mut by_attrs: HashMap<Vec<(String, String)>, u64> = HashMap::new();
         for rm in &metrics {
             for sm in rm.scope_metrics() {
                 for m in sm.metrics() {
@@ -545,17 +549,28 @@ pub mod testutil {
                         continue;
                     }
                     if let AggregatedMetrics::U64(MetricData::Sum(sum)) = m.data() {
-                        total += sum.data_points().map(|dp| dp.value()).sum::<u64>();
+                        for dp in sum.data_points() {
+                            let key: Vec<(String, String)> = dp
+                                .attributes()
+                                .map(|kv| (kv.key.to_string(), kv.value.to_string()))
+                                .collect();
+                            by_attrs.insert(key, dp.value());
+                        }
                     }
                 }
             }
         }
-        total
+        by_attrs.values().sum()
     }
 
     pub fn gauge_value(exporter: &InMemoryMetricExporter, name: &str) -> f64 {
+        observable_gauge_value(exporter, name)
+    }
+
+    pub fn observable_gauge_value(exporter: &InMemoryMetricExporter, name: &str) -> f64 {
         flush();
         let metrics = exporter.get_finished_metrics().unwrap();
+        let mut best = 0.0f64;
         for rm in &metrics {
             for sm in rm.scope_metrics() {
                 for m in sm.metrics() {
@@ -563,19 +578,19 @@ pub mod testutil {
                         continue;
                     }
                     if let AggregatedMetrics::F64(MetricData::Gauge(g)) = m.data() {
-                        if let Some(dp) = g.data_points().last() {
-                            return dp.value();
+                        for dp in g.data_points() {
+                            best = best.max(dp.value());
                         }
                     }
                     if let AggregatedMetrics::I64(MetricData::Gauge(g)) = m.data() {
-                        if let Some(dp) = g.data_points().last() {
-                            return dp.value() as f64;
+                        for dp in g.data_points() {
+                            best = best.max(dp.value() as f64);
                         }
                     }
                 }
             }
         }
-        0.0
+        best
     }
 
     pub fn metric_exists(exporter: &InMemoryMetricExporter, name: &str) -> bool {

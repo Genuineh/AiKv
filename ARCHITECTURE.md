@@ -91,10 +91,12 @@ aikv/src/
 │   ├── config.rs        # ServerSharedState, ConnectionConfig
 │   ├── connection.rs    # 读写循环, HELLO, ATOM 事务, 内联命令
 │   ├── info.rs          # INFO 段渲染
+│   ├── info_catalog.rs  # INFO ↔ OTel refresh sync (feature monitoring)
 │   ├── latency.rs       # LATENCY 直方图
 │   ├── listener.rs      # Server::run accept 循环
 │   ├── metrics.rs       # ServerMetrics
-│   ├── metrics_server.rs  # HTTP /metrics (feature monitoring)
+│   ├── metrics_server.rs  # HTTP /health (feature monitoring)
+│   ├── otel_metrics.rs  # OTLP aikv_* instruments (feature monitoring)
 │   ├── process_metrics.rs
 │   └── slowlog.rs       # 慢查询
 ├── command/             # Redis 命令实现
@@ -145,7 +147,7 @@ aikv/src/
 | [commands-core.md](docs/modules/commands-core.md) | `command/{string~router,...}` | 核心命令, Router, KeyLock |
 | [commands-extended.md](docs/modules/commands-extended.md) | `command/{json,script,blocking,...}` | JSON/Lua/SAVE/INFO/MIGRATE |
 | [cluster.md](docs/modules/cluster.md) | `cluster/*`, router `cluster_route` | MOVED/ASK, CLUSTER 子命令, init wiring |
-| [observability.md](docs/modules/observability.md) | `server/{slowlog,latency,info,metrics*}`, `storage/observation` | SLOWLOG, INFO, `/metrics` |
+| [observability.md](docs/modules/observability.md) | `server/{slowlog,latency,info,info_catalog,metrics*,otel_metrics}`, `storage/observation` | SLOWLOG, INFO, OTLP sync |
 
 AiDb 域文档: [engine](../aidb/docs/modules/engine.md), [engine-storage](../aidb/docs/modules/engine-storage.md), [cluster](../aidb/docs/modules/cluster.md).
 

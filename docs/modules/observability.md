@@ -59,6 +59,7 @@ flowchart TB
 - **冷路径**: `[monitoring]` 下 `main` 每 **15s** 调 `refresh_runtime_metrics` + `refresh_process_metrics`
 - **无 monitoring**: slowlog/latency/INFO/`ServerMetrics` 仍可用; **无** health HTTP 端口、无 OTel layer、**无** 自动 refresh
 - **生产指标**: 仅 **OTLP** → Collector → Prom remote write; **无** 进程内 Prometheus registry, **无** HTTP `/metrics`
+- **INFO ↔ OTel sync**: `[monitoring]` 下 `refresh_runtime_metrics` 末尾调用 `info_catalog::sync_otel_from_server_metrics` — 见 [observability-reference.md](observability-reference.md) §INFO mapping
 - **内部命令**: 含 `.` 的伪命令 (`GOSSIP.tick`, `JSON.get`, `CLUSTER.redirect.moved`) **不** 进 INFO `commandstats`
 
 ## 代码地图
@@ -68,6 +69,7 @@ flowchart TB
 | `server/metrics.rs` | `ServerMetrics` 热路径计数; `[monitoring]` `with_otel` | `on_connect`, `on_command` |
 | `server/otel_metrics.rs` | `OtelMetrics` instruments (`aikv_*`) | `init_global`, `set_db_key_count` |
 | `server/info.rs` | Redis INFO section 渲染 | `InfoRenderer::render`, `redis_mode()` |
+| `server/info_catalog.rs` | INFO ↔ OTel refresh sync | `sync_otel_from_server_metrics` `[monitoring]` |
 | `server/slowlog.rs` | 慢查询环形缓冲 | `SlowQueryLog::record/get` |
 | `server/latency.rs` | 按命令延迟直方图 + 历史 | `LatencyStats::record/snapshot` |
 | `server/config.rs` | `ServerSharedState` 持有上述组件; refresh | `try_register_connection`, `refresh_runtime_metrics` |

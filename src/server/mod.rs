@@ -9,6 +9,8 @@ pub mod metrics;
 pub mod slowlog;
 
 #[cfg(feature = "monitoring")]
+pub mod info_catalog;
+#[cfg(feature = "monitoring")]
 pub mod otel;
 #[cfg(feature = "monitoring")]
 pub mod otel_metrics;

@@ -72,16 +72,59 @@ PromQL label 来自 OTLP 属性: 点号 `.` 通常映射为下划线 `_` (如 `a
 
 ## INFO ↔ `aikv_*` ↔ redis_exporter (Redis 8.8 基线)
 
-对照基准: Redis Open Source **8.8**; 详细 spec → [2026-06-25-redis-alignment-cluster-info-otel-design.md](../superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md).
+对照基准: Redis Open Source **8.8**; 设计 spec → [2026-06-25-redis-alignment-cluster-info-otel-design.md](../superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md).
 
-| INFO 字段 / 段 | `aikv_*` (OTLP) | redis_exporter 近似 |
-|----------------|-----------------|---------------------|
-| `redis_compatible_version:8.8` | (无 gauge; 文档/测试断言) | N/A |
-| `total_commands_processed` | `sum(aikv_commands_total)` | `redis_commands_processed_total` |
-| `cmdstat_get:calls` | `aikv_commands_total{aikv_command_name=GET}` | `redis_commands_total{cmd=get}` |
-| `cmdstat_get:usec` | histogram `aikv_command_duration_seconds` 积分 | exporter 解析 INFO |
-| `cmdstat_get:slowlog_count` | (P2 catalog sync 待定) | 8.8+ INFO 字段 |
-| `cluster_stats_messages_*` | `aikv_gossip_messages_total` 等 | cluster INFO 段 |
-| `aikv_cluster_redirects_total` | 同左 | MOVED/ASK 计数 (非 commandstats) |
+**同步模型 (P2):** `ServerMetrics` 为真源 → `InfoRenderer` 渲染 INFO 文本; `refresh_runtime_metrics` 周期调用 `info_catalog::sync_otel_from_server_metrics` 对齐 gauge 快照与 commandstats 不变式. 热路径仍双写 OTel (P3 可选收敛为 sync-only). 实现: [`info_catalog.rs`](../../src/server/info_catalog.rs).
 
-**语义注意:** MOVED/ASK 响应节点 **不** 增加 `cmdstat_*:calls` (与 Redis 8.8 一致). 集群客户端须 `-c` / cluster-aware SDK — 见 [cluster.md](cluster.md).
+### Stats 段
+
+| INFO 字段 | `aikv_*` (OTLP → PromQL) | redis_exporter (参考) | 备注 |
+|-----------|--------------------------|----------------------|------|
+| `total_commands_processed` | `sum(aikv_commands_total)` | `redis_commands_processed_total` | 仅客户端命令; 不含 MOVED |
+| `total_error_replies` | `sum(aikv_commands_total{aikv_command_status="error"})` | 解析 INFO / 部分 exporter 版本 | |
+| `keyspace_hits` | `aikv_keyspace_hits_total` | `redis_keyspace_hits_total` | |
+| `keyspace_misses` | `aikv_keyspace_misses_total` | `redis_keyspace_misses_total` | |
+| `expired_keys` | `aikv_expired_keys_total` | `redis_expired_keys_total` | 需 refresh drain |
+| `evicted_keys` | `aikv_evicted_keys_total` | `redis_evicted_keys_total` | AiKv 恒 0 |
+| `instantaneous_ops_per_sec` | `aikv_instantaneous_ops_per_sec` | `redis_instantaneous_ops_per_sec` | 15s 采样 |
+| `total_net_input_bytes` | `aikv_net_input_bytes_total` | `redis_net_input_bytes_total` | |
+| `total_net_output_bytes` | `aikv_net_output_bytes_total` | `redis_net_output_bytes_total` | |
+| `rejected_connections` | `aikv_rejected_connections_total` | `redis_rejected_connections_total` | |
+
+### Memory / Clients 段
+
+| INFO 字段 | `aikv_*` | redis_exporter | 备注 |
+|-----------|----------|----------------|------|
+| `used_memory` | `aikv_used_memory_bytes` | `redis_memory_used_bytes` | refresh 后对齐 |
+| `used_memory_peak` | `aikv_used_memory_peak_bytes` | `redis_memory_used_peak_bytes` | |
+| `connected_clients` | `aikv_connected_clients` | `redis_connected_clients` | UpDownCounter |
+| `blocked_clients` | `aikv_blocked_clients` | `redis_blocked_clients` | BLPOP 等 |
+| `maxclients` | — | — | 仅 INFO CONFIG, 无 OTel gauge |
+
+### Commandstats 段 (动态行, Redis 8.8 八字段)
+
+| INFO 子字段 | `aikv_*` | redis_exporter | 备注 |
+|-------------|----------|----------------|------|
+| `cmdstat_<cmd>:calls` | `aikv_commands_total{aikv_command_name=<CMD>}` (ok+error) | `redis_commands_total{cmd=...}` | MOVED/ASK **不计** |
+| `cmdstat_<cmd>:usec` | `aikv_command_duration_seconds` 积分 × 1e6 | INFO 解析 | |
+| `cmdstat_<cmd>:rejected_calls` | (P3 catalog) | 6.2+ | AiKv 字段已输出, 常为 0 |
+| `cmdstat_<cmd>:failed_calls` | `aikv_commands_total{...,status=error}` | INFO 解析 | |
+| `cmdstat_<cmd>:slowlog_count` | `aikv_slow_queries_total{aikv_command_name=<CMD>}` | **8.8+ 可能未解析** | AiKv INFO 先对齐 |
+| `slowlog_time_ms_sum/max` | (P3 catalog) | **8.8+ 可能未解析** | |
+
+### Cluster 段 [cluster]
+
+| INFO / 行为 | `aikv_*` | redis_exporter | 备注 |
+|-------------|----------|----------------|------|
+| MOVED/ASK 响应 | `aikv_cluster_redirects_total{aikv_cluster_redirect_type=moved\|ask}` | 无直接 commandstats | **不** 增加 `cmdstat_*:calls` |
+| `cluster_stats_messages_sent/received` | `aikv_gossip_messages_total` (近似) | cluster INFO | gossip tick |
+| Failover | `aikv_failover_total` | — | |
+
+### Server 元数据
+
+| INFO 字段 | OTel | redis_exporter |
+|-----------|------|----------------|
+| `redis_compatible_version:8.8` | 无 (测试/golden 断言) | N/A |
+| `redis_version` | 无 (AiKv 真实版本) | N/A |
+
+**语义注意:** MOVED/ASK 响应节点 **不** 增加 `cmdstat_*:calls` (Redis 8.8). 集群客户端须 `-c` / cluster-aware SDK — 见 [cluster.md](cluster.md).

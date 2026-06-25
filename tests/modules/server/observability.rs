@@ -434,9 +434,15 @@ fn info_field_u64(text: &str, key: &str) -> Option<u64> {
 async fn info_metrics_consistency_after_commands() {
     use std::sync::Arc;
 
+    use aikv::server::otel_metrics::testutil;
     use aikv::server::{ConnectionConfig, ServerSharedState};
     use aikv::storage::{KvStorage, MemoryEngine, StorageEngineKind, StorageObservation};
     use bytes::Bytes;
+
+    let (exporter, _otel) = testutil::init_in_memory();
+    let pre_hits = testutil::counter_sum(&exporter, "aikv_keyspace_hits_total");
+    let pre_misses = testutil::counter_sum(&exporter, "aikv_keyspace_misses_total");
+    let pre_cmds = testutil::counter_sum(&exporter, "aikv_commands_total");
 
     fn b(s: &str) -> Bytes {
         Bytes::copy_from_slice(s.as_bytes())
@@ -523,6 +529,19 @@ async fn info_metrics_consistency_after_commands() {
     assert_eq!(
         info_field_u64(&stats_text, "instantaneous_ops_per_sec"),
         Some(ops)
+    );
+
+    assert_eq!(
+        testutil::counter_sum(&exporter, "aikv_keyspace_hits_total") - pre_hits,
+        hits
+    );
+    assert_eq!(
+        testutil::counter_sum(&exporter, "aikv_keyspace_misses_total") - pre_misses,
+        misses
+    );
+    assert_eq!(
+        testutil::counter_sum(&exporter, "aikv_commands_total") - pre_cmds,
+        state.metrics().total_commands_processed()
     );
 }
 

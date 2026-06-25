@@ -43,9 +43,9 @@ Redis Client → TCP/RESP/CommandRouter/ClusterRouter
 
 **本项目 spec / 设计:**
 
-- [docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md](docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md) — 集群路由 + INFO 8.8 + OTel 对齐 (**P0/P1 已落地**, P2 进行中)
+- [docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md](docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md) — 集群路由 + INFO 8.8 + OTel 对齐 (**P0–P2 已落地**, P3 可选)
 - [DESIGN.md](DESIGN.md) — 与 Redis 8.8 一致的取舍 (MOVED、INFO 真源、OTLP)
-- [docs/modules/observability-reference.md](docs/modules/observability-reference.md) — INFO ↔ `aikv_*` ↔ redis_exporter 对照 (随 P2 补全)
+- [docs/modules/observability-reference.md](docs/modules/observability-reference.md) — INFO ↔ `aikv_*` ↔ redis_exporter 三列对照 (P2 已补全)
 
 **对比排查建议:** 同场景下并排 `redis-cli INFO` / `INFO commandstats` 与 AiKv; 集群用 `redis-cli -c`; 指标对照 INFO 字段而非臆测 PromQL.
 

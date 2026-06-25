@@ -10,6 +10,8 @@
 
 **Spec:** [../specs/2026-06-25-redis-alignment-cluster-info-otel-design.md](../specs/2026-06-25-redis-alignment-cluster-info-otel-design.md)
 
+**Status:** P0–P2 **Implemented** (2026-06-25); P3 sync-only hot path optional, 未做.
+
 ---
 
 ## File map
@@ -450,7 +452,7 @@ git commit -m "test(info): golden fixture for Redis 8.8 P0 fields"
 - Modify: `src/server/mod.rs`
 - Test: `tests/modules/server/observability.rs`
 
-- [ ] **Step 1: info_catalog.rs 骨架**
+- [x] **Step 1: info_catalog.rs 骨架**
 
 ```rust
 //! INFO P0 字段 ↔ OTel 同步 catalog (Redis 8.8 基线).
@@ -475,7 +477,7 @@ pub fn sync_otel_from_server_metrics(
 }
 ```
 
-- [ ] **Step 2: OtelMetrics 新增 sync 方法**
+- [x] **Step 2: OtelMetrics 新增 sync 方法**
 
 `sync_stats_gauges`: 读 `keyspace_hits`, `used_memory`, `connected_clients` 等 — 与现有 observable 回调数值一致 (可复用 gauge snapshot 写入).
 
@@ -483,7 +485,7 @@ pub fn sync_otel_from_server_metrics(
 
 **P2 最小可行:** 在 `sync_commandstats` 内 debug_assert INFO calls == otel counter; 文档 catalog 表; 热路径保留.
 
-- [ ] **Step 3: refresh_runtime_metrics 末尾**
+- [x] **Step 3: refresh_runtime_metrics 末尾**
 
 ```rust
 #[cfg(feature = "monitoring")]
@@ -495,7 +497,7 @@ crate::server::info_catalog::sync_otel_from_server_metrics(
 
 若 `ServerMetrics` 无 otel getter, 在 `ServerSharedState` 传 otel Arc.
 
-- [ ] **Step 4: 扩展 info_metrics_consistency 测试**
+- [x] **Step 4: 扩展 info_metrics_consistency 测试**
 
 `tests/modules/server/observability.rs` — refresh 后比对 INFO stats 字段与 exporter gauge.
 
@@ -514,7 +516,7 @@ git commit -m "feat(observability): INFO catalog sync hook for OTLP mirrors"
 - Modify: `docs/modules/observability-reference.md`
 - Modify: `docs/modules/observability.md` (一句交叉引用)
 
-- [ ] **Step 1: 增加章节 「INFO field ↔ aikv_* ↔ redis_exporter」**
+- [x] **Step 1: 增加章节 「INFO field ↔ aikv_* ↔ redis_exporter」**
 
 覆盖 P0: stats (hits/misses/commands/net), memory, clients, commandstats 动态行, cluster redirects.
 
@@ -534,7 +536,7 @@ git commit -m "docs: INFO to aikv_* to redis_exporter mapping (Redis 8.8)"
 **Files:**
 - Modify: `docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md` (status → Implemented 各阶段)
 
-- [ ] **Step 1: CI 本地等价**
+- [x] **Step 1: CI 本地等价**
 
 ```bash
 cd /root/code/workspace/aikv
@@ -544,7 +546,7 @@ cargo clippy --all-targets --features cluster
 cargo test --features cluster -- --test-threads=1
 ```
 
-- [ ] **Step 2: 更新 spec status**
+- [x] **Step 2: 更新 spec status**
 
 ```markdown
 **状态:** P0–P2 Implemented (P3 sync-only hot path optional, 未做)

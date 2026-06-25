@@ -101,6 +101,12 @@ impl ServerMetrics {
         self
     }
 
+    /// OTel 镜像句柄 (refresh / info_catalog sync).
+    #[cfg(feature = "monitoring")]
+    pub fn otel_handle(&self) -> Option<&Arc<super::otel_metrics::OtelMetrics>> {
+        self.otel.as_ref()
+    }
+
     pub fn on_connect(&self) {
         self.connections_total.fetch_add(1, Ordering::Relaxed);
         self.connected_clients.fetch_add(1, Ordering::Relaxed);

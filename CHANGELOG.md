@@ -20,6 +20,7 @@
 
 - **集群 MOVED/ASK (breaking)**: 移除服务端透明 TCP 转发 (`forward_command`); 仅返回 `-MOVED`/`-ASK` 字符串. 客户端须 `redis-cli -c` 或 cluster-aware SDK. MOVED/ASK **不计入** commandstats (对齐 Redis 8.8 / redis_exporter).
 - **INFO 8.8 commandstats**: `redis_compatible_version:8.8`; `cmdstat_*` 行含 `rejected_calls`, `failed_calls`, `slowlog_count`, `slowlog_time_ms_sum`, `slowlog_time_ms_max`; golden fixture 迁至 `redis88_info_p0_fields.txt`.
+- **INFO catalog OTel sync (P2)**: `info_catalog::sync_otel_from_server_metrics` 在 `refresh_runtime_metrics` 对齐 gauge 与 commandstats 不变式; 见 `observability-reference.md`.
 - **OTel process CPU (ISSUE-025)**: `process.cpu.time` 按 `cpu.mode=user|system` 拆分; legacy `aikv_process_cpu_milliseconds_total` 保留合计.
 - **OTel env 优先级**: `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_DEPLOYMENT_ENVIRONMENT` 优先于 `AIKV_*`; entrypoint 双写 export.
 - **OTel semconv (monitoring)**: Resource (`service.instance.id` fallback, `deployment.environment`, `OTEL_RESOURCE_ATTRIBUTES`); 指标 label 命名空间化; span `otel.kind=server`, `client.address`, exception events; `kv_connection` server span; 双写 `process.*` 标准指标; Grafana PromQL 对齐新 label.
