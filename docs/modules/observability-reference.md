@@ -40,10 +40,10 @@ PromQL label 来自 OTLP 属性: 点号 `.` 通常映射为下划线 `_` (如 `a
 | `aikv_slow_queries_total` | Counter | `aikv.command.name` | 超阈值 `on_slow_query` |
 | `aikv_uptime_seconds` | Gauge (Observable) | — | refresh |
 | `aikv_process_resident_memory_bytes` | Gauge (Observable) | — | `/proc` RSS (legacy) |
-| `aikv_process_cpu_milliseconds_total` | Counter | — | `/proc` CPU delta (legacy) |
+| `aikv_process_cpu_milliseconds_total` | Counter | — | `/proc` CPU delta 合计 (legacy) |
 | `aikv_process_read_bytes_total` | Counter | — | `/proc/io` (legacy) |
 | `aikv_process_write_bytes_total` | Counter | — | `/proc/io` (legacy) |
-| `process.cpu.time` | Counter | — | 与 legacy CPU 双写 (OTel semconv) |
+| `process.cpu.time` | Counter | **`cpu.mode` Required**: `user`, `system` | Prom: `process_cpu_time_seconds_total`, label `cpu_mode` |
 | `process.memory.usage` | Gauge | `process.memory.state=used` | 与 RSS 双写 |
 | `process.disk.io` | Counter | `disk.io.direction` | 与 read/write 双写 |
 | `aikv_lua_scripts_total` | Counter | — | `on_lua_command` |
@@ -69,3 +69,19 @@ PromQL label 来自 OTLP 属性: 点号 `.` 通常映射为下划线 `_` (如 `a
 | `aidb_raft_rpc_total` | `aidb.raft.rpc.type`, `aidb.raft.rpc.direction` |
 
 `aidb_*` (及 `[cluster]` 时 `aidb_raft_*`) 由 aidb OTel Meter 直写, 同一 OTLP 管道出口; HTTP scrape 已移除 (C2.6).
+
+## INFO ↔ `aikv_*` ↔ redis_exporter (Redis 8.8 基线)
+
+对照基准: Redis Open Source **8.8**; 详细 spec → [2026-06-25-redis-alignment-cluster-info-otel-design.md](../superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md).
+
+| INFO 字段 / 段 | `aikv_*` (OTLP) | redis_exporter 近似 |
+|----------------|-----------------|---------------------|
+| `redis_compatible_version:8.8` | (无 gauge; 文档/测试断言) | N/A |
+| `total_commands_processed` | `sum(aikv_commands_total)` | `redis_commands_processed_total` |
+| `cmdstat_get:calls` | `aikv_commands_total{aikv_command_name=GET}` | `redis_commands_total{cmd=get}` |
+| `cmdstat_get:usec` | histogram `aikv_command_duration_seconds` 积分 | exporter 解析 INFO |
+| `cmdstat_get:slowlog_count` | (P2 catalog sync 待定) | 8.8+ INFO 字段 |
+| `cluster_stats_messages_*` | `aikv_gossip_messages_total` 等 | cluster INFO 段 |
+| `aikv_cluster_redirects_total` | 同左 | MOVED/ASK 计数 (非 commandstats) |
+
+**语义注意:** MOVED/ASK 响应节点 **不** 增加 `cmdstat_*:calls` (与 Redis 8.8 一致). 集群客户端须 `-c` / cluster-aware SDK — 见 [cluster.md](cluster.md).

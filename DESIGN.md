@@ -12,7 +12,7 @@
 | 核心命令、Router、KeyLock | [commands-core.md](docs/modules/commands-core.md) |
 | JSON/Lua/SAVE/INFO/MIGRATE | [commands-extended.md](docs/modules/commands-extended.md) |
 | MOVED/ASK、CLUSTER 子命令 | [cluster.md](docs/modules/cluster.md) |
-| slowlog、INFO、`/metrics` | [observability.md](docs/modules/observability.md) |
+| slowlog、INFO、OTel | [observability.md](docs/modules/observability.md) |
 | LSM、WAL、MetaRaft/MultiRaft | [aidb engine](../aidb/docs/modules/engine.md)、[aidb cluster](../aidb/docs/modules/cluster.md) |
 
 ## 产品形态与横切取舍
@@ -33,7 +33,7 @@ AiKv 是 **bin + lib** 的 Redis RESP 服务 (Tokio async). [AiDb](../aidb/DESIG
 |---------|------|------|
 | (none) | — | 单机二进制无 tonic/OpenRaft/Prometheus 传递依赖 |
 | `cluster` | off | 与 `aidb/cluster` 对齐; CI 主测 `--features cluster` |
-| `monitoring` | off | 避免默认 Prom/OTel 依赖与 scrape 开销 |
+| `monitoring` | off | 避免默认 OTel/health HTTP 依赖与 export 开销 |
 
 ### 与 Redis: 兼容什么, 放弃什么?
 
@@ -172,7 +172,13 @@ WiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障�
 
 ### 为什么 MOVED/ASK 由客户端处理?
 
-Redis Cluster 协议: 服务器返回 `MOVED`/`ASK` 字符串, smart client 重定向. **放弃** 服务端透明代理 (除 `forward_command` 单端点辅助). 客户端可缓存 slot 表.
+与 **Redis 8.x 官方 Cluster 模型** 一致 ([INFO/cluster 语义](https://redis.io/docs/latest/commands/info/)):
+
+- 服务器对非本地 slot 返回 `-MOVED`/`-ASK` 字符串; **不** 代客户端 TCP 转发.
+- smart client (`redis-cli -c` 等) 更新 slot 表并重试.
+- **命令统计** 仅在实际执行节点计入 `commandstats`; MOVED 响应节点 **不** 给该命令加 calls.
+
+**放弃:** 服务端透明代理 (`forward_command`). 历史实现偏离 DESIGN, 见 [docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md](docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md) P0 移除.
 
 ### 为什么 `ClusterRouter::decide` 同步?
 
@@ -200,18 +206,29 @@ Redis Cluster 协议: 服务器返回 `MOVED`/`ASK` 字符串, smart client 重�
 
 ## 可观测性
 
-### 为什么 tracing 始终编译, Prometheus 在 `monitoring` feature?
+**Redis 参考:** Open Source **8.8** (`redis_compatible_version:8.8`; INFO sections + commandstats 行格式). 对齐 spec: [2026-06-25-redis-alignment-cluster-info-otel-design.md](docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md).
+
+### 为什么 tracing 始终编译, OTel 在 `monitoring` feature?
 
 - **tracing**: 命令/连接 span; 未订阅零开销; 与 aidb 一致.
-- **Prometheus + OTel + HTTP `/metrics`**: 可选 feature; 默认无 Prom 依赖.
+- **`monitoring`**: OTel traces + metrics (OTLP push) + HTTP **`/health`** (及 `/`); **无** 进程内 Prometheus `/metrics` scrape.
 
-### 为什么 HTTP `/metrics` 在 aikv 进程?
+### 为什么 RESP 端口不兼 HTTP metrics?
 
-与 [aidb/DESIGN.md](../aidb/DESIGN.md) 对齐: aidb `register_into`; **RESP 端口不能兼 HTTP**. 进程决定 scrape 端点.
+**RESP 端口不能兼 HTTP**. 健康检查走 `--metrics-addr`/`--metrics-port` (默认 9191); 生产业务指标经 **OTLP → Collector → Prom remote write**, 与 [observability.md](docs/modules/observability.md) 一致.
 
 ### 为什么 `ServerMetrics` 为 INFO 唯一数据源?
 
-`InfoRenderer` / `CLUSTER INFO` stats 只读 `ServerMetrics` (及 refresh 后 gauge); Prometheus 为 **镜像**. **放弃** INFO 独立计数公式 — invariant 见 [observability.md](docs/modules/observability.md).
+`InfoRenderer` / `CLUSTER INFO` stats 只读 `ServerMetrics` (及 refresh 后 gauge). **OTel `aikv_*` 为 INFO 镜像** (refresh 同步, 语义等价 redis_exporter 解析 INFO). **放弃** INFO 与监控双计数 — invariant 见 [observability.md](docs/modules/observability.md).
+
+### 与 redis_exporter 的关系
+
+| redis_exporter | AiKV |
+|----------------|------|
+| pull `INFO` → `redis_*` | push OTLP → `aikv_*` |
+| stats 零值字段仍导出 | INFO catalog 固定字段 sync |
+| commandstats 仅有 calls 的命令 | 同 |
+| 指标名 `redis_*` | 指标名 **`aikv_*`**; reference 文档提供对照表 |
 
 ### 为什么 Slowlog 独立于 tracing?
 
@@ -226,7 +243,7 @@ Redis Cluster 协议: 服务器返回 `MOVED`/`ASK` 字符串, smart client 重�
 | 无 `monitoring` | 无自动 refresh | stats 可能滞后 — ISSUE-021 |
 | `evicted_keys` | 恒 0 | 无 maxmemory eviction |
 
-指标前缀: **`aikv_*`** (非历史 `wiqun_kv_*`). `aidb_*` 不进 Redis INFO, 仅 `/metrics`.
+指标前缀: **`aikv_*`** (非历史 `wiqun_kv_*`). `aidb_*` 不进 Redis INFO, 经同一 OTLP 管道导出.
 
 ---
 
@@ -247,11 +264,12 @@ Redis Cluster 协议: 服务器返回 `MOVED`/`ASK` 字符串, smart client 重�
 | 集群 feature | `cfg(cluster)` | 单机精简二进制 | 始终链 cluster |
 | 共识 | aidb MetaRaft/MultiRaft | 强一致 | gossip 共识 |
 | Gossip | 轻量 MetaRaft 刷新 | metrics/telemetry | PING/PONG 决策 |
-| 重定向 | MOVED/ASK 字符串 | smart client 兼容 | 默认透明代理 |
+| 重定向 | MOVED/ASK 字符串 | Redis 8.8 官方; smart client | 服务端透明代理 |
 | 持久化主路径 | aidb Checkpoint | LSM 对齐 | 标准 RDB/AOF |
 | DUMP | 内部 bincode | 与 StoredValue 一致 | Redis DUMP |
-| 指标 | tracing + 可选 Prom | 库/进程分离 | 默认 HTTP scrape |
-| INFO 数据源 | ServerMetrics | INFO↔Prom 一致 | 双计数 |
+| 指标 | tracing + 可选 OTel OTLP | INFO 真源镜像 | Prom `/metrics` scrape |
+| INFO 兼容 | Redis **8.8** commandstats/sections | `redis_compatible_version:8.8` | 7.2 旧基准 |
+| INFO 数据源 | ServerMetrics | INFO↔OTel 一致 | 双计数 |
 
 ---
 

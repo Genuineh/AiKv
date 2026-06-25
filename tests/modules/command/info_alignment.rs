@@ -112,7 +112,7 @@ async fn info_default_section_order_and_fields() {
     expected.push("Cluster");
     expected.push("Keyspace");
     assert_eq!(headers, expected);
-    assert!(text.contains("redis_compatible_version:7.2"));
+    assert!(text.contains("redis_compatible_version:8.8"));
     assert!(text.contains("redis_mode:standalone"));
 }
 
@@ -173,6 +173,8 @@ async fn info_commandstats_reflects_client_commands() {
     assert!(text.contains("cmdstat_set:calls=1,usec="));
     assert!(text.contains("cmdstat_get:calls=1,usec="));
     assert!(text.contains("usec_per_call="));
+    assert!(text.contains("rejected_calls=0,failed_calls=0"));
+    assert!(text.contains("slowlog_count=0,slowlog_time_ms_sum=0,slowlog_time_ms_max=0"));
 }
 
 #[tokio::test]

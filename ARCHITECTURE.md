@@ -129,7 +129,7 @@ aikv/src/
     ├── commands.rs      # CLUSTER 子命令
     ├── connection.rs    # ASKING / READONLY 连接状态
     ├── gossip.rs        # 拓扑刷新
-    ├── forward.rs
+    ├── routing_key.rs    # EVAL/多 key 路由 key 提取
     ├── replication.rs
     ├── announce.rs
     └── config_auto_save.rs

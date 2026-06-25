@@ -38,7 +38,6 @@ flowchart TB
   Conn["Connection\nClusterConnectionState"]
   CR["CommandRouter::cluster_route"]
   DEC["ClusterRouter::decide"]
-  FWD["forward_command"]
   DIS["dispatch_cluster"]
   CSM["CLUSTER_STATE_MGR"]
   MR["aidb MetaRaftNode"]
@@ -48,7 +47,8 @@ flowchart TB
   CLI --> Conn --> CR
   CR --> DEC
   DEC -->|Execute| CDA
-  DEC -->|Moved/Ask| FWD
+  DEC -->|Moved/Ask| CR
+  CR -->|Error MOVED/ASK| CLI
   CR -->|CLUSTER| DIS
   DIS --> MR
   DIS --> MRN
@@ -64,7 +64,7 @@ flowchart TB
 | `cluster/mod.rs` | 模块根; re-export `key_to_slot`/`extract_hash_tag` | `pub mod cluster` |
 | `cluster/state.rs` | 全局单例; leader 缓存; coordinator 注入 | `CLUSTER_STATE_MGR`, `ClusterStateManager` |
 | `cluster/router.rs` | 同步路由决策 | `ClusterRouter::decide`, `check_cross_slot` |
-| `cluster/forward.rs` | 单端点透明 TCP 转发; EVAL 路由 key | `forward_command`, `cluster_routing_key` |
+| `cluster/routing_key.rs` | EVAL/多 key 路由 key 提取 | `cluster_routing_key` |
 | `cluster/connection.rs` | 每连接 asking/readonly | `ClusterConnectionState` |
 | `cluster/announce.rs` | MOVED/SLOTS 客户端地址; 内部转发 TCP 地址 | `AnnounceResolver`, `AnnounceMode` |
 | `cluster/commands.rs` | CLUSTER 子命令 + `dispatch_cluster` | `cluster_meet`, `cluster_set_slot`, … |
@@ -87,7 +87,8 @@ flowchart TB
 - **readonly replica 读**: `READONLY` + `CommandType::Read` + 本地 group → 本地读; 写仍 MOVED 到 leader.
 - **admin 白名单**: `cluster_route` 内命令 (PING/MIGRATE/SCAN/INFO/…) **不** 按 key 路由.
 - **CROSSSLOT**: 多 key 命令 (MGET/MSET/DEL/BLPOP/…) 须同 slot; MSET key 在偶数下标.
-- **Announce unknown 模式**: 客户端见 `:port`; 进程内 `forward_command` 用 `tcp_connect_addr` (rpc host + client port).
+- **Announce unknown 模式**: 客户端见 `:port`; smart client 用 `redis-cli -c` 或 cluster-aware SDK 跟随 MOVED/ASK.
+- **无服务端透明转发**: MOVED/ASK 仅返回 `-MOVED`/`-ASK` 字符串; **不计入** commandstats (对齐 Redis 8.8).
 
 ## 数据流
 
@@ -110,7 +111,6 @@ sequenceDiagram
   participant C as Connection
   participant R as CommandRouter
   participant D as ClusterRouter
-  participant F as forward_command
   participant K as KvStorage
 
   C->>R: execute_with_client(..., cluster_state)
@@ -122,10 +122,9 @@ sequenceDiagram
   else decide Execute
     R->>K: execute_inner
   else Moved/Ask
-    R->>F: TCP 转发 (可选 ASKING)
-    F-->>C: 目标节点响应
+    R-->>C: -MOVED / -ASK (无服务端转发)
   end
-  C->>C: reset_asking
+  C->>C: reset_asking; 跳过 MOVED/ASK commandstats
 ```
 
 ### Slot 迁移 (Kv 侧协调)

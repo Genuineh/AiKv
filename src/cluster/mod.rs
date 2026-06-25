@@ -3,7 +3,7 @@
 pub mod announce;
 pub mod config_auto_save;
 pub mod connection;
-pub mod forward;
+pub mod routing_key;
 pub mod gossip;
 pub mod replication;
 pub mod router;

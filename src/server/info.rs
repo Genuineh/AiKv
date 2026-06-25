@@ -3,7 +3,7 @@
 use crate::server::config::ServerSharedState;
 use crate::storage::{KvStorage, StorageEngineKind};
 
-const REDIS_COMPAT_VERSION: &str = "7.2";
+const REDIS_COMPAT_VERSION: &str = "8.8";
 
 /// 集群是否已初始化 (CLUSTER_STATE_MGR 已 set).
 pub fn is_cluster_initialized() -> bool {
@@ -259,9 +259,16 @@ impl<'a> InfoRenderer<'a> {
                 0.0
             };
             out.push_str(&format!(
-                "cmdstat_{}:calls={calls},usec={},usec_per_call={usec_per_call:.2}\r\n",
+                "cmdstat_{}:calls={calls},usec={},usec_per_call={usec_per_call:.2},\
+                 rejected_calls={},failed_calls={},\
+                 slowlog_count={},slowlog_time_ms_sum={},slowlog_time_ms_max={}\r\n",
                 cmd.to_ascii_lowercase(),
                 totals.usec,
+                totals.rejected,
+                totals.err,
+                totals.slowlog_count,
+                totals.slowlog_time_ms_sum,
+                totals.slowlog_time_ms_max,
             ));
         }
         out

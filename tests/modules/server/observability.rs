@@ -331,12 +331,16 @@ async fn test_runtime_metrics_refresh() {
 #[cfg(all(feature = "monitoring", target_os = "linux"))]
 #[tokio::test]
 async fn process_resident_memory_bytes_in_registry() {
+    use std::sync::Arc;
+
     use aikv::server::otel_metrics::testutil;
     use aikv::server::ServerMetrics;
 
     let (exporter, otel) = testutil::init_in_memory();
-    let server_metrics = ServerMetrics::default().with_otel(otel);
+    let server_metrics = ServerMetrics::default().with_otel(Arc::clone(&otel));
     server_metrics.refresh_process_metrics();
+    server_metrics.refresh_process_metrics();
+    otel.add_process_cpu_delta(0.001, 0.001);
 
     assert!(
         testutil::metric_exists(&exporter, "aikv_process_resident_memory_bytes"),
@@ -345,6 +349,10 @@ async fn process_resident_memory_bytes_in_registry() {
     assert!(
         testutil::gauge_value(&exporter, "aikv_process_resident_memory_bytes") > 0.0,
         "expected RSS gauge > 0"
+    );
+    assert!(
+        testutil::metric_exists(&exporter, "process.cpu.time"),
+        "expected OTel process.cpu.time counter"
     );
 }
 

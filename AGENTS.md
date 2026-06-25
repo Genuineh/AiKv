@@ -28,11 +28,32 @@ Redis Client → TCP/RESP/CommandRouter/ClusterRouter
 
 ## 技术栈与参考
 
+### Redis 8.8 参考标准
+
+排查 AiKv 行为、INFO/可观测性、Cluster 客户端语义时, **以 Redis Open Source 8.8 为对照基准** (非 7.2 旧口径).
+
+| 用途 | 说明 |
+|------|------|
+| **兼容声明** | INFO `redis_compatible_version:8.8` (目标); `redis_version` 仍为 AiKv 真实版本 |
+| **集群** | MOVED/ASK 由 **客户端** 处理 (`redis-cli -c`); **无** 服务端透明转发; 命令统计仅在实际执行节点 |
+| **INFO** | `INFO default` / `INFO all` section 与字段; `commandstats` 含 `rejected_calls`, `failed_calls`, `slowlog_count`, `slowlog_time_ms_sum`, `slowlog_time_ms_max` |
+| **监控镜像** | 生产指标经 OTLP `aikv_*`; 语义对齐 **redis_exporter 解析 INFO** (非引入 `redis_*` 命名) |
+
+**官方文档:** [Redis 8.8 Commands](https://redis.io/docs/latest/commands/) · [INFO](https://redis.io/docs/latest/commands/info/) · [Redis Cluster spec](https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/)
+
+**本项目 spec / 设计:**
+
+- [docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md](docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md) — 集群路由 + INFO 8.8 + OTel 对齐 (**P0/P1 已落地**, P2 进行中)
+- [DESIGN.md](DESIGN.md) — 与 Redis 8.8 一致的取舍 (MOVED、INFO 真源、OTLP)
+- [docs/modules/observability-reference.md](docs/modules/observability-reference.md) — INFO ↔ `aikv_*` ↔ redis_exporter 对照 (随 P2 补全)
+
+**对比排查建议:** 同场景下并排 `redis-cli INFO` / `INFO commandstats` 与 AiKv; 集群用 `redis-cli -c`; 指标对照 INFO 字段而非臆测 PromQL.
+
 | 层级 / 领域 | 本项目 | 可参考 (设计/实现, 非直接依赖) |
 |-------------|--------|--------------------------------|
 | **客户端 RESP** | 自研 `src/protocol/` (RESP2/3, pipeline, 安全边界); **未** 使用 `resp-rs` crate | [Redis RESP 规范](https://redis.io/docs/reference/protocol-spec/); `resp-rs` 的零拷贝/API 设计 |
 | **Redis 类型 → KV** | `StoredValue` / `ValueType` 序列化后写入 AiDb 扁平 key (`{db_index}:{user_key}`) | Kvrocks、Pika/BlackWidow 的编码与兼容性思路 |
-| **Cluster 协议** | MOVED/ASK、16384 slot、CLUSTER 子命令、slot 迁移状态机 | Redis Cluster 行为与客户端约定 |
+| **Cluster 协议** | MOVED/ASK、16384 slot、CLUSTER 子命令、slot 迁移状态机 | **Redis 8.8** Cluster 行为与客户端约定 (见上节) |
 | **Gossip** | **轻量拓扑 tick**: 刷新 leader 路由缓存 + gossip metrics; **NODES 读 MetaRaft**; 故障判定走 MetaRaft, 非 Serf 级 SWIM | Redis Cluster 的 gossip 语义; 完整 Serf/Cassandra 式 gossip 未引入 |
 | **共识 / RPC / LSM** | 委托 **AiDb** (OpenRaft + tonic + 自研 LSM) | 见 AiDb `AGENTS.md` |
 
@@ -79,6 +100,8 @@ cargo test --test commands --features cluster -- --ignored --test-threads=1
 
 - [README.md](README.md)
 - [ARCHITECTURE.md](ARCHITECTURE.md)
+- [DESIGN.md](DESIGN.md)
+- [docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md](docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md)
 - [docs/README.md](docs/README.md) — 按域 WHEN 与 modules 导航
 - [.github/README.md](.github/README.md)
 

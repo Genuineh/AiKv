@@ -16,6 +16,7 @@ const ATTR_COMMAND: &str = "aikv.command.name";
 const ATTR_STATUS: &str = "aikv.command.status";
 const ATTR_DB_INDEX: &str = "aikv.db.index";
 const ATTR_REDIRECT_TYPE: &str = "aikv.cluster.redirect.type";
+const ATTR_CPU_MODE: &str = "cpu.mode";
 
 /// Gauge 类指标快照 (Observable 回调读取).
 #[derive(Default)]
@@ -164,7 +165,7 @@ impl OtelMetrics {
                 .build(),
             process_cpu_milliseconds_total: meter
                 .u64_counter("aikv_process_cpu_milliseconds_total")
-                .with_description("Total process CPU time in milliseconds")
+                .with_description("Total process CPU time in milliseconds (legacy)")
                 .with_unit("ms")
                 .build(),
             process_read_bytes_total: meter
@@ -212,7 +213,7 @@ impl OtelMetrics {
                 .build(),
             process_cpu_time: meter
                 .f64_counter("process.cpu.time")
-                .with_description("Total CPU seconds")
+                .with_description("Total CPU seconds by mode (OTel semconv)")
                 .with_unit("s")
                 .build(),
             process_memory_usage: meter
@@ -365,11 +366,25 @@ impl OtelMetrics {
         );
     }
 
-    pub fn add_process_cpu_ms(&self, delta_ms: u64) {
-        if delta_ms > 0 {
-            self.process_cpu_milliseconds_total.add(delta_ms, &[]);
-            self.process_cpu_time
-                .add(delta_ms as f64 / 1000.0, &[]);
+    pub fn add_process_cpu_delta(&self, user_secs: f64, sys_secs: f64) {
+        if user_secs > 0.0 {
+            self.process_cpu_time.add(
+                user_secs,
+                &[KeyValue::new(ATTR_CPU_MODE, "user")],
+            );
+        }
+        if sys_secs > 0.0 {
+            self.process_cpu_time.add(
+                sys_secs,
+                &[KeyValue::new(ATTR_CPU_MODE, "system")],
+            );
+        }
+        let total_secs = user_secs + sys_secs;
+        if total_secs > 0.0 {
+            let delta_ms = (total_secs * 1000.0).round() as u64;
+            if delta_ms > 0 {
+                self.process_cpu_milliseconds_total.add(delta_ms, &[]);
+            }
         }
     }
 

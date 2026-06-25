@@ -96,6 +96,7 @@ flowchart TB
 - **I3 跟踪排除**: `PING|ECHO|HELLO|QUIT|MONITOR|SLOWLOG` 不经 `record_command_observability`
 - **I4 客户端 commandstats**: `is_client_command` 过滤含 `.` 的内部 key
 - **I5 expired_keys**: 存储 TTL 路径写 `StorageObservation`; 须经 `refresh_runtime_metrics` drain 汇入 `ServerMetrics`
+- **I6 MOVED/ASK**: cluster 重定向响应 **不** 经 `record_command_observability` / Router `on_command` (对齐 Redis 8.8; 见 [cluster.md](cluster.md))
 
 ## 数据流
 
@@ -158,6 +159,8 @@ aikv 进程 (Docker)
 
 `CLUSTER INFO` 文本在 `cluster/commands.rs::cluster_info`; `cluster_state` 按 slot 覆盖与 group leader 动态 ok/fail; gossip 计数读 `ServerMetrics.cluster_messages_*`.
 
+**Redis 8.8 对齐:** `redis_compatible_version:8.8`. `commandstats` 每行 8 字段: `calls`, `usec`, `usec_per_call`, `rejected_calls`, `failed_calls`, `slowlog_count`, `slowlog_time_ms_sum`, `slowlog_time_ms_max`. 仅有执行记录的命令出现在 section 中 (与 redis_exporter 一致).
+
 ### INFO ↔ PromQL (P0 不变式)
 
 INFO 读 `ServerMetrics` atomics; PromQL 读 OTLP 导出的 `aikv_*`. 两者同源, refresh 周期内应对齐:
@@ -171,7 +174,7 @@ INFO 读 `ServerMetrics` atomics; PromQL 读 OTLP 导出的 `aikv_*`. 两者同�
 | `blocked_clients` | `aikv_blocked_clients` | `BlockedClientGuard` (BLPOP 等阻塞等待) |
 | `evicted_keys` | `aikv_evicted_keys_total` | 无 maxmemory eviction, 恒 0 |
 
-Golden 字段: `tests/fixtures/redis7_info_p0_fields.txt`.
+Golden 字段: `tests/fixtures/redis88_info_p0_fields.txt` (Redis 8.8 基准; 旧 `redis7_*` fixture 保留作历史对照).
 
 ## 关键类型与 API
 
@@ -190,6 +193,7 @@ Golden 字段: `tests/fixtures/redis7_info_p0_fields.txt`.
 | `on_connect` / `on_disconnect` | 连接计数 |
 | `on_rejected_connection` | max_clients 拒绝 |
 | `on_command` / `on_command_duration` | 命令 calls/err/usec |
+| `on_slowlog_command` | INFO commandstats `slowlog_*` (超阈值时) |
 | `on_keyspace_hit` / `on_keyspace_miss` | GET 类命中 |
 | `on_gossip_refresh` / `on_failover` / `on_cluster_redirect` | 集群 metrics |
 | `on_json_command` / `on_lua_*` | 扩展命令 |

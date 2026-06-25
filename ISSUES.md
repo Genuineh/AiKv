@@ -38,6 +38,24 @@
 
 <!-- 按 ISSUE-NNN 倒序追加 -->
 
+### ISSUE-025: OTel 无 CPU user/system 拆分
+
+- **状态**: closed
+- **发现于**: Grafana 面板重设计 / `docs/modules/observability-reference.md`
+- **相关 src**: `src/server/process_metrics.rs`, `src/server/otel_metrics.rs`, `src/server/metrics.rs`
+- **现象**: `/proc` 已读 user/sys (INFO cpu 段), OTel 仅导出合计 `aikv_process_cpu_milliseconds_total`
+- **修复**: `process.cpu.time` 按 OTel semconv 写入 `cpu.mode=user|system`; legacy 保留合计 `aikv_process_cpu_milliseconds_total` (无无 label 的 `process.cpu.time`)
+- **影响**: Grafana Service 用 `process_cpu_time_*{cpu_mode="user|system"}`
+
+### ISSUE-024: 无 Redis 风格 mem_fragmentation_ratio
+
+- **状态**: open
+- **发现于**: Grafana 面板重设计 / 旧 Workflow `redis_mem_fragmentation_ratio`
+- **相关 src**: `src/server/info.rs`, `src/server/metrics.rs`
+- **现象**: INFO memory 为简化模型; 无 allocator 碎片率 gauge
+- **影响**: 不 1:1 复刻 Redis 指标; 需单独定义语义 (RSS vs used vs 容器) 再实现
+- **下一步**: 待产品定义; 见 AiFactory `dashboards/README.md` 已知缺口
+
 ### ISSUE-023: Slowlog 默认阈值 100ms vs Redis/oldmain 10ms
 
 - **状态**: closed (doc-only)

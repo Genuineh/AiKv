@@ -239,7 +239,6 @@ impl CommandRouter {
         #[cfg(feature = "cluster")]
         if let Some(state) = conn_state {
             if let Some(result) = self.cluster_route(cmd, args, state).await {
-                record_command_outcome(&self.metrics, cmd, &result);
                 return result;
             }
         }
@@ -338,7 +337,7 @@ impl CommandRouter {
             }
         }
         // Single-key routing (EVAL/EVALSHA use first declared key, not script body).
-        if let Some(key) = crate::cluster::forward::cluster_routing_key(cmd, args) {
+        if let Some(key) = crate::cluster::routing_key::cluster_routing_key(cmd, args) {
             let cmd_type = classify_command(cmd);
             let decision = crate::cluster::router::ClusterRouter::decide(
                 key,
@@ -348,57 +347,17 @@ impl CommandRouter {
             );
             return match decision {
                 crate::cluster::router::RouteDecision::Execute => None,
-                crate::cluster::router::RouteDecision::Moved {
-                    slot,
-                    node_id,
-                    addr,
-                    ..
-                } => {
+                crate::cluster::router::RouteDecision::Moved { slot, addr, .. } => {
                     if let Some(m) = self.metrics.as_ref() {
                         m.on_cluster_redirect("moved");
                     }
-                    let connect_addr = crate::cluster::state::CLUSTER_STATE_MGR
-                        .get()
-                        .and_then(|mgr| {
-                            mgr.announce_resolver.tcp_connect_addr(
-                                node_id,
-                                &addr,
-                                &mgr.meta_raft.get_cluster_meta(),
-                            )
-                        })
-                        .unwrap_or_else(|| addr.clone());
-                    match crate::cluster::forward::forward_command(&connect_addr, false, cmd, args)
-                        .await
-                    {
-                        Ok(resp) => Some(Ok(resp)),
-                        Err(_) => Some(Ok(RespValue::Error(format!("MOVED {slot} {addr}")))),
-                    }
+                    Some(Ok(RespValue::Error(format!("MOVED {slot} {addr}"))))
                 }
-                crate::cluster::router::RouteDecision::Ask {
-                    slot,
-                    node_id,
-                    addr,
-                    ..
-                } => {
+                crate::cluster::router::RouteDecision::Ask { slot, addr, .. } => {
                     if let Some(m) = self.metrics.as_ref() {
                         m.on_cluster_redirect("ask");
                     }
-                    let connect_addr = crate::cluster::state::CLUSTER_STATE_MGR
-                        .get()
-                        .and_then(|mgr| {
-                            mgr.announce_resolver.tcp_connect_addr(
-                                node_id,
-                                &addr,
-                                &mgr.meta_raft.get_cluster_meta(),
-                            )
-                        })
-                        .unwrap_or_else(|| addr.clone());
-                    match crate::cluster::forward::forward_command(&connect_addr, true, cmd, args)
-                        .await
-                    {
-                        Ok(resp) => Some(Ok(resp)),
-                        Err(_) => Some(Ok(RespValue::Error(format!("ASK {slot} {addr}")))),
-                    }
+                    Some(Ok(RespValue::Error(format!("ASK {slot} {addr}"))))
                 }
                 crate::cluster::router::RouteDecision::ClusterDown(msg) => {
                     Some(Ok(RespValue::Error(msg)))

@@ -232,11 +232,13 @@ redis-cli -p 6380 CLUSTER ADDSLOTS $(seq 5461 10922)
 redis-cli -p 6381 CLUSTER ADDSLOTS $(seq 10923 16383)
 ```
 
-Smart client:
+Smart client (**必需** — AiKv 无服务端透明转发, MOVED/ASK 由客户端重试):
 
 ```bash
 redis-cli -c -p 6379
 ```
+
+集群应用须使用 cluster-aware 客户端 (如 `redis-cli -c`, Jedis Cluster, go-redis cluster 模式). 非 cluster 模式客户端收到 MOVED 后不会自动重定向.
 
 MOVED/ASK、failover、slot 迁移语义见 [docs/modules/cluster.md](docs/modules/cluster.md). MetaRaft/MultiRaft 实现见 [aidb cluster.md](../aidb/docs/modules/cluster.md).
 

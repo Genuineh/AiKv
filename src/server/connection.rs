@@ -419,7 +419,13 @@ impl Connection {
                     Ok(resp) => {
                         self.state.set_client_db(self.client_id, self.current_db);
                         if let Some(start) = started {
-                            self.record_command_observability(cmd, &arg_strings, start, true);
+                            #[cfg(feature = "cluster")]
+                            let skip_obs = is_cluster_redirect_response(&resp);
+                            #[cfg(not(feature = "cluster"))]
+                            let skip_obs = false;
+                            if !skip_obs {
+                                self.record_command_observability(cmd, &arg_strings, start, true);
+                            }
                         }
                         self.write_response(resp).await?;
                         // Track key versions for write commands (WATCH support)
@@ -936,8 +942,9 @@ impl Connection {
         self.state
             .metrics()
             .on_command_duration(cmd, duration_us, ok);
-        #[cfg(feature = "monitoring")]
         if duration_us >= self.state.slow_query_log.threshold_us() {
+            self.state.metrics().on_slowlog_command(cmd, duration_us);
+            #[cfg(feature = "monitoring")]
             self.state.metrics().on_slow_query(cmd);
         }
     }
@@ -948,6 +955,11 @@ fn should_track_observability(cmd: &str) -> bool {
         cmd,
         "SLOWLOG" | "MONITOR" | "PING" | "ECHO" | "HELLO" | "QUIT"
     )
+}
+
+#[cfg(feature = "cluster")]
+fn is_cluster_redirect_response(resp: &RespValue) -> bool {
+    matches!(resp, RespValue::Error(msg) if msg.starts_with("MOVED ") || msg.starts_with("ASK "))
 }
 
 fn format_monitor_line(db: usize, cmd: &str, args: &[Bytes]) -> String {

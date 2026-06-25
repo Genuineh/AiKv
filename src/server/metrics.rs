@@ -11,6 +11,10 @@ pub(crate) struct CommandTotals {
     pub(crate) ok: u64,
     pub(crate) err: u64,
     pub(crate) usec: u64,
+    pub(crate) rejected: u64,
+    pub(crate) slowlog_count: u64,
+    pub(crate) slowlog_time_ms_sum: u64,
+    pub(crate) slowlog_time_ms_max: u64,
 }
 
 /// 客户端可见命令统计 (排除 GOSSIP.tick 等内部伪命令).
@@ -41,7 +45,9 @@ pub struct ServerMetrics {
     cluster_messages_received: AtomicU64,
     blocked_clients: AtomicUsize,
     #[cfg(feature = "monitoring")]
-    process_last_cpu_seconds_bits: AtomicU64,
+    process_last_cpu_user_seconds_bits: AtomicU64,
+    #[cfg(feature = "monitoring")]
+    process_last_cpu_sys_seconds_bits: AtomicU64,
     #[cfg(feature = "monitoring")]
     process_last_read_bytes: AtomicU64,
     #[cfg(feature = "monitoring")]
@@ -74,7 +80,9 @@ impl Default for ServerMetrics {
             cluster_messages_received: AtomicU64::new(0),
             blocked_clients: AtomicUsize::new(0),
             #[cfg(feature = "monitoring")]
-            process_last_cpu_seconds_bits: AtomicU64::new(0),
+            process_last_cpu_user_seconds_bits: AtomicU64::new(0),
+            #[cfg(feature = "monitoring")]
+            process_last_cpu_sys_seconds_bits: AtomicU64::new(0),
             #[cfg(feature = "monitoring")]
             process_last_read_bytes: AtomicU64::new(0),
             #[cfg(feature = "monitoring")]
@@ -196,6 +204,16 @@ impl ServerMetrics {
         if let Some(ref otel) = self.otel {
             otel.on_slow_query(command);
         }
+    }
+
+    /// INFO commandstats slowlog_* 字段 (Redis 8.8+).
+    pub fn on_slowlog_command(&self, command: &str, duration_us: u64) {
+        let ms = duration_us / 1000;
+        let mut map = self.commands_total.lock().unwrap();
+        let entry = map.entry(command.to_ascii_uppercase()).or_default();
+        entry.slowlog_count += 1;
+        entry.slowlog_time_ms_sum = entry.slowlog_time_ms_sum.saturating_add(ms);
+        entry.slowlog_time_ms_max = entry.slowlog_time_ms_max.max(ms);
     }
 
     /// 设置 uptime 秒数 (仅 monitoring feature)。
@@ -355,18 +373,32 @@ impl ServerMetrics {
         if let Some(bytes) = crate::server::process_metrics::read_resident_memory_bytes() {
             otel.set_process_rss(bytes);
         }
-        if let Some(cpu_secs) = crate::server::process_metrics::read_cpu_seconds() {
-            let bits = cpu_secs.to_bits();
-            let prev_bits = self
-                .process_last_cpu_seconds_bits
-                .swap(bits, Ordering::Relaxed);
-            if prev_bits != 0 {
-                let prev = f64::from_bits(prev_bits);
-                if cpu_secs > prev {
-                    let delta_ms = ((cpu_secs - prev) * 1000.0).round() as u64;
-                    if delta_ms > 0 {
-                        otel.add_process_cpu_ms(delta_ms);
-                    }
+        if let Some((user_secs, sys_secs)) =
+            crate::server::process_metrics::read_cpu_user_sys_seconds()
+        {
+            let user_bits = user_secs.to_bits();
+            let sys_bits = sys_secs.to_bits();
+            let prev_user = self
+                .process_last_cpu_user_seconds_bits
+                .swap(user_bits, Ordering::Relaxed);
+            let prev_sys = self
+                .process_last_cpu_sys_seconds_bits
+                .swap(sys_bits, Ordering::Relaxed);
+            if prev_user != 0 && prev_sys != 0 {
+                let prev_user_secs = f64::from_bits(prev_user);
+                let prev_sys_secs = f64::from_bits(prev_sys);
+                let user_delta = if user_secs > prev_user_secs {
+                    user_secs - prev_user_secs
+                } else {
+                    0.0
+                };
+                let sys_delta = if sys_secs > prev_sys_secs {
+                    sys_secs - prev_sys_secs
+                } else {
+                    0.0
+                };
+                if user_delta > 0.0 || sys_delta > 0.0 {
+                    otel.add_process_cpu_delta(user_delta, sys_delta);
                 }
             }
         }

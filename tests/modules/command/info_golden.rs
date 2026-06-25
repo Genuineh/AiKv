@@ -2,7 +2,7 @@
 
 use super::helpers::{b, router_with_shared};
 
-const INFO_P0_FIELDS: &str = include_str!("../../fixtures/redis7_info_p0_fields.txt");
+const INFO_P0_FIELDS: &str = include_str!("../../fixtures/redis88_info_p0_fields.txt");
 
 fn info_text(resp: aikv::protocol::RespValue) -> String {
     let aikv::protocol::RespValue::BulkString(Some(text)) = resp else {
@@ -24,7 +24,7 @@ fn info_has_field(text: &str, field: &str) -> bool {
 }
 
 #[tokio::test]
-async fn info_redis7_all_p0_fields_present() {
+async fn info_redis88_all_p0_fields_present() {
     let (router, shared) = router_with_shared();
     let mut db = 0;
 
@@ -47,7 +47,7 @@ async fn info_redis7_all_p0_fields_present() {
         .collect();
     assert!(
         missing.is_empty(),
-        "INFO all missing Redis 7 P0 fields: {}",
+        "INFO all missing Redis 8.8 P0 fields: {}",
         missing.join(", ")
     );
     assert!(text.contains("db0:keys="), "keyspace db0 line missing");
