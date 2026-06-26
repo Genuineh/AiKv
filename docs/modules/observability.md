@@ -307,6 +307,7 @@ redis-cli SLOWLOG GET 10
 | `service.version` | `CARGO_PKG_VERSION` | (resource) |
 | `service.instance.id` | 集群 `node_id` / `AIKV_NODE_ID`; 否则 `{host.name\|localhost}:{tcp_port}` | `service_instance_id` (若 backend 映射) |
 | `host.name` | `AIKV_HOST_LABEL` | `host_name` |
+| `cluster` | `OTEL_RESOURCE_ATTRIBUTES=cluster=<id>`; `up-worker` 按 `AIF_CLUSTER_IDS` 注入 | `cluster` |
 | `node_id` | 同上 (兼容 Grafana 变量) | `node_id` |
 | `deployment.environment` | `AIKV_DEPLOYMENT_ENV` 等 | `deployment_environment` |
 
