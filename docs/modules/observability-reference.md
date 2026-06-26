@@ -163,9 +163,9 @@ Redis 8.8 **键名齐全**; 无子系统真源的字段在 INFO 中以 `0` / `-1
 
 | INFO / 行为 | `aikv_*` | redis_exporter | 备注 |
 |-------------|----------|----------------|------|
-| MOVED/ASK 响应 | `aikv_cluster_redirects_total{aikv_cluster_redirect_type=moved\|ask}` | 无直接 commandstats | **不** 增加 `cmdstat_*:calls` |
-| `cluster_stats_messages_sent/received` | `aikv_gossip_messages_total` (近似) | cluster INFO | gossip tick |
-| Failover | `aikv_failover_total` | — | |
+| MOVED/ASK 响应 | `aikv_cluster_redirects_total{aikv_cluster_redirect_type=moved\|ask}` | 无直接 commandstats | **不** 增加 `cmdstat_*:calls`; 内部键 `CLUSTER.redirect.*` 经 `sync_commandstats` 同步 (大小写不敏感) |
+| `cluster_stats_messages_sent/received` | `aikv_gossip_messages_total` (近似) | cluster INFO | gossip tick; 需 `ClusterStateManager.metrics` |
+| Failover | `aikv_failover_total` | — | 无 failover 事件时 Prom 无 series (Grafana 该线可 No data) |
 
 ### Server 元数据
 

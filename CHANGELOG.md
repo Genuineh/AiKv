@@ -31,6 +31,7 @@
 
 ### Fixed
 
+- **cluster OTel metrics (redirect + gossip)**: `sync_commandstats` 以大小写不敏感前缀匹配内部键 `CLUSTER.redirect.{moved|ask}` → `aikv_cluster_redirects_total`; `init_cluster` 向 `ClusterStateManager` 注入 `ServerMetrics`, 拓扑 tick 写入 `aikv_gossip_messages_total`.
 - **monitoring OTel init**: metrics exporter 失败时 rollback trace provider; 进程退出 `shutdown_otel()` flush.
 - **ISSUE-020**: `blocked_clients` 在 BLPOP/BRPOP/BLMOVE/BZPOP* 阻塞等待期间 +1, 返回时 -1; INFO / `aikv_blocked_clients` 与 `ServerMetrics` 对齐.
 - **ISSUE-005**: `BlockingRegistry` 后台 1s tick 调 `evict_expired` — 清理超时 dead waiter 与 notify 后空槽; 不依赖 `monitoring` feature.

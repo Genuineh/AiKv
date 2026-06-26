@@ -285,7 +285,10 @@ export AIKV_CLUSTER_ANNOUNCE_MODE=fixed   # LAN/GUI; 默认 unknown 适合单种
 | `aikv_commands_total{status="error"}` | 错误命令 | 突增 |
 | `aikv_command_duration_seconds` | 延迟直方图 | p99 关注 |
 | `aikv_slow_queries_total` | 慢查询 | 突增 |
-| `aikv_cluster_redirects_total` | MOVED/ASK | 突增可能路由/迁移问题 |
+| `aikv_cluster_redirects_total` | MOVED/ASK | 突增可能路由/迁移问题; 稳定后接近 0 |
+| `aikv_gossip_messages_total` | 拓扑 tick | 低频 baseline; 无数据查 metrics 注入与 OTel 部署 |
+| `aikv_failover_total` | 主从切换 | 正常应为 0 / 无 series |
+| `aidb_raft_rpc_total` | Raft 复制 RPC | 见 aidb observability; Grafana **Cluster** 行 |
 | `aikv_blocked_clients` | 阻塞客户端 (BLPOP 等) | 突增可能客户端堆积 |
 
 ## 备份与持久化运维

@@ -556,21 +556,20 @@ impl OtelMetrics {
             }
 
             #[cfg(feature = "cluster")]
-            if let Some(redirect_type) = cmd.strip_prefix("CLUSTER.redirect.") {
+            if let Some(redirect_type) = cluster_redirect_type_from_cmd(&cmd) {
                 let prev = snap
                     .cluster_redirects
-                    .get(redirect_type)
+                    .get(&redirect_type)
                     .copied()
                     .unwrap_or(0);
                 let delta = totals.ok.saturating_sub(prev);
                 if delta > 0 {
                     self.cluster_redirects_total.add(
                         delta,
-                        &[KeyValue::new(ATTR_REDIRECT_TYPE, redirect_type.to_string())],
+                        &[KeyValue::new(ATTR_REDIRECT_TYPE, redirect_type.clone())],
                     );
                 }
-                snap.cluster_redirects
-                    .insert(redirect_type.to_string(), totals.ok);
+                snap.cluster_redirects.insert(redirect_type, totals.ok);
             }
         }
     }
@@ -674,10 +673,37 @@ fn counter_delta(current: u64, last: &mut u64) -> u64 {
     delta
 }
 
+#[cfg(feature = "cluster")]
+fn cluster_redirect_type_from_cmd(cmd: &str) -> Option<String> {
+    const PREFIX: &str = "CLUSTER.redirect.";
+    if cmd.len() <= PREFIX.len() || !cmd[..PREFIX.len()].eq_ignore_ascii_case(PREFIX) {
+        return None;
+    }
+    Some(cmd[PREFIX.len()..].to_ascii_lowercase())
+}
+
 fn updown_delta(current: i64, last: &mut i64) -> i64 {
     let delta = current - *last;
     *last = current;
     delta
+}
+
+#[cfg(all(test, feature = "cluster", feature = "monitoring"))]
+mod cluster_redirect_tests {
+    use super::cluster_redirect_type_from_cmd;
+
+    #[test]
+    fn cluster_redirect_type_matches_metrics_key_casing() {
+        assert_eq!(
+            cluster_redirect_type_from_cmd("CLUSTER.redirect.moved").as_deref(),
+            Some("moved")
+        );
+        assert_eq!(
+            cluster_redirect_type_from_cmd("CLUSTER.REDIRECT.ASK").as_deref(),
+            Some("ask")
+        );
+        assert!(cluster_redirect_type_from_cmd("GET").is_none());
+    }
 }
 
 fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {

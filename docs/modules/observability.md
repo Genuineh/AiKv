@@ -274,6 +274,17 @@ redis-cli SLOWLOG GET 10
 4. OTLP 在 refresh sync 前 counter 不变; export 间隔内允许额外延迟 (P3: 最多 ~15s)
 5. 测试可用 `otel_metrics::testutil` (InMemoryMetricExporter)
 
+### 排查集群 metrics (Grafana Cluster 行 No data)
+
+| 指标 | 常见原因 |
+|------|----------|
+| `aikv_cluster_redirects_total` | 稳定集群 + smart client 无 MOVED/ASK (正常); 或旧版 aikv 未修复 OTel 同步 |
+| `aikv_gossip_messages_total` | 旧版未在 `init_cluster` 注入 `metrics`; 或 `$cluster`/`$host`/`$node` 过滤无实例 |
+| `aikv_failover_total` | 未发生 failover → Prom 可能无 series (非 bug) |
+| `aidb_raft_rpc_total` | 副本 node 才有明显流量; 检查变量过滤与 time range |
+
+Grafana 面板 description 与 PromQL 见 AiFactory [`aikv-cluster.json`](../../../AiFactory/monitor/config/grafana/dashboards/aikv-cluster.json).
+
 ### 新增业务 counter
 
 1. 在 `ServerMetrics` 加 atomic 字段 + `on_*` 热路径

@@ -231,6 +231,7 @@ async fn init_cluster(
     config_auto_save_ms: u64,
     cluster_data_port_offset: u16,
     sync_wal: bool,
+    metrics: Arc<aikv::server::metrics::ServerMetrics>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::net::SocketAddr as NetAddr;
 
@@ -425,6 +426,7 @@ async fn init_cluster(
     state_mgr.set_slot_migration_manager(slot_migration);
     state_mgr.data_dir = Some(data_dir.to_path_buf());
     state_mgr.data_port_offset = cluster_data_port_offset;
+    state_mgr.metrics = Some(metrics);
     tracing::info!(
       announce_mode = ?state_mgr.announce_resolver.mode(),
       client_addr = %external_client_addr,
@@ -636,6 +638,7 @@ async fn main() {
             args.config_auto_save_ms,
             args.cluster_data_port_offset,
             args.sync_wal,
+            Arc::clone(&state.metrics),
         )
         .await
         {

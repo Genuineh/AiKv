@@ -99,7 +99,7 @@ flowchart TB
 3. bootstrap (`peers` 空) 或 join peers; 后台 `AIKV_CLIENT_ADDR` → MetaRaft
 4. `Router` + `LifecycleManager` + `MultiRaftNode::start_lifecycle_with_data`
 5. 数据面 gRPC: `rpc_port + cluster_data_port_offset` (默认 +10000)
-6. `MembershipCoordinator` + `SlotMigrationManager` 注入 `ClusterStateManager` → `CLUSTER_STATE_MGR.set`
+6. `MembershipCoordinator` + `SlotMigrationManager` 注入 `ClusterStateManager`; **`state_mgr.metrics = Some(Arc<ServerMetrics>)`** (拓扑 tick → `aikv_gossip_messages_total`) → `CLUSTER_STATE_MGR.set`
 7. 后台: 拓扑 tick (leader 缓存 + metrics)、LeaderChangeWatcher → `apply_observed_group_leader`、`ConfigAutoSave` → `nodes.conf`
 
 `build_storage` (aidb 路径): `StorageAdapter` → `ClusterDataAdapter` → `KvStorageAdapter`.
@@ -273,5 +273,6 @@ cargo test --features cluster -p aikv --test cluster_creategroup
 
 - 调用 `ClusterStateManager::refresh()` 更新本地 group leader 路由缓存
 - 递增 `CLUSTER INFO` 的 `cluster_stats_messages_*` (metrics 语义, 非真实 gossip 报文)
+- OTel: `on_gossip_refresh` → 内部 `GOSSIP.tick` → `sync_counters` → `aikv_gossip_messages_total` (需 `init_cluster` 注入 `ClusterStateManager.metrics`)
 
 `CLUSTER NODES` **直接读 MetaRaft** (`cluster_nodes()`); ping-sent/pong-recv 恒 `0 0` (与 oldmain 一致). link-state 来自 `NodeInfo.status` (`Online`/`Draining` → `connected`, `Offline` → `disconnected`). 故障检测与成员变更以 MetaRaft/Raft 为准.
