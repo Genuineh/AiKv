@@ -74,7 +74,7 @@ PromQL label 来自 OTLP 属性: 点号 `.` 通常映射为下划线 `_` (如 `a
 
 对照基准: Redis Open Source **8.8**; 设计 spec → [2026-06-25-redis-alignment-cluster-info-otel-design.md](../superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md).
 
-**同步模型 (P2):** `ServerMetrics` 为真源 → `InfoRenderer` 渲染 INFO 文本; `refresh_runtime_metrics` 周期调用 `info_catalog::sync_otel_from_server_metrics` 对齐 gauge 快照与 commandstats 不变式. 热路径仍双写 OTel (P3 可选收敛为 sync-only). 实现: [`info_catalog.rs`](../../src/server/info_catalog.rs).
+**同步模型 (P3):** 热路径仅写 `ServerMetrics`; `refresh_runtime_metrics` 周期调用 `info_catalog::sync_otel_from_server_metrics` 读真源、算 delta、写 OTel (OTLP 相对 INFO 最多滞后 ~15s). 实现: [`info_catalog.rs`](../../src/server/info_catalog.rs).
 
 ### Stats 段
 
@@ -90,6 +90,9 @@ PromQL label 来自 OTLP 属性: 点号 `.` 通常映射为下划线 `_` (如 `a
 | `total_net_input_bytes` | `aikv_net_input_bytes_total` | `redis_net_input_bytes_total` | |
 | `total_net_output_bytes` | `aikv_net_output_bytes_total` | `redis_net_output_bytes_total` | |
 | `rejected_connections` | `aikv_rejected_connections_total` | `redis_rejected_connections_total` | |
+| `slowlog_commands_count` | `sum(aikv_slow_queries_total)` (近似) | INFO 解析 (8.8+) | 全局慢命令计数 |
+| `slowlog_commands_time_ms_sum/max` | — | INFO 解析 (8.8+) | INFO 真源; 暂无独立 OTel gauge |
+| `instantaneous_input_kbps` / `instantaneous_output_kbps` | — | INFO 解析 | 15s 滑动窗口; INFO-only |
 
 ### Memory / Clients 段
 
@@ -97,9 +100,53 @@ PromQL label 来自 OTLP 属性: 点号 `.` 通常映射为下划线 `_` (如 `a
 |-----------|----------|----------------|------|
 | `used_memory` | `aikv_used_memory_bytes` | `redis_memory_used_bytes` | refresh 后对齐 |
 | `used_memory_peak` | `aikv_used_memory_peak_bytes` | `redis_memory_used_peak_bytes` | |
+| `used_memory_rss` | `process.memory.usage` / `aikv_process_resident_memory_bytes` | `redis_memory_used_rss_bytes` | `/proc` RSS |
+| `maxmemory` / `maxmemory_policy` | — | INFO 解析 | CONFIG 镜像, 无 OTel gauge |
+| `mem_fragmentation_ratio` | — | INFO 解析 | rss/used 计算 |
 | `connected_clients` | `aikv_connected_clients` | `redis_connected_clients` | UpDownCounter |
 | `blocked_clients` | `aikv_blocked_clients` | `redis_blocked_clients` | BLPOP 等 |
 | `maxclients` | — | — | 仅 INFO CONFIG, 无 OTel gauge |
+
+### Errorstats 段 (Redis 8.8)
+
+| INFO 行 | 语义 | 备注 |
+|---------|------|------|
+| `errorstat_ERR:count=N` | 错误前缀聚合 | AiKv 解析命令错误首 token (非命令名) |
+| `errorstat_WRONGTYPE:count=N` | WRONGTYPE 类错误 | 与 Redis 8.8 一致 |
+
+### AiKV-only INFO 字段 (扩展, 段末)
+
+| 字段 | 段 | 说明 |
+|------|-----|------|
+| `storage_engine` | Server | `memory` / `aidb` |
+| `persistent` | Server | 0/1 |
+| `cluster_stats_messages_sent/received` | Cluster | gossip 计数; OTel `aikv_gossip_messages_total` 近似 |
+
+### Stub 字段策略
+
+Redis 8.8 **键名齐全**; 无子系统真源的字段在 INFO 中以 `0` / `-1` / `ok` 输出. **不因客户端负载变化** — 与「当前无 traffic 所以为 0」不同.
+
+| 类别 | 示例 | 说明 |
+|------|------|------|
+| Pub/Sub / Tracking | `pubsub_*`, `tracking_*`, `watching_clients` | 无 SUBSCRIBE / CLIENT TRACKING 聚合 |
+| AOF / 复制网络 | `aof_*`, `total_net_repl_*`, `sync_*` | 无 AOF; 复制 offset stub |
+| 内存分配器 | `allocator_*`, `mem_clients_*`, `lazyfree_*` | 非 jemalloc 细账 |
+| 事件循环 / ACL | `eventloop_*`, `acl_access_denied_*` | 无等价 eventloop 统计 |
+| Persistence 未发生 | `rdb_last_bgsave_time_sec:-1` | Redis 语义: 从未 BGSAVE |
+
+真源接入后 **只改值, 不改键名**; golden `redis88_info_full_fields.txt` 键名集合不变.
+
+### 运行时真源 (负载可验证)
+
+| INFO 段/字段 | 真源 | 备注 |
+|--------------|------|------|
+| `stats.*` counters | `ServerMetrics` | hits/misses/net/commands |
+| `stats.slowlog_commands_*` | 全局慢命令 | 阈值默认 100ms |
+| `stats.instantaneous_*_kbps` | 网络滑动窗口 | ~15s refresh |
+| `commandstats` / `latencystats` | `ServerMetrics` / `LatencyStats` | MOVED/ASK 不计 |
+| `keyspace` | `KvStorage` | AiDb 下比 `used_memory` 更反映 key 数 |
+| `memory.used_memory_rss` | `/proc` VmRSS | refresh 缓存 |
+| `memory.mem_fragmentation_ratio` | rss/used | ISSUE-024 OTel gauge 仍缺 |
 
 ### Commandstats 段 (动态行, Redis 8.8 八字段)
 

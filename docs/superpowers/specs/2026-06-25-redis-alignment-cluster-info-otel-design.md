@@ -1,11 +1,11 @@
 # AiKv Redis 对齐: 集群路由 + INFO + OTel
 
 **日期:** 2026-06-25  
-**状态:** Approved — P0–P2 **Implemented** (P3 sync-only 热路径 optional, 未做)  
+**状态:** Approved — P0–P3 **Implemented**  
 **版本:** v1.2  
 **关联:** [DESIGN.md](../../../DESIGN.md), `cluster/routing_key.rs`, `command/router.rs`, `server/info.rs`, `server/info_catalog.rs`, `docs/modules/observability*.md`
 
-**实现进度:** P0 (集群 MOVED/ASK) + P1 (INFO 8.8 commandstats) + P2 (`info_catalog` sync + mapping 文档) **已落地**; P3 (热路径 OTel 收敛) 可选未做.
+**实现进度:** P0 (集群 MOVED/ASK) + P1 (INFO 8.8 commandstats) + P2 (`info_catalog` sync) + P3 (热路径 OTel 收敛) + **INFO 8.8 字段级 parity** (多 section, stub 键名, latencystats/threads, fixtures) **已落地**. Stub/真源说明见 `docs/modules/observability.md`.
 
 **前置决策 (用户确认):**
 

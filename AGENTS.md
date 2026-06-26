@@ -36,14 +36,16 @@ Redis Client → TCP/RESP/CommandRouter/ClusterRouter
 |------|------|
 | **兼容声明** | INFO `redis_compatible_version:8.8` (目标); `redis_version` 仍为 AiKv 真实版本 |
 | **集群** | MOVED/ASK 由 **客户端** 处理 (`redis-cli -c`); **无** 服务端透明转发; 命令统计仅在实际执行节点 |
-| **INFO** | `INFO default` / `INFO all` section 与字段; `commandstats` 含 `rejected_calls`, `failed_calls`, `slowlog_count`, `slowlog_time_ms_sum`, `slowlog_time_ms_max` |
+| **INFO** | `INFO default` / `all` / `everything` / 多 section; 8.8 键名 parity (stub `0`/`-1`); commandstats 八字段; errorstats 错误前缀 |
 | **监控镜像** | 生产指标经 OTLP `aikv_*`; 语义对齐 **redis_exporter 解析 INFO** (非引入 `redis_*` 命名) |
+
+字段 stub vs 真源说明: [docs/modules/observability.md](docs/modules/observability.md) §INFO 渲染 · [observability-reference.md](docs/modules/observability-reference.md) §Stub 字段策略
 
 **官方文档:** [Redis 8.8 Commands](https://redis.io/docs/latest/commands/) · [INFO](https://redis.io/docs/latest/commands/info/) · [Redis Cluster spec](https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/)
 
 **本项目 spec / 设计:**
 
-- [docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md](docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md) — 集群路由 + INFO 8.8 + OTel 对齐 (**P0–P2 已落地**, P3 可选)
+- [docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md](docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md) — 集群路由 + INFO 8.8 + OTel 对齐 (**P0–P3 已落地**, INFO 字段级 parity + stub 策略见 observability 文档)
 - [DESIGN.md](DESIGN.md) — 与 Redis 8.8 一致的取舍 (MOVED、INFO 真源、OTLP)
 - [docs/modules/observability-reference.md](docs/modules/observability-reference.md) — INFO ↔ `aikv_*` ↔ redis_exporter 三列对照 (P2 已补全)
 

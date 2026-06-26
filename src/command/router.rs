@@ -747,6 +747,22 @@ fn record_command_outcome(
         return;
     };
     metrics.on_command(cmd, result.is_ok());
+    if let Err(err) = result {
+        if let Some(msg) = error_message_for_stats(err) {
+            metrics.on_error_stat(msg);
+        }
+    }
+}
+
+fn error_message_for_stats(err: &Error) -> Option<&str> {
+    match err {
+        Error::Command(msg) | Error::Protocol(msg) | Error::Storage(msg) | Error::Config(msg) => {
+            Some(msg.as_str())
+        }
+        Error::Io(_) => None,
+        #[cfg(feature = "cluster")]
+        Error::Cluster(msg) => Some(msg.as_str()),
+    }
 }
 
 #[cfg(feature = "monitoring")]

@@ -63,12 +63,56 @@ async fn info_all_extra_sections_present() {
         .unwrap();
 
     let text = info_text(router.execute("INFO", &[b("all")], &mut db).await.unwrap());
-    for section in ["Commandstats", "Errorstats", "Modules"] {
+    for section in ["Commandstats", "Errorstats", "Threads", "Latencystats"] {
         assert!(
             text.contains(&format!("# {section}")),
             "missing section header: {section}"
         );
     }
+}
+
+#[tokio::test]
+async fn info_everything_includes_modules_section() {
+    let (router, _shared) = router_with_shared();
+    let mut db = 0;
+    let text = info_text(
+        router
+            .execute("INFO", &[b("everything")], &mut db)
+            .await
+            .unwrap(),
+    );
+    assert!(text.contains("# Modules"));
+}
+
+const INFO_FULL_FIELDS: &str = include_str!("../../fixtures/redis88_info_full_fields.txt");
+
+#[tokio::test]
+async fn info_full_fields_present_in_everything() {
+    let (router, shared) = router_with_shared();
+    let mut db = 0;
+    router
+        .execute("SET", &[b("golden"), b("v")], &mut db)
+        .await
+        .unwrap();
+    shared.refresh_runtime_metrics().await;
+
+    let text = info_text(
+        router
+            .execute("INFO", &[b("everything")], &mut db)
+            .await
+            .unwrap(),
+    );
+    let fields = parse_field_list(INFO_FULL_FIELDS);
+    let missing: Vec<_> = fields
+        .iter()
+        .filter(|field| !info_has_field(&text, field))
+        .cloned()
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "INFO everything missing Redis 8.8 fields: {}",
+        missing.join(", ")
+    );
 }
 
 #[cfg(feature = "cluster")]

@@ -219,7 +219,7 @@ WiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障�
 
 ### 为什么 `ServerMetrics` 为 INFO 唯一数据源?
 
-`InfoRenderer` / `CLUSTER INFO` stats 只读 `ServerMetrics` (及 refresh 后 gauge). **OTel `aikv_*` 为 INFO 镜像** — `refresh_runtime_metrics` 经 `info_catalog::sync_otel_from_server_metrics` 对齐 gauge 与 commandstats 不变式 (语义等价 redis_exporter 解析 INFO). **放弃** INFO 与监控双计数 — invariant 见 [observability.md](docs/modules/observability.md).
+`InfoRenderer` / `CLUSTER INFO` stats 只读 `ServerMetrics` (及 refresh 后 gauge). **OTel `aikv_*` 为 INFO 镜像** — 热路径仅写 `ServerMetrics`; `refresh_runtime_metrics` 经 `info_catalog::sync_otel_from_server_metrics` delta 同步 OTLP (最多滞后 ~15s). **放弃** INFO 与监控双计数 — invariant 见 [observability.md](docs/modules/observability.md).
 
 ### 与 redis_exporter 的关系
 
@@ -268,7 +268,7 @@ WiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障�
 | 持久化主路径 | aidb Checkpoint | LSM 对齐 | 标准 RDB/AOF |
 | DUMP | 内部 bincode | 与 StoredValue 一致 | Redis DUMP |
 | 指标 | tracing + 可选 OTel OTLP | INFO 真源镜像 | Prom `/metrics` scrape |
-| INFO 兼容 | Redis **8.8** commandstats/sections | `redis_compatible_version:8.8` | 7.2 旧基准 |
+| INFO 兼容 | Redis **8.8** sections + commandstats + 键名 parity | `redis_compatible_version:8.8`; stub 字段见 observability-reference | 7.2 旧基准 / 仅 P0 |
 | INFO 数据源 | ServerMetrics | INFO↔OTel 一致 | 双计数 |
 
 ---

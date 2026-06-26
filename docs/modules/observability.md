@@ -59,15 +59,15 @@ flowchart TB
 - **冷路径**: `[monitoring]` 下 `main` 每 **15s** 调 `refresh_runtime_metrics` + `refresh_process_metrics`
 - **无 monitoring**: slowlog/latency/INFO/`ServerMetrics` 仍可用; **无** health HTTP 端口、无 OTel layer、**无** 自动 refresh
 - **生产指标**: 仅 **OTLP** → Collector → Prom remote write; **无** 进程内 Prometheus registry, **无** HTTP `/metrics`
-- **INFO ↔ OTel sync**: `[monitoring]` 下 `refresh_runtime_metrics` 末尾调用 `info_catalog::sync_otel_from_server_metrics` — 见 [observability-reference.md](observability-reference.md) §INFO mapping
+- **INFO ↔ OTel sync (P3)**: 热路径 **仅** 写 `ServerMetrics`; `[monitoring]` 下 `refresh_runtime_metrics` 末尾经 `info_catalog::sync_otel_from_server_metrics` 读真源、算 delta、写 OTLP 镜像 (相对 INFO 最多滞后 ~15s) — 见 [observability-reference.md](observability-reference.md) §INFO mapping
 - **内部命令**: 含 `.` 的伪命令 (`GOSSIP.tick`, `JSON.get`, `CLUSTER.redirect.moved`) **不** 进 INFO `commandstats`
 
 ## 代码地图
 
 | 路径 | 职责 | 入口 |
 |------|------|------|
-| `server/metrics.rs` | `ServerMetrics` 热路径计数; `[monitoring]` `with_otel` | `on_connect`, `on_command` |
-| `server/otel_metrics.rs` | `OtelMetrics` instruments (`aikv_*`) | `init_global`, `set_db_key_count` |
+| `server/metrics.rs` | `ServerMetrics` 热路径计数 (P3: 不写 OTel) | `on_connect`, `on_command` |
+| `server/otel_metrics.rs` | `OtelMetrics` instruments; refresh delta sync | `init_global`, `sync_counters` |
 | `server/info.rs` | Redis INFO section 渲染 | `InfoRenderer::render`, `redis_mode()` |
 | `server/info_catalog.rs` | INFO ↔ OTel refresh sync | `sync_otel_from_server_metrics` `[monitoring]` |
 | `server/slowlog.rs` | 慢查询环形缓冲 | `SlowQueryLog::record/get` |
@@ -132,7 +132,7 @@ sequenceDiagram
 
 ### 周期 refresh (`refresh_runtime_metrics`)
 
-- `set_uptime_secs`, `sample_instantaneous_ops`, `sync_redis_aligned_gauges`
+- `set_uptime_secs`, `sample_instantaneous_ops`, `refresh_cached_process_info`, `sync_redis_aligned_gauges`
 - `storage.db_key_counts` → `set_db_key_count`
 - `storage.memory_usage_bytes` → `set_memory_bytes`
 - `storage_observation.drain_expired_keys` → `record_expired_keys`
@@ -152,16 +152,36 @@ aikv 进程 (Docker)
 
 | 请求 | 行为 |
 |------|------|
-| `INFO` | default: server → clients → memory → persistence → stats → replication → cpu → [cluster] → keyspace |
-| `INFO all` | default + commandstats + errorstats + modules |
-| `INFO <section>` | 单 section, 大小写敏感 (Redis 段名) |
+| `INFO` / `INFO default` | server → clients → memory → persistence → stats → replication → cpu → [cluster] → keyspace |
+| `INFO all` | default + commandstats + errorstats + **threads** + **latencystats** |
+| `INFO everything` | all + **modules** |
+| `INFO section [section ...]` | Redis 7.0+ 多段拼接 (未知 section 跳过) |
 | `INFO nosuch` | 空 bulk string (非 ERR) |
 
-`memory`: 优先 `KvStorage::memory_usage_bytes()`; fallback `ServerMetrics.used_memory_bytes`.
+`memory`: 优先 `KvStorage::memory_usage_bytes()`; fallback `ServerMetrics.used_memory_bytes()`. **AiDb 引擎**下该值为 memtable + block cache 近似, 不等于全库 key 占用 — 看 `INFO keyspace` 与 `used_memory_rss` (`/proc`).
 
 `CLUSTER INFO` 文本在 `cluster/commands.rs::cluster_info`; `cluster_state` 按 slot 覆盖与 group leader 动态 ok/fail; gossip 计数读 `ServerMetrics.cluster_messages_*`.
 
-**Redis 8.8 对齐:** `redis_compatible_version:8.8`. `commandstats` 每行 8 字段: `calls`, `usec`, `usec_per_call`, `rejected_calls`, `failed_calls`, `slowlog_count`, `slowlog_time_ms_sum`, `slowlog_time_ms_max`. 仅有执行记录的命令出现在 section 中 (与 redis_exporter 一致).
+**Redis 8.8 对齐:** `redis_compatible_version:8.8`. `commandstats` 每行 8 字段 (见下). 仅有执行记录的命令出现在 section 中 (与 redis_exporter 一致).
+
+#### 字段三类 (读 INFO 时)
+
+| 类型 | 含义 | 负载后是否变化 | 示例 |
+|------|------|----------------|------|
+| **Stub** | 键名对齐, 无子系统 | 否, 恒 `0`/`-1`/`ok` | `pubsub_*`, `aof_*`, `allocator_*`, `eventloop_*`, `tracking_*` |
+| **配置/未启用** | 有真源, 当前值为零 | 改 CONFIG 才变 | `maxmemory:0`, `aof_enabled:0` |
+| **运行时真源** | ServerMetrics / storage / `/proc` | 是 | `keyspace_hits`, `cmdstat_*`, `db0:keys`, `used_memory_rss`, `latency_percentiles_*` |
+
+`instantaneous_ops_per_sec` / `instantaneous_*_kbps` 依赖 `refresh_runtime_metrics` (~15s) 滑动采样; 短 burst 可能仍为 0. `slowlog_commands_*` (stats 段) 仅统计 **超过 slowlog 阈值 (默认 100ms)** 的命令.
+
+Golden: `tests/fixtures/redis88_info_p0_fields.txt` (INFO all 核心字段); `redis88_info_full_fields.txt` (INFO everything 全键名).
+
+#### 待核实 (暂不修)
+
+- **errorstats**: 设计为错误前缀 (`errorstat_WRONGTYPE`); 部分命令失败若走 RESP `-ERR` 成功响应路径, 可能未调用 `on_error_stat` (线上常见仅见历史 `errorstat_ERR`).
+- **used_memory vs keyspace**: 集群 AiDb 下二者不必同步上涨; 验收数据集规模以 keyspace 为准.
+
+**Redis 8.8 commandstats 八字段:** `calls`, `usec`, `usec_per_call`, `rejected_calls`, `failed_calls`, `slowlog_count`, `slowlog_time_ms_sum`, `slowlog_time_ms_max`.
 
 ### INFO ↔ PromQL (P0 不变式)
 
@@ -176,7 +196,7 @@ INFO 读 `ServerMetrics` atomics; PromQL 读 OTLP 导出的 `aikv_*`. 两者同�
 | `blocked_clients` | `aikv_blocked_clients` | `BlockedClientGuard` (BLPOP 等阻塞等待) |
 | `evicted_keys` | `aikv_evicted_keys_total` | 无 maxmemory eviction, 恒 0 |
 
-Golden 字段: `tests/fixtures/redis88_info_p0_fields.txt` (Redis 8.8 基准; 旧 `redis7_*` fixture 保留作历史对照).
+Golden 字段: `tests/fixtures/redis88_info_p0_fields.txt` (P0 / INFO all); 全量键名: `tests/fixtures/redis88_info_full_fields.txt` (INFO everything). Stub 与真源对照见上文 **字段三类** 与 [observability-reference.md](observability-reference.md#stub-字段策略).
 
 ## 关键类型与 API
 
@@ -251,15 +271,15 @@ redis-cli SLOWLOG GET 10
 1. 确认 `--features monitoring` 且后台 15s refresh 在跑
 2. 对 memory/expired/ops: 手动 `refresh_runtime_metrics` 后再比 (测试里常用)
 3. 确认比的是 **同名** 字段 (INFO Redis 名 vs `aikv_*`)
-4. OTLP export 间隔内 counter 允许微小延迟
+4. OTLP 在 refresh sync 前 counter 不变; export 间隔内允许额外延迟 (P3: 最多 ~15s)
 5. 测试可用 `otel_metrics::testutil` (InMemoryMetricExporter)
 
 ### 新增业务 counter
 
 1. 在 `ServerMetrics` 加 atomic 字段 + `on_*` 热路径
-2. `[monitoring]` 在 `on_*` 内写入 `OtelMetrics` 对应 instrument
+2. `[monitoring]` 在 `OtelMetrics::sync_counters` / `sync_commandstats` 增加对应 delta 字段 (勿在热路径写 OTel)
 3. 若 INFO 需暴露: 扩展 `InfoRenderer` 对应 section
-4. 加 `info_alignment` / `observability` 契约测试
+4. 加 `info_alignment` / `observability` 契约测试 (refresh 后再 assert OTLP)
 
 ## 配置与 feature flags
 

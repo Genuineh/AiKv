@@ -1,4 +1,8 @@
 //! 连接级指标 (Phase 8: Atomic; monitoring 下 OTel 导出)
+//!
+//! INFO 真源: 热路径写本结构体; `InfoRenderer` 只读; OTLP 经 `info_catalog` refresh delta 同步.
+//! `error_stats` 供 INFO errorstats (错误前缀, 非命令名). 全局 `slowlog_commands_*` 与逐命令
+//! commandstats `slowlog_*` 字段并存 (Redis 8.8 stats + commandstats 语义).
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -44,6 +48,19 @@ pub struct ServerMetrics {
     cluster_messages_sent: AtomicU64,
     cluster_messages_received: AtomicU64,
     blocked_clients: AtomicUsize,
+    uptime_secs: AtomicU64,
+    cached_rss_bytes: AtomicU64,
+    cached_total_system_memory: AtomicU64,
+    net_last_input_bytes: AtomicU64,
+    net_last_output_bytes: AtomicU64,
+    net_last_sample_secs: AtomicU64,
+    instantaneous_input_kbps: AtomicU64,
+    instantaneous_output_kbps: AtomicU64,
+    slowlog_commands_count: AtomicU64,
+    slowlog_commands_time_ms_sum: AtomicU64,
+    slowlog_commands_time_ms_max: AtomicU64,
+    error_stats: Mutex<HashMap<String, u64>>,
+    db_key_counts: Mutex<HashMap<usize, u64>>,
     #[cfg(feature = "monitoring")]
     process_last_cpu_user_seconds_bits: AtomicU64,
     #[cfg(feature = "monitoring")]
@@ -79,6 +96,19 @@ impl Default for ServerMetrics {
             cluster_messages_sent: AtomicU64::new(0),
             cluster_messages_received: AtomicU64::new(0),
             blocked_clients: AtomicUsize::new(0),
+            uptime_secs: AtomicU64::new(0),
+            cached_rss_bytes: AtomicU64::new(0),
+            cached_total_system_memory: AtomicU64::new(0),
+            net_last_input_bytes: AtomicU64::new(0),
+            net_last_output_bytes: AtomicU64::new(0),
+            net_last_sample_secs: AtomicU64::new(0),
+            instantaneous_input_kbps: AtomicU64::new(0),
+            instantaneous_output_kbps: AtomicU64::new(0),
+            slowlog_commands_count: AtomicU64::new(0),
+            slowlog_commands_time_ms_sum: AtomicU64::new(0),
+            slowlog_commands_time_ms_max: AtomicU64::new(0),
+            error_stats: Mutex::new(HashMap::new()),
+            db_key_counts: Mutex::new(HashMap::new()),
             #[cfg(feature = "monitoring")]
             process_last_cpu_user_seconds_bits: AtomicU64::new(0),
             #[cfg(feature = "monitoring")]
@@ -110,36 +140,20 @@ impl ServerMetrics {
     pub fn on_connect(&self) {
         self.connections_total.fetch_add(1, Ordering::Relaxed);
         self.connected_clients.fetch_add(1, Ordering::Relaxed);
-        #[cfg(feature = "monitoring")]
-        if let Some(ref otel) = self.otel {
-            otel.on_connect();
-        }
     }
 
     pub fn on_disconnect(&self) {
         self.connected_clients.fetch_sub(1, Ordering::Relaxed);
-        #[cfg(feature = "monitoring")]
-        if let Some(ref otel) = self.otel {
-            otel.on_disconnect();
-        }
     }
 
     /// 客户端进入阻塞命令等待 (BLPOP 等).
     pub fn on_client_blocked(&self) {
         self.blocked_clients.fetch_add(1, Ordering::Relaxed);
-        #[cfg(feature = "monitoring")]
-        if let Some(ref otel) = self.otel {
-            otel.on_client_blocked();
-        }
     }
 
     /// 客户端离开阻塞命令等待.
     pub fn on_client_unblocked(&self) {
         self.blocked_clients.fetch_sub(1, Ordering::Relaxed);
-        #[cfg(feature = "monitoring")]
-        if let Some(ref otel) = self.otel {
-            otel.on_client_unblocked();
-        }
     }
 
     pub fn on_command(&self, command: &str, ok: bool) {
@@ -150,30 +164,41 @@ impl ServerMetrics {
         } else {
             entry.err += 1;
         }
-        #[cfg(feature = "monitoring")]
-        if let Some(ref otel) = self.otel {
-            otel.on_command(command, ok);
-        }
+    }
+
+    /// 解析 Redis 错误前缀 (首 token), 如 `ERR`, `WRONGTYPE`.
+    pub fn parse_error_prefix(message: &str) -> &str {
+        message.split_whitespace().next().unwrap_or("ERR")
+    }
+
+    /// INFO errorstats 真源: 按错误前缀聚合.
+    pub fn on_error_stat(&self, message: &str) {
+        let prefix = Self::parse_error_prefix(message).to_ascii_uppercase();
+        let mut map = self.error_stats.lock().unwrap();
+        *map.entry(prefix).or_default() += 1;
+    }
+
+    pub fn error_stat_totals(&self) -> Vec<(String, u64)> {
+        let mut out: Vec<_> = self
+            .error_stats
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out
     }
 
     pub fn on_lua_command(&self, command: &str, ok: bool) {
         let key = format!("LUA.{}", command.to_ascii_lowercase());
         self.on_command(&key, ok);
-        #[cfg(feature = "monitoring")]
-        if let Some(ref otel) = self.otel {
-            otel.on_lua_scripts();
-        }
     }
 
     pub fn on_lua_execution(&self, duration_us: u64) {
         self.lua_execution_duration_us
             .fetch_add(duration_us, Ordering::Relaxed);
         self.lua_execution_count.fetch_add(1, Ordering::Relaxed);
-        #[cfg(feature = "monitoring")]
-        if let Some(ref otel) = self.otel {
-            let secs = duration_us as f64 / 1_000_000.0;
-            otel.on_lua_execution(secs);
-        }
     }
 
     pub fn lua_execution_duration_us(&self) -> u64 {
@@ -189,28 +214,16 @@ impl ServerMetrics {
         self.command_ok_count(&key)
     }
 
-    /// 记录命令耗时 (微秒); INFO commandstats 与 OTel histogram 共用.
+    /// 记录命令耗时 (微秒); INFO commandstats 真源.
     pub fn on_command_duration(&self, command: &str, duration_us: u64, ok: bool) {
-        {
-            let mut map = self.commands_total.lock().unwrap();
-            let entry = map.entry(command.to_ascii_uppercase()).or_default();
-            entry.usec = entry.usec.saturating_add(duration_us);
-        }
-        #[cfg(not(feature = "monitoring"))]
+        let mut map = self.commands_total.lock().unwrap();
+        let entry = map.entry(command.to_ascii_uppercase()).or_default();
+        entry.usec = entry.usec.saturating_add(duration_us);
         let _ = ok;
-        #[cfg(feature = "monitoring")]
-        if let Some(ref otel) = self.otel {
-            otel.on_command_duration(command, duration_us, ok);
-        }
     }
 
-    /// 记录慢查询到 OTel counter (仅 monitoring feature)。
-    #[cfg(feature = "monitoring")]
-    pub fn on_slow_query(&self, command: &str) {
-        if let Some(ref otel) = self.otel {
-            otel.on_slow_query(command);
-        }
-    }
+    /// 记录慢查询 (INFO commandstats slowlog_* 由 on_slowlog_command 写入).
+    pub fn on_slow_query(&self, _command: &str) {}
 
     /// INFO commandstats slowlog_* 字段 (Redis 8.8+).
     pub fn on_slowlog_command(&self, command: &str, duration_us: u64) {
@@ -220,6 +233,21 @@ impl ServerMetrics {
         entry.slowlog_count += 1;
         entry.slowlog_time_ms_sum = entry.slowlog_time_ms_sum.saturating_add(ms);
         entry.slowlog_time_ms_max = entry.slowlog_time_ms_max.max(ms);
+        self.slowlog_commands_count.fetch_add(1, Ordering::Relaxed);
+        self.slowlog_commands_time_ms_sum
+            .fetch_add(ms, Ordering::Relaxed);
+        let mut current_max = self.slowlog_commands_time_ms_max.load(Ordering::Relaxed);
+        while ms > current_max {
+            match self.slowlog_commands_time_ms_max.compare_exchange(
+                current_max,
+                ms,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(v) => current_max = v,
+            }
+        }
     }
 
     /// 设置 uptime 秒数 (仅 monitoring feature)。
@@ -277,9 +305,7 @@ impl ServerMetrics {
 
     #[cfg(feature = "monitoring")]
     pub fn set_uptime_secs(&self, secs: u64) {
-        if let Some(ref otel) = self.otel {
-            otel.set_uptime_secs(secs);
-        }
+        self.uptime_secs.store(secs, Ordering::Relaxed);
     }
 
     /// 设置当前内存使用量 (仅 monitoring feature)。
@@ -291,28 +317,18 @@ impl ServerMetrics {
             self.used_memory_peak_bytes
                 .store(current, Ordering::Relaxed);
         }
-        if let Some(ref otel) = self.otel {
-            let peak = self.used_memory_peak_bytes.load(Ordering::Relaxed);
-            otel.set_memory_bytes(current, peak);
-        }
     }
 
     /// 记录过期 key 驱逐 (仅 monitoring feature)。
     #[cfg(feature = "monitoring")]
     pub fn on_expired_key(&self) {
         self.expired_keys.fetch_add(1, Ordering::Relaxed);
-        if let Some(ref otel) = self.otel {
-            otel.on_expired_key();
-        }
     }
 
     /// 记录被拒绝的连接 (仅 monitoring feature)。
     #[cfg(feature = "monitoring")]
     pub fn on_rejected_connection(&self) {
         self.rejected_connections.fetch_add(1, Ordering::Relaxed);
-        if let Some(ref otel) = self.otel {
-            otel.on_rejected_connection();
-        }
     }
 
     /// 批量记录过期 key 驱逐 (仅 monitoring feature)。
@@ -322,9 +338,6 @@ impl ServerMetrics {
             return;
         }
         self.expired_keys.fetch_add(count, Ordering::Relaxed);
-        if let Some(ref otel) = self.otel {
-            otel.record_expired_keys(count);
-        }
     }
 
     #[cfg(feature = "monitoring")]
@@ -343,19 +356,79 @@ impl ServerMetrics {
         if prev_time > 0 && now > prev_time {
             let ops = (cmds.saturating_sub(prev_cmds)) / (now - prev_time);
             self.instantaneous_ops_per_sec.store(ops, Ordering::Relaxed);
-            #[cfg(feature = "monitoring")]
-            if let Some(ref otel) = self.otel {
-                otel.set_instantaneous_ops(ops);
-            }
         }
+        self.sample_instantaneous_net_kbps_inner(now);
+    }
+
+    fn sample_instantaneous_net_kbps_inner(&self, now: u64) {
+        let input = self.net_input_bytes.load(Ordering::Relaxed);
+        let output = self.net_output_bytes.load(Ordering::Relaxed);
+        let prev_input = self.net_last_input_bytes.swap(input, Ordering::Relaxed);
+        let prev_output = self.net_last_output_bytes.swap(output, Ordering::Relaxed);
+        let prev_time = self.net_last_sample_secs.swap(now, Ordering::Relaxed);
+        if prev_time > 0 && now > prev_time {
+            let secs = now - prev_time;
+            let in_kbps = (input.saturating_sub(prev_input) * 8) / (secs * 1024);
+            let out_kbps = (output.saturating_sub(prev_output) * 8) / (secs * 1024);
+            self.instantaneous_input_kbps.store(in_kbps, Ordering::Relaxed);
+            self.instantaneous_output_kbps
+                .store(out_kbps, Ordering::Relaxed);
+        }
+    }
+
+    /// 缓存进程 RSS / 系统内存 (INFO memory 真源).
+    pub fn refresh_cached_process_info(&self) {
+        if let Some(bytes) = crate::server::process_metrics::read_resident_memory_bytes() {
+            self.cached_rss_bytes.store(bytes, Ordering::Relaxed);
+        }
+        if let Some(bytes) = crate::server::process_metrics::read_total_system_memory_bytes() {
+            self.cached_total_system_memory
+                .store(bytes, Ordering::Relaxed);
+        }
+    }
+
+    pub fn cached_rss_bytes(&self) -> u64 {
+        let cached = self.cached_rss_bytes.load(Ordering::Relaxed);
+        if cached > 0 {
+            return cached;
+        }
+        crate::server::process_metrics::read_resident_memory_bytes()
+            .unwrap_or(0)
+    }
+
+    pub fn cached_total_system_memory_bytes(&self) -> u64 {
+        let cached = self.cached_total_system_memory.load(Ordering::Relaxed);
+        if cached > 0 {
+            return cached;
+        }
+        crate::server::process_metrics::read_total_system_memory_bytes()
+            .unwrap_or(0)
+    }
+
+    pub fn instantaneous_input_kbps(&self) -> u64 {
+        self.instantaneous_input_kbps.load(Ordering::Relaxed)
+    }
+
+    pub fn instantaneous_output_kbps(&self) -> u64 {
+        self.instantaneous_output_kbps.load(Ordering::Relaxed)
+    }
+
+    pub fn slowlog_commands_count(&self) -> u64 {
+        self.slowlog_commands_count.load(Ordering::Relaxed)
+    }
+
+    pub fn slowlog_commands_time_ms_sum(&self) -> u64 {
+        self.slowlog_commands_time_ms_sum.load(Ordering::Relaxed)
+    }
+
+    pub fn slowlog_commands_time_ms_max(&self) -> u64 {
+        self.slowlog_commands_time_ms_max.load(Ordering::Relaxed)
     }
 
     /// 更新逻辑 DB key 数量 (仅 monitoring feature)。
     #[cfg(feature = "monitoring")]
     pub fn set_db_key_count(&self, db: usize, count: u64) {
-        if let Some(ref otel) = self.otel {
-            otel.set_db_key_count(db, count);
-        }
+        self.db_key_counts.lock().unwrap().insert(db, count);
     }
 
     /// 记录网络入站字节。
@@ -365,9 +438,6 @@ impl ServerMetrics {
             return;
         }
         self.net_input_bytes.fetch_add(bytes, Ordering::Relaxed);
-        if let Some(ref otel) = self.otel {
-            otel.on_net_input_bytes(bytes);
-        }
     }
 
     /// 刷新进程 RSS / CPU / 磁盘 IO 指标 (仅 monitoring feature)。
@@ -433,9 +503,6 @@ impl ServerMetrics {
             return;
         }
         self.net_output_bytes.fetch_add(bytes, Ordering::Relaxed);
-        if let Some(ref otel) = self.otel {
-            otel.on_net_output_bytes(bytes);
-        }
     }
 
     /// 记录 gossip 拓扑刷新 (MetaRaft 同步).
@@ -446,38 +513,22 @@ impl ServerMetrics {
                 .fetch_add(known_nodes as u64, Ordering::Relaxed);
         }
         self.on_command("GOSSIP.tick", true);
-        #[cfg(all(feature = "monitoring", feature = "cluster"))]
-        if let Some(ref otel) = self.otel {
-            otel.on_gossip_message();
-        }
     }
 
     /// 记录 failover 事件 (仅 cluster feature)。
     pub fn on_failover(&self) {
         self.on_command("CLUSTER.failover", true);
-        #[cfg(all(feature = "monitoring", feature = "cluster"))]
-        if let Some(ref otel) = self.otel {
-            otel.on_failover();
-        }
     }
 
     pub fn on_json_command(&self, command: &str, ok: bool) {
         let key = format!("JSON.{}", command.to_ascii_lowercase());
         self.on_command(&key, ok);
-        #[cfg(feature = "monitoring")]
-        if let Some(ref otel) = self.otel {
-            otel.on_json_command(command);
-        }
     }
 
     /// 集群重定向计数 (aikv_cluster_redirects_total 语义).
     pub fn on_cluster_redirect(&self, redirect_type: &str) {
         let key = format!("CLUSTER.redirect.{}", redirect_type);
         self.on_command(&key, true);
-        #[cfg(all(feature = "monitoring", feature = "cluster"))]
-        if let Some(ref otel) = self.otel {
-            otel.on_cluster_redirect(redirect_type);
-        }
     }
 
     pub fn json_command_ok_count(&self, command: &str) -> u64 {
@@ -491,10 +542,6 @@ impl ServerMetrics {
 
     pub fn on_keyspace_hit(&self) {
         self.keyspace_hits.fetch_add(1, Ordering::Relaxed);
-        #[cfg(feature = "monitoring")]
-        if let Some(ref otel) = self.otel {
-            otel.on_keyspace_hit();
-        }
     }
 
     pub fn net_input_bytes(&self) -> u64 {
@@ -507,10 +554,6 @@ impl ServerMetrics {
 
     pub fn on_keyspace_miss(&self) {
         self.keyspace_misses.fetch_add(1, Ordering::Relaxed);
-        #[cfg(feature = "monitoring")]
-        if let Some(ref otel) = self.otel {
-            otel.on_keyspace_miss();
-        }
     }
 
     pub fn keyspace_hits(&self) -> u64 {
@@ -560,6 +603,35 @@ impl ServerMetrics {
         out
     }
 
+    /// 全部命令统计 (含内部伪命令, 供 OTel sync).
+    pub(crate) fn all_command_totals(&self) -> Vec<(String, CommandTotals)> {
+        let mut out: Vec<_> = self
+            .commands_total
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(cmd, totals)| (cmd.clone(), *totals))
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out
+    }
+
+    pub fn uptime_secs(&self) -> u64 {
+        self.uptime_secs.load(Ordering::Relaxed)
+    }
+
+    pub fn db_key_counts(&self) -> Vec<(usize, u64)> {
+        let mut out: Vec<_> = self
+            .db_key_counts
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(db, count)| (*db, *count))
+            .collect();
+        out.sort_by_key(|(db, _)| *db);
+        out
+    }
+
     pub fn command_ok_count(&self, command: &str) -> u64 {
         self.commands_total
             .lock()
@@ -605,13 +677,9 @@ impl ServerMetrics {
         self.blocked_clients.load(Ordering::Relaxed)
     }
 
-    /// 同步 Redis 对齐 gauge (blocked_clients 等).
+    /// 同步 Redis 对齐 gauge (blocked_clients 等; OTel 写入在 refresh sync).
     #[cfg(feature = "monitoring")]
-    pub fn sync_redis_aligned_gauges(&self) {
-        if let Some(ref otel) = self.otel {
-            otel.sync_blocked_clients(self.blocked_clients());
-        }
-    }
+    pub fn sync_redis_aligned_gauges(&self) {}
 
     #[cfg(not(feature = "monitoring"))]
     pub fn sync_redis_aligned_gauges(&self) {}

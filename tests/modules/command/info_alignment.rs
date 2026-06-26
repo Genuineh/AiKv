@@ -198,11 +198,51 @@ async fn info_errorstats_after_command_error() {
             .unwrap(),
     );
     assert!(text.contains("# Errorstats"));
-    assert!(text.contains("errorstat_lpush:count=1"));
+    assert!(text.contains("errorstat_WRONGTYPE:count=1"));
 }
 
 #[tokio::test]
-async fn info_all_includes_commandstats_errorstats_modules() {
+async fn info_multi_section_stats_and_memory() {
+    let (router, _shared) = router_with_shared();
+    let mut db = 0;
+    let text = info_text(
+        router
+            .execute("INFO", &[b("stats"), b("memory")], &mut db)
+            .await
+            .unwrap(),
+    );
+    let headers: Vec<_> = text
+        .lines()
+        .filter(|l| l.starts_with("# "))
+        .map(|l| l.trim_start_matches("# ").trim())
+        .collect();
+    assert_eq!(headers, vec!["Stats", "Memory"]);
+    assert!(text.contains("total_commands_processed:"));
+    assert!(text.contains("used_memory:"));
+}
+
+#[tokio::test]
+async fn info_default_alias_matches_empty() {
+    let (router, _shared) = router_with_shared();
+    let mut db = 0;
+    let default_text = info_text(router.execute("INFO", &[], &mut db).await.unwrap());
+    let explicit = info_text(
+        router
+            .execute("INFO", &[b("default")], &mut db)
+            .await
+            .unwrap(),
+    );
+    fn headers(text: &str) -> Vec<&str> {
+        text.lines()
+            .filter(|l| l.starts_with("# "))
+            .map(|l| l.trim_start_matches("# ").trim())
+            .collect()
+    }
+    assert_eq!(headers(&default_text), headers(&explicit));
+}
+
+#[tokio::test]
+async fn info_all_includes_commandstats_errorstats_threads_latencystats() {
     let (router, _shared) = router_with_shared();
     let mut db = 0;
     router
@@ -216,9 +256,81 @@ async fn info_all_includes_commandstats_errorstats_modules() {
         .filter(|l| l.starts_with("# "))
         .map(|l| l.trim_start_matches("# ").trim())
         .collect();
-    assert!(headers.contains(&"Commandstats"));
-    assert!(headers.contains(&"Errorstats"));
-    assert!(headers.contains(&"Modules"));
+    for section in [
+        "Commandstats",
+        "Errorstats",
+        "Threads",
+        "Latencystats",
+    ] {
+        assert!(
+            headers.contains(&section),
+            "INFO all missing section: {section}"
+        );
+    }
+    assert!(
+        !headers.contains(&"Modules"),
+        "INFO all must not include Modules"
+    );
+}
+
+#[tokio::test]
+async fn info_everything_includes_modules() {
+    let (router, _shared) = router_with_shared();
+    let mut db = 0;
+    let text = info_text(
+        router
+            .execute("INFO", &[b("everything")], &mut db)
+            .await
+            .unwrap(),
+    );
+    assert!(text.contains("# Modules"));
+}
+
+#[tokio::test]
+async fn info_memory_includes_rss_and_maxmemory() {
+    let (router, shared) = router_with_shared();
+    let mut db = 0;
+    shared.refresh_runtime_metrics().await;
+    let text = info_text(
+        router
+            .execute("INFO", &[b("memory")], &mut db)
+            .await
+            .unwrap(),
+    );
+    assert!(text.contains("used_memory_rss:"));
+    assert!(text.contains("maxmemory:"));
+    assert!(text.contains("mem_fragmentation_ratio:"));
+}
+
+#[tokio::test]
+async fn info_stats_includes_redis88_slowlog_globals() {
+    let (router, _shared) = router_with_shared();
+    let mut db = 0;
+    let text = info_text(
+        router
+            .execute("INFO", &[b("stats")], &mut db)
+            .await
+            .unwrap(),
+    );
+    assert!(text.contains("slowlog_commands_count:"));
+    assert!(text.contains("slowlog_commands_time_ms_sum:"));
+    assert!(text.contains("slowlog_commands_time_ms_max:"));
+    assert!(text.contains("instantaneous_input_kbps:"));
+    assert!(text.contains("instantaneous_output_kbps:"));
+}
+
+#[tokio::test]
+async fn info_persistence_uses_redis_bgsave_time_sec_key() {
+    let (router, _shared) = router_with_shared();
+    let mut db = 0;
+    let text = info_text(
+        router
+            .execute("INFO", &[b("persistence")], &mut db)
+            .await
+            .unwrap(),
+    );
+    assert!(text.contains("rdb_last_bgsave_time_sec:"));
+    assert!(!text.contains("rdb_last_bgsave_time:"));
 }
 
 #[tokio::test]

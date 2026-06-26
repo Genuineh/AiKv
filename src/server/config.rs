@@ -141,6 +141,7 @@ impl ServerSharedState {
             ("appendonly".into(), "no".into()),
             ("save".into(), "".into()),
             ("maxmemory".into(), "0".into()),
+            ("maxmemory-policy".into(), "noeviction".into()),
             ("timeout".into(), "300".into()),
             (
                 "slowlog-log-slower-than".into(),
@@ -294,6 +295,7 @@ impl ServerSharedState {
     pub async fn refresh_runtime_metrics(self: &Arc<Self>) {
         self.metrics.set_uptime_secs(self.uptime_secs());
         self.metrics.sample_instantaneous_ops();
+        self.metrics.refresh_cached_process_info();
         self.metrics.sync_redis_aligned_gauges();
         if let Ok(counts) = self.storage.db_key_counts().await {
             for (db, count) in counts.iter().enumerate() {

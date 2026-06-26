@@ -24,16 +24,12 @@ impl ServerCommands {
 
     #[instrument(name = "cmd_server", skip(self, args), fields(cmd.name = "INFO"))]
     pub async fn info(&self, _current_db: usize, args: &[Bytes]) -> Result<RespValue> {
-        if args.len() > 1 {
-            return Err(router::wrong_args("INFO", ""));
-        }
-        let section = if args.is_empty() {
-            None
-        } else {
-            Some(String::from_utf8_lossy(&args[0]).to_ascii_lowercase())
-        };
+        let sections: Vec<String> = args
+            .iter()
+            .map(|arg| String::from_utf8_lossy(arg).to_ascii_lowercase())
+            .collect();
         let renderer = crate::server::InfoRenderer::new(&self.shared, self.storage.as_ref());
-        let out = renderer.render(section.as_deref()).await;
+        let out = renderer.render(&sections).await;
         Ok(router::bulk(out.into_bytes()))
     }
 

@@ -2,8 +2,9 @@
 //!
 //! TODO(exemplars): metrics↔traces 跳转需 OTel Rust SDK exemplar 采集; 当前 0.32 仍不支持.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter};
 use opentelemetry::KeyValue;
@@ -12,11 +13,36 @@ const CMD_DURATION_BUCKETS: [f64; 14] = [
     0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
 ];
 
-const ATTR_COMMAND: &str = "aikv.command.name";
+pub(crate) const ATTR_COMMAND: &str = "aikv.command.name";
 const ATTR_STATUS: &str = "aikv.command.status";
 const ATTR_DB_INDEX: &str = "aikv.db.index";
-const ATTR_REDIRECT_TYPE: &str = "aikv.cluster.redirect.type";
+pub(crate) const ATTR_REDIRECT_TYPE: &str = "aikv.cluster.redirect.type";
 const ATTR_CPU_MODE: &str = "cpu.mode";
+
+/// Counter / histogram sync 上次 cumulative 快照 (OTel counter 仅支持 add(delta)).
+#[derive(Default)]
+pub(crate) struct SyncSnapshot {
+    keyspace_hits: u64,
+    keyspace_misses: u64,
+    connections_total: u64,
+    connected_clients: i64,
+    rejected_connections: u64,
+    expired_keys: u64,
+    evicted_keys: u64,
+    net_input_bytes: u64,
+    net_output_bytes: u64,
+    lua_execution_count: u64,
+    lua_execution_duration_us: u64,
+    gossip_messages: u64,
+    failover: u64,
+    commands_ok: HashMap<String, u64>,
+    commands_err: HashMap<String, u64>,
+    commands_usec: HashMap<String, u64>,
+    commands_slowlog: HashMap<String, u64>,
+    json_commands: HashMap<String, u64>,
+    #[cfg(feature = "cluster")]
+    cluster_redirects: HashMap<String, u64>,
+}
 
 /// Gauge 类指标快照 (Observable 回调读取).
 #[derive(Default)]
@@ -60,6 +86,7 @@ pub struct OtelMetrics {
     process_cpu_time: Counter<f64>,
     process_memory_usage: Gauge<f64>,
     process_disk_io: Counter<u64>,
+    sync_snapshot: Mutex<SyncSnapshot>,
 }
 
 impl std::fmt::Debug for OtelMetrics {
@@ -226,6 +253,7 @@ impl OtelMetrics {
                 .with_description("Process disk I/O bytes")
                 .with_unit("By")
                 .build(),
+            sync_snapshot: Mutex::new(SyncSnapshot::default()),
         });
 
         register_aikv_observable_gauges(&meter, &gauges);
@@ -426,6 +454,230 @@ impl OtelMetrics {
     pub fn on_failover(&self) {
         self.failover_total.add(1, &[]);
     }
+
+    /// 将 observable gauge 快照与 `ServerMetrics` atomics 对齐.
+    pub fn sync_stats_gauges(&self, metrics: &crate::server::metrics::ServerMetrics) {
+        self.sync_blocked_clients(metrics.blocked_clients());
+        self.set_instantaneous_ops(metrics.instantaneous_ops_per_sec());
+        self.set_memory_bytes(
+            metrics.used_memory_bytes(),
+            metrics.used_memory_peak_bytes(),
+        );
+        self.set_uptime_secs(metrics.uptime_secs());
+        self.gauges
+            .process_resident_memory_bytes
+            .store(metrics.cached_rss_bytes() as i64, Ordering::Relaxed);
+        self.process_memory_usage
+            .record(metrics.cached_rss_bytes() as f64, &[]);
+        for (db, count) in metrics.db_key_counts() {
+            self.set_db_key_count(db, count);
+        }
+    }
+
+    /// 读 `ServerMetrics` atomics, 与 snapshot 做差, `counter.add(delta)`.
+    pub fn sync_counters(&self, metrics: &crate::server::metrics::ServerMetrics) {
+        let mut snap = self.sync_snapshot.lock().unwrap();
+        self.sync_counters_locked(metrics, &mut snap);
+    }
+
+    /// 遍历 command totals, 对 ok/err/usec/slowlog 分别 delta 到 OTel.
+    pub fn sync_commandstats(&self, metrics: &crate::server::metrics::ServerMetrics) {
+        let info_calls: u64 = metrics
+            .client_command_totals()
+            .iter()
+            .map(|(_, totals)| totals.ok + totals.err)
+            .sum();
+        let processed = metrics.total_commands_processed();
+        debug_assert_eq!(
+            processed, info_calls,
+            "total_commands_processed must match sum of client commandstats calls"
+        );
+
+        let mut snap = self.sync_snapshot.lock().unwrap();
+        for (cmd, totals) in metrics.all_command_totals() {
+            let prev_ok = snap.commands_ok.get(&cmd).copied().unwrap_or(0);
+            let prev_err = snap.commands_err.get(&cmd).copied().unwrap_or(0);
+            let prev_usec = snap.commands_usec.get(&cmd).copied().unwrap_or(0);
+            let prev_slow = snap.commands_slowlog.get(&cmd).copied().unwrap_or(0);
+
+            let delta_ok = totals.ok.saturating_sub(prev_ok);
+            let delta_err = totals.err.saturating_sub(prev_err);
+            let delta_usec = totals.usec.saturating_sub(prev_usec);
+            let delta_calls = delta_ok + delta_err;
+            let delta_slow = totals.slowlog_count.saturating_sub(prev_slow);
+
+            if delta_ok > 0 {
+                self.commands_total
+                    .add(delta_ok, &Self::cmd_attrs(&cmd, "ok"));
+            }
+            if delta_err > 0 {
+                self.commands_total
+                    .add(delta_err, &Self::cmd_attrs(&cmd, "error"));
+            }
+
+            if delta_calls > 0 && delta_usec > 0 {
+                let avg_secs = (delta_usec as f64 / delta_calls as f64) / 1_000_000.0;
+                let status = if delta_err > 0 && delta_ok == 0 {
+                    "error"
+                } else {
+                    "ok"
+                };
+                for _ in 0..delta_calls {
+                    self.command_duration_seconds
+                        .record(avg_secs, &Self::cmd_attrs(&cmd, status));
+                }
+            }
+
+            if delta_slow > 0 {
+                self.slow_queries_total.add(
+                    delta_slow,
+                    &[KeyValue::new(ATTR_COMMAND, cmd.clone())],
+                );
+            }
+
+            snap.commands_ok.insert(cmd.clone(), totals.ok);
+            snap.commands_err.insert(cmd.clone(), totals.err);
+            snap.commands_usec.insert(cmd.clone(), totals.usec);
+            snap.commands_slowlog
+                .insert(cmd.clone(), totals.slowlog_count);
+
+            if let Some(sub) = cmd.strip_prefix("JSON.") {
+                let json_name = sub.to_ascii_uppercase();
+                let prev_json = snap.json_commands.get(&json_name).copied().unwrap_or(0);
+                let current = totals.ok + totals.err;
+                let delta_json = current.saturating_sub(prev_json);
+                if delta_json > 0 {
+                    self.json_commands_total.add(
+                        delta_json,
+                        &[KeyValue::new(ATTR_COMMAND, json_name.clone())],
+                    );
+                }
+                snap.json_commands.insert(json_name, current);
+            }
+
+            #[cfg(feature = "cluster")]
+            if let Some(redirect_type) = cmd.strip_prefix("CLUSTER.redirect.") {
+                let prev = snap
+                    .cluster_redirects
+                    .get(redirect_type)
+                    .copied()
+                    .unwrap_or(0);
+                let delta = totals.ok.saturating_sub(prev);
+                if delta > 0 {
+                    self.cluster_redirects_total.add(
+                        delta,
+                        &[KeyValue::new(ATTR_REDIRECT_TYPE, redirect_type.to_string())],
+                    );
+                }
+                snap.cluster_redirects
+                    .insert(redirect_type.to_string(), totals.ok);
+            }
+        }
+    }
+
+    /// 测试用: 重置 sync 快照, 避免跨测试污染 global `OtelMetrics`.
+    pub(crate) fn reset_sync_snapshot_for_test(&self) {
+        *self.sync_snapshot.lock().unwrap() = SyncSnapshot::default();
+    }
+
+    fn sync_counters_locked(
+        &self,
+        metrics: &crate::server::metrics::ServerMetrics,
+        snap: &mut SyncSnapshot,
+    ) {
+        let delta = counter_delta(metrics.connections_total(), &mut snap.connections_total);
+        if delta > 0 {
+            self.connections_total.add(delta, &[]);
+        }
+
+        let client_delta = updown_delta(
+            metrics.connected_clients() as i64,
+            &mut snap.connected_clients,
+        );
+        if client_delta != 0 {
+            self.connected_clients.add(client_delta, &[]);
+        }
+
+        let delta = counter_delta(metrics.keyspace_hits(), &mut snap.keyspace_hits);
+        if delta > 0 {
+            self.keyspace_hits_total.add(delta, &[]);
+        }
+
+        let delta = counter_delta(metrics.keyspace_misses(), &mut snap.keyspace_misses);
+        if delta > 0 {
+            self.keyspace_misses_total.add(delta, &[]);
+        }
+
+        let delta = counter_delta(metrics.rejected_connections(), &mut snap.rejected_connections);
+        if delta > 0 {
+            self.rejected_connections_total.add(delta, &[]);
+        }
+
+        let delta = counter_delta(metrics.expired_keys(), &mut snap.expired_keys);
+        if delta > 0 {
+            self.expired_keys_total.add(delta, &[]);
+        }
+
+        let delta = counter_delta(metrics.evicted_keys(), &mut snap.evicted_keys);
+        if delta > 0 {
+            self.evicted_keys_total.add(delta, &[]);
+        }
+
+        let delta = counter_delta(metrics.net_input_bytes(), &mut snap.net_input_bytes);
+        if delta > 0 {
+            self.net_input_bytes_total.add(delta, &[]);
+        }
+
+        let delta = counter_delta(metrics.net_output_bytes(), &mut snap.net_output_bytes);
+        if delta > 0 {
+            self.net_output_bytes_total.add(delta, &[]);
+        }
+
+        let delta = counter_delta(metrics.lua_execution_count(), &mut snap.lua_execution_count);
+        if delta > 0 {
+            self.lua_scripts_total.add(delta, &[]);
+        }
+
+        let delta = counter_delta(
+            metrics.lua_execution_duration_us(),
+            &mut snap.lua_execution_duration_us,
+        );
+        if delta > 0 {
+            self.lua_execution_duration_seconds
+                .record(delta as f64 / 1_000_000.0, &[]);
+        }
+
+        #[cfg(feature = "cluster")]
+        {
+            let delta = counter_delta(
+                metrics.command_ok_count("GOSSIP.tick"),
+                &mut snap.gossip_messages,
+            );
+            if delta > 0 {
+                self.gossip_messages_total.add(delta, &[]);
+            }
+
+            let delta = counter_delta(
+                metrics.command_ok_count("CLUSTER.failover"),
+                &mut snap.failover,
+            );
+            if delta > 0 {
+                self.failover_total.add(delta, &[]);
+            }
+        }
+    }
+}
+
+fn counter_delta(current: u64, last: &mut u64) -> u64 {
+    let delta = current.saturating_sub(*last);
+    *last = current;
+    delta
+}
+
+fn updown_delta(current: i64, last: &mut i64) -> i64 {
+    let delta = current - *last;
+    *last = current;
+    delta
 }
 
 fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {
@@ -501,7 +753,8 @@ pub const AIKV_METRIC_NAMES: &[&str] = &[
 
 #[cfg(feature = "monitoring")]
 pub mod testutil {
-    use std::sync::{Arc, OnceLock};
+    use std::cell::RefCell;
+    use std::sync::{Arc, Mutex};
 
     use opentelemetry::global;
     use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData};
@@ -509,31 +762,33 @@ pub mod testutil {
 
     use super::OtelMetrics;
 
-    static TEST_EXPORTER: OnceLock<InMemoryMetricExporter> = OnceLock::new();
-    static TEST_PROVIDER: OnceLock<Arc<SdkMeterProvider>> = OnceLock::new();
+    static TEST_INIT_LOCK: Mutex<()> = Mutex::new(());
 
+    thread_local! {
+        static TEST_PROVIDER: RefCell<Option<Arc<SdkMeterProvider>>> = const { RefCell::new(None) };
+    }
+
+    /// 每个测试独立 meter provider + 清空 sync 快照 (thread-local provider 避免并行 flush 串台).
     pub fn init_in_memory() -> (InMemoryMetricExporter, Arc<OtelMetrics>) {
-        if let Some(exporter) = TEST_EXPORTER.get() {
-            if let Some(otel) = super::global_otel().read().unwrap().as_ref() {
-                return (exporter.clone(), Arc::clone(otel));
-            }
-        }
+        let _guard = TEST_INIT_LOCK.lock().unwrap();
         let exporter = InMemoryMetricExporter::default();
         let provider = SdkMeterProvider::builder()
             .with_periodic_exporter(exporter.clone())
             .build();
         global::set_meter_provider(provider.clone());
         let provider = Arc::new(provider);
-        let _ = TEST_PROVIDER.set(Arc::clone(&provider));
-        let _ = TEST_EXPORTER.set(exporter.clone());
+        TEST_PROVIDER.with(|cell| *cell.borrow_mut() = Some(Arc::clone(&provider)));
         let otel = OtelMetrics::install_global(global::meter("aikv"));
+        otel.reset_sync_snapshot_for_test();
         (exporter, otel)
     }
 
     fn flush() {
-        if let Some(provider) = TEST_PROVIDER.get() {
-            provider.force_flush().unwrap();
-        }
+        TEST_PROVIDER.with(|cell| {
+            if let Some(provider) = cell.borrow().as_ref() {
+                provider.force_flush().unwrap();
+            }
+        });
     }
 
     pub fn counter_sum(exporter: &InMemoryMetricExporter, name: &str) -> u64 {

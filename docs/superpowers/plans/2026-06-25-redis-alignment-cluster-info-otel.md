@@ -10,7 +10,7 @@
 
 **Spec:** [../specs/2026-06-25-redis-alignment-cluster-info-otel-design.md](../specs/2026-06-25-redis-alignment-cluster-info-otel-design.md)
 
-**Status:** P0–P2 **Implemented** (2026-06-25); P3 sync-only hot path optional, 未做.
+**Status:** P0–P3 + INFO 8.8 字段级 parity **Implemented** (2026-06-26); stub/真源说明见 `docs/modules/observability.md`.
 
 ---
 
@@ -556,12 +556,12 @@ cargo test --features cluster -- --test-threads=1
 
 ---
 
-## Task 11 (Optional P3): 热路径 OTel 收敛
+## Task 11 (P3): 热路径 OTel 收敛
 
 **仅当 P2 sync 稳定后.**
 
-- [ ] 将 `OtelMetrics::on_command` / `on_command_duration` 改为 debug-only 或移除, 仅 `sync_otel_from_server_metrics` 写入
-- [ ] 跑全量 observability + cluster 测试
+- [x] 将热路径 `on_*` 移除; 仅 `sync_otel_from_server_metrics` 经 delta 写 OTLP
+- [x] 跑全量 observability + cluster 测试
 - [ ] Commit: `refactor(observability): OTLP commandstats from INFO sync only`
 
 ---

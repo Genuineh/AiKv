@@ -226,6 +226,8 @@ async fn test_otel_metrics_integration() {
     server_metrics.on_command("SET", true);
     server_metrics.on_command("GET", false);
 
+    aikv::server::info_catalog::sync_otel_from_server_metrics(&server_metrics);
+
     let after = testutil::counter_sum(&exporter, "aikv_connections_total");
     assert!(after > before, "connections_total should increase");
     assert!(testutil::metric_exists(&exporter, "aikv_commands_total"));
@@ -254,6 +256,8 @@ async fn test_maxclients_rejection_metrics() {
 
     assert!(state.try_register_connection());
     assert!(!state.try_register_connection());
+
+    aikv::server::info_catalog::sync_otel_from_server_metrics(state.metrics());
 
     assert_eq!(
         testutil::counter_sum(&exporter, "aikv_rejected_connections_total"),
@@ -388,6 +392,8 @@ async fn test_net_bytes_metrics() {
     write_cmd(&mut stream, &[b"PING"]).await;
     let _ = super::helpers::read_response(&mut stream).await;
     tokio::time::sleep(Duration::from_millis(50)).await;
+
+    state.refresh_runtime_metrics().await;
 
     assert!(
         state.metrics().net_input_bytes() > 0,
@@ -531,6 +537,8 @@ async fn info_metrics_consistency_after_commands() {
         Some(ops)
     );
 
+    state.refresh_runtime_metrics().await;
+
     assert_eq!(
         testutil::counter_sum(&exporter, "aikv_keyspace_hits_total") - pre_hits,
         hits
@@ -542,6 +550,59 @@ async fn info_metrics_consistency_after_commands() {
     assert_eq!(
         testutil::counter_sum(&exporter, "aikv_commands_total") - pre_cmds,
         state.metrics().total_commands_processed()
+    );
+}
+
+/// P3: 热路径不写 OTel; refresh sync 前 counter 不变, sync 后与 INFO 一致.
+#[cfg(feature = "monitoring")]
+#[tokio::test]
+async fn otel_counters_sync_only_on_refresh() {
+    use std::sync::Arc;
+
+    use aikv::server::otel_metrics::testutil;
+    use aikv::server::{ConnectionConfig, ServerSharedState};
+    use aikv::storage::{KvStorage, MemoryEngine};
+    use bytes::Bytes;
+
+    let (exporter, _otel) = testutil::init_in_memory();
+    let pre_cmds = testutil::counter_sum(&exporter, "aikv_commands_total");
+    let pre_hits = testutil::counter_sum(&exporter, "aikv_keyspace_hits_total");
+
+    fn b(s: &str) -> Bytes {
+        Bytes::copy_from_slice(s.as_bytes())
+    }
+
+    let storage: Arc<dyn KvStorage> = MemoryEngine::new(16);
+    let state = ServerSharedState::new(ConnectionConfig::default(), storage, 6379);
+    let router = state.router();
+    let mut db = 0;
+
+    router
+        .execute("SET", &[b("k"), b("v")], &mut db)
+        .await
+        .unwrap();
+    router.execute("GET", &[b("k")], &mut db).await.unwrap();
+
+    assert_eq!(
+        testutil::counter_sum(&exporter, "aikv_commands_total"),
+        pre_cmds,
+        "OTel commands_total must not change before refresh sync"
+    );
+    assert_eq!(
+        testutil::counter_sum(&exporter, "aikv_keyspace_hits_total"),
+        pre_hits,
+        "OTel keyspace_hits must not change before refresh sync"
+    );
+
+    state.refresh_runtime_metrics().await;
+
+    assert_eq!(
+        testutil::counter_sum(&exporter, "aikv_commands_total") - pre_cmds,
+        state.metrics().total_commands_processed()
+    );
+    assert_eq!(
+        testutil::counter_sum(&exporter, "aikv_keyspace_hits_total") - pre_hits,
+        state.metrics().keyspace_hits()
     );
 }
 
@@ -666,7 +727,11 @@ fn test_metric_catalog_contract() {
     server_metrics.on_connect();
     server_metrics.on_command("PING", true);
     server_metrics.on_command_duration("PING", 1000, true);
+    server_metrics.on_keyspace_hit();
+    server_metrics.set_uptime_secs(1);
     server_metrics.set_db_key_count(0, 0);
+
+    aikv::server::info_catalog::sync_otel_from_server_metrics(&server_metrics);
 
     for name in AIKV_METRIC_NAMES {
         assert!(

@@ -49,12 +49,12 @@
 
 ### ISSUE-024: 无 Redis 风格 mem_fragmentation_ratio
 
-- **状态**: open
+- **状态**: open (INFO 已输出; OTel gauge 仍缺)
 - **发现于**: Grafana 面板重设计 / 旧 Workflow `redis_mem_fragmentation_ratio`
-- **相关 src**: `src/server/info.rs`, `src/server/metrics.rs`
-- **现象**: INFO memory 为简化模型; 无 allocator 碎片率 gauge
-- **影响**: 不 1:1 复刻 Redis 指标; 需单独定义语义 (RSS vs used vs 容器) 再实现
-- **下一步**: 待产品定义; 见 AiFactory `dashboards/README.md` 已知缺口
+- **相关 src**: `src/server/info.rs`, `src/server/metrics.rs`, `src/server/process_metrics.rs`
+- **现象**: INFO memory 已输出 `mem_fragmentation_ratio` / `mem_fragmentation_bytes` (rss/used); 无独立 OTel fragmentation gauge
+- **影响**: Grafana 若只查 OTLP 仍无 fragmentation series; INFO/redis_exporter 解析可用
+- **下一步**: 可选 `aikv_mem_fragmentation_ratio` gauge sync; 见 AiFactory `dashboards/README.md`
 
 ### ISSUE-023: Slowlog 默认阈值 100ms vs Redis/oldmain 10ms
 
