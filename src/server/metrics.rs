@@ -604,6 +604,7 @@ impl ServerMetrics {
     }
 
     /// 全部命令统计 (含内部伪命令, 供 OTel sync).
+    #[cfg(feature = "monitoring")]
     pub(crate) fn all_command_totals(&self) -> Vec<(String, CommandTotals)> {
         let mut out: Vec<_> = self
             .commands_total

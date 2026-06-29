@@ -505,6 +505,7 @@ async fn init_cluster(
     Ok(())
 }
 
+#[allow(unused_variables)]
 fn init_logging(
     tcp_port: u16,
     #[cfg(feature = "cluster")] cluster_node_id: Option<u64>,
