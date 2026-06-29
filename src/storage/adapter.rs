@@ -255,10 +255,11 @@ impl KvStorage for KvStorageAdapter {
     }
 
     async fn mset(&self, db: usize, pairs: &[(Vec<u8>, Vec<u8>)]) -> Result<()> {
+        let mut ops = Vec::with_capacity(pairs.len());
         for (key, value) in pairs {
-            self.set(db, key, value).await?;
+            ops.push((key.clone(), WriteOp::Put(value.clone())));
         }
-        Ok(())
+        self.write_batch(db, ops).await
     }
 
     async fn write_batch(&self, db: usize, ops: Vec<(Vec<u8>, WriteOp)>) -> Result<()> {

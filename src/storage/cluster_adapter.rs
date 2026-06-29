@@ -36,8 +36,8 @@ use crate::storage::types::StorageEngineKind;
 const GROUP_READY_MAX_ATTEMPTS: u32 = 20;
 const GROUP_READY_RETRY_DELAY: Duration = Duration::from_millis(250);
 const ERR_DATA_GROUP_NOT_READY: &str = "CLUSTERDOWN data group not ready";
-const SET_BATCH_MAX_OPS: usize = 64;
-const SET_BATCH_MAX_DELAY: Duration = Duration::from_millis(1);
+const SET_BATCH_MAX_OPS: usize = 128;
+const SET_BATCH_MAX_DELAY: Duration = Duration::from_millis(10);
 
 /// 数据面感知的存储适配器.
 pub struct ClusterDataAdapter {
@@ -268,10 +268,12 @@ async fn run_set_batcher(
             tb.put(item.key.clone(), item.value.clone());
         }
 
+        let t0 = std::time::Instant::now();
         let result = ClusterDataAdapter::propose_group_with_retry(&mgr, gid, Request::WriteBatch(tb))
             .await
             .and_then(ClusterDataAdapter::check_response)
             .map_err(|e| e.to_string());
+        tracing::info!(target: "perf", gid, batch_size = items.len(), propose_ms = t0.elapsed().as_millis(), "set_batcher_propose");
 
         for item in items {
             let _ = item.ack.send(result.clone());
