@@ -18,6 +18,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use parking_lot::Mutex;
+use tokio::sync::{mpsc, oneshot};
 
 use aidb::cluster::router::key_to_slot;
 use aidb::cluster::{
@@ -34,15 +36,31 @@ use crate::storage::types::StorageEngineKind;
 const GROUP_READY_MAX_ATTEMPTS: u32 = 20;
 const GROUP_READY_RETRY_DELAY: Duration = Duration::from_millis(250);
 const ERR_DATA_GROUP_NOT_READY: &str = "CLUSTERDOWN data group not ready";
+const SET_BATCH_MAX_OPS: usize = 64;
+const SET_BATCH_MAX_DELAY: Duration = Duration::from_millis(1);
 
 /// 数据面感知的存储适配器.
 pub struct ClusterDataAdapter {
     local: Arc<dyn StorageAdapter>,
+    set_batchers: Mutex<HashMap<u64, Arc<GroupSetBatcher>>>,
+}
+
+struct GroupSetBatcher {
+    tx: mpsc::Sender<SetBatchItem>,
+}
+
+struct SetBatchItem {
+    key: Vec<u8>,
+    value: Vec<u8>,
+    ack: oneshot::Sender<std::result::Result<(), String>>,
 }
 
 impl ClusterDataAdapter {
     pub fn new(local: Arc<dyn StorageAdapter>) -> Arc<Self> {
-        Arc::new(Self { local })
+        Arc::new(Self {
+            local,
+            set_batchers: Mutex::new(HashMap::new()),
+        })
     }
 
     /// 本节点作为迁槽目标时的本地 data group (IMPORTING / MIGRATE RESTORE).
@@ -181,6 +199,84 @@ impl ClusterDataAdapter {
         }
         Err(last_err)
     }
+
+    fn get_or_spawn_set_batcher(
+        &self,
+        mgr: Arc<ClusterStateManager>,
+        gid: u64,
+    ) -> Arc<GroupSetBatcher> {
+        let mut batchers = self.set_batchers.lock();
+        if let Some(existing) = batchers.get(&gid) {
+            return existing.clone();
+        }
+
+        let (tx, rx) = mpsc::channel(4096);
+        let batcher = Arc::new(GroupSetBatcher { tx });
+        tokio::spawn(run_set_batcher(mgr, gid, rx));
+        batchers.insert(gid, batcher.clone());
+        batcher
+    }
+
+    async fn submit_batched_set(
+        &self,
+        mgr: Arc<ClusterStateManager>,
+        gid: u64,
+        key: Vec<u8>,
+        value: Vec<u8>,
+    ) -> Result<()> {
+        let batcher = self.get_or_spawn_set_batcher(mgr, gid);
+        let (ack, wait) = oneshot::channel();
+        batcher
+            .tx
+            .send(SetBatchItem { key, value, ack })
+            .await
+            .map_err(|_| Error::Cluster("data group write batcher stopped".into()))?;
+        wait.await
+            .map_err(|_| Error::Cluster("data group write batcher dropped response".into()))?
+            .map_err(Error::Cluster)
+    }
+}
+
+async fn run_set_batcher(
+    mgr: Arc<ClusterStateManager>,
+    gid: u64,
+    mut rx: mpsc::Receiver<SetBatchItem>,
+) {
+    while let Some(first) = rx.recv().await {
+        let mut items = Vec::with_capacity(SET_BATCH_MAX_OPS);
+        items.push(first);
+
+        while items.len() < SET_BATCH_MAX_OPS {
+            while items.len() < SET_BATCH_MAX_OPS {
+                match rx.try_recv() {
+                    Ok(item) => items.push(item),
+                    Err(mpsc::error::TryRecvError::Empty) => break,
+                    Err(mpsc::error::TryRecvError::Disconnected) => break,
+                }
+            }
+            if items.len() >= SET_BATCH_MAX_OPS {
+                break;
+            }
+            match tokio::time::timeout(SET_BATCH_MAX_DELAY, rx.recv()).await {
+                Ok(Some(item)) => items.push(item),
+                Ok(None) | Err(_) => break,
+            }
+        }
+
+        let mut tb = ThinWriteBatch::new();
+        for item in &items {
+            tb.put(item.key.clone(), item.value.clone());
+        }
+
+        let result = ClusterDataAdapter::propose_group_with_retry(&mgr, gid, Request::WriteBatch(tb))
+            .await
+            .and_then(ClusterDataAdapter::check_response)
+            .map_err(|e| e.to_string());
+
+        for item in items {
+            let _ = item.ack.send(result.clone());
+        }
+    }
 }
 
 /// Checkpoint every local data-group DB under `dest/group_{id}/`.
@@ -232,16 +328,8 @@ impl StorageAdapter for ClusterDataAdapter {
     async fn set(&self, key: &[u8], value: &[u8]) -> Result<()> {
         match Self::route_write(key) {
             Some((mgr, gid)) => {
-                let resp = Self::propose_group_with_retry(
-                    &mgr,
-                    gid,
-                    Request::Put {
-                        key: key.to_vec(),
-                        value: value.to_vec(),
-                    },
-                )
-                .await?;
-                Self::check_response(resp)
+                self.submit_batched_set(mgr, gid, key.to_vec(), value.to_vec())
+                    .await
             }
             None if Self::should_use_local_engine(key) => self.local.set(key, value).await,
             None => Err(Self::data_group_not_ready_err()),

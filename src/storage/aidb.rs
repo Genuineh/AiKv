@@ -84,19 +84,15 @@ impl AiDbEngine {
 #[async_trait]
 impl StorageAdapter for AiDbEngine {
     async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let key = key.to_vec();
-        self.blocking(move |db| db.get(&key).map_err(|e| Error::Storage(e.to_string())))
-            .await
+        self.db
+            .get(key)
+            .map_err(|e| Error::Storage(e.to_string()))
     }
 
     async fn set(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        let key = key.to_vec();
-        let value = value.to_vec();
-        self.blocking(move |db| {
-            db.put(&key, &value)
-                .map_err(|e| Error::Storage(e.to_string()))
-        })
-        .await
+        self.db
+            .put(key, value)
+            .map_err(|e| Error::Storage(e.to_string()))
     }
 
     async fn delete(&self, key: &[u8]) -> Result<bool> {
