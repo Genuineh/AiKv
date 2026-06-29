@@ -1,0 +1,511 @@
+//! 内存存储引擎
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use parking_lot::RwLock;
+use rand::seq::SliceRandom;
+use tracing::instrument;
+
+use crate::error::{Error, Result};
+use crate::storage::observation::StorageObservation;
+use crate::storage::types::{
+    now_ms, KeyspaceStats, KvStorage, ScanResult, StoredValue, ValueType, WriteOp, TTL_NO_EXPIRY,
+    WRONGTYPE,
+};
+
+pub struct MemoryEngine {
+    databases: Vec<RwLock<HashMap<Vec<u8>, StoredValue>>>,
+    observation: Option<Arc<StorageObservation>>,
+}
+
+impl MemoryEngine {
+    pub fn new(db_count: usize) -> Arc<Self> {
+        Self::with_observation(db_count, None)
+    }
+
+    pub fn with_observation(
+        db_count: usize,
+        observation: Option<Arc<StorageObservation>>,
+    ) -> Arc<Self> {
+        let databases = (0..db_count).map(|_| RwLock::new(HashMap::new())).collect();
+        Arc::new(Self {
+            databases,
+            observation,
+        })
+    }
+
+    fn check_db(&self, db: usize) -> Result<()> {
+        if db >= self.databases.len() {
+            return Err(Error::Command(format!(
+                "ERR DB index is out of range (db={db}, max={})",
+                self.databases.len()
+            )));
+        }
+        Ok(())
+    }
+
+    fn remove_expired(map: &mut HashMap<Vec<u8>, StoredValue>, key: &[u8]) -> bool {
+        if let Some(stored) = map.get(key) {
+            if stored.is_expired() {
+                map.remove(key);
+                return true;
+            }
+        }
+        false
+    }
+
+    fn evict_expired_at_key(&self, map: &mut HashMap<Vec<u8>, StoredValue>, key: &[u8]) {
+        if Self::remove_expired(map, key) {
+            self.record_expired(1);
+        }
+    }
+
+    fn record_expired(&self, count: u64) {
+        if count == 0 {
+            return;
+        }
+        if let Some(obs) = &self.observation {
+            for _ in 0..count {
+                obs.record_expired_key();
+            }
+        }
+    }
+
+    fn purge_expired(map: &mut HashMap<Vec<u8>, StoredValue>) -> u64 {
+        let mut removed = 0u64;
+        map.retain(|_, v| {
+            if v.is_expired() {
+                removed += 1;
+                false
+            } else {
+                true
+            }
+        });
+        removed
+    }
+
+    fn get_entry_read(&self, db: usize, key: &[u8]) -> Result<Option<StoredValue>> {
+        self.check_db(db)?;
+        let map = self.databases[db].read();
+        match map.get(key) {
+            None => Ok(None),
+            Some(stored) if stored.is_expired() => {
+                drop(map);
+                let mut map = self.databases[db].write();
+                if Self::remove_expired(&mut map, key) {
+                    self.record_expired(1);
+                }
+                Ok(None)
+            }
+            Some(stored) => Ok(Some(stored.clone())),
+        }
+    }
+}
+
+/// 轻量 glob: 仅 `*` 与 `?`, 不支持 `[abc]` 字符类
+pub fn glob_match(pattern: &[u8], text: &[u8]) -> bool {
+    glob_match_impl(pattern, text, 0, 0)
+}
+
+fn glob_match_impl(pattern: &[u8], text: &[u8], pi: usize, ti: usize) -> bool {
+    if pi == pattern.len() {
+        return ti == text.len();
+    }
+    if pattern[pi] == b'*' {
+        if pi + 1 == pattern.len() {
+            return true;
+        }
+        for j in ti..=text.len() {
+            if glob_match_impl(pattern, text, pi + 1, j) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if ti >= text.len() {
+        return false;
+    }
+    if pattern[pi] == b'?' || pattern[pi] == text[ti] {
+        return glob_match_impl(pattern, text, pi + 1, ti + 1);
+    }
+    false
+}
+
+#[async_trait]
+impl KvStorage for MemoryEngine {
+    #[instrument(name = "mem_engine_get", skip(self, key), fields(db, key_size = key.len()))]
+    async fn get(&self, db: usize, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let stored = self.get_typed(db, key).await?;
+        match stored {
+            None => Ok(None),
+            Some(s) => match s.value {
+                ValueType::String(v) => Ok(Some(v)),
+                _ => Err(Error::Command(WRONGTYPE.into())),
+            },
+        }
+    }
+
+    #[instrument(name = "mem_engine_set", skip(self, key, value), fields(db, key_size = key.len(), value_size = value.len()))]
+    async fn set(&self, db: usize, key: &[u8], value: &[u8]) -> Result<()> {
+        self.set_typed(db, key, StoredValue::string(value.to_vec()))
+            .await
+    }
+
+    async fn set_with_ttl(
+        &self,
+        db: usize,
+        key: &[u8],
+        value: &[u8],
+        expire_at_ms: u64,
+    ) -> Result<()> {
+        self.set_typed(
+            db,
+            key,
+            StoredValue {
+                value: ValueType::String(value.to_vec()),
+                expires_at: Some(expire_at_ms),
+            },
+        )
+        .await
+    }
+
+    #[instrument(name = "mem_engine_del", skip(self, key), fields(db, key_size = key.len()))]
+    async fn delete(&self, db: usize, key: &[u8]) -> Result<bool> {
+        self.check_db(db)?;
+        let mut map = self.databases[db].write();
+        Self::remove_expired(&mut map, key);
+        Ok(map.remove(key).is_some())
+    }
+
+    async fn exists(&self, db: usize, key: &[u8]) -> Result<bool> {
+        Ok(self.get_typed(db, key).await?.is_some())
+    }
+
+    async fn mget(&self, db: usize, keys: &[Vec<u8>]) -> Result<Vec<Option<Vec<u8>>>> {
+        let mut out = Vec::with_capacity(keys.len());
+        for key in keys {
+            let stored = self.get_typed(db, key).await?;
+            out.push(match stored {
+                None => None,
+                Some(s) => match s.value {
+                    ValueType::String(v) => Some(v),
+                    _ => None,
+                },
+            });
+        }
+        Ok(out)
+    }
+
+    async fn mset(&self, db: usize, pairs: &[(Vec<u8>, Vec<u8>)]) -> Result<()> {
+        for (key, value) in pairs {
+            self.set(db, key, value).await?;
+        }
+        Ok(())
+    }
+
+    async fn write_batch(&self, db: usize, ops: Vec<(Vec<u8>, WriteOp)>) -> Result<()> {
+        for (key, op) in ops {
+            match op {
+                WriteOp::Put(value) => self.set(db, &key, &value).await?,
+                WriteOp::Delete => {
+                    self.delete(db, &key).await?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn keys(&self, db: usize, pattern: &[u8]) -> Result<Vec<Vec<u8>>> {
+        self.check_db(db)?;
+        let map = self.databases[db].read();
+        let keys: Vec<Vec<u8>> = map
+            .iter()
+            .filter(|(_, v)| !v.is_expired())
+            .filter(|(k, _)| glob_match(pattern, k))
+            .map(|(k, _)| k.clone())
+            .collect();
+        drop(map);
+        // 惰性删除过期 key
+        let mut map = self.databases[db].write();
+        let removed = Self::purge_expired(&mut map);
+        self.record_expired(removed);
+        Ok(keys)
+    }
+
+    async fn scan(
+        &self,
+        db: usize,
+        cursor: u64,
+        pattern: &[u8],
+        count: usize,
+    ) -> Result<ScanResult> {
+        self.check_db(db)?;
+        let map = self.databases[db].read();
+        let mut valid: Vec<Vec<u8>> = map
+            .iter()
+            .filter(|(_, v)| !v.is_expired())
+            .filter(|(k, _)| pattern.is_empty() || glob_match(pattern, k))
+            .map(|(k, _)| k.clone())
+            .collect();
+        drop(map);
+        valid.sort();
+
+        let skip = cursor as usize;
+        let end = (skip + count).min(valid.len());
+        let keys = valid[skip..end].to_vec();
+        let next_cursor = if end < valid.len() { end as u64 } else { 0 };
+        Ok(ScanResult {
+            cursor: next_cursor,
+            keys,
+        })
+    }
+
+    async fn len(&self, db: usize) -> Result<usize> {
+        self.check_db(db)?;
+        let map = self.databases[db].read();
+        let n = map.values().filter(|v| !v.is_expired()).count();
+        Ok(n)
+    }
+
+    async fn keyspace_stats(&self, db: usize) -> Result<KeyspaceStats> {
+        self.check_db(db)?;
+        let map = self.databases[db].read();
+        let now = now_ms();
+        let mut keys = 0usize;
+        let mut expires = 0usize;
+        let mut ttl_remaining = Vec::new();
+        for v in map.values() {
+            if v.is_expired() {
+                continue;
+            }
+            keys += 1;
+            if let Some(exp) = v.expires_at {
+                expires += 1;
+                if exp > now {
+                    ttl_remaining.push(exp - now);
+                }
+            }
+        }
+        let avg_ttl = crate::storage::types::compute_avg_ttl_ms(ttl_remaining.into_iter());
+        Ok(KeyspaceStats {
+            keys,
+            expires,
+            avg_ttl,
+        })
+    }
+
+    async fn clear(&self, db: usize) -> Result<()> {
+        self.check_db(db)?;
+        self.databases[db].write().clear();
+        Ok(())
+    }
+
+    async fn clear_all(&self) -> Result<()> {
+        for db in &self.databases {
+            db.write().clear();
+        }
+        Ok(())
+    }
+
+    #[instrument(name = "mem_engine_expire", skip(self, key), fields(db, key_size = key.len()))]
+    async fn expire(&self, db: usize, key: &[u8], ttl_ms: u64) -> Result<bool> {
+        self.check_db(db)?;
+        let mut map = self.databases[db].write();
+        if ttl_ms == 0 {
+            Self::remove_expired(&mut map, key);
+            return Ok(map.remove(key).is_some());
+        }
+        let Some(stored) = map.get(key) else {
+            return Ok(false);
+        };
+        if stored.is_expired() {
+            map.remove(key);
+            self.record_expired(1);
+            return Ok(false);
+        }
+        let expires_at = now_ms().saturating_add(ttl_ms);
+        if let Some(entry) = map.get_mut(key) {
+            entry.expires_at = Some(expires_at);
+        }
+        Ok(true)
+    }
+
+    async fn expire_at(&self, db: usize, key: &[u8], timestamp_ms: u64) -> Result<bool> {
+        self.check_db(db)?;
+        let mut map = self.databases[db].write();
+        let now = now_ms();
+        if timestamp_ms <= now {
+            Self::remove_expired(&mut map, key);
+            return Ok(map.remove(key).is_some());
+        }
+        let Some(stored) = map.get(key) else {
+            return Ok(false);
+        };
+        if stored.is_expired() {
+            map.remove(key);
+            self.record_expired(1);
+            return Ok(false);
+        }
+        if let Some(entry) = map.get_mut(key) {
+            entry.expires_at = Some(timestamp_ms);
+        }
+        Ok(true)
+    }
+
+    async fn ttl(&self, db: usize, key: &[u8]) -> Result<Option<i64>> {
+        self.check_db(db)?;
+        let map = self.databases[db].read();
+        let Some(stored) = map.get(key) else {
+            return Ok(None);
+        };
+        if stored.is_expired() {
+            drop(map);
+            let mut map = self.databases[db].write();
+            self.evict_expired_at_key(&mut map, key);
+            return Ok(None);
+        }
+        match stored.expires_at {
+            None => Ok(Some(TTL_NO_EXPIRY)),
+            Some(expires_at) => {
+                let now = now_ms();
+                if now >= expires_at {
+                    drop(map);
+                    let mut map = self.databases[db].write();
+                    self.evict_expired_at_key(&mut map, key);
+                    Ok(None)
+                } else {
+                    Ok(Some((expires_at - now) as i64))
+                }
+            }
+        }
+    }
+
+    async fn persist(&self, db: usize, key: &[u8]) -> Result<bool> {
+        self.check_db(db)?;
+        let mut map = self.databases[db].write();
+        Self::remove_expired(&mut map, key);
+        let Some(entry) = map.get_mut(key) else {
+            return Ok(false);
+        };
+        entry.expires_at = None;
+        Ok(true)
+    }
+
+    async fn db_count(&self) -> Result<usize> {
+        Ok(self.databases.len())
+    }
+
+    async fn swap_db(&self, a: usize, b: usize) -> Result<()> {
+        self.check_db(a)?;
+        self.check_db(b)?;
+        if a == b {
+            return Ok(());
+        }
+        let map_a = std::mem::take(&mut *self.databases[a].write());
+        let map_b = std::mem::take(&mut *self.databases[b].write());
+        *self.databases[a].write() = map_b;
+        *self.databases[b].write() = map_a;
+        Ok(())
+    }
+
+    async fn get_typed(&self, db: usize, key: &[u8]) -> Result<Option<StoredValue>> {
+        self.get_entry_read(db, key)
+    }
+
+    async fn set_typed(&self, db: usize, key: &[u8], value: StoredValue) -> Result<()> {
+        self.check_db(db)?;
+        self.databases[db].write().insert(key.to_vec(), value);
+        Ok(())
+    }
+
+    async fn rename_key(&self, db: usize, old_key: &[u8], new_key: &[u8]) -> Result<()> {
+        self.check_db(db)?;
+        if old_key == new_key {
+            return Ok(());
+        }
+        let mut map = self.databases[db].write();
+        Self::remove_expired(&mut map, old_key);
+        let Some(value) = map.remove(old_key) else {
+            return Err(Error::Command("ERR no such key".into()));
+        };
+        map.insert(new_key.to_vec(), value);
+        Ok(())
+    }
+
+    async fn rename_key_nx(&self, db: usize, old_key: &[u8], new_key: &[u8]) -> Result<bool> {
+        self.check_db(db)?;
+        if old_key == new_key {
+            return Ok(true);
+        }
+        let mut map = self.databases[db].write();
+        Self::remove_expired(&mut map, old_key);
+        let Some(value) = map.remove(old_key) else {
+            return Err(Error::Command("ERR no such key".into()));
+        };
+        if map.contains_key(new_key) {
+            map.insert(old_key.to_vec(), value);
+            return Ok(false);
+        }
+        map.insert(new_key.to_vec(), value);
+        Ok(true)
+    }
+
+    async fn copy_key(
+        &self,
+        src_db: usize,
+        dst_db: usize,
+        src_key: &[u8],
+        dst_key: &[u8],
+        replace: bool,
+    ) -> Result<bool> {
+        let Some(stored) = self.get_typed(src_db, src_key).await? else {
+            return Ok(false);
+        };
+        if src_db == dst_db && src_key == dst_key {
+            return Ok(replace);
+        }
+        if self.get_typed(dst_db, dst_key).await?.is_some() && !replace {
+            return Ok(false);
+        }
+        self.set_typed(dst_db, dst_key, stored.clone()).await?;
+        Ok(true)
+    }
+
+    async fn random_key(&self, db: usize) -> Result<Option<Vec<u8>>> {
+        let keys = self.keys(db, b"*").await?;
+        if keys.is_empty() {
+            return Ok(None);
+        }
+        let mut rng = rand::thread_rng();
+        Ok(keys.choose(&mut rng).cloned())
+    }
+
+    async fn memory_usage_bytes(&self) -> Result<u64> {
+        let mut total = 0u64;
+        for db in &self.databases {
+            let map = db.read();
+            for (key, value) in map.iter() {
+                if !value.is_expired() {
+                    total += key.len() as u64 + value.approximate_heap_bytes();
+                }
+            }
+        }
+        Ok(total)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn glob_star_and_question() {
+        assert!(glob_match(b"*", b"foo"));
+        assert!(glob_match(b"f*", b"foo"));
+        assert!(!glob_match(b"f*", b"bar"));
+        assert!(glob_match(b"f?o", b"foo"));
+        assert!(!glob_match(b"f?o", b"fooo"));
+    }
+}

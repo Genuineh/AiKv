@@ -1,33 +1,33 @@
 name: Security Audit
 
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
-    branches: [ main ]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.gitignore'
+    branches: [main, new/main, new/wiqun]
   pull_request:
-    branches: [ main ]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'LICENSE'
-      - '.gitignore'
+    branches: [main, new/main, new/wiqun]
   schedule:
-    # Run daily at 00:00 UTC
-    - cron: '0 0 * * *'
+    - cron: "0 0 * * *"
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   audit:
-    name: Security Audit
+    name: Cargo Audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
       - name: Install cargo-audit
-        run: cargo install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit@0.21.2
+
       - name: Run cargo audit
         run: cargo audit
 
@@ -36,8 +36,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
       - name: Install cargo-deny
-        run: cargo install cargo-deny
-      - name: Run cargo deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: Run cargo deny check
         run: cargo deny check

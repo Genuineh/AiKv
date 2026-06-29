@@ -1,49 +1,19 @@
-# cargo-deny configuration
-# https://embarkstudios.github.io/cargo-deny/
-
 [advisories]
-version = 2
-db-path = "~/.cargo/advisory-db"
-db-urls = ["https://github.com/rustsec/advisory-db"]
-
-# Temporary exception for RUSTSEC-2026-0001 (rkyv OOM issue). This is a tracked
-# technical debt item and should be removed once upstream patches rust_decimal/
-# openraft to depend on a safe rkyv >= 0.8.13.
-# Transient transitive dependency (rkyv) pulled in via rust_decimal -> byte-unit -> openraft;
-# no safe upgrade available yet. Tracked in repo issue.
-#
-# Temporary exception for RUSTSEC-2025-0141 (bincode unmaintained). Bincode is used
-# for serialization in AiDb storage adapter. No safe drop-in replacement available yet
-# as alternatives (wincode, postcard, bitcode, rkyv) have different APIs or performance
-# characteristics. Tracked in repo issue.
-ignore = [
-    "RUSTSEC-2026-0001",
-    "RUSTSEC-2025-0141",
-]
+ignore = ["RUSTSEC-2025-0141"]
 
 [licenses]
-version = 2
 allow = [
-    "MIT",
-    "Apache-2.0",
-    "Apache-2.0 WITH LLVM-exception",
-    "BSD-2-Clause",
-    "BSD-3-Clause",
-    "ISC",
-    "Unicode-DFS-2016",
-    "Unicode-3.0",
+  "MIT",
+  "Apache-2.0",
+  "ISC",
+  "BSD-3-Clause",
+  "BSD-2-Clause",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
 ]
-confidence-threshold = 0.8
 
 [bans]
-multiple-versions = "warn"
-wildcards = "allow"
-highlight = "all"
+multiple-versions = "deny"
 
 [sources]
-unknown-registry = "deny"
-unknown-git = "deny"
-allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = [
-    "https://github.com/wiqun/AiDb",
-]
+allow-git = []

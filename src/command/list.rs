@@ -1,752 +1,748 @@
-use crate::error::{AikvError, Result};
-use crate::protocol::RespValue;
-use crate::storage::{StorageEngine, StoredValue};
-use bytes::Bytes;
-use std::collections::VecDeque;
+//! List 命令
 
-/// List command handler
+use std::collections::VecDeque;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use bytes::Bytes;
+use tokio::sync::oneshot;
+use tracing::instrument;
+
+use crate::command::blocking::{self, BlockedClientGuard, BlockingRegistry};
+use crate::command::router::{self, KeyLock};
+use crate::error::{Error, Result};
+use crate::protocol::RespValue;
+use crate::server::ServerMetrics;
+use crate::storage::{KvStorage, StoredValue, ValueType};
+
 pub struct ListCommands {
-    storage: StorageEngine,
+    storage: Arc<dyn KvStorage>,
+    key_lock: Arc<KeyLock>,
+    metrics: Option<Arc<ServerMetrics>>,
 }
 
 impl ListCommands {
-    pub fn new(storage: StorageEngine) -> Self {
+    pub fn new(storage: Arc<dyn KvStorage>, key_lock: Arc<KeyLock>) -> Self {
         Self {
             storage,
+            key_lock,
+            metrics: None,
         }
     }
 
-    /// LPUSH key element [element ...]
-    /// Insert all the specified values at the head of the list stored at key
-    pub fn lpush(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() < 2 {
-            return Err(AikvError::WrongArgCount("LPUSH".to_string()));
+    pub fn with_metrics(
+        storage: Arc<dyn KvStorage>,
+        key_lock: Arc<KeyLock>,
+        metrics: Arc<ServerMetrics>,
+    ) -> Self {
+        Self {
+            storage,
+            key_lock,
+            metrics: Some(metrics),
         }
+    }
 
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let elements: Vec<Bytes> = args[1..].to_vec();
+    #[instrument(name = "cmd_list", skip(self, args), fields(cmd.name = "LPUSH"))]
+    pub async fn lpush(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_min_args("LPUSH", args, 2)?;
+        self.push(db, &args[0], &args[1..], true).await
+    }
 
-        // Migrated: Logic moved from storage layer to command layer
-        let list = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            // Get existing list or return error if wrong type
-            let mut list = stored.as_list()?.clone();
-            // Insert elements at the front (left) in correct order
-            for element in elements {
-                list.push_front(element.clone());
+    pub async fn rpush(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_min_args("RPUSH", args, 2)?;
+        self.push(db, &args[0], &args[1..], false).await
+    }
+
+    async fn push(
+        &self,
+        db: usize,
+        key: &Bytes,
+        elements: &[Bytes],
+        front: bool,
+    ) -> Result<RespValue> {
+        let _lock = self.key_lock.lock(key).await;
+        let mut stored = self.load_or_create_list(db, key).await?;
+        let list = stored.as_list_mut()?;
+        if front {
+            for el in elements {
+                list.push_front(el.to_vec());
             }
-            list
         } else {
-            // Create new list with elements
-            let mut list = VecDeque::new();
-            for element in elements {
-                list.push_front(element.clone());
+            for el in elements {
+                list.push_back(el.to_vec());
             }
-            list
-        };
-
-        let len = list.len();
-        self.storage
-            .set_value(db_index, key, StoredValue::new_list(list))?;
-        Ok(RespValue::Integer(len as i64))
+        }
+        let len = list.len() as i64;
+        self.storage.set_typed(db, key, stored).await?;
+        BlockingRegistry::global().notify(key, RespValue::SimpleString("OK".into()));
+        Ok(router::integer(len))
     }
 
-    /// RPUSH key element [element ...]
-    /// Insert all the specified values at the tail of the list stored at key
-    pub fn rpush(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() < 2 {
-            return Err(AikvError::WrongArgCount("RPUSH".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let elements: Vec<Bytes> = args[1..].to_vec();
-
-        // Migrated: Logic moved from storage layer to command layer
-        let list = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            // Get existing list or return error if wrong type
-            let mut list = stored.as_list()?.clone();
-            // Insert elements at the back (right)
-            for element in elements {
-                list.push_back(element);
-            }
-            list
-        } else {
-            // Create new list with elements
-            let mut list = VecDeque::new();
-            for element in elements {
-                list.push_back(element);
-            }
-            list
-        };
-
-        let len = list.len();
-        self.storage
-            .set_value(db_index, key, StoredValue::new_list(list))?;
-        Ok(RespValue::Integer(len as i64))
-    }
-
-    /// LPOP key \[count\]
-    /// Remove and return the first elements of the list stored at key
-    pub fn lpop(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.is_empty() {
-            return Err(AikvError::WrongArgCount("LPOP".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
+    pub async fn lpop(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("LPOP", args, 1)?;
         let count = if args.len() > 1 {
-            String::from_utf8_lossy(&args[1])
-                .parse::<usize>()
-                .map_err(|_| AikvError::InvalidArgument("invalid count".to_string()))?
-        } else {
-            1
-        };
-
-        // Migrated: Logic moved from storage layer to command layer
-        let mut values = Vec::new();
-
-        if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let mut list = stored.as_list()?.clone();
-
-            // Pop elements from the front
-            for _ in 0..count.min(list.len()) {
-                if let Some(value) = list.pop_front() {
-                    values.push(value);
-                }
-            }
-
-            // Update or delete the list
-            if list.is_empty() {
-                self.storage.delete_from_db(db_index, &key)?;
-            } else {
-                self.storage
-                    .set_value(db_index, key, StoredValue::new_list(list))?;
-            }
-        }
-
-        if values.is_empty() {
-            Ok(RespValue::Null)
-        } else if count == 1 {
-            Ok(RespValue::bulk_string(values[0].clone()))
-        } else {
-            Ok(RespValue::Array(Some(
-                values.into_iter().map(RespValue::bulk_string).collect(),
-            )))
-        }
-    }
-
-    /// RPOP key \[count\]
-    /// Remove and return the last elements of the list stored at key
-    pub fn rpop(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.is_empty() {
-            return Err(AikvError::WrongArgCount("RPOP".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let count = if args.len() > 1 {
-            String::from_utf8_lossy(&args[1])
-                .parse::<usize>()
-                .map_err(|_| AikvError::InvalidArgument("invalid count".to_string()))?
-        } else {
-            1
-        };
-
-        // Migrated: Logic moved from storage layer to command layer
-        let mut values = Vec::new();
-
-        if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let mut list = stored.as_list()?.clone();
-
-            // Pop elements from the back
-            for _ in 0..count.min(list.len()) {
-                if let Some(value) = list.pop_back() {
-                    values.push(value);
-                }
-            }
-
-            // Update or delete the list
-            if list.is_empty() {
-                self.storage.delete_from_db(db_index, &key)?;
-            } else {
-                self.storage
-                    .set_value(db_index, key, StoredValue::new_list(list))?;
-            }
-        }
-
-        if values.is_empty() {
-            Ok(RespValue::Null)
-        } else if count == 1 {
-            Ok(RespValue::bulk_string(values[0].clone()))
-        } else {
-            Ok(RespValue::Array(Some(
-                values.into_iter().map(RespValue::bulk_string).collect(),
-            )))
-        }
-    }
-
-    /// LLEN key
-    /// Returns the length of the list stored at key
-    pub fn llen(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("LLEN".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-
-        // Migrated: Logic moved from storage layer to command layer
-        let len = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            stored.as_list()?.len()
-        } else {
-            0
-        };
-
-        Ok(RespValue::Integer(len as i64))
-    }
-
-    /// LRANGE key start stop
-    /// Returns the specified elements of the list stored at key
-    pub fn lrange(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 3 {
-            return Err(AikvError::WrongArgCount("LRANGE".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let start = String::from_utf8_lossy(&args[1])
-            .parse::<i64>()
-            .map_err(|_| AikvError::InvalidArgument("invalid start index".to_string()))?;
-        let stop = String::from_utf8_lossy(&args[2])
-            .parse::<i64>()
-            .map_err(|_| AikvError::InvalidArgument("invalid stop index".to_string()))?;
-
-        // Migrated: Logic moved from storage layer to command layer
-        let values = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let list = stored.as_list()?;
-            let len = list.len() as i64;
-
-            if len == 0 {
-                Vec::new()
-            } else {
-                // Normalize negative indices
-                let start_idx = if start < 0 {
-                    (len + start).max(0) as usize
-                } else {
-                    start.min(len) as usize
-                };
-
-                let stop_idx = if stop < 0 {
-                    (len + stop).max(0) as usize
-                } else {
-                    stop.min(len - 1) as usize
-                };
-
-                // Extract range
-                if start_idx > stop_idx || start_idx >= len as usize {
-                    Vec::new()
-                } else {
-                    list.iter()
-                        .skip(start_idx)
-                        .take(stop_idx - start_idx + 1)
-                        .cloned()
-                        .collect()
-                }
-            }
-        } else {
-            Vec::new()
-        };
-
-        Ok(RespValue::Array(Some(
-            values.into_iter().map(RespValue::bulk_string).collect(),
-        )))
-    }
-
-    /// LINDEX key index
-    /// Returns the element at index in the list stored at key
-    pub fn lindex(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("LINDEX".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let index = String::from_utf8_lossy(&args[1])
-            .parse::<i64>()
-            .map_err(|_| AikvError::InvalidArgument("invalid index".to_string()))?;
-
-        // Migrated: Logic moved from storage layer to command layer
-        let value = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let list = stored.as_list()?;
-            let len = list.len() as i64;
-
-            if len == 0 {
-                None
-            } else {
-                // Normalize negative index
-                let idx = if index < 0 { len + index } else { index };
-
-                if idx >= 0 && idx < len {
-                    list.get(idx as usize).cloned()
-                } else {
-                    None
-                }
-            }
+            Some(parse_pop_count(&args[1])?)
         } else {
             None
         };
-
-        match value {
-            Some(value) => Ok(RespValue::bulk_string(value)),
-            None => Ok(RespValue::Null),
-        }
+        self.pop(db, &args[0], count, true).await
     }
 
-    /// LSET key index element
-    /// Sets the list element at index to element
-    pub fn lset(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 3 {
-            return Err(AikvError::WrongArgCount("LSET".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let index = String::from_utf8_lossy(&args[1])
-            .parse::<i64>()
-            .map_err(|_| AikvError::InvalidArgument("invalid index".to_string()))?;
-        let element = args[2].clone();
-
-        // Migrated: Logic moved from storage layer to command layer
-        if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let mut list = stored.as_list()?.clone();
-            let len = list.len() as i64;
-
-            // Normalize negative index
-            let idx = if index < 0 { len + index } else { index };
-
-            if idx >= 0 && idx < len {
-                if let Some(elem) = list.get_mut(idx as usize) {
-                    *elem = element;
-                }
-                self.storage
-                    .set_value(db_index, key, StoredValue::new_list(list))?;
-                Ok(RespValue::simple_string("OK"))
-            } else {
-                Err(AikvError::InvalidArgument("index out of range".to_string()))
-            }
+    pub async fn rpop(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("RPOP", args, 1)?;
+        let count = if args.len() > 1 {
+            Some(parse_pop_count(&args[1])?)
         } else {
-            Err(AikvError::InvalidArgument("no such key".to_string()))
+            None
+        };
+        self.pop(db, &args[0], count, false).await
+    }
+
+    async fn pop(
+        &self,
+        db: usize,
+        key: &Bytes,
+        count: Option<i64>,
+        front: bool,
+    ) -> Result<RespValue> {
+        let _lock = self.key_lock.lock(key).await;
+        let Some(mut stored) = self.storage.get_typed(db, key).await? else {
+            return Ok(router::nil_bulk());
+        };
+        let list = stored.as_list_mut()?;
+        let count = count.unwrap_or(1);
+        if count == 0 {
+            return Ok(RespValue::Array(Some(vec![])));
+        }
+        let n = (count as usize).min(list.len());
+        let mut popped = Vec::with_capacity(n);
+        for _ in 0..n {
+            let v = if front {
+                list.pop_front()
+            } else {
+                list.pop_back()
+            };
+            popped.push(v.expect("len checked"));
+        }
+        if list.is_empty() {
+            self.storage.delete(db, key).await?;
+        } else {
+            self.storage.set_typed(db, key, stored).await?;
+        }
+        if count == 1 && popped.len() == 1 {
+            return Ok(router::bulk(popped.into_iter().next().unwrap()));
+        }
+        Ok(array_of_bulk(popped))
+    }
+
+    pub async fn llen(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("LLEN", args, 1)?;
+        let list = self.load_list(db, &args[0]).await?;
+        Ok(router::integer(list.map(|l| l.len() as i64).unwrap_or(0)))
+    }
+
+    pub async fn lrange(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("LRANGE", args, 3)?;
+        let start = parse_i64(&args[1])?;
+        let stop = parse_i64(&args[2])?;
+        let list = self.load_list(db, &args[0]).await?;
+        let Some(list) = list else {
+            return Ok(RespValue::Array(Some(vec![])));
+        };
+        let (start_idx, stop_idx) = normalize_range(list.len(), start, stop);
+        if start_idx > stop_idx {
+            return Ok(RespValue::Array(Some(vec![])));
+        }
+        let items: Vec<Vec<u8>> = list
+            .iter()
+            .skip(start_idx)
+            .take(stop_idx - start_idx + 1)
+            .cloned()
+            .collect();
+        Ok(array_of_bulk(items))
+    }
+
+    pub async fn lindex(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("LINDEX", args, 2)?;
+        let index = parse_i64(&args[1])?;
+        let list = self.load_list(db, &args[0]).await?;
+        let Some(list) = list else {
+            return Ok(router::nil_bulk());
+        };
+        let idx = normalize_index(list.len(), index);
+        match list.get(idx) {
+            None => Ok(router::nil_bulk()),
+            Some(v) => Ok(router::bulk(v.clone())),
         }
     }
 
-    /// LREM key count element
-    /// Removes the first count occurrences of elements equal to element from the list
-    pub fn lrem(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 3 {
-            return Err(AikvError::WrongArgCount("LREM".to_string()));
+    pub async fn lset(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("LSET", args, 3)?;
+        let index = parse_i64(&args[1])?;
+        let _lock = self.key_lock.lock(&args[0]).await;
+        let Some(mut stored) = self.storage.get_typed(db, &args[0]).await? else {
+            return Err(Error::Command("ERR no such key".into()));
+        };
+        let list = stored.as_list_mut()?;
+        let idx = normalize_index(list.len(), index);
+        let Some(slot) = list.get_mut(idx) else {
+            return Err(Error::Command("ERR index out of range".into()));
+        };
+        *slot = args[2].to_vec();
+        self.storage.set_typed(db, &args[0], stored).await?;
+        Ok(router::ok())
+    }
+
+    pub async fn lrem(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("LREM", args, 3)?;
+        let count = parse_i64(&args[1])?;
+        let element = args[2].as_ref();
+        let _lock = self.key_lock.lock(&args[0]).await;
+        let Some(mut stored) = self.storage.get_typed(db, &args[0]).await? else {
+            return Ok(router::integer(0));
+        };
+        let list = stored.as_list_mut()?;
+        let removed = if count == 0 {
+            let before = list.len();
+            list.retain(|v| v.as_slice() != element);
+            before - list.len()
+        } else if count > 0 {
+            remove_direction(list, element, count as usize, true)
+        } else {
+            remove_direction(list, element, (-count) as usize, false)
+        };
+        if list.is_empty() {
+            self.storage.delete(db, &args[0]).await?;
+        } else {
+            self.storage.set_typed(db, &args[0], stored).await?;
+        }
+        Ok(router::integer(removed as i64))
+    }
+
+    #[instrument(name = "cmd_list", skip(self, args), fields(cmd.name = "LINSERT"))]
+    pub async fn linsert(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("LINSERT", args, 4)?;
+        let key = &args[0];
+        let where_arg = &args[1];
+        let pivot = args[2].as_ref();
+        let element = args[3].to_vec();
+        let before = if eq_ignore_case(where_arg, b"BEFORE") {
+            true
+        } else if eq_ignore_case(where_arg, b"AFTER") {
+            false
+        } else {
+            return Err(Error::Command("ERR syntax error".into()));
+        };
+
+        let _lock = self.key_lock.lock(key).await;
+        let Some(mut stored) = self.storage.get_typed(db, key).await? else {
+            return Ok(router::integer(0));
+        };
+        let list = stored.as_list_mut()?;
+        let Some(idx) = list.iter().position(|v| v.as_slice() == pivot) else {
+            return Ok(router::integer(-1));
+        };
+        let insert_at = if before { idx } else { idx + 1 };
+        list.insert(insert_at, element);
+        let len = list.len() as i64;
+        self.storage.set_typed(db, key, stored).await?;
+        Ok(router::integer(len))
+    }
+
+    #[instrument(name = "cmd_list", skip(self, args), fields(cmd.name = "LMOVE"))]
+    pub async fn lmove(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("LMOVE", args, 4)?;
+        let source = &args[0];
+        let destination = &args[1];
+        let from_left = parse_side(&args[2])?;
+        let to_left = parse_side(&args[3])?;
+
+        let (_lock_a, _lock_b) = self.key_lock.lock_two(source, destination).await;
+        let same_key = source == destination;
+
+        let Some(mut src_stored) = self.storage.get_typed(db, source).await? else {
+            return Ok(router::nil_bulk());
+        };
+        let src_list = src_stored.as_list_mut()?;
+        if src_list.is_empty() {
+            return Ok(router::nil_bulk());
         }
 
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let count = String::from_utf8_lossy(&args[1])
-            .parse::<i64>()
-            .map_err(|_| AikvError::InvalidArgument("invalid count".to_string()))?;
-        let element = args[2].clone();
-
-        // Migrated: Logic moved from storage layer to command layer
-        let removed = if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let mut list = stored.as_list()?.clone();
-            let mut removed_count = 0;
-
-            if count == 0 {
-                // Remove all occurrences
-                list.retain(|e| {
-                    if e == &element {
-                        removed_count += 1;
-                        false
-                    } else {
-                        true
-                    }
-                });
-            } else if count > 0 {
-                // Remove first count occurrences from head
-                let mut to_remove = count as usize;
-                let mut new_list = VecDeque::new();
-                for elem in list {
-                    if to_remove > 0 && elem == element {
-                        to_remove -= 1;
-                        removed_count += 1;
-                    } else {
-                        new_list.push_back(elem);
-                    }
+        if !same_key {
+            if let Some(dest_stored) = self.storage.get_typed(db, destination).await? {
+                if !matches!(dest_stored.value, ValueType::List(_)) {
+                    return Err(router::wrongtype());
                 }
-                list = new_list;
-            } else {
-                // Remove first |count| occurrences from tail
-                let mut to_remove = (-count) as usize;
-                let mut new_list = VecDeque::new();
-                for elem in list.into_iter().rev() {
-                    if to_remove > 0 && elem == element {
-                        to_remove -= 1;
-                        removed_count += 1;
-                    } else {
-                        new_list.push_front(elem);
-                    }
-                }
-                list = new_list;
             }
+        }
 
-            // Update or delete the list
+        let element = if from_left {
+            src_list.pop_front().expect("non-empty")
+        } else {
+            src_list.pop_back().expect("non-empty")
+        };
+
+        if same_key {
+            if to_left {
+                src_list.push_front(element.clone());
+            } else {
+                src_list.push_back(element.clone());
+            }
+            self.storage.set_typed(db, source, src_stored).await?;
+            return Ok(router::bulk(element));
+        }
+
+        if src_list.is_empty() {
+            self.storage.delete(db, source).await?;
+        } else {
+            self.storage.set_typed(db, source, src_stored).await?;
+        }
+
+        let mut dest_stored = match self.storage.get_typed(db, destination).await? {
+            None => StoredValue::new_list(VecDeque::new()),
+            Some(stored) => stored,
+        };
+        let dest_list = dest_stored.as_list_mut()?;
+        if to_left {
+            dest_list.push_front(element.clone());
+        } else {
+            dest_list.push_back(element.clone());
+        }
+        self.storage.set_typed(db, destination, dest_stored).await?;
+        Ok(router::bulk(element))
+    }
+
+    #[instrument(name = "cmd_list", skip(self, args), fields(cmd.name = "LPOS"))]
+    pub async fn lpos(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_min_args("LPOS", args, 2)?;
+        let key = &args[0];
+        let element = args[1].as_ref();
+        let opts = parse_lpos_options(&args[2..])?;
+
+        let Some(stored) = self.storage.get_typed(db, key).await? else {
+            return if opts.count.is_some() {
+                Ok(RespValue::Array(Some(vec![])))
+            } else {
+                Ok(router::nil_bulk())
+            };
+        };
+        let list = stored.as_list()?;
+        find_lpos(list, element, &opts)
+    }
+
+    pub async fn ltrim(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("LTRIM", args, 3)?;
+        let start = parse_i64(&args[1])?;
+        let stop = parse_i64(&args[2])?;
+        let _lock = self.key_lock.lock(&args[0]).await;
+        let Some(mut stored) = self.storage.get_typed(db, &args[0]).await? else {
+            return Ok(router::ok());
+        };
+        let list = stored.as_list_mut()?;
+        let (start_idx, stop_idx) = normalize_range(list.len(), start, stop);
+        if start_idx > stop_idx {
+            self.storage.delete(db, &args[0]).await?;
+            return Ok(router::ok());
+        }
+        let trimmed: VecDeque<Vec<u8>> = list
+            .iter()
+            .skip(start_idx)
+            .take(stop_idx - start_idx + 1)
+            .cloned()
+            .collect();
+        *list = trimmed;
+        if list.is_empty() {
+            self.storage.delete(db, &args[0]).await?;
+        } else {
+            self.storage.set_typed(db, &args[0], stored).await?;
+        }
+        Ok(router::ok())
+    }
+
+    async fn load_list(&self, db: usize, key: &[u8]) -> Result<Option<VecDeque<Vec<u8>>>> {
+        let Some(stored) = self.storage.get_typed(db, key).await? else {
+            return Ok(None);
+        };
+        Ok(Some(stored.as_list()?.clone()))
+    }
+
+    async fn load_or_create_list(&self, db: usize, key: &[u8]) -> Result<StoredValue> {
+        match self.storage.get_typed(db, key).await? {
+            None => Ok(StoredValue::new_list(VecDeque::new())),
+            Some(stored) => match stored.value {
+                ValueType::List(_) => Ok(stored),
+                _ => Err(router::wrongtype()),
+            },
+        }
+    }
+
+    // -- 阻塞命令 --
+
+    /// Parse timeout float from Bytes (last arg for BLPOP/BRPOP/BZPOP*)
+    pub(crate) fn parse_timeout_secs(b: &Bytes) -> Result<f64> {
+        let s = std::str::from_utf8(b)
+            .map_err(|_| Error::Command("ERR timeout is not a float".into()))?;
+        s.parse::<f64>()
+            .map_err(|_| Error::Command("ERR timeout is not a float".into()))
+    }
+
+    /// Non-blocking: try to pop from first non-empty key. Returns None if all empty.
+    async fn try_pop_any(
+        &self,
+        db: usize,
+        keys: &[&Bytes],
+        left: bool,
+    ) -> Result<Option<RespValue>> {
+        for &key in keys {
+            let Some(mut stored) = self.storage.get_typed(db, key).await? else {
+                continue;
+            };
+            let list = match stored.as_list_mut() {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
             if list.is_empty() {
-                self.storage.delete_from_db(db_index, &key)?;
-            } else {
-                self.storage
-                    .set_value(db_index, key, StoredValue::new_list(list))?;
+                continue;
             }
+            let element = if left {
+                list.pop_front().expect("non-empty")
+            } else {
+                list.pop_back().expect("non-empty")
+            };
+            if list.is_empty() {
+                self.storage.delete(db, key).await?;
+            } else {
+                self.storage.set_typed(db, key, stored).await?;
+            }
+            return Ok(Some(RespValue::Array(Some(vec![
+                RespValue::BulkString(Some(key.clone())),
+                RespValue::BulkString(Some(bytes::Bytes::from(element))),
+            ]))));
+        }
+        Ok(None)
+    }
 
-            removed_count
+    pub async fn blpop(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_min_args("BLPOP", args, 2)?;
+        let keys: Vec<&Bytes> = args[..args.len() - 1].iter().collect();
+        let timeout = Self::parse_timeout_secs(&args[args.len() - 1])?;
+        self.blocking_pop(db, &keys, timeout, true).await
+    }
+
+    pub async fn brpop(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_min_args("BRPOP", args, 2)?;
+        let keys: Vec<&Bytes> = args[..args.len() - 1].iter().collect();
+        let timeout = Self::parse_timeout_secs(&args[args.len() - 1])?;
+        self.blocking_pop(db, &keys, timeout, false).await
+    }
+
+    async fn blocking_pop(
+        &self,
+        db: usize,
+        keys: &[&Bytes],
+        timeout_secs: f64,
+        left: bool,
+    ) -> Result<RespValue> {
+        // Try non-blocking first
+        if let Some(result) = self.try_pop_any(db, keys, left).await? {
+            return Ok(result);
+        }
+
+        if timeout_secs == 0.0 {
+            return Ok(blocking::nil_blocking_response());
+        }
+
+        let dur = if timeout_secs > 0.0 {
+            Duration::from_secs_f64(timeout_secs)
+        } else {
+            Duration::from_secs(300)
+        };
+
+        let _blocked = BlockedClientGuard::enter(&self.metrics);
+
+        let registry = BlockingRegistry::global();
+        let mut receivers: Vec<oneshot::Receiver<RespValue>> = keys
+            .iter()
+            .map(|k| registry.register(k.to_vec(), dur))
+            .collect();
+
+        let deadline = Instant::now() + dur;
+        while Instant::now() < deadline {
+            for rx in &mut receivers {
+                match rx.try_recv() {
+                    Ok(_) | Err(oneshot::error::TryRecvError::Closed) => {
+                        let remaining = deadline.saturating_duration_since(Instant::now());
+                        if remaining.is_zero() {
+                            return Ok(blocking::nil_blocking_response());
+                        }
+                        if let Some(result) = self.try_pop_any(db, keys, left).await? {
+                            return Ok(result);
+                        }
+                        // Element taken by another waiter, re-register
+                        receivers = keys
+                            .iter()
+                            .map(|k| registry.register(k.to_vec(), remaining))
+                            .collect();
+                        break;
+                    }
+                    Err(oneshot::error::TryRecvError::Empty) => {}
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        Ok(blocking::nil_blocking_response())
+    }
+
+    /// BLMOVE with blocking when source is empty
+    pub async fn blmove_blocking(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("BLMOVE", args, 5)?;
+        let source = &args[0];
+        let timeout = Self::parse_timeout_secs(&args[4])?;
+
+        // Try non-blocking first
+        let immediate = self.lmove(db, &args[..4]).await?;
+        if !matches!(&immediate, RespValue::BulkString(None)) {
+            return Ok(immediate);
+        }
+
+        if timeout == 0.0 {
+            return Ok(blocking::nil_blocking_response());
+        }
+
+        let dur = if timeout > 0.0 {
+            Duration::from_secs_f64(timeout)
+        } else {
+            Duration::from_secs(300)
+        };
+
+        let _blocked = BlockedClientGuard::enter(&self.metrics);
+
+        let registry = BlockingRegistry::global();
+        let deadline = Instant::now() + dur;
+
+        while Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Ok(blocking::nil_blocking_response());
+            }
+            let mut rx = registry.register(source.to_vec(), remaining);
+
+            let result = tokio::time::timeout(remaining, &mut rx).await;
+            match result {
+                Ok(_) => {
+                    // Notified or sender dropped, retry LMOVE
+                    let retry = self.lmove(db, &args[..4]).await?;
+                    if !matches!(&retry, RespValue::BulkString(None)) {
+                        return Ok(retry);
+                    }
+                    // Element taken, loop to re-register
+                }
+                Err(_) => {
+                    // Timeout
+                    return Ok(blocking::nil_blocking_response());
+                }
+            }
+        }
+
+        Ok(blocking::nil_blocking_response())
+    }
+}
+
+fn normalize_range(len: usize, start: i64, stop: i64) -> (usize, usize) {
+    let len_i = len as i64;
+    let start_idx = if start < 0 {
+        (len_i + start).max(0) as usize
+    } else {
+        (start as usize).min(len)
+    };
+    let stop_idx = if stop < 0 {
+        (len_i + stop).max(0) as usize
+    } else {
+        (stop as usize).min(len.saturating_sub(1))
+    };
+    (start_idx, stop_idx)
+}
+
+fn normalize_index(len: usize, index: i64) -> usize {
+    if index < 0 {
+        (len as i64 + index) as usize
+    } else {
+        index as usize
+    }
+}
+
+fn remove_direction(
+    list: &mut VecDeque<Vec<u8>>,
+    element: &[u8],
+    max: usize,
+    from_front: bool,
+) -> usize {
+    let mut removed = 0;
+    if from_front {
+        let mut i = 0;
+        while i < list.len() && removed < max {
+            if list[i].as_slice() == element {
+                list.remove(i);
+                removed += 1;
+            } else {
+                i += 1;
+            }
+        }
+    } else {
+        let mut i = list.len();
+        while i > 0 && removed < max {
+            i -= 1;
+            if list[i].as_slice() == element {
+                list.remove(i);
+                removed += 1;
+            }
+        }
+    }
+    removed
+}
+
+fn array_of_bulk(items: Vec<Vec<u8>>) -> RespValue {
+    RespValue::Array(Some(items.into_iter().map(router::bulk).collect()))
+}
+
+fn parse_i64(b: &Bytes) -> Result<i64> {
+    let s =
+        std::str::from_utf8(b).map_err(|_| Error::Command("ERR value is not an integer".into()))?;
+    s.parse::<i64>()
+        .map_err(|_| Error::Command("ERR value is not an integer".into()))
+}
+
+fn parse_pop_count(b: &Bytes) -> Result<i64> {
+    let n = parse_i64(b)?;
+    if n < 0 {
+        return Err(Error::Command(
+            "ERR value is not an integer or out of range".into(),
+        ));
+    }
+    Ok(n)
+}
+
+fn eq_ignore_case(a: &Bytes, b: &[u8]) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .zip(b.iter())
+            .all(|(x, y)| x.eq_ignore_ascii_case(y))
+}
+
+fn parse_side(b: &Bytes) -> Result<bool> {
+    if eq_ignore_case(b, b"LEFT") {
+        Ok(true)
+    } else if eq_ignore_case(b, b"RIGHT") {
+        Ok(false)
+    } else {
+        Err(Error::Command("ERR syntax error".into()))
+    }
+}
+
+struct LposOptions {
+    rank: i64,
+    count: Option<i64>,
+    maxlen: i64,
+}
+
+fn parse_lpos_options(args: &[Bytes]) -> Result<LposOptions> {
+    let mut rank = 1_i64;
+    let mut count = None;
+    let mut maxlen = 0_i64;
+    let mut i = 0;
+    while i < args.len() {
+        if eq_ignore_case(&args[i], b"RANK") {
+            if i + 1 >= args.len() {
+                return Err(router::wrong_args("LPOS", ""));
+            }
+            rank = parse_i64(&args[i + 1])?;
+            i += 2;
+        } else if eq_ignore_case(&args[i], b"COUNT") {
+            if i + 1 >= args.len() {
+                return Err(router::wrong_args("LPOS", ""));
+            }
+            count = Some(parse_i64(&args[i + 1])?);
+            i += 2;
+        } else if eq_ignore_case(&args[i], b"MAXLEN") {
+            if i + 1 >= args.len() {
+                return Err(router::wrong_args("LPOS", ""));
+            }
+            maxlen = parse_i64(&args[i + 1])?;
+            if maxlen < 0 {
+                return Err(Error::Command(
+                    "ERR value is not an integer or out of range".into(),
+                ));
+            }
+            i += 2;
+        } else {
+            return Err(router::wrong_args("LPOS", ""));
+        }
+    }
+    Ok(LposOptions {
+        rank,
+        count,
+        maxlen,
+    })
+}
+
+fn find_lpos(list: &VecDeque<Vec<u8>>, element: &[u8], opts: &LposOptions) -> Result<RespValue> {
+    if opts.rank == 0 {
+        return Err(Error::Command("ERR RANK can't be zero".into()));
+    }
+
+    let len = list.len();
+    let abs_rank = opts.rank.unsigned_abs() as usize;
+
+    let indices: Vec<usize> = if opts.rank > 0 {
+        let end = if opts.maxlen > 0 {
+            (opts.maxlen as usize).min(len)
+        } else {
+            len
+        };
+        (0..end)
+            .filter(|&i| list[i].as_slice() == element)
+            .collect()
+    } else {
+        let start = if opts.maxlen > 0 {
+            len.saturating_sub(opts.maxlen as usize)
         } else {
             0
         };
+        (start..len)
+            .rev()
+            .filter(|&i| list[i].as_slice() == element)
+            .collect()
+    };
 
-        Ok(RespValue::Integer(removed as i64))
-    }
-
-    /// LTRIM key start stop
-    /// Trim the list to the specified range
-    pub fn ltrim(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 3 {
-            return Err(AikvError::WrongArgCount("LTRIM".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let start = String::from_utf8_lossy(&args[1])
-            .parse::<i64>()
-            .map_err(|_| AikvError::InvalidArgument("invalid start index".to_string()))?;
-        let stop = String::from_utf8_lossy(&args[2])
-            .parse::<i64>()
-            .map_err(|_| AikvError::InvalidArgument("invalid stop index".to_string()))?;
-
-        // Migrated: Logic moved from storage layer to command layer
-        if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let list = stored.as_list()?;
-            let len = list.len() as i64;
-
-            if len == 0 {
-                // Empty list, just delete
-                self.storage.delete_from_db(db_index, &key)?;
-            } else {
-                // Normalize negative indices
-                let start_idx = if start < 0 {
-                    (len + start).max(0) as usize
-                } else {
-                    start.min(len) as usize
-                };
-
-                let stop_idx = if stop < 0 {
-                    (len + stop).max(0) as usize
-                } else {
-                    stop.min(len - 1) as usize
-                };
-
-                // Trim the list
-                if start_idx > stop_idx || start_idx >= len as usize {
-                    // Result would be empty
-                    self.storage.delete_from_db(db_index, &key)?;
-                } else {
-                    let trimmed: VecDeque<Bytes> = list
-                        .iter()
-                        .skip(start_idx)
-                        .take(stop_idx - start_idx + 1)
-                        .cloned()
-                        .collect();
-                    self.storage
-                        .set_value(db_index, key, StoredValue::new_list(trimmed))?;
-                }
-            }
-        }
-
-        Ok(RespValue::simple_string("OK"))
-    }
-
-    /// LINSERT key BEFORE|AFTER pivot element
-    /// Inserts element in the list stored at key either before or after the reference value pivot
-    pub fn linsert(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 4 {
-            return Err(AikvError::WrongArgCount("LINSERT".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let position = String::from_utf8_lossy(&args[1]).to_uppercase();
-        let pivot = args[2].clone();
-        let element = args[3].clone();
-
-        // Validate position argument
-        let before = match position.as_str() {
-            "BEFORE" => true,
-            "AFTER" => false,
-            _ => return Err(AikvError::InvalidArgument("ERR syntax error".to_string())),
-        };
-
-        if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let list = stored.as_list()?.clone();
-
-            // Find the pivot element
-            let pivot_idx = list.iter().position(|e| e == &pivot);
-
-            if let Some(idx) = pivot_idx {
-                let insert_idx = if before { idx } else { idx + 1 };
-                // VecDeque doesn't have insert, so we need to work around it
-                let mut new_list: VecDeque<Bytes> = list.iter().take(insert_idx).cloned().collect();
-                new_list.push_back(element);
-                for elem in list.iter().skip(insert_idx) {
-                    new_list.push_back(elem.clone());
-                }
-
-                let len = new_list.len();
-                self.storage
-                    .set_value(db_index, key, StoredValue::new_list(new_list))?;
-                Ok(RespValue::Integer(len as i64))
-            } else {
-                // Pivot not found
-                Ok(RespValue::Integer(-1))
-            }
-        } else {
-            // Key doesn't exist
-            Ok(RespValue::Integer(0))
-        }
-    }
-
-    /// LMOVE source destination LEFT|RIGHT LEFT|RIGHT
-    /// Atomically returns and removes the first/last element of the source list,
-    /// and pushes the element to the first/last element of the destination list
-    pub fn lmove(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() != 4 {
-            return Err(AikvError::WrongArgCount("LMOVE".to_string()));
-        }
-
-        let source_key = String::from_utf8_lossy(&args[0]).to_string();
-        let dest_key = String::from_utf8_lossy(&args[1]).to_string();
-        let wherefrom = String::from_utf8_lossy(&args[2]).to_uppercase();
-        let whereto = String::from_utf8_lossy(&args[3]).to_uppercase();
-
-        // Validate direction arguments
-        let pop_left = match wherefrom.as_str() {
-            "LEFT" => true,
-            "RIGHT" => false,
-            _ => return Err(AikvError::InvalidArgument("ERR syntax error".to_string())),
-        };
-
-        let push_left = match whereto.as_str() {
-            "LEFT" => true,
-            "RIGHT" => false,
-            _ => return Err(AikvError::InvalidArgument("ERR syntax error".to_string())),
-        };
-
-        // Get source list
-        if let Some(stored) = self.storage.get_value(db_index, &source_key)? {
-            let mut source_list = stored.as_list()?.clone();
-
-            if source_list.is_empty() {
-                return Ok(RespValue::Null);
-            }
-
-            // Pop element from source
-            let element = if pop_left {
-                source_list.pop_front()
-            } else {
-                source_list.pop_back()
-            };
-
-            if let Some(elem) = element {
-                // Get or create destination list
-                let mut dest_list = if source_key == dest_key {
-                    // Same key, use the already modified source list
-                    source_list.clone()
-                } else if let Some(dest_stored) = self.storage.get_value(db_index, &dest_key)? {
-                    dest_stored.as_list()?.clone()
-                } else {
-                    VecDeque::new()
-                };
-
-                // Push element to destination
-                if push_left {
-                    dest_list.push_front(elem.clone());
-                } else {
-                    dest_list.push_back(elem.clone());
-                }
-
-                // Update source (if not same as dest)
-                if source_key != dest_key {
-                    if source_list.is_empty() {
-                        self.storage.delete_from_db(db_index, &source_key)?;
-                    } else {
-                        self.storage.set_value(
-                            db_index,
-                            source_key,
-                            StoredValue::new_list(source_list),
-                        )?;
-                    }
-                }
-
-                // Update destination
-                self.storage
-                    .set_value(db_index, dest_key, StoredValue::new_list(dest_list))?;
-
-                Ok(RespValue::bulk_string(elem))
-            } else {
-                Ok(RespValue::Null)
-            }
-        } else {
-            Ok(RespValue::Null)
-        }
-    }
-
-    /// LPOS key element [RANK rank] [COUNT num-matches] [MAXLEN len]
-    /// Returns the index of matching elements inside a list
-    pub fn lpos(&self, args: &[Bytes], db_index: usize) -> Result<RespValue> {
-        if args.len() < 2 {
-            return Err(AikvError::WrongArgCount("LPOS".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let element = args[1].clone();
-
-        // Parse optional arguments
-        let mut rank: i64 = 1;
-        let mut count: Option<usize> = None;
-        let mut maxlen: usize = 0; // 0 means no limit
-
-        let mut i = 2;
-        while i < args.len() {
-            let option = String::from_utf8_lossy(&args[i]).to_uppercase();
-            match option.as_str() {
-                "RANK" => {
-                    if i + 1 >= args.len() {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    i += 1;
-                    rank = String::from_utf8_lossy(&args[i])
-                        .parse::<i64>()
-                        .map_err(|_| {
-                            AikvError::InvalidArgument(
-                                "ERR value is not an integer or out of range".to_string(),
-                            )
-                        })?;
-                    if rank == 0 {
-                        return Err(AikvError::InvalidArgument(
-                            "ERR RANK can't be zero".to_string(),
-                        ));
-                    }
-                }
-                "COUNT" => {
-                    if i + 1 >= args.len() {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    i += 1;
-                    count = Some(String::from_utf8_lossy(&args[i]).parse::<usize>().map_err(
-                        |_| {
-                            AikvError::InvalidArgument(
-                                "ERR value is not an integer or out of range".to_string(),
-                            )
-                        },
-                    )?);
-                }
-                "MAXLEN" => {
-                    if i + 1 >= args.len() {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    i += 1;
-                    maxlen = String::from_utf8_lossy(&args[i])
-                        .parse::<usize>()
-                        .map_err(|_| {
-                            AikvError::InvalidArgument(
-                                "ERR value is not an integer or out of range".to_string(),
-                            )
-                        })?;
-                }
-                _ => {
-                    return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                }
-            }
-            i += 1;
-        }
-
-        if let Some(stored) = self.storage.get_value(db_index, &key)? {
-            let list = stored.as_list()?;
-
-            if list.is_empty() {
-                return if count.is_some() {
-                    Ok(RespValue::Array(Some(vec![])))
-                } else {
-                    Ok(RespValue::Null)
-                };
-            }
-
-            let mut matches: Vec<usize> = Vec::new();
-            let mut matched_count = 0;
-            // COUNT 0 means return all matches
-            let target_count = count.unwrap_or(1);
-            let unlimited = count == Some(0);
-            let max_to_scan = if maxlen > 0 {
-                maxlen.min(list.len())
-            } else {
-                list.len()
-            };
-
-            if rank > 0 {
-                // Positive rank: search from head to tail
-                let skip = (rank - 1) as usize;
-                let mut found = 0;
-                for (idx, item) in list.iter().enumerate().take(max_to_scan) {
-                    if item == &element {
-                        if found >= skip {
-                            matches.push(idx);
-                            matched_count += 1;
-                            if !unlimited && (count.is_none() || matched_count >= target_count) {
-                                break;
-                            }
-                        }
-                        found += 1;
-                    }
-                }
-            } else {
-                // Negative rank: search from tail to head
-                let skip = (-rank - 1) as usize;
-                let mut found = 0;
-                let start_idx = if max_to_scan < list.len() {
-                    list.len() - max_to_scan
-                } else {
-                    0
-                };
-                for idx in (start_idx..list.len()).rev() {
-                    if let Some(item) = list.get(idx) {
-                        if item == &element {
-                            if found >= skip {
-                                matches.push(idx);
-                                matched_count += 1;
-                                if !unlimited && (count.is_none() || matched_count >= target_count)
-                                {
-                                    break;
-                                }
-                            }
-                            found += 1;
-                        }
-                    }
-                }
-            }
-
-            if count.is_some() {
-                // Return array of indices
-                Ok(RespValue::Array(Some(
-                    matches
-                        .into_iter()
-                        .map(|i| RespValue::Integer(i as i64))
-                        .collect(),
-                )))
-            } else {
-                // Return single index or null
-                match matches.first() {
-                    Some(&idx) => Ok(RespValue::Integer(idx as i64)),
-                    None => Ok(RespValue::Null),
-                }
-            }
-        } else if count.is_some() {
+    if indices.len() < abs_rank {
+        return if opts.count.is_some() {
             Ok(RespValue::Array(Some(vec![])))
         } else {
-            Ok(RespValue::Null)
+            Ok(router::nil_bulk())
+        };
+    }
+
+    let remaining = &indices[abs_rank - 1..];
+    match opts.count {
+        None => Ok(router::integer(remaining[0] as i64)),
+        Some(0) => Ok(RespValue::Array(Some(
+            remaining
+                .iter()
+                .map(|&i| router::integer(i as i64))
+                .collect(),
+        ))),
+        Some(n) if n > 0 => {
+            let take = (n as usize).min(remaining.len());
+            Ok(RespValue::Array(Some(
+                remaining[..take]
+                    .iter()
+                    .map(|&i| router::integer(i as i64))
+                    .collect(),
+            )))
         }
+        Some(_) => Err(Error::Command(
+            "ERR value is not an integer or out of range".into(),
+        )),
     }
 }

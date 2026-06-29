@@ -1,818 +1,616 @@
-use crate::error::{AikvError, Result};
-use crate::protocol::RespValue;
-use crate::storage::StorageEngine;
-use bytes::Bytes;
+//! String 命令
 
-/// String command handler
+use std::sync::Arc;
+
+use bytes::Bytes;
+use tracing::instrument;
+
+use crate::command::router::{self, KeyLock};
+use crate::error::{Error, Result};
+use crate::protocol::RespValue;
+use crate::storage::{now_ms, KvStorage, WRONGTYPE};
+
 pub struct StringCommands {
-    storage: StorageEngine,
+    storage: Arc<dyn KvStorage>,
+    key_lock: Arc<KeyLock>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SetCondition {
+    None,
+    Nx,
+    Xx,
 }
 
 impl StringCommands {
-    pub fn new(storage: StorageEngine) -> Self {
-        Self {
-            storage,
+    pub fn new(storage: Arc<dyn KvStorage>, key_lock: Arc<KeyLock>) -> Self {
+        Self { storage, key_lock }
+    }
+
+    #[instrument(name = "cmd_string", skip(self, args), fields(cmd.name = "GET"))]
+    pub async fn get(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("GET", args, 1)?;
+        match self.storage.get(db, &args[0]).await? {
+            None => Ok(router::nil_bulk()),
+            Some(v) => Ok(router::bulk(v)),
         }
     }
 
-    /// GET key
-    pub fn get(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("GET".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-
-        match self.storage.get_from_db(current_db, &key)? {
-            Some(value) => Ok(RespValue::bulk_string(value)),
-            None => Ok(RespValue::null_bulk_string()),
-        }
-    }
-
-    /// SET key value \[EX seconds\] \[PX milliseconds\] \[NX|XX\]
-    pub fn set(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
+    #[instrument(name = "cmd_string", skip(self, args), fields(cmd.name = "SET"))]
+    pub async fn set(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         if args.len() < 2 {
-            return Err(AikvError::WrongArgCount("SET".to_string()));
+            return Err(router::wrong_args("SET", ""));
         }
+        let (key, value, expire_ms, condition) = parse_set_options(args)?;
 
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let value = args[1].clone();
-
-        // Parse options
-        let mut i = 2;
-        let mut nx = false;
-        let mut xx = false;
-        let mut expire_ms: Option<u64> = None;
-
-        while i < args.len() {
-            let option = String::from_utf8_lossy(&args[i]).to_uppercase();
-            match option.as_str() {
-                "NX" => nx = true,
-                "XX" => xx = true,
-                "EX" => {
-                    // Set expiration in seconds
-                    if i + 1 >= args.len() {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    i += 1;
-                    let seconds_str = String::from_utf8_lossy(&args[i]);
-                    let seconds = seconds_str.parse::<u64>().map_err(|_| {
-                        AikvError::InvalidArgument("ERR value is not an integer".to_string())
-                    })?;
-                    expire_ms = Some(seconds * 1000);
-                }
-                "PX" => {
-                    // Set expiration in milliseconds
-                    if i + 1 >= args.len() {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    i += 1;
-                    let ms_str = String::from_utf8_lossy(&args[i]);
-                    let ms = ms_str.parse::<u64>().map_err(|_| {
-                        AikvError::InvalidArgument("ERR value is not an integer".to_string())
-                    })?;
-                    expire_ms = Some(ms);
-                }
-                _ => {}
+        if matches!(condition, SetCondition::Nx | SetCondition::Xx) {
+            let _lock = self.key_lock.lock(&key).await;
+            let exists = self.storage.get(db, &key).await?.is_some();
+            if condition == SetCondition::Nx && exists {
+                return Ok(router::nil_bulk());
             }
-            i += 1;
+            if condition == SetCondition::Xx && !exists {
+                return Ok(router::nil_bulk());
+            }
+            return self.apply_set(db, &key, &value, expire_ms).await;
         }
 
-        // Check conditions
-        if nx && self.storage.exists_in_db(current_db, &key)? {
-            return Ok(RespValue::null_bulk_string());
-        }
+        self.apply_set(db, &key, &value, expire_ms).await
+    }
 
-        if xx && !self.storage.exists_in_db(current_db, &key)? {
-            return Ok(RespValue::null_bulk_string());
-        }
-
-        // Set with or without expiration
-        if let Some(ms) = expire_ms {
-            use std::time::{SystemTime, UNIX_EPOCH};
-            let now_ms = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64;
-            let expire_at = now_ms + ms;
-            self.storage
-                .set_with_expiration_in_db(current_db, key, value, expire_at)?;
+    async fn apply_set(
+        &self,
+        db: usize,
+        key: &[u8],
+        value: &[u8],
+        expire_at: Option<u64>,
+    ) -> Result<RespValue> {
+        if let Some(at) = expire_at {
+            self.storage.set_with_ttl(db, key, value, at).await?;
         } else {
-            self.storage.set_in_db(current_db, key, value)?;
+            self.storage.set(db, key, value).await?;
         }
-
-        Ok(RespValue::ok())
+        Ok(router::ok())
     }
 
-    /// DEL key \[key ...\]
-    pub fn del(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.is_empty() {
-            return Err(AikvError::WrongArgCount("DEL".to_string()));
-        }
-
-        let mut count = 0;
-        for arg in args {
-            let key = String::from_utf8_lossy(arg).to_string();
-            if self.storage.delete_from_db(current_db, &key)? {
-                count += 1;
-            }
-        }
-
-        Ok(RespValue::integer(count))
+    pub async fn mget(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_min_args("MGET", args, 1)?;
+        let keys: Vec<Vec<u8>> = args.iter().map(|b| b.to_vec()).collect();
+        let values = self.storage.mget(db, &keys).await?;
+        let items: Vec<RespValue> = values
+            .into_iter()
+            .map(|v| match v {
+                Some(b) => router::bulk(b),
+                None => router::nil_bulk(),
+            })
+            .collect();
+        Ok(RespValue::Array(Some(items)))
     }
 
-    /// EXISTS key \[key ...\]
-    pub fn exists(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.is_empty() {
-            return Err(AikvError::WrongArgCount("EXISTS".to_string()));
+    pub async fn mset(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        if args.len() < 2 || !args.len().is_multiple_of(2) {
+            return Err(router::wrong_args("MSET", ""));
         }
-
-        let mut count = 0;
-        for arg in args {
-            let key = String::from_utf8_lossy(arg).to_string();
-            if self.storage.exists_in_db(current_db, &key)? {
-                count += 1;
-            }
-        }
-
-        Ok(RespValue::integer(count))
-    }
-
-    /// MGET key \[key ...\]
-    pub fn mget(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.is_empty() {
-            return Err(AikvError::WrongArgCount("MGET".to_string()));
-        }
-
-        // Migrated: Logic moved from storage layer to command layer
-        let mut result = Vec::with_capacity(args.len());
-        for arg in args {
-            let key = String::from_utf8_lossy(arg).to_string();
-            match self.storage.get_from_db(current_db, &key)? {
-                Some(bytes) => result.push(RespValue::bulk_string(bytes)),
-                None => result.push(RespValue::null_bulk_string()),
-            }
-        }
-
-        Ok(RespValue::array(result))
-    }
-
-    /// MSET key value \[key value ...\]
-    pub fn mset(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.is_empty() || args.len() % 2 != 0 {
-            return Err(AikvError::WrongArgCount("MSET".to_string()));
-        }
-
-        // Migrated: Logic moved from storage layer to command layer
+        let mut pairs = Vec::with_capacity(args.len() / 2);
         for chunk in args.chunks(2) {
-            let key = String::from_utf8_lossy(&chunk[0]).to_string();
-            let value = chunk[1].clone();
-            self.storage.set_in_db(current_db, key, value)?;
+            pairs.push((chunk[0].to_vec(), chunk[1].to_vec()));
         }
-
-        Ok(RespValue::ok())
+        self.storage.mset(db, &pairs).await?;
+        Ok(router::ok())
     }
 
-    /// STRLEN key
-    pub fn strlen(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("STRLEN".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-
-        match self.storage.get_from_db(current_db, &key)? {
-            Some(value) => Ok(RespValue::integer(value.len() as i64)),
-            None => Ok(RespValue::integer(0)),
-        }
-    }
-
-    /// APPEND key value
-    pub fn append(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("APPEND".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let append_value = &args[1];
-
-        let new_value = match self.storage.get_from_db(current_db, &key)? {
-            Some(existing) => {
-                let mut combined = existing.to_vec();
-                combined.extend_from_slice(append_value);
-                Bytes::from(combined)
+    pub async fn del(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_min_args("DEL", args, 1)?;
+        let mut count = 0i64;
+        for key in args {
+            if self.storage.delete(db, key).await? {
+                count += 1;
             }
-            None => append_value.clone(),
-        };
-
-        let len = new_value.len() as i64;
-        self.storage.set_in_db(current_db, key, new_value)?;
-
-        Ok(RespValue::integer(len))
-    }
-
-    /// INCR key
-    /// Increments the number stored at key by one
-    pub fn incr(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("INCR".to_string()));
         }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        self.incr_by_internal(&key, 1, current_db)
+        Ok(router::integer(count))
     }
 
-    /// DECR key
-    /// Decrements the number stored at key by one
-    pub fn decr(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("DECR".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        self.incr_by_internal(&key, -1, current_db)
-    }
-
-    /// INCRBY key increment
-    /// Increments the number stored at key by increment
-    pub fn incrby(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("INCRBY".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let increment = String::from_utf8_lossy(&args[1])
-            .parse::<i64>()
-            .map_err(|_| {
-                AikvError::InvalidArgument(
-                    "ERR value is not an integer or out of range".to_string(),
-                )
-            })?;
-
-        self.incr_by_internal(&key, increment, current_db)
-    }
-
-    /// DECRBY key decrement
-    /// Decrements the number stored at key by decrement
-    pub fn decrby(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("DECRBY".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let decrement = String::from_utf8_lossy(&args[1])
-            .parse::<i64>()
-            .map_err(|_| {
-                AikvError::InvalidArgument(
-                    "ERR value is not an integer or out of range".to_string(),
-                )
-            })?;
-
-        self.incr_by_internal(&key, -decrement, current_db)
-    }
-
-    /// Internal helper for INCR/DECR/INCRBY/DECRBY
-    fn incr_by_internal(&self, key: &str, increment: i64, current_db: usize) -> Result<RespValue> {
-        let current_value = match self.storage.get_from_db(current_db, key)? {
-            Some(value) => {
-                let value_str = String::from_utf8_lossy(&value);
-                value_str.parse::<i64>().map_err(|_| {
-                    AikvError::InvalidArgument(
-                        "ERR value is not an integer or out of range".to_string(),
-                    )
-                })?
+    pub async fn exists(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_min_args("EXISTS", args, 1)?;
+        let mut count = 0i64;
+        for key in args {
+            if self.storage.exists(db, key).await? {
+                count += 1;
             }
-            None => 0,
-        };
-
-        let new_value = current_value.checked_add(increment).ok_or_else(|| {
-            AikvError::InvalidArgument("ERR increment or decrement would overflow".to_string())
-        })?;
-
-        self.storage.set_in_db(
-            current_db,
-            key.to_string(),
-            Bytes::from(new_value.to_string()),
-        )?;
-        Ok(RespValue::integer(new_value))
+        }
+        Ok(router::integer(count))
     }
 
-    /// INCRBYFLOAT key increment
-    /// Increments the string representing a floating point number by the specified increment
-    pub fn incrbyfloat(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("INCRBYFLOAT".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let increment = String::from_utf8_lossy(&args[1])
-            .parse::<f64>()
-            .map_err(|_| {
-                AikvError::InvalidArgument("ERR value is not a valid float".to_string())
-            })?;
-
-        let current_value = match self.storage.get_from_db(current_db, &key)? {
-            Some(value) => {
-                let value_str = String::from_utf8_lossy(&value);
-                value_str.parse::<f64>().map_err(|_| {
-                    AikvError::InvalidArgument("ERR value is not a valid float".to_string())
-                })?
-            }
-            None => 0.0,
-        };
-
-        let new_value = current_value + increment;
-
-        // Check for infinity or NaN
-        if new_value.is_infinite() || new_value.is_nan() {
-            return Err(AikvError::InvalidArgument(
-                "ERR increment would produce NaN or Infinity".to_string(),
-            ));
-        }
-
-        // Format the float as Redis does (remove trailing zeros)
-        let formatted = format!("{}", new_value);
-        self.storage
-            .set_in_db(current_db, key, Bytes::from(formatted.clone()))?;
-        Ok(RespValue::bulk_string(Bytes::from(formatted)))
-    }
-
-    /// GETRANGE key start end
-    /// Returns the substring of the string value stored at key
-    pub fn getrange(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 3 {
-            return Err(AikvError::WrongArgCount("GETRANGE".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let start = String::from_utf8_lossy(&args[1])
-            .parse::<i64>()
-            .map_err(|_| {
-                AikvError::InvalidArgument(
-                    "ERR value is not an integer or out of range".to_string(),
-                )
-            })?;
-        let end = String::from_utf8_lossy(&args[2])
-            .parse::<i64>()
-            .map_err(|_| {
-                AikvError::InvalidArgument(
-                    "ERR value is not an integer or out of range".to_string(),
-                )
-            })?;
-
-        match self.storage.get_from_db(current_db, &key)? {
-            Some(value) => {
-                let len = value.len() as i64;
-                if len == 0 {
-                    return Ok(RespValue::bulk_string(Bytes::from("")));
-                }
-
-                // Normalize negative indices
-                let start_idx = if start < 0 {
-                    (len + start).max(0)
-                } else {
-                    start.min(len)
-                } as usize;
-                let end_idx = if end < 0 {
-                    (len + end).max(0)
-                } else {
-                    end.min(len - 1)
-                } as usize;
-
-                if start_idx > end_idx || start_idx >= value.len() {
-                    Ok(RespValue::bulk_string(Bytes::from("")))
-                } else {
-                    Ok(RespValue::bulk_string(Bytes::from(
-                        value[start_idx..=end_idx].to_vec(),
-                    )))
-                }
-            }
-            None => Ok(RespValue::bulk_string(Bytes::from(""))),
+    pub async fn strlen(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("STRLEN", args, 1)?;
+        match self.storage.get(db, &args[0]).await? {
+            None => Ok(router::integer(0)),
+            Some(v) => Ok(router::integer(v.len() as i64)),
         }
     }
 
-    /// SETRANGE key offset value
-    /// Overwrites part of the string stored at key, starting at the specified offset
-    pub fn setrange(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 3 {
-            return Err(AikvError::WrongArgCount("SETRANGE".to_string()));
+    pub async fn getrange(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("GETRANGE", args, 3)?;
+        let start = parse_i64_arg(&args[1], "GETRANGE")?;
+        let end = parse_i64_arg(&args[2], "GETRANGE")?;
+        match self.storage.get(db, &args[0]).await? {
+            None => Ok(router::bulk(Vec::new())),
+            Some(value) => Ok(router::bulk(string_range_slice(&value, start, end))),
         }
+    }
 
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let offset = String::from_utf8_lossy(&args[1])
-            .parse::<usize>()
-            .map_err(|_| AikvError::InvalidArgument("ERR offset is out of range".to_string()))?;
-        let value = &args[2];
-
-        let mut current = match self.storage.get_from_db(current_db, &key)? {
-            Some(v) => v.to_vec(),
-            None => Vec::new(),
-        };
-
-        // Extend with null bytes if necessary
-        let required_len = offset + value.len();
-        if required_len > current.len() {
-            current.resize(required_len, 0);
+    pub async fn setrange(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("SETRANGE", args, 3)?;
+        let key = &args[0];
+        let offset = parse_setrange_offset(&args[1])?;
+        let patch = &args[2];
+        let _lock = self.key_lock.lock(key).await;
+        let mut current = self.storage.get(db, key).await?.unwrap_or_default();
+        let end = offset
+            .checked_add(patch.len())
+            .ok_or_else(|| Error::Command("ERR offset is out of range".into()))?;
+        if end > current.len() {
+            current.resize(end, 0);
         }
-
-        // Overwrite at offset
-        current[offset..offset + value.len()].copy_from_slice(value);
-
+        current[offset..end].copy_from_slice(patch);
         let len = current.len() as i64;
-        self.storage
-            .set_in_db(current_db, key, Bytes::from(current))?;
-        Ok(RespValue::integer(len))
+        self.storage.set(db, key, &current).await?;
+        Ok(router::integer(len))
     }
 
-    /// GETEX key [EX seconds | PX milliseconds | EXAT unix-time | PXAT unix-time-milliseconds | PERSIST]
-    /// Get the value of key and optionally set its expiration
-    pub fn getex(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.is_empty() {
-            return Err(AikvError::WrongArgCount("GETEX".to_string()));
+    pub async fn setbit(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("SETBIT", args, 3)?;
+        let key = &args[0];
+        let offset = parse_bit_offset(&args[1])?;
+        let bit = parse_bit_value(&args[2])?;
+        let _lock = self.key_lock.lock(key).await;
+        let mut data = self.storage.get(db, key).await?.unwrap_or_default();
+        let prev = read_bit(&data, offset);
+        write_bit(&mut data, offset, bit);
+        self.storage.set(db, key, &data).await?;
+        Ok(router::integer(i64::from(prev)))
+    }
+
+    pub async fn getbit(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("GETBIT", args, 2)?;
+        let data = self.storage.get(db, &args[0]).await?.unwrap_or_default();
+        let offset = parse_bit_offset(&args[1])?;
+        Ok(router::integer(i64::from(read_bit(&data, offset))))
+    }
+
+    pub async fn append(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("APPEND", args, 2)?;
+        let key = &args[0];
+        let _lock = self.key_lock.lock(key).await;
+        let mut current: Vec<u8> = self.storage.get(db, key).await?.unwrap_or_default();
+        current.extend_from_slice(&args[1]);
+        let len = current.len() as i64;
+        self.storage.set(db, key, &current).await?;
+        Ok(router::integer(len))
+    }
+
+    pub async fn incr(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        self.incrby_delta(db, args, 1, "INCR").await
+    }
+
+    pub async fn decr(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        self.incrby_delta(db, args, -1, "DECR").await
+    }
+
+    pub async fn incrby(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("INCRBY", args, 2)?;
+        let delta = parse_i64_arg(&args[1], "INCRBY")?;
+        self.incrby_delta(db, &args[0..1], delta, "INCRBY").await
+    }
+
+    pub async fn decrby(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("DECRBY", args, 2)?;
+        let delta = parse_i64_arg(&args[1], "DECRBY")?;
+        self.incrby_delta(db, &args[0..1], -delta, "DECRBY").await
+    }
+
+    async fn incrby_delta(
+        &self,
+        db: usize,
+        args: &[Bytes],
+        delta: i64,
+        cmd: &str,
+    ) -> Result<RespValue> {
+        router::require_args(cmd, args, 1)?;
+        let key = &args[0];
+        let _lock = self.key_lock.lock(key).await;
+        let stored = self.storage.get(db, key).await?;
+        match stored {
+            None => {
+                self.storage
+                    .set(db, key, delta.to_string().as_bytes())
+                    .await?;
+                Ok(router::integer(delta))
+            }
+            Some(bytes) => {
+                if let Ok(v) = parse_i64_bytes(&bytes) {
+                    let result = v.checked_add(delta).ok_or_else(|| {
+                        Error::Command("ERR increment or decrement would overflow".into())
+                    })?;
+                    self.storage
+                        .set(db, key, result.to_string().as_bytes())
+                        .await?;
+                    Ok(router::integer(result))
+                } else if let Ok(f) = parse_f64_bytes(&bytes) {
+                    let result = f + delta as f64;
+                    let s = format_float(result);
+                    self.storage.set(db, key, s.as_bytes()).await?;
+                    Ok(router::bulk(s.into_bytes()))
+                } else {
+                    Err(router::wrongtype())
+                }
+            }
         }
+    }
 
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-
-        // Get the value first
-        let value = match self.storage.get_from_db(current_db, &key)? {
-            Some(v) => v,
-            None => return Ok(RespValue::null_bulk_string()),
+    pub async fn incrbyfloat(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("INCRBYFLOAT", args, 2)?;
+        let key = &args[0];
+        let delta = parse_f64_arg(&args[1], "INCRBYFLOAT")?;
+        if !delta.is_finite() {
+            return Err(Error::Command("ERR value is not a valid float".into()));
+        }
+        let _lock = self.key_lock.lock(key).await;
+        let stored = self.storage.get(db, key).await?;
+        let result = match stored {
+            None => delta,
+            Some(bytes) => {
+                let v = parse_f64_bytes(&bytes).map_err(|_| router::wrongtype())?;
+                let r = v + delta;
+                if !r.is_finite() {
+                    return Err(Error::Command(
+                        "ERR increment would produce NaN or Infinity".into(),
+                    ));
+                }
+                r
+            }
         };
-
-        // Parse options
-        if args.len() > 1 {
-            let option = String::from_utf8_lossy(&args[1]).to_uppercase();
-            match option.as_str() {
-                "EX" => {
-                    if args.len() < 3 {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    let seconds =
-                        String::from_utf8_lossy(&args[2])
-                            .parse::<u64>()
-                            .map_err(|_| {
-                                AikvError::InvalidArgument(
-                                    "ERR value is not an integer or out of range".to_string(),
-                                )
-                            })?;
-                    let now_ms = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as u64;
-                    let expire_at = now_ms + seconds * 1000;
-                    self.storage.set_with_expiration_in_db(
-                        current_db,
-                        key,
-                        value.clone(),
-                        expire_at,
-                    )?;
-                }
-                "PX" => {
-                    if args.len() < 3 {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    let ms = String::from_utf8_lossy(&args[2])
-                        .parse::<u64>()
-                        .map_err(|_| {
-                            AikvError::InvalidArgument(
-                                "ERR value is not an integer or out of range".to_string(),
-                            )
-                        })?;
-                    let now_ms = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as u64;
-                    let expire_at = now_ms + ms;
-                    self.storage.set_with_expiration_in_db(
-                        current_db,
-                        key,
-                        value.clone(),
-                        expire_at,
-                    )?;
-                }
-                "EXAT" => {
-                    if args.len() < 3 {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    let unix_time =
-                        String::from_utf8_lossy(&args[2])
-                            .parse::<u64>()
-                            .map_err(|_| {
-                                AikvError::InvalidArgument(
-                                    "ERR value is not an integer or out of range".to_string(),
-                                )
-                            })?;
-                    let expire_at = unix_time * 1000;
-                    self.storage.set_with_expiration_in_db(
-                        current_db,
-                        key,
-                        value.clone(),
-                        expire_at,
-                    )?;
-                }
-                "PXAT" => {
-                    if args.len() < 3 {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    let expire_at =
-                        String::from_utf8_lossy(&args[2])
-                            .parse::<u64>()
-                            .map_err(|_| {
-                                AikvError::InvalidArgument(
-                                    "ERR value is not an integer or out of range".to_string(),
-                                )
-                            })?;
-                    self.storage.set_with_expiration_in_db(
-                        current_db,
-                        key,
-                        value.clone(),
-                        expire_at,
-                    )?;
-                }
-                "PERSIST" => {
-                    // Re-set without expiration to remove TTL
-                    self.storage.set_in_db(current_db, key, value.clone())?;
-                }
-                _ => {
-                    return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                }
-            }
-        }
-
-        Ok(RespValue::bulk_string(value))
+        let s = format_float(result);
+        self.storage.set(db, key, s.as_bytes()).await?;
+        Ok(router::bulk(s.into_bytes()))
     }
 
-    /// GETDEL key
-    /// Get the value of key and delete the key
-    pub fn getdel(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("GETDEL".to_string()));
+    pub async fn setnx(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("SETNX", args, 2)?;
+        let key = &args[0];
+        let value = &args[1];
+        let _lock = self.key_lock.lock(key).await;
+        let exists = self.storage.get(db, key).await?.is_some();
+        if exists {
+            return Ok(router::integer(0));
         }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-
-        match self.storage.get_from_db(current_db, &key)? {
-            Some(value) => {
-                self.storage.delete_from_db(current_db, &key)?;
-                Ok(RespValue::bulk_string(value))
-            }
-            None => Ok(RespValue::null_bulk_string()),
-        }
+        self.storage.set(db, key, value).await?;
+        Ok(router::integer(1))
     }
 
-    /// SETNX key value
-    /// Set key to hold string value if key does not exist
-    pub fn setnx(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("SETNX".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let value = args[1].clone();
-
-        if self.storage.exists_in_db(current_db, &key)? {
-            Ok(RespValue::integer(0))
-        } else {
-            self.storage.set_in_db(current_db, key, value)?;
-            Ok(RespValue::integer(1))
-        }
-    }
-
-    /// SETEX key seconds value
-    /// Set key to hold the string value and set key to timeout after a given number of seconds
-    pub fn setex(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 3 {
-            return Err(AikvError::WrongArgCount("SETEX".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let seconds = String::from_utf8_lossy(&args[1])
-            .parse::<u64>()
-            .map_err(|_| {
-                AikvError::InvalidArgument(
-                    "ERR value is not an integer or out of range".to_string(),
-                )
-            })?;
-        let value = args[2].clone();
-
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-        let expire_at = now_ms + seconds * 1000;
-
-        self.storage
-            .set_with_expiration_in_db(current_db, key, value, expire_at)?;
-        Ok(RespValue::ok())
-    }
-
-    /// PSETEX key milliseconds value
-    /// Set key to hold the string value and set key to timeout after a given number of milliseconds
-    pub fn psetex(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 3 {
-            return Err(AikvError::WrongArgCount("PSETEX".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let milliseconds = String::from_utf8_lossy(&args[1])
-            .parse::<u64>()
-            .map_err(|_| {
-                AikvError::InvalidArgument(
-                    "ERR value is not an integer or out of range".to_string(),
-                )
-            })?;
-        let value = args[2].clone();
-
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-        let expire_at = now_ms + milliseconds;
-
-        self.storage
-            .set_with_expiration_in_db(current_db, key, value, expire_at)?;
-        Ok(RespValue::ok())
-    }
-
-    /// SETBIT key offset value
-    /// Sets or clears the bit at offset in the string value stored at key
-    pub fn setbit(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 3 {
-            return Err(AikvError::WrongArgCount("SETBIT".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let offset = String::from_utf8_lossy(&args[1])
-            .parse::<usize>()
-            .map_err(|_| {
-                AikvError::InvalidArgument(
-                    "ERR bit offset is not an integer or out of range".to_string(),
-                )
-            })?;
-        let bit_value = String::from_utf8_lossy(&args[2])
-            .parse::<u8>()
-            .map_err(|_| {
-                AikvError::InvalidArgument("ERR bit is not an integer or out of range".to_string())
-            })?;
-
-        if bit_value != 0 && bit_value != 1 {
-            return Err(AikvError::InvalidArgument(
-                "ERR bit is not an integer or out of range".to_string(),
+    pub async fn setex(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("SETEX", args, 3)?;
+        let key = &args[0];
+        let secs = parse_u64_arg(&args[1], "SETEX")?;
+        if secs == 0 {
+            return Err(Error::Command(
+                "ERR invalid expire time in 'setex' command".into(),
             ));
         }
+        let value = &args[2];
+        let expire_at = now_ms().saturating_add(secs.saturating_mul(1000));
+        self.storage.set_with_ttl(db, key, value, expire_at).await?;
+        Ok(router::ok())
+    }
 
-        // Get current value or create empty string
-        let mut current = match self.storage.get_from_db(current_db, &key)? {
-            Some(v) => v.to_vec(),
-            None => Vec::new(),
+    pub async fn psetex(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("PSETEX", args, 3)?;
+        let key = &args[0];
+        let ms = parse_u64_arg(&args[1], "PSETEX")?;
+        if ms == 0 {
+            return Err(Error::Command(
+                "ERR invalid expire time in 'psetex' command".into(),
+            ));
+        }
+        let value = &args[2];
+        let expire_at = now_ms().saturating_add(ms);
+        self.storage.set_with_ttl(db, key, value, expire_at).await?;
+        Ok(router::ok())
+    }
+
+    pub async fn getdel(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("GETDEL", args, 1)?;
+        let key = &args[0];
+        let _lock = self.key_lock.lock(key).await;
+        match self.storage.get(db, key).await? {
+            None => Ok(router::nil_bulk()),
+            Some(v) => {
+                self.storage.delete(db, key).await?;
+                Ok(router::bulk(v))
+            }
+        }
+    }
+
+    pub async fn getex(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_min_args("GETEX", args, 1)?;
+        let key = &args[0];
+        let value = match self.storage.get(db, key).await? {
+            None => return Ok(router::nil_bulk()),
+            Some(v) => v,
         };
-
-        // Calculate byte and bit positions
-        let byte_index = offset / 8;
-        let bit_index = offset % 8;
-
-        // Extend the string if necessary
-        if byte_index >= current.len() {
-            current.resize(byte_index + 1, 0);
+        if args.len() == 1 {
+            return Ok(router::bulk(value));
         }
-
-        // Get the old bit value
-        let old_bit = ((current[byte_index] >> (7 - bit_index)) & 1) as i64;
-
-        // Set or clear the bit
-        if bit_value == 1 {
-            current[byte_index] |= 1 << (7 - bit_index);
-        } else {
-            current[byte_index] &= !(1 << (7 - bit_index));
+        let opt = String::from_utf8_lossy(&args[1]).to_ascii_uppercase();
+        match opt.as_str() {
+            "PERSIST" => {
+                self.storage.persist(db, key).await?;
+            }
+            "EX" => {
+                if args.len() < 3 {
+                    return Err(router::wrong_args("GETEX", ""));
+                }
+                let secs = parse_u64_arg(&args[2], "GETEX")?;
+                if secs == 0 {
+                    return Err(Error::Command(
+                        "ERR invalid expire time in 'getex' command".into(),
+                    ));
+                }
+                let expire_at = now_ms().saturating_add(secs.saturating_mul(1000));
+                self.storage
+                    .set_with_ttl(db, key, &value, expire_at)
+                    .await?;
+            }
+            "PX" => {
+                if args.len() < 3 {
+                    return Err(router::wrong_args("GETEX", ""));
+                }
+                let ms = parse_u64_arg(&args[2], "GETEX")?;
+                if ms == 0 {
+                    return Err(Error::Command(
+                        "ERR invalid expire time in 'getex' command".into(),
+                    ));
+                }
+                let expire_at = now_ms().saturating_add(ms);
+                self.storage
+                    .set_with_ttl(db, key, &value, expire_at)
+                    .await?;
+            }
+            "EXAT" => {
+                if args.len() < 3 {
+                    return Err(router::wrong_args("GETEX", ""));
+                }
+                let ts_secs = parse_u64_arg(&args[2], "GETEX")?;
+                let expire_at = ts_secs.saturating_mul(1000);
+                self.storage
+                    .set_with_ttl(db, key, &value, expire_at)
+                    .await?;
+            }
+            "PXAT" => {
+                if args.len() < 3 {
+                    return Err(router::wrong_args("GETEX", ""));
+                }
+                let expire_at = parse_u64_arg(&args[2], "GETEX")?;
+                self.storage
+                    .set_with_ttl(db, key, &value, expire_at)
+                    .await?;
+            }
+            _ => return Err(Error::Command("ERR syntax error".into())),
         }
-
-        self.storage
-            .set_in_db(current_db, key, Bytes::from(current))?;
-        Ok(RespValue::integer(old_bit))
+        Ok(router::bulk(value))
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::storage::StorageEngine;
+type SetOptions = (Vec<u8>, Vec<u8>, Option<u64>, SetCondition);
 
-    fn setup() -> StringCommands {
-        StringCommands::new(StorageEngine::new_memory(16))
-    }
-
-    #[test]
-    fn test_get_set() {
-        let cmd = setup();
-
-        // SET
-        let result = cmd
-            .set(&[Bytes::from("key1"), Bytes::from("value1")], 0)
-            .unwrap();
-        assert_eq!(result, RespValue::ok());
-
-        // GET
-        let result = cmd.get(&[Bytes::from("key1")], 0).unwrap();
-        assert_eq!(result, RespValue::bulk_string("value1"));
-    }
-
-    #[test]
-    fn test_del() {
-        let cmd = setup();
-
-        cmd.set(&[Bytes::from("key1"), Bytes::from("value1")], 0)
-            .unwrap();
-        cmd.set(&[Bytes::from("key2"), Bytes::from("value2")], 0)
-            .unwrap();
-
-        let result = cmd
-            .del(
-                &[
-                    Bytes::from("key1"),
-                    Bytes::from("key2"),
-                    Bytes::from("key3"),
-                ],
-                0,
-            )
-            .unwrap();
-        assert_eq!(result, RespValue::integer(2));
-    }
-
-    #[test]
-    fn test_exists() {
-        let cmd = setup();
-
-        cmd.set(&[Bytes::from("key1"), Bytes::from("value1")], 0)
-            .unwrap();
-
-        let result = cmd
-            .exists(&[Bytes::from("key1"), Bytes::from("key2")], 0)
-            .unwrap();
-        assert_eq!(result, RespValue::integer(1));
-    }
-
-    #[test]
-    fn test_mget_mset() {
-        let cmd = setup();
-
-        cmd.mset(
-            &[
-                Bytes::from("key1"),
-                Bytes::from("value1"),
-                Bytes::from("key2"),
-                Bytes::from("value2"),
-            ],
-            0,
-        )
-        .unwrap();
-
-        let result = cmd
-            .mget(
-                &[
-                    Bytes::from("key1"),
-                    Bytes::from("key2"),
-                    Bytes::from("key3"),
-                ],
-                0,
-            )
-            .unwrap();
-
-        if let RespValue::Array(Some(arr)) = result {
-            assert_eq!(arr.len(), 3);
-            assert_eq!(arr[0], RespValue::bulk_string("value1"));
-            assert_eq!(arr[1], RespValue::bulk_string("value2"));
-            assert_eq!(arr[2], RespValue::null_bulk_string());
-        } else {
-            panic!("Expected array response");
+fn parse_set_options(args: &[Bytes]) -> Result<SetOptions> {
+    let key = args[0].to_vec();
+    let value = args[1].to_vec();
+    let mut expire_at: Option<u64> = None;
+    let mut condition = SetCondition::None;
+    let mut i = 2;
+    while i < args.len() {
+        let opt = String::from_utf8_lossy(&args[i]).to_ascii_uppercase();
+        match opt.as_str() {
+            "EX" => {
+                if expire_at.is_some() {
+                    return Err(Error::Command("ERR syntax error".into()));
+                }
+                i += 1;
+                if i >= args.len() {
+                    return Err(router::wrong_args("SET", ""));
+                }
+                let secs = parse_u64_arg(&args[i], "SET")?;
+                if secs == 0 {
+                    return Err(Error::Command(
+                        "ERR invalid expire time in 'set' command".into(),
+                    ));
+                }
+                expire_at = Some(now_ms().saturating_add(secs.saturating_mul(1000)));
+            }
+            "PX" => {
+                if expire_at.is_some() {
+                    return Err(Error::Command("ERR syntax error".into()));
+                }
+                i += 1;
+                if i >= args.len() {
+                    return Err(router::wrong_args("SET", ""));
+                }
+                let ms = parse_u64_arg(&args[i], "SET")?;
+                if ms == 0 {
+                    return Err(Error::Command(
+                        "ERR invalid expire time in 'set' command".into(),
+                    ));
+                }
+                expire_at = Some(now_ms().saturating_add(ms));
+            }
+            "EXAT" => {
+                if expire_at.is_some() {
+                    return Err(Error::Command("ERR syntax error".into()));
+                }
+                i += 1;
+                if i >= args.len() {
+                    return Err(router::wrong_args("SET", ""));
+                }
+                let ts_secs = parse_u64_arg(&args[i], "SET")?;
+                if ts_secs == 0 {
+                    return Err(Error::Command(
+                        "ERR invalid expire time in 'set' command".into(),
+                    ));
+                }
+                expire_at = Some(ts_secs.saturating_mul(1000));
+            }
+            "PXAT" => {
+                if expire_at.is_some() {
+                    return Err(Error::Command("ERR syntax error".into()));
+                }
+                i += 1;
+                if i >= args.len() {
+                    return Err(router::wrong_args("SET", ""));
+                }
+                let ts_ms = parse_u64_arg(&args[i], "SET")?;
+                if ts_ms == 0 {
+                    return Err(Error::Command(
+                        "ERR invalid expire time in 'set' command".into(),
+                    ));
+                }
+                expire_at = Some(ts_ms);
+            }
+            "NX" => {
+                if condition != SetCondition::None {
+                    return Err(Error::Command("ERR syntax error".into()));
+                }
+                condition = SetCondition::Nx;
+            }
+            "XX" => {
+                if condition != SetCondition::None {
+                    return Err(Error::Command("ERR syntax error".into()));
+                }
+                condition = SetCondition::Xx;
+            }
+            "GET" => {
+                return Err(Error::Command("ERR syntax error".into()));
+            }
+            _ => return Err(Error::Command("ERR syntax error".into())),
         }
+        i += 1;
+    }
+    Ok((key, value, expire_at, condition))
+}
+
+/// Redis bit offset: 0 is the leftmost bit of the first byte.
+fn read_bit(data: &[u8], offset: u64) -> u8 {
+    let byte_idx = (offset / 8) as usize;
+    let bit_pos = 7 - (offset % 8);
+    let byte = data.get(byte_idx).copied().unwrap_or(0);
+    (byte >> bit_pos) & 1
+}
+
+fn write_bit(data: &mut Vec<u8>, offset: u64, bit: u8) {
+    let byte_idx = (offset / 8) as usize;
+    let bit_pos = 7 - (offset % 8);
+    if data.len() <= byte_idx {
+        data.resize(byte_idx + 1, 0);
+    }
+    let mask = 1u8 << bit_pos;
+    if bit == 1 {
+        data[byte_idx] |= mask;
+    } else {
+        data[byte_idx] &= !mask;
+    }
+}
+
+/// Redis GETRANGE inclusive byte range (negative indices count from end).
+fn string_range_slice(value: &[u8], start: i64, end: i64) -> Vec<u8> {
+    let len = value.len() as i64;
+    if len == 0 {
+        return Vec::new();
     }
 
-    #[test]
-    fn test_strlen() {
-        let cmd = setup();
+    let start_idx = if start < 0 {
+        (len + start).max(0)
+    } else {
+        start.min(len)
+    } as usize;
+    let end_idx = if end < 0 {
+        (len + end).max(0)
+    } else {
+        end.min(len - 1)
+    } as usize;
 
-        cmd.set(&[Bytes::from("key1"), Bytes::from("hello")], 0)
-            .unwrap();
-
-        let result = cmd.strlen(&[Bytes::from("key1")], 0).unwrap();
-        assert_eq!(result, RespValue::integer(5));
+    if start_idx > end_idx || start_idx >= value.len() {
+        Vec::new()
+    } else {
+        value[start_idx..=end_idx].to_vec()
     }
+}
 
-    #[test]
-    fn test_append() {
-        let cmd = setup();
+fn parse_setrange_offset(b: &[u8]) -> Result<usize> {
+    let s = std::str::from_utf8(b)
+        .map_err(|_| Error::Command("ERR offset is out of range".into()))?;
+    if s.starts_with('-') {
+        return Err(Error::Command("ERR offset is out of range".into()));
+    }
+    s.parse::<usize>()
+        .map_err(|_| Error::Command("ERR offset is out of range".into()))
+}
 
-        let result = cmd
-            .append(&[Bytes::from("key1"), Bytes::from("Hello")], 0)
-            .unwrap();
-        assert_eq!(result, RespValue::integer(5));
+fn parse_bit_offset(b: &[u8]) -> Result<u64> {
+    let s = std::str::from_utf8(b)
+        .map_err(|_| Error::Command("ERR bit offset is not an integer or out of range".into()))?;
+    if s.starts_with('-') {
+        return Err(Error::Command(
+            "ERR bit offset is not an integer or out of range".into(),
+        ));
+    }
+    s.parse::<u64>()
+        .map_err(|_| Error::Command("ERR bit offset is not an integer or out of range".into()))
+}
 
-        let result = cmd
-            .append(&[Bytes::from("key1"), Bytes::from(" World")], 0)
-            .unwrap();
-        assert_eq!(result, RespValue::integer(11));
+fn parse_bit_value(b: &[u8]) -> Result<u8> {
+    let s = std::str::from_utf8(b)
+        .map_err(|_| Error::Command("ERR bit is not an integer or out of range".into()))?;
+    match s {
+        "0" => Ok(0),
+        "1" => Ok(1),
+        _ => Err(Error::Command(
+            "ERR bit is not an integer or out of range".into(),
+        )),
+    }
+}
 
-        let result = cmd.get(&[Bytes::from("key1")], 0).unwrap();
-        assert_eq!(result, RespValue::bulk_string("Hello World"));
+fn parse_i64_arg(b: &[u8], _cmd: &str) -> Result<i64> {
+    parse_i64_bytes(b)
+        .map_err(|_| Error::Command("ERR value is not an integer or out of range".into()))
+}
+
+fn parse_u64_arg(b: &[u8], _cmd: &str) -> Result<u64> {
+    let s = std::str::from_utf8(b).map_err(|_| Error::Command("ERR syntax error".into()))?;
+    s.parse::<u64>()
+        .map_err(|_| Error::Command("ERR syntax error".into()))
+}
+
+fn parse_f64_arg(b: &[u8], _cmd: &str) -> Result<f64> {
+    parse_f64_bytes(b)
+}
+
+fn parse_i64_bytes(b: &[u8]) -> Result<i64> {
+    let s = std::str::from_utf8(b).map_err(|_| Error::Command(WRONGTYPE.into()))?;
+    s.parse::<i64>()
+        .map_err(|_| Error::Command(WRONGTYPE.into()))
+}
+
+fn parse_f64_bytes(b: &[u8]) -> Result<f64> {
+    let s = std::str::from_utf8(b).map_err(|_| Error::Command(WRONGTYPE.into()))?;
+    s.parse::<f64>()
+        .map_err(|_| Error::Command(WRONGTYPE.into()))
+}
+
+fn format_float(v: f64) -> String {
+    let s = v.to_string();
+    if s.contains('.') {
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        s
     }
 }
