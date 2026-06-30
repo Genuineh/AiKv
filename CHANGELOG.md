@@ -11,6 +11,11 @@
 
 - **B1.1 + B1.4**: CONTRIBUTING 回归测必带规范; `slow:`/`stress:` 标签 taxonomy; CI `test-cluster` 补 `--test-threads=1`; 标准化 server/commands `#[ignore]` reason.
 
+### Changed
+
+- **集群 SET batcher**: `SET_BATCH_MAX_DELAY` 10ms → 1ms; 新增 `SET_BATCH_EAGER_FLUSH=4` (凑够 4 条立即 propose). 本地集群 SET 基线约 664 → ~2000 ops/s (`-n 500 -c 10 --cluster`).
+- **集群 snapshot 策略**: `snapshot_logs_since_last` 1000 → 256 (更频繁 snapshot/purge).
+
 - **C2.6**: `aikv_db_keys` OTel labeled gauge — OTLP remote write 覆盖 (C2.6 移除 HTTP scrape).
  实现 `JSON.MGET` — 顶层 + Lua `redis.call`; 多 key 单 path batch 读; 对齐 Redis 7 (missing → null, wrong-type 与 `JSON.GET` 一致).
 - **ISSUE-010**: `MIGRATE AUTH2 username password` — 解析 + TCP `AUTH user pass`; `KEYS` 遇 `AUTH2` 停止; `AUTH2` 优先于 `AUTH` (对齐 Redis 7 / oldmain).

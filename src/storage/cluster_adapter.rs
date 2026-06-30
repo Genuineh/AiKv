@@ -37,7 +37,10 @@ const GROUP_READY_MAX_ATTEMPTS: u32 = 20;
 const GROUP_READY_RETRY_DELAY: Duration = Duration::from_millis(250);
 const ERR_DATA_GROUP_NOT_READY: &str = "CLUSTERDOWN data group not ready";
 const SET_BATCH_MAX_OPS: usize = 128;
-const SET_BATCH_MAX_DELAY: Duration = Duration::from_millis(10);
+/// 凑批等待上限. 旧值 10ms 会把 fresh 集群 SET 压在 ~700 ops/s (实测 p50≈14ms).
+const SET_BATCH_MAX_DELAY: Duration = Duration::from_millis(1);
+/// 已凑够该数量则不再等待, 立即 propose (低负载时仍可能 batch=1).
+const SET_BATCH_EAGER_FLUSH: usize = 4;
 
 /// 数据面感知的存储适配器.
 pub struct ClusterDataAdapter {
@@ -254,7 +257,7 @@ async fn run_set_batcher(
                     Err(mpsc::error::TryRecvError::Disconnected) => break,
                 }
             }
-            if items.len() >= SET_BATCH_MAX_OPS {
+            if items.len() >= SET_BATCH_MAX_OPS || items.len() >= SET_BATCH_EAGER_FLUSH {
                 break;
             }
             match tokio::time::timeout(SET_BATCH_MAX_DELAY, rx.recv()).await {

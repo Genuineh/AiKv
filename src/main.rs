@@ -265,7 +265,7 @@ async fn init_cluster(
         election_timeout_max: raft_election_timeout_max,
         heartbeat_interval: raft_heartbeat_interval,
         max_payload_entries: 100,
-        snapshot_logs_since_last: 1000,
+        snapshot_logs_since_last: 256,
         max_entry_size: 8 * 1024 * 1024,
         rpc_timeout_ms: raft_rpc_timeout_ms,
         grpc_max_message_size: 64 * 1024 * 1024,
