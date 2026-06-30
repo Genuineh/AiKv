@@ -4,7 +4,7 @@
 
 ## 1. User
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>`
 
 请先阅读 (不要跳过):
 

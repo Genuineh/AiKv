@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 1. `AiKv-Workflow/backup/design.md` — 总规程
@@ -86,7 +86,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -95,7 +95,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -104,7 +104,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -113,7 +113,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/README.md"
+  "path": "../../../aidb/README.md"
 }
 ```
 
@@ -122,7 +122,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/README.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/README.md"
 }
 ```
 
@@ -146,7 +146,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/Cargo.toml",
+  "path": "../../Cargo.toml",
   "limit": 40
 }
 ```
@@ -156,7 +156,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/archive/21-deployment.md",
+  "path": "../../archive/21-deployment.md",
   "limit": 80
 }
 ```
@@ -175,7 +175,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/DEPLOYMENT.md",
+  "path": "../../DEPLOYMENT.md",
   "limit": 60
 }
 ```
@@ -190,7 +190,7 @@
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aidb/archive/16-readme.md"
+  "path": "../../../aidb/archive/16-readme.md"
 }
 ```
 
@@ -200,7 +200,7 @@
 ```json
 {
   "pattern": "struct Args|#\\[arg",
-  "path": "/root/code/database/aikv/src/main.rs",
+  "path": "../../src/main.rs",
   "-A": 1
 }
 ```
@@ -211,7 +211,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/ARCHITECTURE.md"
+  "path": "../../ARCHITECTURE.md"
 }
 ```
 
@@ -243,7 +243,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/AGENTS.md"
+  "path": "../../AGENTS.md"
 }
 ```
 
@@ -253,7 +253,7 @@
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/e2e/README.md"
+  "path": "../../e2e/README.md"
 }
 ```
 
@@ -411,7 +411,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/main.rs",
+  "path": "../../src/main.rs",
   "limit": 150
 }
 ```
@@ -421,7 +421,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/lib.rs"
+  "path": "../../src/lib.rs"
 }
 ```
 
@@ -430,7 +430,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/Cargo.toml"
+  "path": "../../Cargo.toml"
 }
 ```
 
@@ -439,7 +439,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/DESIGN.md",
+  "path": "../../DESIGN.md",
   "limit": 80
 }
 ```
@@ -449,7 +449,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/ISSUES.md",
+  "path": "../../ISSUES.md",
   "limit": 80
 }
 ```
@@ -464,7 +464,7 @@
 ```json
 {
   "pattern": "待核实|ISSUE-",
-  "path": "/root/code/database/aikv/ARCHITECTURE.md"
+  "path": "../../ARCHITECTURE.md"
 }
 ```
 
@@ -474,7 +474,7 @@
 ```json
 {
   "pattern": "待核实|ISSUE-",
-  "path": "/root/code/database/aikv/DESIGN.md"
+  "path": "../../DESIGN.md"
 }
 ```
 
@@ -484,7 +484,7 @@
 ```json
 {
   "pattern": "待核实|ISSUE-",
-  "path": "/root/code/database/aikv/DEPLOYMENT.md"
+  "path": "../../DEPLOYMENT.md"
 }
 ```
 
@@ -495,7 +495,7 @@
 {
   "offset": 150,
   "limit": 120,
-  "path": "/root/code/database/aikv/src/main.rs"
+  "path": "../../src/main.rs"
 }
 ```
 
@@ -518,7 +518,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/docs/modules/commands-core.md"
+  "path": "../../docs/modules/commands-core.md"
 }
 ```
 
@@ -528,7 +528,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/docs/modules/commands-extended.md"
+  "path": "../../docs/modules/commands-extended.md"
 }
 ```
 
@@ -538,7 +538,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/docs/modules/cluster.md"
+  "path": "../../docs/modules/cluster.md"
 }
 ```
 
@@ -548,7 +548,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/docs/modules/observability.md"
+  "path": "../../docs/modules/observability.md"
 }
 ```
 
@@ -559,7 +559,7 @@
 {
   "limit": 80,
   "offset": 550,
-  "path": "/root/code/database/aikv/src/main.rs"
+  "path": "../../src/main.rs"
 }
 ```
 
@@ -582,7 +582,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/AGENTS.md",
+  "path": "../../AGENTS.md",
   "offset": 40
 }
 ```
@@ -592,7 +592,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/commands-core.md",
+  "path": "../../docs/modules/commands-core.md",
   "pattern": "^## 已知限制|阻塞|BLPOP"
 }
 ```
@@ -602,7 +602,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/commands-extended.md",
+  "path": "../../docs/modules/commands-extended.md",
   "pattern": "^## 已知限制|BLPOP|MIGRATE"
 }
 ```
@@ -616,7 +616,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/examples/README.md"
+  "path": "../../examples/README.md"
 }
 ```
 
@@ -626,7 +626,7 @@
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/examples/basic.rs"
+  "path": "../../examples/basic.rs"
 }
 ```
 
@@ -812,7 +812,7 @@ redis-cli -p 6379 PING
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/README.md"
+  "path": "../../../aikv-oldmain/README.md"
 }
 ```
 
@@ -830,7 +830,7 @@ redis-cli -p 6379 PING
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory",
   "pattern": "README|quick.?start|特性|feature",
   "-i": true,
   "head_limit": 30
@@ -842,7 +842,7 @@ redis-cli -p 6379 PING
 
 ```json
 {
-  "path": "/root/code/database/aidb/archive/16-readme.md",
+  "path": "../../../aidb/archive/16-readme.md",
   "offset": 200,
   "limit": 150
 }
@@ -857,7 +857,7 @@ redis-cli -p 6379 PING
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/guide/01-quick-start.md",
+  "path": "../../../aikv-oldmain/docs/guide/01-quick-start.md",
   "limit": 80
 }
 ```
@@ -867,7 +867,7 @@ redis-cli -p 6379 PING
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/guide/02-deployment.md",
+  "path": "../../../aikv-oldmain/docs/guide/02-deployment.md",
   "limit": 80
 }
 ```
@@ -877,7 +877,7 @@ redis-cli -p 6379 PING
 
 ```json
 {
-  "path": "/root/code/database/aidb/archive/16-readme.md",
+  "path": "../../../aidb/archive/16-readme.md",
   "pattern": "步 2",
   "-A": 80
 }
@@ -903,7 +903,7 @@ redis-cli -p 6379 PING
 {
   "limit": 100,
   "offset": 80,
-  "path": "/root/code/database/aikv-oldmain/docs/guide/01-quick-start.md"
+  "path": "../../../aikv-oldmain/docs/guide/01-quick-start.md"
 }
 ```
 
@@ -922,7 +922,7 @@ redis-cli -p 6379 PING
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/01-resp-tcp.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/01-resp-tcp.md"
 }
 ```
 
@@ -1091,7 +1091,7 @@ redis-cli -p 6379 PING
 
 ```json
 {
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "pattern": "SCRIPT KILL|MONITOR|cluster-mode|--port"
 }
 ```
@@ -1101,7 +1101,7 @@ redis-cli -p 6379 PING
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command",
+  "path": "../../src/command",
   "pattern": "register_command|lookup\\(",
   "head_limit": 15
 }
@@ -1113,7 +1113,7 @@ redis-cli -p 6379 PING
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/DEPLOYMENT.md",
+  "path": "../../DEPLOYMENT.md",
   "offset": 60
 }
 ```
@@ -1127,7 +1127,7 @@ redis-cli -p 6379 PING
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command",
+  "path": "../../src/command",
   "pattern": "SCRIPT|KILL"
 }
 ```
@@ -1147,7 +1147,7 @@ redis-cli -p 6379 PING
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/DEPLOYMENT.md",
+  "path": "../../DEPLOYMENT.md",
   "offset": 100
 }
 ```
@@ -1161,7 +1161,7 @@ redis-cli -p 6379 PING
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/script.rs",
+  "path": "../../src/command/script.rs",
   "pattern": "script_kill",
   "-A": 8
 }
@@ -1173,7 +1173,7 @@ redis-cli -p 6379 PING
 ```json
 {
   "limit": 25,
-  "path": "/root/code/database/aikv/e2e/README.md"
+  "path": "../../e2e/README.md"
 }
 ```
 
@@ -1311,7 +1311,7 @@ redis-cli -p 6379 PING
 
 ```json
 {
-  "path": "/root/code/database/aidb/README.md"
+  "path": "../../../aidb/README.md"
 }
 ```
 
@@ -1517,7 +1517,7 @@ cargo run --example basic
 
 ```json
 {
-  "path": "/root/code/database/aikv/DESIGN.md",
+  "path": "../../DESIGN.md",
   "pattern": "^## |^### ",
   "head_limit": 30
 }
@@ -1528,7 +1528,7 @@ cargo run --example basic
 
 ```json
 {
-  "path": "/root/code/database/aikv/README.md",
+  "path": "../../README.md",
   "contents": "# AiKv\n\n用 Rust 实现的 **Redis RESP 兼容 KV 网络服务** (bin + lib, 当前 **0.10.5**). 对外提供 RESP2/3 与 Redis 命令语义; 存储可选内存或 AiDb LSM 持久化; 集群与 HTTP 指标通过 Cargo feature 按需启用.\n\n## 特性\n\n**服务与协议** (始终可用):\n\n- RESP2/RESP3 (HELLO 协商), Pipeline, Tokio 异步 TCP\n- 数据结构: String, Hash, List, Set, Sorted Set, Key/DB 管理\n- JSON 命令, Lua `EVAL`/`EVALSHA`/`SCRIPT`\n- 阻塞列表/ZSet: BLPOP/BRPOP/BLMOVE, BZPOPMIN/BZPOPMAX\n- 持久化运维: SAVE/BGSAVE/LASTSAVE/SHUTDOWN (aidb 路径走 `Checkpoint`, 非标准 RDB 主路径)\n- 可观测: INFO, SLOWLOG, LATENCY 直方图\n\n**存储引擎**:\n\n| 引擎 | CLI | 说明 |\n|------|-----|------|\n| 内存 | `--engine memory` (默认) | 开发/测试; 重启数据丢失 |\n| AiDb | `--engine aidb --data-dir <path>` | WAL + LSM; **生产与集群推荐** |\n\n**可选能力** (feature):\n\n| 能力 | Feature | 说明 |\n|------|---------|------|\n| Redis Cluster | `cluster` | MOVED/ASK, CLUSTER 子命令, slot 迁移; `aidb/cluster` |\n| Prometheus / OTel | `monitoring` | HTTP `/metrics`, tracing 导出; `aidb/monitoring` |\n\nFeature 组合、CLI 全表与集群多节点示例见 [DEPLOYMENT.md](DEPLOYMENT.md).\n\n## 与 AiDb\n\n[AiDb](../aidb/) 提供同步 LSM 引擎与 MetaRaft/Multi-Raft 共识; AiKv 在其上实现 TCP、Redis 命令与 Cluster **客户端协议**. Monorepo 内 `aidb = { path = \"../aidb\" }`; 本地开发需 sibling 布局 `../aidb`.\n\n## 快速开始\n\n```bash\n# 确保 ../aidb 存在\ncargo build --release --features cluster\n./target/release/aikv --bind 127.0.0.1:6379\n\n# 另开终端\nredis-cli -p 6379 PING\n```\n\n持久化 (生产推荐):\n\n```bash\n./target/release/aikv --bind 127.0.0.1:6379 --engine aidb --data-dir /tmp/aikv-data\n```\n\n集群部署与 `monitoring` scrape 见 [DEPLOYMENT.md](DEPLOYMENT.md).\n\n## 示例\n\n内嵌 memory Server 演示 (无需单独起二进制):\n\n```bash\ncargo run --example basic\n```\n\n| 示例 | 说明 | 运行 |\n|------|------|------|\n| `basic` | PING/SET/GET/HSET/INFO 等 | `cargo run --example basic` |\n| `cluster` | CRC16 槽位 / hash tag | `cargo run --features cluster --example cluster` |\n\n详见 [examples/README.md](examples/README.md).\n\n## E2E 测试\n\n基于 `redis-cli` 的 shell smoke 测试 (需先 `cargo build --release --features cluster`):\n\n```bash\n./e2e/test_basic.sh\n```\n\n详见 [e2e/README.md](e2e/README.md).\n\n## 文档\n\n| 文档 | 内容 |\n|------|------|\n| [ARCHITECTURE.md](ARCHITECTURE.md) | 分层、数据流、与 AiDb 边界 |\n| [DESIGN.md](DESIGN.md) | 跨模块设计决策与已知限制 |\n| [DEPLOYMENT.md](DEPLOYMENT.md) | 构建、feature、CLI、集群部署、监控 |\n| [AGENTS.md](AGENTS.md) | AI 助手与 CI 入口 |\n| [docs/modules/protocol.md](docs/modules/protocol.md) | RESP parser/encoder |\n| [docs/modules/server.md](docs/modules/server.md) | TCP Listener/Connection |\n| [docs/modules/storage.md](docs/modules/storage.md) | KvStorage, MemoryEngine, AiDbEngine |\n| [docs/modules/commands-core.md](docs/modules/commands-core.md) | 核心数据结构命令, Router |\n| [docs/modules/commands-extended.md](docs/modules/commands-extended.md) | JSON, Lua, SAVE, INFO, MIGRATE |\n| [docs/modules/cluster.md](docs/modules/cluster.md) | MOVED/ASK, CLUSTER 子命令 |\n| [docs/modules/observability.md](docs/modules/observability.md) | slowlog, INFO, `/metrics` |\n| [ISSUES.md](ISSUES.md) | 待核实项 |\n\n## 已知限制\n\n非 100% Redis 命令兼容; 无标准 `dump.rdb` / memory AOF 主路径. 详情见 [DESIGN.md](DESIGN.md) §与 Redis.\n\n## 待核实\n\n集群 failover/stub 子命令与可观测性默认差异 — 见 [ISSUES.md](ISSUES.md).\n\n## 许可\n\n[MIT](LICENSE) (见 [Cargo.toml](Cargo.toml)).\n"
 }
 ```
@@ -1542,7 +1542,7 @@ cargo run --example basic
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `README.md` | 待开始 | `backup/aikv/README.md` | 已移出 aikv | 最后修订入口 |",
   "new_string": "| `README.md` (入口) | ✅ | `backup/aikv/README.md` (主); oldmain `README.md` + `docs/guide/` (查漏); WiQunTools/wiqun-kv 跳过 | 已写 `aikv/README.md` | 模块级; 弃 mermaid/过时 CLI/aikv-tool/Milestone; ISSUES 根文档一行 |"
 }
@@ -1553,7 +1553,7 @@ cargo run --example basic
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "| 22 | `README.md` | ⬜ 待开始 | |",
   "new_string": "| 22 | `README.md` | ✅ 完成 | 2026-06-18 |"
 }
@@ -1567,7 +1567,7 @@ cargo run --example basic
 **Tool `Shell`**
 
 ```bash
-for f in ARCHITECTURE.md DESIGN.md DEPLOYMENT.md AGENTS.md ISSUES.md LICENSE Cargo.toml examples/README.md e2e/README.md docs/modules/{protocol,server,storage,commands-core,commands-extended,cluster,observability}.md; do test -f "/root/code/database/aikv/$f" && echo "OK $f" || echo "MISSING $f"; done; test -f /root/code/database/aidb/README.md && echo "OK ../aidb/"
+for f in ARCHITECTURE.md DESIGN.md DEPLOYMENT.md AGENTS.md ISSUES.md LICENSE Cargo.toml examples/README.md e2e/README.md docs/modules/{protocol,server,storage,commands-core,commands-extended,cluster,observability}.md; do test -f "../../$f" && echo "OK $f" || echo "MISSING $f"; done; test -f ../../../aidb/README.md && echo "OK ../aidb/"
 ```
 
 

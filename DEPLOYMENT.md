@@ -80,7 +80,7 @@ chmod +x e2e/*.sh
 ## Monorepo 布局
 
 ```shell
-database/
+<workspace>/
 ├── aidb/          # LSM + 可选 MetaRaft/MultiRaft (path 依赖)
 └── aikv/          # 本仓库 — RESP bin
     ├── src/main.rs

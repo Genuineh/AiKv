@@ -283,7 +283,7 @@ redis-cli SLOWLOG GET 10
 | `aikv_failover_total` | 未发生 failover → Prom 可能无 series (非 bug) |
 | `aidb_raft_rpc_total` | 副本 node 才有明显流量; 检查变量过滤与 time range |
 
-Grafana 面板 description 与 PromQL 见 AiFactory [`aikv-cluster.json`](../../../AiFactory/monitor/config/grafana/dashboards/aikv-cluster.json).
+Grafana 面板 description 与 PromQL 见 AiFactory [`aikv-cluster.json`](../../../aifactory/monitor/config/grafana/dashboards/aikv-cluster.json).
 
 ### 新增业务 counter
 
@@ -367,7 +367,7 @@ cargo test -p aikv --features cluster gossip_refresh -- --test-threads=1
 - **Slowlog 默认 100ms** — Redis/oldmain 为 10ms
 - **`evicted_keys` 恒 0** — 无 maxmemory eviction
 - **无 `CONFIG SET loglevel`** — oldmain `LoggingManager` 已移除
-- **Grafana 面板** 见 AiFactory [`monitor/config/grafana/dashboards/README.md`](../../../AiFactory/monitor/config/grafana/dashboards/README.md) (PromQL: `aikv_*` / `aidb_*`, filter `{service_name="aikv"}`)
+- **Grafana 面板** 见 AiFactory [`monitor/config/grafana/dashboards/README.md`](../../../aifactory/monitor/config/grafana/dashboards/README.md) (PromQL: `aikv_*` / `aidb_*`, filter `{service_name="aikv"}`)
 - **C2.6**: 生产 metrics 经 OTLP remote write; `:9191-9196` 仅 `/health`; `aikv_db_keys` 为 OTel labeled gauge
 - **C2.3 Exemplars**: 暂缓; OTel Rust SDK 0.32 仍无 exemplar 采集 — TODO 待 SDK 支持后实现
 - **C3.1 Profiles**: Alloy `pyroscope.ebpf` → 115 Pyroscope; Grafana **AiKv Profiles**; 无应用内 profiling SDK

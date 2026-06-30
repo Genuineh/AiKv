@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 
@@ -64,7 +64,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -73,7 +73,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -82,7 +82,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -98,7 +98,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv/src/storage"
+  "target_directory": "../../src/storage"
 }
 ```
 
@@ -107,7 +107,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/storage/mod.rs"
+  "path": "../../src/storage/mod.rs"
 }
 ```
 
@@ -117,7 +117,7 @@
 ```json
 {
   "pattern": "storage::",
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "glob": "*.rs",
   "head_limit": 40
 }
@@ -132,7 +132,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/storage/types.rs",
+  "path": "../../src/storage/types.rs",
   "limit": 120
 }
 ```
@@ -142,7 +142,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/storage/adapter.rs",
+  "path": "../../src/storage/adapter.rs",
   "limit": 80
 }
 ```
@@ -152,7 +152,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/storage/aidb.rs",
+  "path": "../../src/storage/aidb.rs",
   "limit": 80
 }
 ```
@@ -162,7 +162,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/storage/memory.rs",
+  "path": "../../src/storage/memory.rs",
   "limit": 80
 }
 ```
@@ -172,7 +172,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/storage/cluster_adapter.rs",
+  "path": "../../src/storage/cluster_adapter.rs",
   "limit": 80
 }
 ```
@@ -182,7 +182,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/storage/observation.rs",
+  "path": "../../src/storage/observation.rs",
   "limit": 60
 }
 ```
@@ -192,7 +192,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/storage/dump.rs",
+  "path": "../../src/storage/dump.rs",
   "limit": 60
 }
 ```
@@ -207,7 +207,7 @@
 ```json
 {
   "offset": 120,
-  "path": "/root/code/database/aikv/src/storage/types.rs"
+  "path": "../../src/storage/types.rs"
 }
 ```
 
@@ -217,7 +217,7 @@
 ```json
 {
   "glob_pattern": "**/storage/**",
-  "target_directory": "/root/code/database/aikv-oldmain"
+  "target_directory": "../../../aikv-oldmain"
 }
 ```
 
@@ -237,7 +237,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/storage.md"
+  "path": "../../docs/modules/storage.md"
 }
 ```
 
@@ -250,7 +250,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/main.rs",
+  "path": "../../src/main.rs",
   "offset": 120,
   "limit": 80
 }
@@ -262,7 +262,7 @@
 ```json
 {
   "pattern": "impl KvStorage",
-  "path": "/root/code/database/aikv/src/storage"
+  "path": "../../src/storage"
 }
 ```
 
@@ -272,7 +272,7 @@
 ```json
 {
   "glob_pattern": "**/*storage*",
-  "target_directory": "/root/code/database/AiKv-Workflow/backup/aikv"
+  "target_directory": "../../../AiKv-Workflow/backup/aikv"
 }
 ```
 
@@ -282,7 +282,7 @@
 ```json
 {
   "glob_pattern": "**/02-storage*",
-  "target_directory": "/root/code/database/WiQunTools"
+  "target_directory": "../../../WiQunTools"
 }
 ```
 
@@ -291,7 +291,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/storage/mod.rs"
+  "path": "../../../aikv-oldmain/src/storage/mod.rs"
 }
 ```
 
@@ -304,7 +304,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "storage::",
   "glob": "**/tests/**",
   "head_limit": 20
@@ -316,7 +316,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "mod storage|storage/",
   "glob": "**/*test*",
   "head_limit": 30
@@ -329,7 +329,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/docs/modules/server.md"
+  "path": "../../docs/modules/server.md"
 }
 ```
 
@@ -338,7 +338,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv",
+  "path": "../../../AiKv-Workflow/backup/aikv",
   "pattern": "storage|KvStorage|MemoryEngine|AiDbEngine",
   "head_limit": 25
 }
@@ -354,7 +354,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv/tests/modules/storage"
+  "target_directory": "../../tests/modules/storage"
 }
 ```
 
@@ -363,7 +363,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "cluster_adapter|ClusterDataAdapter",
   "glob": "**/*"
 }
@@ -375,7 +375,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/src/storage/adapter.rs",
+  "path": "../../src/storage/adapter.rs",
   "offset": 80
 }
 ```
@@ -389,7 +389,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/storage",
+  "path": "../../src/storage",
   "pattern": "impl StorageAdapter"
 }
 ```
@@ -401,7 +401,7 @@
 {
   "limit": 50,
   "offset": 115,
-  "path": "/root/code/database/aikv/src/storage/memory.rs"
+  "path": "../../src/storage/memory.rs"
 }
 ```
 
@@ -413,7 +413,7 @@
 **Tool `Shell`**
 
 ```bash
-wc -l /root/code/database/aikv/src/storage/*.rs /root/code/database/aikv-oldmain/src/storage/*.rs 2>/dev/null
+wc -l ../../src/storage/*.rs ../../../aikv-oldmain/src/storage/*.rs 2>/dev/null
 ```
 
 
@@ -576,7 +576,7 @@ oldmain 结构差异大 (`StorageEngine` 同步 enum vs 新代码 async trait �
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/storage/adapter.rs",
+  "path": "../../src/storage/adapter.rs",
   "offset": 115
 }
 ```
@@ -586,7 +586,7 @@ oldmain 结构差异大 (`StorageEngine` 同步 enum vs 新代码 async trait �
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/storage/aidb.rs",
+  "path": "../../src/storage/aidb.rs",
   "offset": 74
 }
 ```
@@ -596,7 +596,7 @@ oldmain 结构差异大 (`StorageEngine` 同步 enum vs 新代码 async trait �
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/storage/memory.rs",
+  "path": "../../src/storage/memory.rs",
   "offset": 160
 }
 ```
@@ -606,7 +606,7 @@ oldmain 结构差异大 (`StorageEngine` 同步 enum vs 新代码 async trait �
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/storage/cluster_adapter.rs",
+  "path": "../../src/storage/cluster_adapter.rs",
   "offset": 70
 }
 ```
@@ -616,7 +616,7 @@ oldmain 结构差异大 (`StorageEngine` 同步 enum vs 新代码 async trait �
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests/modules/storage/mod.rs"
+  "path": "../../tests/modules/storage/mod.rs"
 }
 ```
 
@@ -631,7 +631,7 @@ oldmain 结构差异大 (`StorageEngine` 同步 enum vs 新代码 async trait �
 {
   "limit": 115,
   "offset": 80,
-  "path": "/root/code/database/aikv/src/storage/memory.rs"
+  "path": "../../src/storage/memory.rs"
 }
 ```
 
@@ -641,7 +641,7 @@ oldmain 结构差异大 (`StorageEngine` 同步 enum vs 新代码 async trait �
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/tests/modules/storage/compat.rs"
+  "path": "../../tests/modules/storage/compat.rs"
 }
 ```
 
@@ -650,7 +650,7 @@ oldmain 结构差异大 (`StorageEngine` 同步 enum vs 新代码 async trait �
 
 ```json
 {
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "pattern": "create_checkpoint|flush_engine|close_engine|engine_kind"
 }
 ```
@@ -663,7 +663,7 @@ oldmain 结构差异大 (`StorageEngine` 同步 enum vs 新代码 async trait �
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aikv && cargo test --test modules storage:: -- --list 2>/dev/null | wc -l; cargo test --test modules storage:: -- --list 2>/dev/null | head -30
+cd ../../../aikv && cargo test --test modules storage:: -- --list 2>/dev/null | wc -l; cargo test --test modules storage:: -- --list 2>/dev/null | head -30
 ```
 
 
@@ -671,7 +671,7 @@ cd /root/code/database/aikv && cargo test --test modules storage:: -- --list 2>/
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests/modules/storage",
+  "path": "../../tests/modules/storage",
   "pattern": "WRONGTYPE|mget|write_batch"
 }
 ```
@@ -685,7 +685,7 @@ cd /root/code/database/aikv && cargo test --test modules storage:: -- --list 2>/
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests",
+  "path": "../../tests",
   "pattern": "mod storage|modules::storage"
 }
 ```
@@ -696,7 +696,7 @@ cd /root/code/database/aikv && cargo test --test modules storage:: -- --list 2>/
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/tests/modules/storage/memory.rs"
+  "path": "../../tests/modules/storage/memory.rs"
 }
 ```
 
@@ -901,7 +901,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv",
+  "path": "../../../AiKv-Workflow/backup/aikv",
   "pattern": "storage|KvStorage|MemoryEngine|AiDbEngine|StoredValue|StorageAdapter",
   "glob": "*.{md,MD}"
 }
@@ -912,7 +912,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain",
+  "path": "../../../aikv-oldmain",
   "pattern": "storage|KvStorage|MemoryEngine|StoredValue",
   "glob": "**/*.{md,MD}",
   "head_limit": 40
@@ -925,7 +925,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/02-storage-commands.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/02-storage-commands.md"
 }
 ```
 
@@ -935,7 +935,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 ```json
 {
   "limit": 150,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/06-persistence.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/06-persistence.md"
 }
 ```
 
@@ -948,7 +948,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/04-storage.md"
+  "path": "../../../aikv-oldmain/docs/development/architecture/04-storage.md"
 }
 ```
 
@@ -957,7 +957,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/ARCHITECTURE.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/ARCHITECTURE.md",
   "offset": 25,
   "limit": 100
 }
@@ -970,7 +970,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 {
   "glob": "**/*",
   "head_limit": 30,
-  "path": "/root/code/database/wiqun-kv/src/storage",
+  "path": "../../../wiqun-kv/src/storage",
   "pattern": "."
 }
 ```
@@ -982,7 +982,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 {
   "glob": "**/07-cluster*",
   "head_limit": 30,
-  "path": "/root/code/database/WiQunTools",
+  "path": "../../../WiQunTools",
   "pattern": "ClusterDataAdapter|cluster_adapter|StorageAdapter"
 }
 ```
@@ -992,7 +992,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 
 ```json
 {
-  "path": "/root/code/database/aikv/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1006,7 +1006,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 ```json
 {
   "glob_pattern": "src/storage/*",
-  "target_directory": "/root/code/database/wiqun-kv"
+  "target_directory": "../../../wiqun-kv"
 }
 ```
 
@@ -1017,7 +1017,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 {
   "glob": "02-storage-commands.md",
   "head_limit": 40,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory",
   "pattern": "Phase 10|StorageAdapter|KvStorageAdapter|wiqun_db|AiDb"
 }
 ```
@@ -1028,7 +1028,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv-oldmain/src/storage/memory_adapter.rs"
+  "path": "../../../aikv-oldmain/src/storage/memory_adapter.rs"
 }
 ```
 
@@ -1038,7 +1038,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv-oldmain/src/storage/cluster_raft.rs"
+  "path": "../../../aikv-oldmain/src/storage/cluster_raft.rs"
 }
 ```
 
@@ -1049,7 +1049,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 {
   "glob": "07-cluster*.md",
   "head_limit": 25,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory",
   "pattern": "ClusterRaft|cluster_raft|数据面|StorageAdapter"
 }
 ```
@@ -1065,7 +1065,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 {
   "glob": "07-cluster-protocol.md",
   "head_limit": 30,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory",
   "pattern": "storage|ClusterData|adapter|Raft"
 }
 ```
@@ -1075,7 +1075,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/DESIGN.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/DESIGN.md",
   "limit": 80
 }
 ```
@@ -1086,7 +1086,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/wiqun-kv/src/storage/mod.rs"
+  "path": "../../../wiqun-kv/src/storage/mod.rs"
 }
 ```
 
@@ -1097,7 +1097,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 {
   "glob": "05-lua.md",
   "head_limit": 15,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory",
   "pattern": "mget|WRONGTYPE|write_batch"
 }
 ```
@@ -1112,7 +1112,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 ```json
 {
   "glob_pattern": "**/persistence/**",
-  "target_directory": "/root/code/database/aikv/src"
+  "target_directory": "../../src"
 }
 ```
 
@@ -1123,7 +1123,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 {
   "glob": "02-storage-commands.md",
   "head_limit": 10,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory",
   "pattern": "mget|MGET"
 }
 ```
@@ -1268,7 +1268,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 ```json
 {
   "limit": 150,
-  "path": "/root/code/database/aikv-oldmain/src/storage/aidb_adapter.rs"
+  "path": "../../../aikv-oldmain/src/storage/aidb_adapter.rs"
 }
 ```
 
@@ -1279,7 +1279,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 {
   "limit": 120,
   "offset": 850,
-  "path": "/root/code/database/aikv-oldmain/src/storage/memory_adapter.rs"
+  "path": "../../../aikv-oldmain/src/storage/memory_adapter.rs"
 }
 ```
 
@@ -1288,7 +1288,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/storage",
+  "path": "../../../aikv-oldmain/src/storage",
   "pattern": "fn mget|async fn mget|fn get_from_db|get_value"
 }
 ```
@@ -1298,7 +1298,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv/src/storage",
+  "path": "../../../wiqun-kv/src/storage",
   "pattern": "fn mget|Options::for_testing"
 }
 ```
@@ -1314,7 +1314,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 {
   "limit": 50,
   "offset": 475,
-  "path": "/root/code/database/aikv-oldmain/src/storage/aidb_adapter.rs"
+  "path": "../../../aikv-oldmain/src/storage/aidb_adapter.rs"
 }
 ```
 
@@ -1325,7 +1325,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 {
   "limit": 50,
   "offset": 620,
-  "path": "/root/code/database/aikv-oldmain/src/storage/memory_adapter.rs"
+  "path": "../../../aikv-oldmain/src/storage/memory_adapter.rs"
 }
 ```
 
@@ -1336,7 +1336,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 {
   "limit": 50,
   "offset": 183,
-  "path": "/root/code/database/wiqun-kv/src/storage/memory.rs"
+  "path": "../../../wiqun-kv/src/storage/memory.rs"
 }
 ```
 
@@ -1347,7 +1347,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 {
   "limit": 100,
   "offset": 200,
-  "path": "/root/code/database/aikv-oldmain/src/storage/cluster_raft.rs"
+  "path": "../../../aikv-oldmain/src/storage/cluster_raft.rs"
 }
 ```
 
@@ -1357,7 +1357,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/wiqun-kv/src/storage/wiqun_db.rs"
+  "path": "../../../wiqun-kv/src/storage/wiqun_db.rs"
 }
 ```
 
@@ -1372,7 +1372,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 {
   "limit": 50,
   "offset": 708,
-  "path": "/root/code/database/aikv-oldmain/src/storage/cluster_raft.rs"
+  "path": "../../../aikv-oldmain/src/storage/cluster_raft.rs"
 }
 ```
 
@@ -1381,7 +1381,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/storage/cluster_raft.rs",
+  "path": "../../../aikv-oldmain/src/storage/cluster_raft.rs",
   "pattern": "propose|write_batch|set_value",
   "head_limit": 25
 }
@@ -1392,7 +1392,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/storage",
+  "path": "../../../aikv-oldmain/src/storage",
   "pattern": "SerializableStoredValue"
 }
 ```
@@ -1404,7 +1404,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 {
   "limit": 80,
   "offset": 238,
-  "path": "/root/code/database/wiqun-kv/src/storage/adapter.rs"
+  "path": "../../../wiqun-kv/src/storage/adapter.rs"
 }
 ```
 
@@ -1417,7 +1417,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command",
+  "path": "../../../aikv-oldmain/src/command",
   "pattern": "fn mget|MGET",
   "head_limit": 15
 }
@@ -1429,7 +1429,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv-oldmain/src/storage/memory_adapter.rs",
+  "path": "../../../aikv-oldmain/src/storage/memory_adapter.rs",
   "offset": 95
 }
 ```
@@ -1445,7 +1445,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 {
   "limit": 40,
   "offset": 140,
-  "path": "/root/code/database/aikv-oldmain/src/command/string.rs"
+  "path": "../../../aikv-oldmain/src/command/string.rs"
 }
 ```
 
@@ -1458,7 +1458,7 @@ cluster 仅在 `aidb` 路径且 `feature = "cluster"` 时插入 `ClusterDataAdap
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/string.rs",
+  "path": "../../src/command/string.rs",
   "pattern": "fn mget|async fn mget",
   "-A": 25
 }
@@ -1659,7 +1659,7 @@ description: AiKv storage layer — KvStorage trait, MemoryEngine, StorageAdapte
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aidb/docs/modules/cluster.md"
+  "path": "../../../aidb/docs/modules/cluster.md"
 }
 ```
 
@@ -1684,7 +1684,7 @@ description: AiKv storage layer — KvStorage trait, MemoryEngine, StorageAdapte
 {
   "offset": 115,
   "limit": 100,
-  "path": "/root/code/database/aikv/docs/modules/server.md"
+  "path": "../../docs/modules/server.md"
 }
 ```
 
@@ -1984,7 +1984,7 @@ cargo test --test storage memory aidb types -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aidb/ISSUES.md",
+  "path": "../../../aidb/ISSUES.md",
   "limit": 80
 }
 ```
@@ -1995,7 +1995,7 @@ cargo test --test storage memory aidb types -- --test-threads=1
 ```json
 {
   "glob_pattern": "docs/modules/*",
-  "target_directory": "/root/code/database/aikv"
+  "target_directory": "../../../aikv"
 }
 ```
 
@@ -2008,7 +2008,7 @@ cargo test --test storage memory aidb types -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/cluster.md",
+  "path": "../../../aidb/docs/modules/cluster.md",
   "pattern": "ISSUES"
 }
 ```
@@ -2018,7 +2018,7 @@ cargo test --test storage memory aidb types -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/server.md",
+  "path": "../../docs/modules/server.md",
   "pattern": "ISSUES"
 }
 ```
@@ -2033,7 +2033,7 @@ cargo test --test storage memory aidb types -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/AiKv-Workflow/backup/archive"
+  "target_directory": "../../../AiKv-Workflow/backup/archive"
 }
 ```
 
@@ -2046,7 +2046,7 @@ cargo test --test storage memory aidb types -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/storage.md",
+  "path": "../../docs/modules/storage.md",
   "contents": "---\nname: aikv-storage\ndescription: AiKv storage layer — KvStorage trait, MemoryEngine, StorageAdapter/KvStorageAdapter, AiDbEngine, ClusterDataAdapter, StoredValue/TTL/DUMP encoding. Use when changing src/storage/*, debugging memory vs aidb engine paths, TTL expiry, persistence bridge (flush/checkpoint), or cluster data-plane Raft writes.\n---\n\n# AiKv Storage (存储层)\n\n## 何时读本文\n\n- 改 `src/storage/*` 或排查 memory / aidb 引擎、TTL、多 DB、`StoredValue` 编解码\n- 理解命令层如何持有 `Arc<dyn KvStorage>` (见 [commands-core.md](commands-core.md))\n- 排查 cluster 模式下 **数据面** 写是否经 Raft (IMPORTING / slot 已分配)\n- **不覆盖**: AiDb LSM 内核 (WAL/MemTable/SSTable) → [aidb engine.md](../../aidb/docs/modules/engine.md) / [engine-storage.md](../../aidb/docs/modules/engine-storage.md)\n- **不覆盖**: MetaRaft/MultiRaft/Router → [aidb cluster.md](../../aidb/docs/modules/cluster.md)\n- **不覆盖**: MOVED/ASK / CLUSTER 子命令 → [cluster.md](cluster.md) (步 11)\n- **不覆盖**: SAVE/BGSAVE/RESTORE 命令语义 → [commands-extended.md](commands-extended.md); INFO/metrics 渲染 → [observability.md](observability.md)\n\n## 架构一览\n\n命令层只依赖 **`KvStorage`** (多 DB、typed value、TTL). 底层持久化/集群走 **两层扁平 KV**:\n\n```mermaid\nflowchart TB\n  CMD[\"command/*\\nArc<dyn KvStorage>\"]\n  MEM[\"MemoryEngine\\nimpl KvStorage\"]\n  KSA[\"KvStorageAdapter\\nimpl KvStorage\"]\n  SA[\"StorageAdapter\"]\n  CLU[\"ClusterDataAdapter\\nfeature cluster\"]\n  ADB[\"AiDbEngine\"]\n  CMD --> MEM\n  CMD --> KSA\n  KSA --> SA\n  SA --> CLU\n  CLU --> ADB\n  SA --> ADB\n```\n\n**进程装配** (`main.rs` `build_storage`):\n\n| `--engine` | 链路 | `StorageEngineKind` |\n|------------|------|---------------------|\n| `memory` | `MemoryEngine::with_observation(16, obs)` → 直接 `Arc<dyn KvStorage>` | `Memory` |\n| `aidb` | `AiDbEngine::open` → 可选 `ClusterDataAdapter::new` → `KvStorageAdapter::with_observation` | `AiDb` |\n\ncluster 包装 **仅 aidb 路径**; memory 不经 `StorageAdapter`.\n\n## 代码地图\n\n| 路径 | 职责 | 入口 |\n|------|------|------|\n| `storage/mod.rs` | 模块根; pub re-export | `KvStorage`, `MemoryEngine`, `AiDbEngine` |\n| `storage/types.rs` | 命令层契约 | `KvStorage`, `StoredValue`, `ValueType`, `WriteOp`, `StorageEngineKind` |\n| `storage/memory.rs` | 内存引擎; 直 impl `KvStorage` | `MemoryEngine::new`, `glob_match` |\n| `storage/adapter.rs` | 扁平 KV → 多 DB 语义 | `StorageAdapter`, `KvStorageAdapter`, `AdapterWriteOp` |\n| `storage/aidb.rs` | sync `aidb::DB` 的 async 包装 | `AiDbEngine::open`, `encode_key` / `decode_key` |\n| `storage/cluster_adapter.rs` | 数据面 Raft 包装 (`#[cfg(feature = \"cluster\")]`) | `ClusterDataAdapter::new` |\n| `storage/dump.rs` | 内部 DUMP 格式 | `encode` / `decode`, `DUMP_VERSION` |\n| `storage/observation.rs` | 过期 key 计数 (INFO/metrics) | `StorageObservation` |\n| `main.rs` ~L130–157 | CLI 引擎装配 | `build_storage` |\n\n`ServerSharedState` 持有 `Arc<dyn KvStorage>` (`server/config.rs`); RESTORE 用 `dump_encode`/`decode` (`server/connection.rs`).\n\n## 关键 invariant (勿破坏)\n\n- **String `get`/`set`**: `get`/`set` 仅 String; 非 String → `WRONGTYPE`. Hash/List/Set/ZSet 必须 `get_typed`/`set_typed`.\n- **两套 WriteOp**: `storage::WriteOp` (命令/Lua batch) ≠ `AdapterWriteOp` (扁平 KV). 转换在 `KvStorageAdapter::write_batch`.\n- **AiDb key 编码**: 物理 key = `{db_index}:{user_key}` (ASCII). `clear`/`keys`/`scan` 依赖 `db_prefix` + `prefix_end`.\n- **bincode 值**: aidb 路径 blob = `bincode(StoredValue)`; 与 `dump.rs` 同类型, DUMP 多 1 字节 version 前缀.\n- **惰性 TTL**: 读路径遇过期删除; memory/adapter 可 `StorageObservation::record_expired_key`.\n- **cluster 写路径**: slot 已分配时写 **必须** `propose_group`; **禁止** 写 local fallback (防 SET 成功 GET 空). 仅 `Unallocated` 或未初始化 cluster 写 local.\n- **cluster 读路径**: Assigned / 本地 Migrating group → `get_local`; 否则 `CLUSTERDOWN data group not ready`.\n- **持久化面**: memory 默认 `create_checkpoint` → ERR; aidb 委托 `DB::flush` / `Checkpoint::create`.\n\n## 数据流\n\n### String SET (aidb 路径)\n\n```mermaid\nsequenceDiagram\n  participant C as command/string\n  participant K as KvStorageAdapter\n  participant S as StorageAdapter\n  participant D as aidb::DB\n\n  C->>K: set(db, key, value)\n  K->>K: StoredValue::string + bincode\n  K->>S: set(\"db:key\", bytes)\n  Note over S: ClusterDataAdapter 可能 propose_group\n  S->>D: spawn_blocking put\n```\n\n### Typed HSET (共用)\n\n```mermaid\nflowchart LR\n  H[command/hash] --> GT[get_typed / set_typed]\n  GT --> ME{引擎}\n  ME -->|memory| MAP[HashMap StoredValue]\n  ME -->|aidb| BC[bincode → flat KV]\n```\n\n### Cluster 写 (已分配 slot)\n\n```mermaid\nflowchart LR\n  W[StorageAdapter::set] --> RW[route_write]\n  RW --> PG[propose_group_with_retry]\n  PG --> SM[MultiRaft apply → group SM]\n  RW -->|Unallocated only| LOC[local AiDbEngine]\n```\n\n## 关键类型与 API\n\n### `StoredValue` / `ValueType`\n\n- `StoredValue { value, expires_at }` — `expires_at`: Unix ms, `None` = 永不过期\n- `ValueType`: String / Hash / List / Set / ZSet (`Serialize`)\n- `as_*` / `as_*_mut` 类型不符 → `Error::Command(WRONGTYPE)`\n- `TTL_NO_EXPIRY` (-1): 存储层 sentinel; 命令层映射 Redis `-1`\n\n### `KvStorage` (命令层面, 节选)\n\n| 类别 | 方法 |\n|------|------|\n| String KV | `get`, `set`, `set_with_ttl`, `delete`, `exists`, `mget`, `mset` |\n| Typed | `get_typed`, `set_typed` |\n| 批量 | `write_batch(db, Vec<(key, WriteOp)>)` |\n| 键空间 | `keys`, `scan`, `len`, `keyspace_stats`, `clear`, `clear_all` |\n| TTL | `expire`, `expire_at`, `ttl`, `persist` |\n| DB | `db_count`, `swap_db`, `rename_key`, `copy_key`, `random_key` |\n| 引擎 | `engine_kind`, `flush_engine`, `create_checkpoint`, `close_engine`, `memory_usage_bytes`, `db_key_counts` |\n\n默认 `engine_kind` = Memory; memory 不覆盖 checkpoint/flush.\n\n### `StorageAdapter` (扁平 KV)\n\n`get` / `set` / `delete` / `exists` / `write_batch` / `scan_prefix` / `delete_range` / `len` / `clear` / `flush` / `create_checkpoint` / `close` / `engine_kind` / `approximate_memory_bytes`.\n\n实现: `AiDbEngine`; cluster 模式下外层 `ClusterDataAdapter` 再包一层.\n\n### `AiDbEngine` key 工具\n\n```rust\n// 物理 key\nAiDbEngine::encode_key(db, user_key)   // b\"0:mykey\"\nAiDbEngine::decode_key(encoded)        // Option<(db, user_key)>\nAiDbEngine::prefix_end(prefix)         // range scan 上界\n```\n\n`open(path)`: `Options::for_testing()`, `create_if_missing`, `sync_wal: true`; 所有 DB 操作为 `spawn_blocking`.\n\n### DUMP (内部格式, 非 Redis)\n\n```shell\n[ u8 version=0 ][ bincode(StoredValue) ]\n```\n\nRESTORE 校验 version; 失败 → `ERR DUMP payload version or checksum error`.\n\n## 常见任务\n\n### 新增/修改 KvStorage 方法\n\n1. 在 `types.rs` trait 定义; 评估 memory 与 `KvStorageAdapter` **双实现**\n2. 若涉及 flat KV, 评估是否扩展 `StorageAdapter` + `AiDbEngine` + `ClusterDataAdapter`\n3. 在 `tests/modules/storage/compat.rs` 补 memory vs aidb 一致性 (若适用)\n4. 命令层在 [commands-core.md](commands-core.md) 对应 handler 调用\n\n### 调试 memory vs aidb 行为不一致\n\n1. 跑 `cargo test --test storage compat -- --test-threads=1`\n2. 确认走哪条路径: `engine_kind()` 或 CLI `--engine`\n3. 对比是否经 bincode / key 编码 (adapter 专有)\n4. 查 [ISSUES.md](../../ISSUES.md) 已知差异\n\n### 调试 aidb 重启后数据丢失\n\n1. 确认 `--engine aidb --data-dir` 指向持久目录\n2. 查 `AiDbEngine::open` 是否同一 path\n3. cluster 模式: 用户数据在 **group SM**, 不单靠 local `AiDbEngine` 单库\n4. LSM 恢复细节 → [aidb engine.md](../../aidb/docs/modules/engine.md)\n\n### 调试 cluster 写成功读为空\n\n1. 确认 `CLUSTER_STATE_MGR` 已初始化且 slot Assigned\n2. 查 `ClusterDataAdapter::should_use_local_engine` — 已分配 slot **不应** fallback local\n3. 查 `route_write` / IMPORTING 是否写到 target group\n4. 控制面/MOVED → [cluster.md](cluster.md); Raft → [aidb cluster.md](../../aidb/docs/modules/cluster.md)\n\n### 调试 TTL / keyspace stats\n\n1. 过期为惰性: `ttl`/`get_typed` 触发删除\n2. `keyspace_stats` 只计未过期 key; `avg_ttl` 来自 `compute_avg_ttl_ms`\n3. `StorageObservation` 计数在 INFO/metrics drain — [observability.md](observability.md)\n\n## 配置与 feature flags\n\n| 项 | 位置 | 说明 |\n|----|------|------|\n| `--engine memory\\|aidb` | `main.rs` | 选择装配链 |\n| `--data-dir` | `main.rs` | aidb 必填 |\n| `feature = \"cluster\"` | `cluster_adapter.rs`, `main.rs` | 插入 `ClusterDataAdapter` |\n| `DB_COUNT` (=16) | `types.rs` | 逻辑 DB 数量 |\n| `StorageObservation` | `main.rs` → engine | 可选注入, 两路径均支持 |\n\n## 测试\n\n```bash\ncd aikv\ncargo test --test storage -- --test-threads=1\ncargo test --test storage compat -- --test-threads=1\ncargo test --test storage memory aidb types -- --test-threads=1\n```\n\n| 套件 | 路径 | 重点 |\n|------|------|------|\n| memory | `tests/modules/storage/memory.rs` | TTL, rename, scan, WRONGTYPE |\n| aidb | `tests/modules/storage/aidb.rs` | encode_key, adapter 读写 |\n| compat | `tests/modules/storage/compat.rs` | **双引擎行为一致** |\n| dump | `storage/dump.rs` unit | version + roundtrip |\n| cluster checkpoint | `cluster_adapter.rs` unit | `checkpoint_group_storages` |\n\n## 已知限制\n\n- **`scan` / `keys` (aidb 路径)**: `scan_prefix` 后 **全量 sort**, O(n) 内存; 大 keyspace 慎用.\n- **Memory `write_batch`**: 顺序 await, **非原子**; AiDb 路径单 `WriteBatch` 原子.\n- **AiDb 单库多 DB**: 非 oldmain 的 16 独立 `DB` 目录; 靠 key 前缀隔离.\n- **DUMP/RESTORE**: AiKv 内部格式, **不兼容** Redis DUMP.\n- **`glob_match`**: 仅 `*`/`?`; 无 `[abc]` 字符类.\n- **`random_key`**: memory 用 `rand`; adapter 用 `unix_nanos % len` — 分布不同.\n- **`AiDbEngine::open`**: 当前 `Options::for_testing()` — 见 ISSUE-002.\n\n## 待核实\n\n- 见 [ISSUES.md](../../ISSUES.md#issue-001-memoryengine-mget-对非-string-key-静默返回-none) — `mget` 在 memory 与 aidb 路径对 wrong-type key 行为不一致.\n- 见 [ISSUES.md](../../ISSUES.md#issue-002-aidbengineopen-固定-optionsfortesting) — 生产 Options 是否待收敛.\n"
 }
 ```
@@ -2056,7 +2056,7 @@ cargo test --test storage memory aidb types -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aikv/ISSUES.md",
+  "path": "../../ISSUES.md",
   "contents": "# AiKv — 待核实与问题跟踪\n\n> 位于 aikv 仓库根目录. module 内 **一行引用** 本文件条目 (见 `AiKv-Workflow/backup/design.md` 模板).\n\n**图例**: 状态 = `open` | `confirmed-bug` | `doc-only` | `closed`\n\n---\n\n## 如何使用\n\n1. 文档整理 **步 2–3** 发现设计偏离、实现疑点、oldmain 行为差异时, 在此新增条目.\n2. 在对应 module 的 **「待核实」** 小节写: `见 ISSUES.md#ISSUE-NNN — 一句话`\n3. 文档整理 **不阻塞** 于修复; 确认要修的 bug 另开开发任务.\n4. 关闭条目时更新状态, 必要时回写 module 删除或改写引用.\n\n整理流程中新增 ISSUES 条目, 须在 **步 2–3 确认门控** 内讨论后再写入.\n\n---\n\n## 条目模板 (复制后填写)\n\n```markdown\n### ISSUE-NNN: 标题\n\n- **状态**: open\n- **发现于**: PROGRESS 步 N / 章节 `docs/modules/xxx.md`\n- **相关 src**: `src/...`\n- **旧文档**: `aikv-oldmain/docs/...` (可选)\n- **oldmain 代码**: `aikv-oldmain/src/...` (可选)\n- **现象**: 当前实现 vs 旧设计/旧代码 的差异\n- **影响**: 文档应如何描述 / 是否可能是 bug\n- **下一步**: 待核实 | 需写测试 | 需开 issue 修代码\n```\n\n---\n\n## 条目列表\n\n<!-- 按 ISSUE-NNN 倒序追加 -->\n\n### ISSUE-002: AiDbEngine::open 固定 Options::for_testing()\n\n- **状态**: open\n- **发现于**: PROGRESS 步 6 / 章节 `docs/modules/storage.md`\n- **相关 src**: `src/storage/aidb.rs` (`open`)\n- **旧文档**: WiQunTools `06-persistence.md` — 「生产 Options 待收敛」\n- **oldmain 代码**: `aikv-oldmain/src/storage/aidb_adapter.rs` — `Options::default()`, `sync_wal(false)`\n- **现象**: 现码 `Options::for_testing()` + `sync_wal: true`; 无 CLI/配置切换生产 Options. wiqun-kv `wiqun_db.rs` 同形.\n- **影响**: module 已知限制已记录; 生产调优是否 intentional 待确认.\n- **下一步**: 待核实是否暴露生产 preset 或保留 testing defaults.\n\n### ISSUE-001: MemoryEngine mget 对非 String key 静默返回 None\n\n- **状态**: open\n- **发现于**: PROGRESS 步 6 / 章节 `docs/modules/storage.md`\n- **相关 src**: `src/storage/memory.rs` (`mget`), `src/storage/adapter.rs` (`mget` → `get`)\n- **oldmain 代码**: `memory_adapter.rs` `get_from_db` → WRONGTYPE; `aidb_adapter.rs` `get_from_db` → 非 String 返回 `None`\n- **现象**: `MemoryEngine::mget` 遇 Hash/List 等返回 `None` (等同 key 不存在); `KvStorageAdapter::mget` 调 `get` → 整命令 **WRONGTYPE**. oldmain memory MGET 失败 WRONGTYPE, aidb MGET 静默 nil — **重构后与 oldmain 两侧均不完全一致**.\n- **影响**: `--engine memory` vs `aidb` 下 MGET wrong-type 语义不同; `compat.rs` 未覆盖.\n- **下一步**: 对照 Redis 7 语义; 统一 `mget` 实现; 补 compat 测试.\n"
 }
 ```
@@ -2066,7 +2066,7 @@ cargo test --test storage memory aidb types -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `docs/modules/storage.md` | 待开始 | | | `storage/*` |",
   "new_string": "| `docs/modules/storage.md` | ✅ | backup/aikv ARCHITECTURE,DESIGN,CHANGELOG; WiQunTools 02-storage-commands, 06-persistence (查漏 05-lua); aikv-oldmain src/storage/*; wiqun-kv src/storage (查漏) | 已写 aikv/docs/modules/storage.md; oldmain 04-storage.md 已归档 | ISSUE-001/002 open; 加深章 types/memory/adapter/aidb/cluster_adapter |"
 }
@@ -2077,7 +2077,7 @@ cargo test --test storage memory aidb types -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "**当前阶段**: 阶段 1 — modules (步 6/12 待开始)",
   "new_string": "**当前阶段**: 阶段 1 — modules (步 7/12 待开始)"
 }
@@ -2088,7 +2088,7 @@ cargo test --test storage memory aidb types -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "| 6 | aikv | `docs/modules/storage.md` | storage/* | ⬜ 待开始 | |",
   "new_string": "| 6 | aikv | `docs/modules/storage.md` | storage/* | ✅ 完成 | 2026-06-18 |"
 }
@@ -2102,7 +2102,7 @@ cargo test --test storage memory aidb types -- --test-threads=1
 **Tool `Shell`**
 
 ```bash
-mkdir -p /root/code/database/AiKv-Workflow/backup/archive/aikv-oldmain/docs/development/architecture && mv /root/code/database/aikv-oldmain/docs/development/architecture/04-storage.md /root/code/database/AiKv-Workflow/backup/archive/aikv-oldmain/docs/development/architecture/04-storage.md
+mkdir -p ../../../AiKv-Workflow/backup/archive/aikv-oldmain/docs/development/architecture && mv ../../../aikv-oldmain/docs/development/architecture/04-storage.md ../../../AiKv-Workflow/backup/archive/aikv-oldmain/docs/development/architecture/04-storage.md
 ```
 
 
@@ -2112,7 +2112,7 @@ mkdir -p /root/code/database/AiKv-Workflow/backup/archive/aikv-oldmain/docs/deve
 {
   "new_string": "| 日期 | 源仓库 | 旧文件路径 | 对应新章节 | 处理 |\n|------|--------|------------|------------|------|\n| 2026-06-18 | aikv-oldmain | `docs/development/architecture/04-storage.md` | `docs/modules/storage.md` | 已归档 → `backup/archive/aikv-oldmain/docs/development/architecture/04-storage.md` (legacy RDB/AOF, 已过时) |",
   "old_string": "| 日期 | 源仓库 | 旧文件路径 | 对应新章节 | 处理 |\n|------|--------|------------|------------|------|",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -2158,7 +2158,7 @@ mkdir -p /root/code/database/AiKv-Workflow/backup/archive/aikv-oldmain/docs/deve
 
 ```json
 {
-  "path": "/root/code/database/vibe-coding/scripts/archive-cursor-session.sh"
+  "path": "../../../vibe-coding/scripts/archive-cursor-session.sh"
 }
 ```
 
@@ -2168,7 +2168,7 @@ mkdir -p /root/code/database/AiKv-Workflow/backup/archive/aikv-oldmain/docs/deve
 ```json
 {
   "glob_pattern": "**/archive-cursor-session*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 

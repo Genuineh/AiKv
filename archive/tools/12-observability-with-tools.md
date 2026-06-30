@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 1. `AiKv-Workflow/backup/design.md` — 总规程
@@ -82,7 +82,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -91,7 +91,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -100,7 +100,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -116,7 +116,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv/src/server"
+  "target_directory": "../../src/server"
 }
 ```
 
@@ -126,7 +126,7 @@
 ```json
 {
   "pattern": "observability|slowlog|latency|metrics|should_track",
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "output_mode": "files_with_matches"
 }
 ```
@@ -137,7 +137,7 @@
 ```json
 {
   "glob_pattern": "**/*observability*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -146,7 +146,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/server.md",
+  "path": "../../docs/modules/server.md",
   "limit": 80
 }
 ```
@@ -160,7 +160,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/mod.rs"
+  "path": "../../src/server/mod.rs"
 }
 ```
 
@@ -169,7 +169,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/main.rs",
+  "path": "../../src/main.rs",
   "pattern": "monitoring|metrics|otel|tracing|slowlog|latency|MetricsServer",
   "-C": 2
 }
@@ -181,7 +181,7 @@
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aikv/src/storage/observation.rs"
+  "path": "../../src/storage/observation.rs"
 }
 ```
 
@@ -190,7 +190,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/commands-extended.md",
+  "path": "../../docs/modules/commands-extended.md",
   "pattern": "INFO|TIME|SLOWLOG|LATENCY|observability|metrics"
 }
 ```
@@ -200,7 +200,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/cluster.md",
+  "path": "../../docs/modules/cluster.md",
   "pattern": "metrics|observability|INFO"
 }
 ```
@@ -214,7 +214,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "pattern": "should_track_observability|slow_query|latency_stats|prometheus_metrics|ServerMetrics|InfoRenderer"
 }
 ```
@@ -225,7 +225,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/08-observability.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/08-observability.md"
 }
 ```
 
@@ -235,7 +235,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md"
 }
 ```
 
@@ -245,7 +245,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb/docs/modules/observability.md"
+  "path": "../../../aidb/docs/modules/observability.md"
 }
 ```
 
@@ -255,7 +255,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv/tests/modules/server"
+  "target_directory": "../../tests/modules/server"
 }
 ```
 
@@ -267,7 +267,7 @@
 **Tool `Shell`**
 
 ```bash
-wc -l /root/code/database/aikv/src/server/{slowlog,latency,info,metrics,metrics_server,process_metrics}.rs /root/code/database/aikv/src/storage/observation.rs 2>/dev/null; rg -l "observability|slowlog|latency|InfoRenderer|MetricsServer|ServerMetrics" /root/code/database/aikv-oldmain --glob "*.md" 2>/dev/null | head -20; rg -l "observability|slowlog|metrics" /root/code/database/wiqun-factory/docs --glob "*.md" 2>/dev/null | head -10
+wc -l ../../src/server/{slowlog,latency,info,metrics,metrics_server,process_metrics}.rs ../../src/storage/observation.rs 2>/dev/null; rg -l "observability|slowlog|latency|InfoRenderer|MetricsServer|ServerMetrics" ../../../aikv-oldmain --glob "*.md" 2>/dev/null | head -20; rg -l "observability|slowlog|metrics" ../../../wiqun-factory/docs --glob "*.md" 2>/dev/null | head -10
 ```
 
 
@@ -277,7 +277,7 @@ wc -l /root/code/database/aikv/src/server/{slowlog,latency,info,metrics,metrics_
 {
   "offset": 900,
   "limit": 50,
-  "path": "/root/code/database/aikv/src/server/connection.rs"
+  "path": "../../src/server/connection.rs"
 }
 ```
 
@@ -287,7 +287,7 @@ wc -l /root/code/database/aikv/src/server/{slowlog,latency,info,metrics,metrics_
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/src/server/config.rs"
+  "path": "../../src/server/config.rs"
 }
 ```
 
@@ -300,7 +300,7 @@ wc -l /root/code/database/aikv/src/server/{slowlog,latency,info,metrics,metrics_
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "monitoring",
   "glob": "Cargo.toml"
 }
@@ -312,7 +312,7 @@ wc -l /root/code/database/aikv/src/server/{slowlog,latency,info,metrics,metrics_
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -321,7 +321,7 @@ wc -l /root/code/database/aikv/src/server/{slowlog,latency,info,metrics,metrics_
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests",
+  "path": "../../tests",
   "pattern": "observability|info_golden|metrics",
   "output_mode": "files_with_matches"
 }
@@ -332,7 +332,7 @@ wc -l /root/code/database/aikv/src/server/{slowlog,latency,info,metrics,metrics_
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/config.rs",
+  "path": "../../src/server/config.rs",
   "pattern": "refresh_runtime_metrics|refresh_process"
 }
 ```
@@ -346,7 +346,7 @@ wc -l /root/code/database/aikv/src/server/{slowlog,latency,info,metrics,metrics_
 
 ```json
 {
-  "path": "/root/code/database/aikv/ISSUES.md",
+  "path": "../../ISSUES.md",
   "pattern": "^### ISSUE-"
 }
 ```
@@ -357,7 +357,7 @@ wc -l /root/code/database/aikv/src/server/{slowlog,latency,info,metrics,metrics_
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/src/server/metrics.rs"
+  "path": "../../src/server/metrics.rs"
 }
 ```
 
@@ -367,7 +367,7 @@ wc -l /root/code/database/aikv/src/server/{slowlog,latency,info,metrics,metrics_
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/src/server/metrics_server.rs"
+  "path": "../../src/server/metrics_server.rs"
 }
 ```
 
@@ -380,7 +380,7 @@ wc -l /root/code/database/aikv/src/server/{slowlog,latency,info,metrics,metrics_
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster",
+  "path": "../../src/cluster",
   "pattern": "metrics|on_cluster|aikv_cluster"
 }
 ```
@@ -390,7 +390,7 @@ wc -l /root/code/database/aikv/src/server/{slowlog,latency,info,metrics,metrics_
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/metrics.rs",
+  "path": "../../src/server/metrics.rs",
   "pattern": "^pub (struct|fn|const)|^impl",
   "head_limit": 40
 }
@@ -558,7 +558,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `docs/modules/observability.md` | 待开始 | `backup/aikv/docs/superpowers/*observability*` | | slowlog/latency/info/metrics |",
   "new_string": "| `docs/modules/observability.md` | 🔄 步 0 ✅ | (步 2 填) | | 范围: `server/{slowlog,latency,info,metrics,metrics_server,process_metrics}`, `storage/observation`, `main.rs` monitoring; 横切 connection/router/cluster metrics 钩子 |"
 }
@@ -569,7 +569,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/slowlog.rs"
+  "path": "../../src/server/slowlog.rs"
 }
 ```
 
@@ -578,7 +578,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/latency.rs"
+  "path": "../../src/server/latency.rs"
 }
 ```
 
@@ -587,7 +587,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/process_metrics.rs"
+  "path": "../../src/server/process_metrics.rs"
 }
 ```
 
@@ -596,7 +596,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/metrics_server.rs"
+  "path": "../../src/server/metrics_server.rs"
 }
 ```
 
@@ -609,7 +609,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/info.rs"
+  "path": "../../src/server/info.rs"
 }
 ```
 
@@ -618,7 +618,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/metrics.rs",
+  "path": "../../src/server/metrics.rs",
   "offset": 1,
   "limit": 250
 }
@@ -629,7 +629,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/metrics.rs",
+  "path": "../../src/server/metrics.rs",
   "offset": 250,
   "limit": 250
 }
@@ -640,7 +640,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/metrics.rs",
+  "path": "../../src/server/metrics.rs",
   "offset": 500,
   "limit": 310
 }
@@ -657,7 +657,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 {
   "limit": 120,
   "offset": 140,
-  "path": "/root/code/database/aikv/src/server/config.rs"
+  "path": "../../src/server/config.rs"
 }
 ```
 
@@ -668,7 +668,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 {
   "limit": 80,
   "offset": 280,
-  "path": "/root/code/database/aikv/src/server/config.rs"
+  "path": "../../src/server/config.rs"
 }
 ```
 
@@ -677,7 +677,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server",
+  "path": "../../src/server",
   "pattern": "on_connect|on_rejected|record_command|on_net_|on_keyspace|blocked_clients|record_expired"
 }
 ```
@@ -689,7 +689,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 {
   "limit": 80,
   "offset": 500,
-  "path": "/root/code/database/aikv/src/main.rs"
+  "path": "../../src/main.rs"
 }
 ```
 
@@ -699,7 +699,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aikv/tests/modules/server/observability.rs"
+  "path": "../../tests/modules/server/observability.rs"
 }
 ```
 
@@ -714,7 +714,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 {
   "limit": 60,
   "offset": 360,
-  "path": "/root/code/database/aikv/src/server/connection.rs"
+  "path": "../../src/server/connection.rs"
 }
 ```
 
@@ -723,7 +723,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "pattern": "StorageObservation|record_expired_key|blocked_clients"
 }
 ```
@@ -734,7 +734,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/tests/modules/command/info_alignment.rs"
+  "path": "../../tests/modules/command/info_alignment.rs"
 }
 ```
 
@@ -743,7 +743,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster",
+  "path": "../../src/cluster",
   "pattern": "on_gossip|on_failover|on_cluster_redirect|cluster_info"
 }
 ```
@@ -757,7 +757,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "pattern": "blocked_clients\\.(fetch|store)|on_command\\("
 }
 ```
@@ -769,7 +769,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 {
   "limit": 50,
   "offset": 680,
-  "path": "/root/code/database/aikv/src/command/router.rs"
+  "path": "../../src/command/router.rs"
 }
 ```
 
@@ -780,7 +780,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 {
   "limit": 50,
   "offset": 80,
-  "path": "/root/code/database/aikv/src/cluster/commands.rs"
+  "path": "../../src/cluster/commands.rs"
 }
 ```
 
@@ -790,7 +790,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/tests/modules/cluster/observability.rs"
+  "path": "../../tests/modules/cluster/observability.rs"
 }
 ```
 
@@ -803,7 +803,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/connection.rs",
+  "path": "../../src/server/connection.rs",
   "pattern": "record_command|on_command|process_command"
 }
 ```
@@ -815,7 +815,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 {
   "limit": 80,
   "offset": 700,
-  "path": "/root/code/database/aikv/src/command/router.rs"
+  "path": "../../src/command/router.rs"
 }
 ```
 
@@ -830,7 +830,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 {
   "limit": 120,
   "offset": 334,
-  "path": "/root/code/database/aikv/src/server/connection.rs"
+  "path": "../../src/server/connection.rs"
 }
 ```
 
@@ -839,7 +839,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/router.rs",
+  "path": "../../src/command/router.rs",
   "pattern": "record_command_outcome|execute_with_client"
 }
 ```
@@ -853,7 +853,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "pattern": "on_cluster_redirect"
 }
 ```
@@ -865,7 +865,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 {
   "limit": 60,
   "offset": 120,
-  "path": "/root/code/database/aikv/tests/modules/server/observability.rs"
+  "path": "../../tests/modules/server/observability.rs"
 }
 ```
 
@@ -878,7 +878,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "info_golden|redis7_info"
 }
 ```
@@ -890,7 +890,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 {
   "limit": 40,
   "offset": 665,
-  "path": "/root/code/database/aikv/src/main.rs"
+  "path": "../../src/main.rs"
 }
 ```
 
@@ -903,7 +903,7 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "refresh_runtime_metrics"
 }
 ```
@@ -1101,7 +1101,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md"
 }
 ```
 
@@ -1110,7 +1110,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain",
+  "path": "../../../aikv-oldmain",
   "pattern": "observability|slowlog|latency|INFO|metrics|/metrics",
   "glob": "*.md",
   "head_limit": 40
@@ -1122,7 +1122,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv",
+  "path": "../../../AiKv-Workflow/backup/aikv",
   "pattern": "observability|slowlog|metrics|INFO",
   "glob": "*.md",
   "head_limit": 30
@@ -1135,7 +1135,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/08-observability.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/08-observability.md"
 }
 ```
 
@@ -1150,7 +1150,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 {
   "limit": 80,
   "offset": 230,
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/01-overview.md"
+  "path": "../../../aikv-oldmain/docs/development/architecture/01-overview.md"
 }
 ```
 
@@ -1160,7 +1160,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/wiqun-factory/docs/MONITORING.md"
+  "path": "../../../wiqun-factory/docs/MONITORING.md"
 }
 ```
 
@@ -1170,7 +1170,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/WiQunTools/docs/superpowers/plans/2026-05-28-phase17-observability.md"
+  "path": "../../../WiQunTools/docs/superpowers/plans/2026-05-28-phase17-observability.md"
 }
 ```
 
@@ -1179,7 +1179,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv",
+  "path": "../../../AiKv-Workflow/backup/aikv",
   "pattern": "observability|metrics|slowlog|9191|OTel|OTLP",
   "glob": "DEPLOYMENT.md"
 }
@@ -1191,7 +1191,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/*wiqun-kv*dashboard*",
-  "target_directory": "/root/code/database/wiqun-factory"
+  "target_directory": "../../../wiqun-factory"
 }
 ```
 
@@ -1206,7 +1206,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 {
   "limit": 80,
   "offset": 115,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md"
 }
 ```
 
@@ -1215,7 +1215,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/main.rs",
+  "path": "../../src/main.rs",
   "pattern": "AIKV_|WIQUN_"
 }
 ```
@@ -1226,7 +1226,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/observability/**",
-  "target_directory": "/root/code/database/aikv-oldmain/src"
+  "target_directory": "../../../aikv-oldmain/src"
 }
 ```
 
@@ -1236,7 +1236,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/wiqun-factory/docs/superpowers/specs/2026-06-10-wiqun-kv-dashboard-design.md"
+  "path": "../../../wiqun-factory/docs/superpowers/specs/2026-06-10-wiqun-kv-dashboard-design.md"
 }
 ```
 
@@ -1245,7 +1245,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/ARCHITECTURE.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/ARCHITECTURE.md",
   "pattern": "observability|metrics|slowlog|INFO"
 }
 ```
@@ -1260,7 +1260,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aikv-oldmain/src/observability/metrics.rs"
+  "path": "../../../aikv-oldmain/src/observability/metrics.rs"
 }
 ```
 
@@ -1271,7 +1271,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 {
   "limit": 50,
   "offset": 580,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md"
 }
 ```
 
@@ -1280,7 +1280,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/blocking.rs",
+  "path": "../../src/command/blocking.rs",
   "pattern": "blocked"
 }
 ```
@@ -1291,7 +1291,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/DEPLOYMENT.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/DEPLOYMENT.md",
   "offset": 180
 }
 ```
@@ -1305,7 +1305,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md",
   "pattern": "15|1s|interval"
 }
 ```
@@ -1315,7 +1315,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "pattern": "blocked_clients"
 }
 ```
@@ -1326,7 +1326,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/ISSUES.md",
+  "path": "../../ISSUES.md",
   "offset": 35
 }
 ```
@@ -1340,7 +1340,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command",
+  "path": "../../src/command",
   "pattern": "blocked"
 }
 ```
@@ -1351,7 +1351,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/wiqun-kv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md"
+  "path": "../../../wiqun-kv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md"
 }
 ```
 
@@ -1477,7 +1477,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 {
   "new_string": "## 条目列表\n\n<!-- 按 ISSUE-NNN 倒序追加 -->\n\n### ISSUE-022: metrics refresh 周期 15s vs 设计 spec 1s\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 12 / 章节 `docs/modules/observability.md` (步 2)\n- **相关 src**: `src/main.rs` (15s interval), `src/server/config.rs` (`refresh_runtime_metrics`)\n- **旧文档**: `backup/aikv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md` §R4 写 1s\n- **现象**: 设计 spec 要求 refresh 与 ops/sec 窗口 1s; 现 `tokio::time::interval(Duration::from_secs(15))`\n- **影响**: `instantaneous_ops_per_sec` 采样粒度粗于 spec; module 以代码 15s 为准\n- **下一步**: doc-only\n\n### ISSUE-021: `refresh_runtime_metrics` 仅 monitoring 后台 tick\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 12 / 章节 `docs/modules/observability.md` (步 2)\n- **相关 src**: `src/main.rs` (`#[cfg(feature = \"monitoring\")]` 15s loop), `src/server/config.rs` (`refresh_runtime_metrics`)\n- **现象**: 无 `monitoring` feature 时不启后台 refresh; `StorageObservation` drain、ops/sec sample、Prometheus gauge 同步不自动运行\n- **影响**: 无 monitoring 构建下 INFO `stats.expired_keys` / `instantaneous_ops_per_sec` 可能滞后; memory/keyspace 段仍可直接查 `KvStorage`\n- **下一步**: doc-only — module 写 refresh 条件\n\n### ISSUE-020: `blocked_clients` 无写入点\n\n- **状态**: open\n- **发现于**: PROGRESS 步 12 / 章节 `docs/modules/observability.md` (步 2)\n- **相关 src**: `src/server/metrics.rs` (`blocked_clients`), `src/command/blocking.rs` (BlockingRegistry)\n- **旧文档**: `WiQunTools/docs/wiqun-kv-inventory/08-observability.md` — 「无 BLPOP 时为 0」\n- **现象**: `AtomicUsize blocked_clients` 仅 default 0; BlockingRegistry 等待/唤醒未同步计数\n- **影响**: INFO clients / `aikv_blocked_clients` 恒 0; 实现阻塞命令后仍可能不准\n- **下一步**: doc-only 先描述现状; 接 blocking 时修代码\n\n### ISSUE-019: SET-CONFIG-EPOCH / COUNT-FAILURE-REPORTS 为 stub",
   "old_string": "## 条目列表\n\n<!-- 按 ISSUE-NNN 倒序追加 -->\n\n### ISSUE-019: SET-CONFIG-EPOCH / COUNT-FAILURE-REPORTS 为 stub",
-  "path": "/root/code/database/aikv/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1488,7 +1488,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 {
   "new_string": "| `docs/modules/observability.md` | 🔄 步 2 ✅ | backup/aikv superpowers spec + CHANGELOG/DEPLOYMENT; WiQunTools 08 + phase17; wiqun-factory MONITORING/dashboard (查漏); oldmain 01-overview §observability (过时) | | ISSUE-020 open; 021–022/013 doc-only; 步 3 进行中 |",
   "old_string": "| `docs/modules/observability.md` | 🔄 步 0 ✅ | (步 2 填) | | 范围: `server/{slowlog,latency,info,metrics,metrics_server,process_metrics}`, `storage/observation`, `main.rs` monitoring; 横切 connection/router/cluster metrics 钩子 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1498,7 +1498,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv-oldmain/src/server"
+  "target_directory": "../../../aikv-oldmain/src/server"
 }
 ```
 
@@ -1508,7 +1508,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/wiqun-kv/src/server"
+  "target_directory": "../../../wiqun-kv/src/server"
 }
 ```
 
@@ -1522,7 +1522,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv-oldmain/src"
+  "target_directory": "../../../aikv-oldmain/src"
 }
 ```
 
@@ -1531,7 +1531,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/server/mod.rs"
+  "path": "../../../aikv-oldmain/src/server/mod.rs"
 }
 ```
 
@@ -1540,7 +1540,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src",
+  "path": "../../../aikv-oldmain/src",
   "pattern": "slowlog|latency|InfoRenderer|ServerMetrics|metrics_server"
 }
 ```
@@ -1549,7 +1549,7 @@ cargo test -p aikv --features cluster observability -- --test-threads=1
 **Tool `Shell`**
 
 ```bash
-diff -q /root/code/database/aikv/src/server/metrics.rs /root/code/database/wiqun-kv/src/server/metrics.rs 2>/dev/null; diff -q /root/code/database/aikv/src/server/info.rs /root/code/database/wiqun-kv/src/server/info.rs 2>/dev/null; diff -q /root/code/database/aikv/src/server/slowlog.rs /root/code/database/wiqun-kv/src/server/slowlog.rs 2>/dev/null; wc -l /root/code/database/aikv-oldmain/src/observability/*.rs
+diff -q ../../src/server/metrics.rs ../../../wiqun-kv/src/server/metrics.rs 2>/dev/null; diff -q ../../src/server/info.rs ../../../wiqun-kv/src/server/info.rs 2>/dev/null; diff -q ../../src/server/slowlog.rs ../../../wiqun-kv/src/server/slowlog.rs 2>/dev/null; wc -l ../../../aikv-oldmain/src/observability/*.rs
 ```
 
 
@@ -1560,7 +1560,7 @@ diff -q /root/code/database/aikv/src/server/metrics.rs /root/code/database/wiqun
 **Tool `Shell`**
 
 ```bash
-for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs observation.rs; do echo "=== $f ==="; diff -u /root/code/database/wiqun-kv/src/server/$f /root/code/database/aikv/src/server/$f 2>/dev/null | head -30 || diff -u /root/code/database/wiqun-kv/src/storage/$f /root/code/database/aikv/src/storage/$f 2>/dev/null | head -30; done
+for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs observation.rs; do echo "=== $f ==="; diff -u ../../../wiqun-kv/src/server/$f ../../src/server/$f 2>/dev/null | head -30 || diff -u ../../../wiqun-kv/src/storage/$f ../../src/storage/$f 2>/dev/null | head -30; done
 ```
 
 
@@ -1569,7 +1569,7 @@ for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs obse
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aikv-oldmain/src/observability/mod.rs"
+  "path": "../../../aikv-oldmain/src/observability/mod.rs"
 }
 ```
 
@@ -1578,7 +1578,7 @@ for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs obse
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/server.rs",
+  "path": "../../../aikv-oldmain/src/command/server.rs",
   "pattern": "fn info|INFO|build_.*info"
 }
 ```
@@ -1592,7 +1592,7 @@ for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs obse
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv/src/server/metrics.rs",
+  "path": "../../../wiqun-kv/src/server/metrics.rs",
   "pattern": "wiqun_kv|aikv_",
   "head_limit": 5
 }
@@ -1603,7 +1603,7 @@ for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs obse
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/observability/metrics.rs",
+  "path": "../../../aikv-oldmain/src/observability/metrics.rs",
   "pattern": "metrics_server|prometheus|/metrics|HTTP"
 }
 ```
@@ -1615,7 +1615,7 @@ for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs obse
 {
   "limit": 50,
   "offset": 1175,
-  "path": "/root/code/database/aikv-oldmain/src/command/server.rs"
+  "path": "../../../aikv-oldmain/src/command/server.rs"
 }
 ```
 
@@ -1626,7 +1626,7 @@ for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs obse
 {
   "limit": 50,
   "offset": 1295,
-  "path": "/root/code/database/aikv-oldmain/src/command/server.rs"
+  "path": "../../../aikv-oldmain/src/command/server.rs"
 }
 ```
 
@@ -1639,7 +1639,7 @@ for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs obse
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/observability",
+  "path": "../../../aikv-oldmain/src/observability",
   "pattern": "threshold|100_000|10000|DEFAULT"
 }
 ```
@@ -1649,7 +1649,7 @@ for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs obse
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src",
+  "path": "../../../aikv-oldmain/src",
   "pattern": "export_prometheus|metrics_port|9191"
 }
 ```
@@ -1663,7 +1663,7 @@ for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs obse
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "100_000|10_000|slowlog-log-slower-than"
 }
 ```
@@ -1782,7 +1782,7 @@ for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs obse
 {
   "new_string": "### ISSUE-023: Slowlog 默认阈值 100ms vs Redis/oldmain 10ms\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 12 / 章节 `docs/modules/observability.md` (步 3)\n- **相关 src**: `src/server/slowlog.rs` (`DEFAULT_SLOWLOG_THRESHOLD_US = 100_000`)\n- **oldmain 代码**: `aikv-oldmain/src/observability/logging.rs` — 默认 10_000 µs (10ms, 近 Redis)\n- **现象**: 现默认 100ms; Redis `slowlog-log-slower-than` 默认 10000 µs; CONFIG GET 返回 100000\n- **影响**: 新部署记录的慢查询更少; module 写实际默认\n- **下一步**: doc-only; 是否改默认另开开发任务\n\n### ISSUE-022: metrics refresh 周期 15s vs 设计 spec 1s",
   "old_string": "### ISSUE-022: metrics refresh 周期 15s vs 设计 spec 1s",
-  "path": "/root/code/database/aikv/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1793,7 +1793,7 @@ for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs obse
 {
   "new_string": "| `docs/modules/observability.md` | 🔄 步 3 ✅ | backup/aikv superpowers spec + CHANGELOG/DEPLOYMENT; WiQunTools 08 + phase17; wiqun-factory MONITORING/dashboard (查漏); oldmain `src/observability/*` vs `server/*` (过时); wiqun-kv 等价查漏 | | ISSUE-020~023; 步 4 草稿待确认 |",
   "old_string": "| `docs/modules/observability.md` | 🔄 步 2 ✅ | backup/aikv superpowers spec + CHANGELOG/DEPLOYMENT; WiQunTools 08 + phase17; wiqun-factory MONITORING/dashboard (查漏); oldmain 01-overview §observability (过时) | | ISSUE-020 open; 021–022/013 doc-only; 步 3 进行中 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1802,7 +1802,7 @@ for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs obse
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/cluster.md",
+  "path": "../../docs/modules/cluster.md",
   "limit": 120
 }
 ```
@@ -1812,7 +1812,7 @@ for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs obse
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/observability.md"
+  "path": "../../../aidb/docs/modules/observability.md"
 }
 ```
 
@@ -1836,7 +1836,7 @@ for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs obse
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/metrics.rs",
+  "path": "../../src/server/metrics.rs",
   "pattern": "Opts::new\\(|IntCounter::new|IntGauge::new|Histogram"
 }
 ```
@@ -1847,7 +1847,7 @@ for f in slowlog.rs latency.rs info.rs metrics_server.rs process_metrics.rs obse
 ```json
 {
   "glob_pattern": "observability.md",
-  "target_directory": "/root/code/database/aikv/docs/modules"
+  "target_directory": "../../docs/modules"
 }
 ```
 
@@ -2248,7 +2248,7 @@ description: AiKv Prometheus aikv_* metric catalog and INFO field cross-referenc
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv/docs"
+  "target_directory": "../../docs"
 }
 ```
 
@@ -2258,7 +2258,7 @@ description: AiKv Prometheus aikv_* metric catalog and INFO field cross-referenc
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/AiKv-Workflow/backup/archive"
+  "target_directory": "../../../AiKv-Workflow/backup/archive"
 }
 ```
 
@@ -2271,7 +2271,7 @@ description: AiKv Prometheus aikv_* metric catalog and INFO field cross-referenc
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs",
+  "path": "../../docs",
   "pattern": "步 12"
 }
 ```
@@ -2281,7 +2281,7 @@ description: AiKv Prometheus aikv_* metric catalog and INFO field cross-referenc
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/observability.md",
+  "path": "../../docs/modules/observability.md",
   "contents": "---\nname: aikv-observability\ndescription: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, InfoRenderer, Prometheus /metrics, tracing/OTel wiring. Use when changing src/server/{slowlog,latency,info,metrics,metrics_server,process_metrics}, storage/observation, main.rs monitoring setup, or debugging INFO/SLOWLOG/LATENCY/metrics alignment.\n---\n\n# AiKv Observability (可观测性)\n\n## 何时读本文\n\n- 改 `server/{slowlog,latency,info,metrics,metrics_server,process_metrics}`、`storage/observation`, 或 `main.rs` tracing/OTel/metrics 装配\n- 排查 INFO 与 Prometheus 数值不一致、慢查询/SLOWLOG、LATENCY 直方图、`/metrics` scrape\n- 接集群 gossip/failover/redirect 计数、JSON/Lua 专用 metrics\n- **不覆盖**: TCP 连接循环与内联命令 → [server.md](server.md)\n- **不覆盖**: INFO/SLOWLOG/LATENCY/COMMAND **命令 dispatch** → [commands-extended.md](commands-extended.md)\n- **不覆盖**: MOVED/ASK、CLUSTER 子命令语义 → [cluster.md](cluster.md) (本章只写 metrics/INFO 段写入点)\n- **不覆盖**: `aidb_*` / `aidb_raft_*` 定义与引擎 span → [aidb observability.md](../../aidb/docs/modules/observability.md)\n- **构建**: `--features monitoring` 启用 Prometheus HTTP + OTel; 默认 **不** 启用\n\n## 架构: 单一数据源 + 可选 Prometheus 镜像\n\n```mermaid\nflowchart TB\n  subgraph always [始终编译]\n    SM[ServerMetrics]\n    SL[SlowQueryLog]\n    LS[LatencyStats]\n    SO[StorageObservation]\n  end\n  subgraph mon [monitoring feature]\n    PM[Metrics Registry aikv_*]\n    MS[MetricsServer /metrics]\n    RF[refresh_runtime_metrics 15s]\n    PROC[refresh_process_metrics]\n  end\n  subgraph out [输出]\n    INFO[InfoRenderer / CLUSTER INFO 读 metrics]\n    TR[tracing JSON / OTel]\n  end\n  CONN[Connection] --> SM\n  CONN --> SL\n  CONN --> LS\n  ROUTER[CommandRouter] --> SM\n  STOR[memory/adapter TTL] --> SO\n  SO -->|drain| RF\n  RF --> SM\n  SM --> INFO\n  SM -->|mirror| PM\n  PM --> MS\n  PM -->|register_into| AIDB[aidb_*]\n  PROC --> PM\n```\n\n要点:\n\n- **热路径**: `ServerMetrics` (atomic + `commands_total` Mutex) 为 INFO 与业务计数唯一源\n- **冷路径**: `[monitoring]` 下 `main` 每 **15s** 调 `refresh_runtime_metrics` + `refresh_process_metrics`\n- **无 monitoring**: slowlog/latency/INFO/`ServerMetrics` 仍可用; **无** HTTP `/metrics`、无 OTel layer、**无** 自动 refresh (见 ISSUE-021)\n- **内部命令**: 含 `.` 的伪命令 (`GOSSIP.tick`, `JSON.get`, `CLUSTER.redirect.moved`) **不** 进 INFO `commandstats`\n\n## 代码地图\n\n| 路径 | 职责 | 入口 |\n|------|------|------|\n| `server/metrics.rs` | `ServerMetrics` 热路径计数; `[monitoring]` `Metrics` + `aikv_*` 注册 | `on_connect`, `on_command`, `Metrics::new` |\n| `server/info.rs` | Redis INFO section 渲染 | `InfoRenderer::render`, `redis_mode()` |\n| `server/slowlog.rs` | 慢查询环形缓冲 | `SlowQueryLog::record/get` |\n| `server/latency.rs` | 按命令延迟直方图 + 历史 | `LatencyStats::record/snapshot` |\n| `server/config.rs` | `ServerSharedState` 持有上述组件; refresh | `try_register_connection`, `refresh_runtime_metrics` |\n| `server/connection.rs` | 网络字节; Router 命令 observability 钩子 | `record_command_observability`, `should_track_observability` |\n| `server/metrics_server.rs` | HTTP `/metrics`, `/health`, `/` | `MetricsServer::run` `[monitoring]` |\n| `server/process_metrics.rs` | Linux `/proc` RSS/CPU/IO | `read_*` `[monitoring]` |\n| `storage/observation.rs` | 跨引擎 expired key 计数 | `record_expired_key`, `drain_expired_keys` |\n| `main.rs` | JSON log, OTel, MetricsServer spawn, 15s tick | `init_logging`, `create_otel_tracer` (~L503–696) |\n\n**横切写入点** (语义见它章, 本章只记钩子):\n\n| 路径 | 调用 |\n|------|------|\n| `command/router.rs` | `on_command`, keyspace hit/miss, `on_cluster_redirect` |\n| `command/json.rs`, `command/script.rs` | `on_json_command`, `on_lua_command`, `on_lua_execution` |\n| `command/server.rs` | INFO/SLOWLOG/LATENCY **读** shared (dispatch → commands-extended) |\n| `cluster/gossip.rs` | `on_gossip_refresh` |\n| `cluster/commands.rs` | `cluster_info()` 读 `cluster_messages_*`; failover → `on_failover` |\n\n完整 `aikv_*` 指标表 → [observability-reference.md](observability-reference.md).\n\n## 关键 invariant (勿破坏)\n\n- **I1 INFO↔Prometheus**: `InfoRenderer` / `CLUSTER INFO` stats 字段须与同期 `ServerMetrics` (及 refresh 后的 gauge) 一致; 禁止独立计数公式\n- **I2 钩子分工**: Router `on_command` 计 calls/err; Connection `on_command_duration` 计 usec/histogram; **勿** 在 INFO 重复累加\n- **I3 跟踪排除**: `PING|ECHO|HELLO|QUIT|MONITOR|SLOWLOG` 不经 `record_command_observability`\n- **I4 客户端 commandstats**: `is_client_command` 过滤含 `.` 的内部 key\n- **I5 expired_keys**: 存储 TTL 路径写 `StorageObservation`; 须经 `refresh_runtime_metrics` drain 汇入 `ServerMetrics`\n\n## 数据流\n\n### 启动 (`main.rs`)\n\n1. `init_logging()` — `RUST_LOG`; JSON 默认开 (`AIKV_JSON_LOG`, 默认 `true`)\n2. `[monitoring]` + `AIKV_OTLP_ENDPOINT` → OTel layer (`service.name=aikv`)\n3. `StorageObservation::new()` → `build_storage` → `ServerSharedState::new_with_backup_dir`\n4. `[monitoring]` spawn `MetricsServer` (`--metrics-addr` + `--metrics-port`, 默认 `127.0.0.1:9191`)\n5. `[monitoring]` 15s loop: `refresh_runtime_metrics` + `refresh_process_metrics`\n\n### 命令路径 (经 Router)\n\n```mermaid\nsequenceDiagram\n  participant C as Connection\n  participant R as CommandRouter\n  participant M as ServerMetrics\n  participant SL as SlowQueryLog\n  participant L as LatencyStats\n\n  C->>R: execute_with_client\n  R->>M: on_command (ok/err)\n  R-->>C: Result\n  C->>L: record (若 track)\n  C->>SL: record (若 track)\n  C->>M: on_command_duration\n```\n\n内联命令 (PING/ATOM/ASKING 等) **不** 走上述 Router 钩子.\n\n### 周期 refresh (`refresh_runtime_metrics`)\n\n- `set_uptime_secs`, `sample_instantaneous_ops`, `sync_redis_aligned_gauges`\n- `storage.db_key_counts` → `set_db_key_count`\n- `storage.memory_usage_bytes` → `set_memory_bytes`\n- `storage_observation.drain_expired_keys` → `record_expired_keys`\n\n### INFO 渲染 (`InfoRenderer`)\n\n| 请求 | 行为 |\n|------|------|\n| `INFO` | default: server → clients → memory → persistence → stats → replication → cpu → [cluster] → keyspace |\n| `INFO all` | default + commandstats + errorstats + modules |\n| `INFO <section>` | 单 section, 大小写敏感 (Redis 段名) |\n| `INFO nosuch` | 空 bulk string (非 ERR) |\n\n`memory`: 优先 `KvStorage::memory_usage_bytes()`; fallback `ServerMetrics.used_memory_bytes`.\n\n`CLUSTER INFO` 文本在 `cluster/commands.rs::cluster_info`, 读 `ServerMetrics.cluster_messages_*` (状态字段见 ISSUE-013).\n\n### INFO ↔ Prometheus (P0 不变式)\n\n| INFO 字段 | Prometheus | 备注 |\n|-----------|------------|------|\n| `used_memory` | `aikv_used_memory_bytes` | refresh 周期内相等 |\n| `keyspace_hits` / `keyspace_misses` | `aikv_keyspace_*_total` | counter 当前值 |\n| `instantaneous_ops_per_sec` | `aikv_instantaneous_ops_per_sec` | gauge |\n| `expired_keys` | `aikv_expired_keys_total` | 需 refresh drain |\n| `blocked_clients` | `aikv_blocked_clients` | 当前恒 0 (ISSUE-020) |\n| `evicted_keys` | `aikv_evicted_keys_total` | 无 maxmemory eviction, 恒 0 |\n\nGolden 字段: `tests/fixtures/redis7_info_p0_fields.txt`.\n\n## 关键类型与 API\n\n### `ServerSharedState` (observability 字段)\n\n- `metrics: Arc<ServerMetrics>`\n- `slow_query_log: Arc<SlowQueryLog>`\n- `latency_stats: Arc<LatencyStats>`\n- `[monitoring] prometheus_metrics: Arc<Metrics>`\n\n### `ServerMetrics` (节选 pub 面)\n\n| 方法 | 用途 |\n|------|------|\n| `on_connect` / `on_disconnect` | 连接计数 |\n| `on_rejected_connection` | max_clients 拒绝 |\n| `on_command` / `on_command_duration` | 命令 calls/err/usec |\n| `on_keyspace_hit` / `on_keyspace_miss` | GET 类命中 |\n| `on_gossip_refresh` / `on_failover` / `on_cluster_redirect` | 集群 metrics |\n| `on_json_command` / `on_lua_*` | 扩展命令 |\n| `client_command_totals()` | INFO commandstats/errorstats |\n| `[monitoring] with_prometheus` | 双写 Prometheus |\n\n### `SlowQueryLog`\n\n- 默认阈值 **100ms** (`DEFAULT_SLOWLOG_THRESHOLD_US = 100_000`; 见 ISSUE-023)\n- 默认容量 128; CONFIG 键 `slowlog-log-slower-than`, `slowlog-max-len`\n\n### `MetricsServer`\n\n- `GET /metrics` — Prometheus text 0.0.4\n- `GET /health` — `200 OK`\n- bind 失败时 error log 并退出 task (不 crash 主进程)\n\n## 常见任务\n\n### 启用 Prometheus + scrape\n\n```bash\ncargo build --features monitoring\ncargo run --features monitoring -- --metrics-addr 0.0.0.0 --metrics-port 9191\ncurl -s http://127.0.0.1:9191/metrics | head\n```\n\n`Metrics::new()` 已 `aidb::metrics::register_into`; scrape 同一 Registry 含 `aidb_*` (engine 启用 monitoring 时).\n\n### 启用 OTel trace\n\n```bash\nexport AIKV_OTLP_ENDPOINT=http://127.0.0.1:4317\ncargo run --features monitoring\n```\n\n无 endpoint 时仅 JSON/compact tracing, 无 OTel layer.\n\n### 调整慢查询阈值\n\n```bash\nredis-cli CONFIG SET slowlog-log-slower-than 10000\nredis-cli SLOWLOG GET 10\n```\n\n或改 `SlowQueryLog` 默认值 (见 ISSUE-023).\n\n### 排查 INFO 与 /metrics 不一致\n\n1. 确认 `--features monitoring` 且后台 15s refresh 在跑\n2. 对 memory/expired/ops: 手动 `refresh_runtime_metrics` 后再比 (测试里常用)\n3. 确认比的是 **同名** 字段 (INFO Redis 名 vs `aikv_*`)\n4. scrape 间隔内 counter 允许微小延迟\n\n### 新增业务 counter\n\n1. 在 `ServerMetrics` 加 atomic 字段 + `on_*` 热路径\n2. `[monitoring]` 在 `on_*` 内 mirror 到 `Metrics` 并 `register`\n3. 若 INFO 需暴露: 扩展 `InfoRenderer` 对应 section\n4. 加 `info_alignment` / `observability` 契约测试\n\n## 配置与 feature flags\n\n| 项 | 位置 | 说明 |\n|----|------|------|\n| `monitoring` | `Cargo.toml` | `prometheus`, OTel, hyper; `aidb/monitoring`; 导出 `metrics_server` |\n| `cluster` | 叠加 | `aikv_cluster_redirects_total`, gossip/failover counters |\n| `--metrics-port` / `--metrics-addr` | `main.rs` CLI | 默认 9191 / 127.0.0.1 |\n| `AIKV_JSON_LOG` | env | 默认 true → JSON tracing |\n| `AIKV_OTLP_ENDPOINT` | env | `[monitoring]` OTel exporter |\n| `RUST_LOG` | env | tracing filter |\n\n运维 scrape/OTLP/Loki 部署流程 → 阶段 2 `DEPLOYMENT.md` (提炼自 wiqun-factory); 旧 env 名 `WIQUN_*` 已改为 `AIKV_*`.\n\n## 测试\n\n```bash\n# 基础 (无 monitoring)\ncargo test -p aikv observability info_alignment info_golden -- --test-threads=1\n\n# Prometheus HTTP\ncargo test -p aikv --features monitoring test_metrics_endpoint -- --test-threads=1\n\n# 集群 metrics\ncargo test -p aikv --features cluster gossip_refresh -- --test-threads=1\n```\n\n| 测试 | 覆盖 |\n|------|------|\n| `tests/modules/server/observability.rs` | 连接计数、/metrics、INFO↔Prom 对齐 |\n| `tests/modules/command/info_golden.rs` | Redis 7 P0 字段 |\n| `tests/modules/command/info_alignment.rs` | memory 非 placeholder、stats 字段 |\n| `tests/modules/cluster/observability.rs` | gossip → cluster_messages |\n\n## 已知限制\n\n- **`blocked_clients` 恒 0** — BlockingRegistry 未同步 (ISSUE-020)\n- **无 monitoring 时无自动 refresh** — `expired_keys` / `instantaneous_ops_per_sec` 可能滞后 (ISSUE-021)\n- **refresh 周期 15s** — 非设计 spec 1s (ISSUE-022)\n- **Slowlog 默认 100ms** — Redis/oldmain 为 10ms (ISSUE-023)\n- **`evicted_keys` 恒 0** — 无 maxmemory eviction\n- **无 `CONFIG SET loglevel`** — oldmain `LoggingManager` 已移除\n- **Grafana 旧面板** 可能仍用 `wiqun_kv_*` PromQL — 现 scrape 为 `aikv_*`\n- **`aidb_*` 不映射 Redis INFO** — 仅 `/metrics`\n\n## 待核实\n\n- 见 [ISSUES.md](../../ISSUES.md#issue-020) — blocked_clients 无写入点\n- 见 [ISSUES.md](../../ISSUES.md#issue-021) — refresh 仅 monitoring 后台 tick\n- 见 [ISSUES.md](../../ISSUES.md#issue-022) — refresh 周期 15s vs spec 1s\n- 见 [ISSUES.md](../../ISSUES.md#issue-023) — slowlog 默认阈值 100ms\n- 见 [ISSUES.md](../../ISSUES.md#issue-013) — CLUSTER INFO cluster_state 恒 ok\n"
 }
 ```
@@ -2291,7 +2291,7 @@ description: AiKv Prometheus aikv_* metric catalog and INFO field cross-referenc
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/observability-reference.md",
+  "path": "../../docs/modules/observability-reference.md",
   "contents": "---\nname: aikv-observability-reference\ndescription: AiKv Prometheus aikv_* metric catalog and INFO field cross-reference. Use when looking up metric names, labels, or INFO↔Prometheus mapping for aikv observability.\n---\n\n# AiKv Observability Reference\n\n> 主文档: [observability.md](observability.md). `aidb_*` → [aidb observability.md](../../aidb/docs/modules/observability.md).\n\n## aikv_* 指标 (`Metrics`, monitoring + 可选 cluster)\n\n| 指标 | 类型 | labels | ServerMetrics 来源 |\n|------|------|--------|-------------------|\n| `aikv_commands_total` | CounterVec | command, status | `on_command` |\n| `aikv_command_duration_seconds` | HistogramVec | command, status | `on_command_duration` |\n| `aikv_connections_total` | Counter | — | `on_connect` |\n| `aikv_connected_clients` | Gauge | — | connect/disconnect |\n| `aikv_rejected_connections_total` | Counter | — | `on_rejected_connection` |\n| `aikv_used_memory_bytes` | Gauge | — | `set_memory_bytes` |\n| `aikv_used_memory_peak_bytes` | Gauge | — | 同上 |\n| `aikv_keyspace_hits_total` | Counter | — | `on_keyspace_hit` |\n| `aikv_keyspace_misses_total` | Counter | — | `on_keyspace_miss` |\n| `aikv_expired_keys_total` | Counter | — | `record_expired_keys` |\n| `aikv_evicted_keys_total` | Counter | — | (恒 0) |\n| `aikv_instantaneous_ops_per_sec` | Gauge | — | `sample_instantaneous_ops` |\n| `aikv_blocked_clients` | Gauge | — | `sync_redis_aligned_gauges` (恒 0) |\n| `aikv_db_keys` | GaugeVec | db | `set_db_key_count` |\n| `aikv_net_input_bytes_total` | Counter | — | `on_net_input_bytes` |\n| `aikv_net_output_bytes_total` | Counter | — | `on_net_output_bytes` |\n| `aikv_slow_queries_total` | CounterVec | command | 超阈值 `on_slow_query` |\n| `aikv_uptime_seconds` | Gauge | — | refresh |\n| `aikv_process_resident_memory_bytes` | Gauge | — | `/proc` RSS |\n| `aikv_process_cpu_milliseconds_total` | Counter | — | `/proc` CPU delta |\n| `aikv_process_read_bytes_total` | Counter | — | `/proc/io` |\n| `aikv_process_write_bytes_total` | Counter | — | `/proc/io` |\n| `aikv_lua_scripts_total` | Counter | — | `on_lua_command` |\n| `aikv_lua_execution_duration_seconds` | Histogram | — | `on_lua_execution` |\n| `aikv_json_commands_total` | CounterVec | command | `on_json_command` |\n| `aikv_cluster_redirects_total` | CounterVec | type | `on_cluster_redirect` [cluster] |\n| `aikv_gossip_messages_total` | Counter | — | `on_gossip_refresh` [cluster] |\n| `aikv_failover_total` | Counter | — | `on_failover` [cluster] |\n\n同一 HTTP `/metrics` 另含 `aidb::metrics::register_into` 注册的 `aidb_*` (及 `[cluster]` 时 `aidb_raft_*`).\n"
 }
 ```
@@ -2307,7 +2307,7 @@ description: AiKv Prometheus aikv_* metric catalog and INFO field cross-referenc
 {
   "new_string": "- **不覆盖**: `aikv_cluster_redirects_total` / INFO cluster 段 → [observability.md](observability.md)",
   "old_string": "- **不覆盖**: `aikv_cluster_redirects_total` / INFO cluster 段 → [observability.md](observability.md) (步 12)",
-  "path": "/root/code/database/aikv/docs/modules/cluster.md"
+  "path": "../../docs/modules/cluster.md"
 }
 ```
 
@@ -2318,7 +2318,7 @@ description: AiKv Prometheus aikv_* metric catalog and INFO field cross-referenc
 {
   "new_string": "**嵌入方**: `aikv/src/server/metrics.rs` 在 `Metrics::new()` 内调用 `aidb::metrics::register_into(&registry)?`, 与 `aikv_*` 共用 Registry 后由 HTTP 暴露.",
   "old_string": "**嵌入方**: `aikv/src/server/metrics.rs` 在 `Metrics::new()` 内调用 `aidb::metrics::register_into(&registry)?`, 与 `wiqun_kv_*` 共用 Registry 后由 HTTP 暴露.",
-  "path": "/root/code/database/aidb/docs/modules/observability.md"
+  "path": "../../../aidb/docs/modules/observability.md"
 }
 ```
 
@@ -2329,7 +2329,7 @@ description: AiKv Prometheus aikv_* metric catalog and INFO field cross-referenc
 {
   "new_string": "- **不覆盖**: HTTP `/metrics`、OTel Collector、slowlog/INFO → aikv [observability.md](../../../aikv/docs/modules/observability.md)",
   "old_string": "- **不覆盖**: HTTP `/metrics`、OTel Collector、slowlog/INFO → aikv [observability.md](../../../aikv/docs/modules/observability.md) (步 12)",
-  "path": "/root/code/database/aidb/docs/modules/observability.md"
+  "path": "../../../aidb/docs/modules/observability.md"
 }
 ```
 
@@ -2340,7 +2340,7 @@ description: AiKv Prometheus aikv_* metric catalog and INFO field cross-referenc
 {
   "new_string": "| `docs/modules/observability.md` | ✅ | backup/aikv superpowers spec + CHANGELOG/DEPLOYMENT; WiQunTools 08; wiqun-factory MONITORING (查漏); oldmain observability/* (过时) | spec 已归档 | ISSUE-020~023; observability-reference.md |",
   "old_string": "| `docs/modules/observability.md` | 🔄 步 3 ✅ | backup/aikv superpowers spec + CHANGELOG/DEPLOYMENT; WiQunTools 08 + phase17; wiqun-factory MONITORING/dashboard (查漏); oldmain `src/observability/*` vs `server/*` (过时); wiqun-kv 等价查漏 | | ISSUE-020~023; 步 4 草稿待确认 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -2351,7 +2351,7 @@ description: AiKv Prometheus aikv_* metric catalog and INFO field cross-referenc
 {
   "new_string": "**当前阶段**: 阶段 1 ✅ 完成 — 可进入阶段 2a (aidb 汇总)",
   "old_string": "**当前阶段**: 阶段 1 — modules (步 12/12 待开始)",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -2362,7 +2362,7 @@ description: AiKv Prometheus aikv_* metric catalog and INFO field cross-referenc
 {
   "new_string": "| 12 | aikv | `docs/modules/observability.md` | slowlog, metrics, info | ✅ 完成 | 2026-06-18 |",
   "old_string": "| 12 | aikv | `docs/modules/observability.md` | slowlog, metrics, info | ⬜ 待开始 | |",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -2370,7 +2370,7 @@ description: AiKv Prometheus aikv_* metric catalog and INFO field cross-referenc
 **Tool `Shell`**
 
 ```bash
-mkdir -p /root/code/database/AiKv-Workflow/backup/archive/aikv/docs/superpowers/specs && mv /root/code/database/AiKv-Workflow/backup/aikv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md /root/code/database/AiKv-Workflow/backup/archive/aikv/docs/superpowers/specs/
+mkdir -p ../../../AiKv-Workflow/backup/archive/aikv/docs/superpowers/specs && mv ../../../AiKv-Workflow/backup/aikv/docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md ../../../AiKv-Workflow/backup/archive/aikv/docs/superpowers/specs/
 ```
 
 
@@ -2384,7 +2384,7 @@ mkdir -p /root/code/database/AiKv-Workflow/backup/archive/aikv/docs/superpowers/
 {
   "new_string": "| 日期 | 源仓库 | 旧文件路径 | 对应新章节 | 处理 |\n|------|--------|------------|------------|------|\n| 2026-06-18 | backup/aikv | `docs/superpowers/specs/2026-06-10-redis-observability-alignment-design.md` | `aikv/docs/modules/observability.md` | 已归档 → `backup/archive/aikv/docs/superpowers/specs/` |\n| 2026-06-18 | aidb-oldmain | `docs/monitoring/MONITORING_GUIDE.md` | `docs/modules/observability.md` | 无有效内容跳过 (MetricsServer/Collector 已移除) |",
   "old_string": "| 日期 | 源仓库 | 旧文件路径 | 对应新章节 | 处理 |\n|------|--------|------------|------------|------|\n| 2026-06-18 | aidb-oldmain | `docs/monitoring/MONITORING_GUIDE.md` | `docs/modules/observability.md` | 无有效内容跳过 (MetricsServer/Collector 已移除) |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -2395,7 +2395,7 @@ mkdir -p /root/code/database/AiKv-Workflow/backup/archive/aikv/docs/superpowers/
 {
   "new_string": "- [x] 阶段 1: 12 篇 modules 全部 ✅",
   "old_string": "- [ ] 阶段 1: 12 篇 modules 全部 ✅",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -2403,7 +2403,7 @@ mkdir -p /root/code/database/AiKv-Workflow/backup/archive/aikv/docs/superpowers/
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aikv && cargo test observability info_alignment info_golden -- --test-threads=1 2>&1 | tail -20
+cd ../../../aikv && cargo test observability info_alignment info_golden -- --test-threads=1 2>&1 | tail -20
 ```
 
 
@@ -2414,7 +2414,7 @@ cd /root/code/database/aikv && cargo test observability info_alignment info_gold
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aikv && cargo test info_ -- --test-threads=1 2>&1 | tail -25
+cd ../../../aikv && cargo test info_ -- --test-threads=1 2>&1 | tail -25
 ```
 
 
@@ -2425,7 +2425,7 @@ cd /root/code/database/aikv && cargo test info_ -- --test-threads=1 2>&1 | tail 
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aikv && cargo test observability -- --test-threads=1 2>&1 | tail -20 && cargo test --features monitoring test_metrics_endpoint -- --test-threads=1 2>&1 | tail -15
+cd ../../../aikv && cargo test observability -- --test-threads=1 2>&1 | tail -20 && cargo test --features monitoring test_metrics_endpoint -- --test-threads=1 2>&1 | tail -15
 ```
 
 
@@ -2479,7 +2479,7 @@ cargo test --features monitoring test_metrics_endpoint     # 通过
 
 ```json
 {
-  "path": "/root/code/database/vibe-coding/scripts/archive-cursor-session.sh"
+  "path": "../../../vibe-coding/scripts/archive-cursor-session.sh"
 }
 ```
 
@@ -2489,7 +2489,7 @@ cargo test --features monitoring test_metrics_endpoint     # 通过
 ```json
 {
   "glob_pattern": "**/archive-cursor-session*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 

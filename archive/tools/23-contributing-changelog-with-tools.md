@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 1. `AiKv-Workflow/backup/design.md` — 总规程
@@ -92,7 +92,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -101,7 +101,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -110,7 +110,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -136,7 +136,7 @@
 ```json
 {
   "glob_pattern": "aikv/{CONTRIBUTING,CHANGELOG}.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -145,7 +145,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/CONTRIBUTING.md",
+  "path": "../../../aidb/CONTRIBUTING.md",
   "limit": 80
 }
 ```
@@ -155,7 +155,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/CHANGELOG.md",
+  "path": "../../../aidb/CHANGELOG.md",
   "limit": 60
 }
 ```
@@ -165,7 +165,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/CONTRIBUTING.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/CONTRIBUTING.md",
   "limit": 80
 }
 ```
@@ -175,7 +175,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/CHANGELOG.md",
   "limit": 80
 }
 ```
@@ -186,7 +186,7 @@
 ```json
 {
   "pattern": "version",
-  "path": "/root/code/database/aikv/Cargo.toml",
+  "path": "../../Cargo.toml",
   "head_limit": 5
 }
 ```
@@ -200,7 +200,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "CONTRIBUTING|CHANGELOG|测试矩阵|test-cluster|e2e",
   "glob": "*.md",
   "head_limit": 40
@@ -212,7 +212,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/install-hooks.sh"
+  "path": "../../install-hooks.sh"
 }
 ```
 
@@ -222,7 +222,7 @@
 ```json
 {
   "glob_pattern": "aikv/.github/workflows/*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -232,7 +232,7 @@
 ```json
 {
   "glob_pattern": "aikv/{tests,e2e}/README.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -241,7 +241,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/archive/17-contributing-changelog.md",
+  "path": "../../../aidb/archive/17-contributing-changelog.md",
   "limit": 80
 }
 ```
@@ -255,7 +255,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/.github/README.md"
+  "path": "../../.github/README.md"
 }
 ```
 
@@ -264,7 +264,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/hooks/pre-commit"
+  "path": "../../hooks/pre-commit"
 }
 ```
 
@@ -273,7 +273,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/.github/workflows/ci.yml"
+  "path": "../../.github/workflows/ci.yml"
 }
 ```
 
@@ -282,7 +282,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/AGENTS.md",
+  "path": "../../AGENTS.md",
   "pattern": "CI|test|hook|clippy",
   "-C": 2
 }
@@ -292,7 +292,7 @@
 **Tool `Shell`**
 
 ```bash
-ls -la /root/code/database/aikv/src/ && ls /root/code/database/aikv/tests/ 2>/dev/null | head -20
+ls -la ../../src/ && ls ../../tests/ 2>/dev/null | head -20
 ```
 
 
@@ -304,7 +304,7 @@ ls -la /root/code/database/aikv/src/ && ls /root/code/database/aikv/tests/ 2>/de
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests/README.md"
+  "path": "../../tests/README.md"
 }
 ```
 
@@ -314,7 +314,7 @@ ls -la /root/code/database/aikv/src/ && ls /root/code/database/aikv/tests/ 2>/de
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/e2e/README.md"
+  "path": "../../e2e/README.md"
 }
 ```
 
@@ -324,7 +324,7 @@ ls -la /root/code/database/aikv/src/ && ls /root/code/database/aikv/tests/ 2>/de
 ```json
 {
   "offset": 80,
-  "path": "/root/code/database/aidb/CONTRIBUTING.md"
+  "path": "../../../aidb/CONTRIBUTING.md"
 }
 ```
 
@@ -333,7 +333,7 @@ ls -la /root/code/database/aikv/src/ && ls /root/code/database/aikv/tests/ 2>/de
 
 ```json
 {
-  "path": "/root/code/database/aikv/README.md",
+  "path": "../../README.md",
   "pattern": "CONTRIBUTING|测试|CI|e2e"
 }
 ```
@@ -344,7 +344,7 @@ ls -la /root/code/database/aikv/src/ && ls /root/code/database/aikv/tests/ 2>/de
 ```json
 {
   "glob_pattern": "**/CONTRIBUTING*",
-  "target_directory": "/root/code/database/aikv-oldmain"
+  "target_directory": "../../../aikv-oldmain"
 }
 ```
 
@@ -357,7 +357,7 @@ ls -la /root/code/database/aikv/src/ && ls /root/code/database/aikv/tests/ 2>/de
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/CONTRIBUTING.md",
+  "path": "../../../aikv-oldmain/CONTRIBUTING.md",
   "limit": 60
 }
 ```
@@ -367,7 +367,7 @@ ls -la /root/code/database/aikv/src/ && ls /root/code/database/aikv/tests/ 2>/de
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/CHANGELOG.md",
   "pattern": "^## \\["
 }
 ```
@@ -377,7 +377,7 @@ ls -la /root/code/database/aikv/src/ && ls /root/code/database/aikv/tests/ 2>/de
 
 ```json
 {
-  "path": "/root/code/database/aikv/README.md",
+  "path": "../../README.md",
   "pattern": "CONTRIBUTING|CHANGELOG|文档",
   "-A": 3
 }
@@ -387,7 +387,7 @@ ls -la /root/code/database/aikv/src/ && ls /root/code/database/aikv/tests/ 2>/de
 **Tool `Shell`**
 
 ```bash
-ls /root/code/database/aikv/tests/*.rs 2>/dev/null; ls /root/code/database/aikv/e2e/test_cluster_*.sh 2>/dev/null | wc -l; ls /root/code/database/aikv/e2e/test_*.sh 2>/dev/null | wc -l
+ls ../../tests/*.rs 2>/dev/null; ls ../../e2e/test_cluster_*.sh 2>/dev/null | wc -l; ls ../../e2e/test_*.sh 2>/dev/null | wc -l
 ```
 
 
@@ -401,7 +401,7 @@ ls /root/code/database/aikv/tests/*.rs 2>/dev/null; ls /root/code/database/aikv/
 {
   "offset": 78,
   "limit": 30,
-  "path": "/root/code/database/aikv/README.md"
+  "path": "../../README.md"
 }
 ```
 
@@ -411,7 +411,7 @@ ls /root/code/database/aikv/tests/*.rs 2>/dev/null; ls /root/code/database/aikv/
 ```json
 {
   "glob_pattern": "aikv/tests/**/*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -420,7 +420,7 @@ ls /root/code/database/aikv/tests/*.rs 2>/dev/null; ls /root/code/database/aikv/
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "protoc|protobuf",
   "glob": "*.{yml,md,sh,toml}"
 }
@@ -436,7 +436,7 @@ ls /root/code/database/aikv/tests/*.rs 2>/dev/null; ls /root/code/database/aikv/
 ```json
 {
   "glob_pattern": "aikv/**/regression*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -446,7 +446,7 @@ ls /root/code/database/aikv/tests/*.rs 2>/dev/null; ls /root/code/database/aikv/
 ```json
 {
   "glob_pattern": "aikv/benches/*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -456,7 +456,7 @@ ls /root/code/database/aikv/tests/*.rs 2>/dev/null; ls /root/code/database/aikv/
 ```json
 {
   "offset": 80,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/CONTRIBUTING.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/CONTRIBUTING.md"
 }
 ```
 
@@ -469,7 +469,7 @@ ls /root/code/database/aikv/tests/*.rs 2>/dev/null; ls /root/code/database/aikv/
 
 ```json
 {
-  "path": "/root/code/database/aikv/DEPLOYMENT.md",
+  "path": "../../DEPLOYMENT.md",
   "pattern": "cargo test|测试"
 }
 ```
@@ -643,7 +643,7 @@ src/
 
 ```json
 {
-  "path": "/root/code/database/aikv/rust-toolchain.toml"
+  "path": "../../rust-toolchain.toml"
 }
 ```
 
@@ -652,7 +652,7 @@ src/
 
 ```json
 {
-  "path": "/root/code/database/aikv/.github/workflows/security.yml"
+  "path": "../../.github/workflows/security.yml"
 }
 ```
 
@@ -661,7 +661,7 @@ src/
 
 ```json
 {
-  "path": "/root/code/database/aikv/Cargo.toml",
+  "path": "../../Cargo.toml",
   "limit": 80
 }
 ```
@@ -671,7 +671,7 @@ src/
 
 ```json
 {
-  "path": "/root/code/database/aikv/lib.rs"
+  "path": "../../lib.rs"
 }
 ```
 
@@ -679,7 +679,7 @@ src/
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aikv && ls e2e/test_cluster_*.sh 2>/dev/null; echo "---"; ls e2e/test_*.sh 2>/dev/null | sed 's|.*/||' | sort
+cd ../../../aikv && ls e2e/test_cluster_*.sh 2>/dev/null; echo "---"; ls e2e/test_*.sh 2>/dev/null | sed 's|.*/||' | sort
 ```
 
 
@@ -687,7 +687,7 @@ cd /root/code/database/aikv && ls e2e/test_cluster_*.sh 2>/dev/null; echo "---";
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests",
+  "path": "../../tests",
   "pattern": "#\\[ignore\\]"
 }
 ```
@@ -701,7 +701,7 @@ cd /root/code/database/aikv && ls e2e/test_cluster_*.sh 2>/dev/null; echo "---";
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/lib.rs"
+  "path": "../../src/lib.rs"
 }
 ```
 
@@ -710,7 +710,7 @@ cd /root/code/database/aikv && ls e2e/test_cluster_*.sh 2>/dev/null; echo "---";
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests",
+  "path": "../../tests",
   "pattern": "#\\[ignore\\]",
   "glob": "**/*"
 }
@@ -721,7 +721,7 @@ cd /root/code/database/aikv && ls e2e/test_cluster_*.sh 2>/dev/null; echo "---";
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests/resp.rs",
+  "path": "../../tests/resp.rs",
   "limit": 15
 }
 ```
@@ -731,7 +731,7 @@ cd /root/code/database/aikv && ls e2e/test_cluster_*.sh 2>/dev/null; echo "---";
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests/cluster_integration.rs",
+  "path": "../../tests/cluster_integration.rs",
   "limit": 20
 }
 ```
@@ -741,7 +741,7 @@ cd /root/code/database/aikv && ls e2e/test_cluster_*.sh 2>/dev/null; echo "---";
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests/storage.rs",
+  "path": "../../tests/storage.rs",
   "limit": 15
 }
 ```
@@ -751,7 +751,7 @@ cd /root/code/database/aikv && ls e2e/test_cluster_*.sh 2>/dev/null; echo "---";
 
 ```json
 {
-  "path": "/root/code/database/aikv/DEPLOYMENT.md",
+  "path": "../../DEPLOYMENT.md",
   "pattern": "构建与验证|cargo test",
   "-B": 2,
   "-A": 15
@@ -767,7 +767,7 @@ cd /root/code/database/aikv && ls e2e/test_cluster_*.sh 2>/dev/null; echo "---";
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests/modules",
+  "path": "../../tests/modules",
   "pattern": "#\\[ignore\\]"
 }
 ```
@@ -778,7 +778,7 @@ cd /root/code/database/aikv && ls e2e/test_cluster_*.sh 2>/dev/null; echo "---";
 ```json
 {
   "limit": 12,
-  "path": "/root/code/database/aikv/tests/commands.rs"
+  "path": "../../tests/commands.rs"
 }
 ```
 
@@ -788,7 +788,7 @@ cd /root/code/database/aikv && ls e2e/test_cluster_*.sh 2>/dev/null; echo "---";
 ```json
 {
   "limit": 12,
-  "path": "/root/code/database/aikv/tests/server.rs"
+  "path": "../../tests/server.rs"
 }
 ```
 
@@ -796,7 +796,7 @@ cd /root/code/database/aikv && ls e2e/test_cluster_*.sh 2>/dev/null; echo "---";
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aikv && cargo test --workspace --features cluster -- --list 2>/dev/null | wc -l || echo "cargo test list failed"
+cd ../../../aikv && cargo test --workspace --features cluster -- --list 2>/dev/null | wc -l || echo "cargo test list failed"
 ```
 
 
@@ -808,7 +808,7 @@ cd /root/code/database/aikv && cargo test --workspace --features cluster -- --li
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests/modules/server",
+  "path": "../../tests/modules/server",
   "pattern": "ignore|malicious|pipeline_large|px_expiry"
 }
 ```
@@ -818,7 +818,7 @@ cd /root/code/database/aikv && cargo test --workspace --features cluster -- --li
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests/modules/command",
+  "path": "../../tests/modules/command",
   "pattern": "ignore|px_expiry"
 }
 ```
@@ -827,7 +827,7 @@ cd /root/code/database/aikv && cargo test --workspace --features cluster -- --li
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aikv && cargo test --workspace --features cluster -- --list 2>/dev/null | rg -c '^test ' || true; cargo test --lib --features cluster -- --list 2>/dev/null | rg -c '^test ' || true
+cd ../../../aikv && cargo test --workspace --features cluster -- --list 2>/dev/null | rg -c '^test ' || true; cargo test --lib --features cluster -- --list 2>/dev/null | rg -c '^test ' || true
 ```
 
 
@@ -838,7 +838,7 @@ cd /root/code/database/aikv && cargo test --workspace --features cluster -- --li
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aikv && cargo test --lib --features cluster -- --list 2>/dev/null | grep -c ': test$' ; echo "integration targets:"; for t in resp server storage commands cluster_commands cluster_creategroup cluster_integration cluster_routing cluster_skeleton; do n=$(cargo test --test $t --features cluster -- --list 2>/dev/null | grep -c ': test$' || echo 0); echo "  $t: $n"; done
+cd ../../../aikv && cargo test --lib --features cluster -- --list 2>/dev/null | grep -c ': test$' ; echo "integration targets:"; for t in resp server storage commands cluster_commands cluster_creategroup cluster_integration cluster_routing cluster_skeleton; do n=$(cargo test --test $t --features cluster -- --list 2>/dev/null | grep -c ': test$' || echo 0); echo "  $t: $n"; done
 ```
 
 
@@ -847,7 +847,7 @@ cd /root/code/database/aikv && cargo test --lib --features cluster -- --list 2>/
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/AGENTS.md"
+  "path": "../../AGENTS.md"
 }
 ```
 
@@ -860,7 +860,7 @@ cd /root/code/database/aikv && cargo test --lib --features cluster -- --list 2>/
 
 ```json
 {
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "pattern": "#\\[cfg\\(test\\)\\]|mod tests",
   "output_mode": "count"
 }
@@ -872,7 +872,7 @@ cd /root/code/database/aikv && cargo test --lib --features cluster -- --list 2>/
 ```json
 {
   "offset": 40,
-  "path": "/root/code/database/aikv/AGENTS.md"
+  "path": "../../AGENTS.md"
 }
 ```
 
@@ -1075,7 +1075,7 @@ cargo test --workspace --features cluster
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/CONTRIBUTING.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/CONTRIBUTING.md"
 }
 ```
 
@@ -1085,7 +1085,7 @@ cargo test --workspace --features cluster
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/CHANGELOG.md"
 }
 ```
 
@@ -1094,7 +1094,7 @@ cargo test --workspace --features cluster
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/CONTRIBUTING.md"
+  "path": "../../../aikv-oldmain/CONTRIBUTING.md"
 }
 ```
 
@@ -1104,7 +1104,7 @@ cargo test --workspace --features cluster
 ```json
 {
   "glob_pattern": "**/*{CI,ci,DEVELOPMENT,development,CONTRIBUTING}*",
-  "target_directory": "/root/code/database/aikv-oldmain"
+  "target_directory": "../../../aikv-oldmain"
 }
 ```
 
@@ -1113,7 +1113,7 @@ cargo test --workspace --features cluster
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory",
   "pattern": "CONTRIBUTING|CI|test|coverage|hook|changelog",
   "-i": true,
   "head_limit": 40
@@ -1129,7 +1129,7 @@ cargo test --workspace --features cluster
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/.github/workflows/ci.yml"
+  "path": "../../../aikv-oldmain/.github/workflows/ci.yml"
 }
 ```
 
@@ -1139,7 +1139,7 @@ cargo test --workspace --features cluster
 ```json
 {
   "glob_pattern": "**/CONTRIBUTING*",
-  "target_directory": "/root/code/database/wiqun-kv"
+  "target_directory": "../../../wiqun-kv"
 }
 ```
 
@@ -1149,7 +1149,7 @@ cargo test --workspace --features cluster
 ```json
 {
   "glob_pattern": "**/CHANGELOG*",
-  "target_directory": "/root/code/database/wiqun-kv"
+  "target_directory": "../../../wiqun-kv"
 }
 ```
 
@@ -1159,7 +1159,7 @@ cargo test --workspace --features cluster
 ```json
 {
   "offset": 380,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/CHANGELOG.md"
 }
 ```
 
@@ -1168,7 +1168,7 @@ cargo test --workspace --features cluster
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory",
   "pattern": "测试|CI|coverage|contribut|changelog|e2e",
   "glob": "01*.md",
   "head_limit": 30
@@ -1185,7 +1185,7 @@ cargo test --workspace --features cluster
 ```json
 {
   "limit": 90,
-  "path": "/root/code/database/wiqun-kv/CONTRIBUTING.md"
+  "path": "../../../wiqun-kv/CONTRIBUTING.md"
 }
 ```
 
@@ -1195,7 +1195,7 @@ cargo test --workspace --features cluster
 ```json
 {
   "limit": 15,
-  "path": "/root/code/database/wiqun-kv/CHANGELOG.md"
+  "path": "../../../wiqun-kv/CHANGELOG.md"
 }
 ```
 
@@ -1204,7 +1204,7 @@ cargo test --workspace --features cluster
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs",
+  "path": "../../../aikv-oldmain/docs",
   "pattern": "CONTRIBUTING|CI|test|coverage|hook",
   "head_limit": 25
 }
@@ -1216,7 +1216,7 @@ cargo test --workspace --features cluster
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb/archive/17-contributing-changelog.md",
+  "path": "../../../aidb/archive/17-contributing-changelog.md",
   "offset": 200
 }
 ```
@@ -1375,7 +1375,7 @@ cargo test --workspace --features cluster
 ```json
 {
   "glob_pattern": "aikv-oldmain/{hooks,tests,e2e}/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1385,7 +1385,7 @@ cargo test --workspace --features cluster
 ```json
 {
   "glob_pattern": "aikv-oldmain/.github/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1394,7 +1394,7 @@ cargo test --workspace --features cluster
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/Cargo.toml",
+  "path": "../../../aikv-oldmain/Cargo.toml",
   "pattern": "version|features|aidb|wiqun"
 }
 ```
@@ -1403,14 +1403,14 @@ cargo test --workspace --features cluster
 **Tool `Shell`**
 
 ```bash
-echo "=== oldmain tests ===" && ls /root/code/database/aikv-oldmain/tests/*.rs 2>/dev/null; echo "=== oldmain e2e count ===" && ls /root/code/database/aikv-oldmain/e2e/test_*.sh 2>/dev/null | wc -l; ls /root/code/database/aikv-oldmain/e2e/test_cluster_*.sh 2>/dev/null | wc -l; echo "=== oldmain hooks ===" && ls /root/code/database/aikv-oldmain/hooks 2>/dev/null || echo "no hooks dir"; ls /root/code/database/aikv-oldmain/install-hooks.sh 2>/dev/null || echo "no install-hooks"
+echo "=== oldmain tests ===" && ls ../../../aikv-oldmain/tests/*.rs 2>/dev/null; echo "=== oldmain e2e count ===" && ls ../../../aikv-oldmain/e2e/test_*.sh 2>/dev/null | wc -l; ls ../../../aikv-oldmain/e2e/test_cluster_*.sh 2>/dev/null | wc -l; echo "=== oldmain hooks ===" && ls ../../../aikv-oldmain/hooks 2>/dev/null || echo "no hooks dir"; ls ../../../aikv-oldmain/install-hooks.sh 2>/dev/null || echo "no install-hooks"
 ```
 
 
 **Tool `Shell`**
 
 ```bash
-echo "=== oldmain src ===" && ls /root/code/database/aikv-oldmain/src/
+echo "=== oldmain src ===" && ls ../../../aikv-oldmain/src/
 ```
 
 
@@ -1421,7 +1421,7 @@ echo "=== oldmain src ===" && ls /root/code/database/aikv-oldmain/src/
 **Tool `Shell`**
 
 ```bash
-ls /root/code/database/aikv-oldmain/src/; echo "---"; ls /root/code/database/aikv-oldmain/src/command/ 2>/dev/null | head -15; echo "---"; test -d /root/code/database/aikv-oldmain/src/script && ls aikv-oldmain/src/script || echo "no script dir"; test -f /root/code/database/aikv-oldmain/.pre-commit-config.yaml && echo "has pre-commit yaml" || echo "no pre-commit yaml"
+ls ../../../aikv-oldmain/src/; echo "---"; ls ../../../aikv-oldmain/src/command/ 2>/dev/null | head -15; echo "---"; test -d ../../../aikv-oldmain/src/script && ls aikv-oldmain/src/script || echo "no script dir"; test -f ../../../aikv-oldmain/.pre-commit-config.yaml && echo "has pre-commit yaml" || echo "no pre-commit yaml"
 ```
 
 
@@ -1429,7 +1429,7 @@ ls /root/code/database/aikv-oldmain/src/; echo "---"; ls /root/code/database/aik
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/.github/workflows/security.yml"
+  "path": "../../../aikv-oldmain/.github/workflows/security.yml"
 }
 ```
 
@@ -1438,7 +1438,7 @@ ls /root/code/database/aikv-oldmain/src/; echo "---"; ls /root/code/database/aik
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv",
+  "path": "../../../wiqun-kv",
   "pattern": "install-hooks|pre-commit|test-cluster",
   "glob": "*.{yml,md,sh}"
 }
@@ -1450,7 +1450,7 @@ ls /root/code/database/aikv-oldmain/src/; echo "---"; ls /root/code/database/aik
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/wiqun-kv/.github/workflows/ci.yml"
+  "path": "../../../wiqun-kv/.github/workflows/ci.yml"
 }
 ```
 
@@ -1463,7 +1463,7 @@ ls /root/code/database/aikv-oldmain/src/; echo "---"; ls /root/code/database/aik
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv/.github/workflows/ci.yml"
+  "path": "../../../wiqun-kv/.github/workflows/ci.yml"
 }
 ```
 
@@ -1471,7 +1471,7 @@ ls /root/code/database/aikv-oldmain/src/; echo "---"; ls /root/code/database/aik
 **Tool `Shell`**
 
 ```bash
-ls /root/code/database/wiqun-kv/tests/*.rs 2>/dev/null; echo "---"; ls /root/code/database/wiqun-kv/e2e/test_*.sh 2>/dev/null | wc -l; ls /root/code/database/wiqun-kv/hooks 2>/dev/null || echo "no hooks"; test -f /root/code/database/wiqun-kv/install-hooks.sh && echo "has install-hooks" || echo "no install-hooks"
+ls ../../../wiqun-kv/tests/*.rs 2>/dev/null; echo "---"; ls ../../../wiqun-kv/e2e/test_*.sh 2>/dev/null | wc -l; ls ../../../wiqun-kv/hooks 2>/dev/null || echo "no hooks"; test -f ../../../wiqun-kv/install-hooks.sh && echo "has install-hooks" || echo "no install-hooks"
 ```
 
 
@@ -1479,7 +1479,7 @@ ls /root/code/database/wiqun-kv/tests/*.rs 2>/dev/null; echo "---"; ls /root/cod
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/lib.rs",
+  "path": "../../../aikv-oldmain/src/lib.rs",
   "pattern": "^pub mod"
 }
 ```
@@ -1651,7 +1651,7 @@ CHANGELOG **不写** oldmain→现仓版本映射; 读者只看连续 SemVer 史
 
 ```json
 {
-  "path": "/root/code/database/aidb/CONTRIBUTING.md"
+  "path": "../../../aidb/CONTRIBUTING.md"
 }
 ```
 
@@ -1660,7 +1660,7 @@ CHANGELOG **不写** oldmain→现仓版本映射; 读者只看连续 SemVer 史
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/CHANGELOG.md"
 }
 ```
 
@@ -1669,7 +1669,7 @@ CHANGELOG **不写** oldmain→现仓版本映射; 读者只看连续 SemVer 史
 
 ```json
 {
-  "path": "/root/code/database/aikv/DEPLOYMENT.md",
+  "path": "../../DEPLOYMENT.md",
   "limit": 25
 }
 ```
@@ -1684,7 +1684,7 @@ CHANGELOG **不写** oldmain→现仓版本映射; 读者只看连续 SemVer 史
 ```json
 {
   "glob_pattern": "aikv/tests/common/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1693,7 +1693,7 @@ CHANGELOG **不写** oldmain→现仓版本映射; 读者只看连续 SemVer 史
 
 ```json
 {
-  "path": "/root/code/database/aikv/DEPLOYMENT.md",
+  "path": "../../DEPLOYMENT.md",
   "pattern": "CONTRIBUTING"
 }
 ```
@@ -1708,7 +1708,7 @@ CHANGELOG **不写** oldmain→现仓版本映射; 读者只看连续 SemVer 史
 ```json
 {
   "glob_pattern": "aikv/examples/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -2008,7 +2008,7 @@ Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/
 
 ```json
 {
-  "path": "/root/code/database/aikv/README.md",
+  "path": "../../README.md",
   "offset": 78,
   "limit": 25
 }
@@ -2019,7 +2019,7 @@ Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "CONTRIBUTING|CHANGELOG|步 23"
 }
 ```
@@ -2033,7 +2033,7 @@ Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/
 
 ```json
 {
-  "path": "/root/code/database/aikv/README.md",
+  "path": "../../README.md",
   "pattern": "测试|CONTRIBUTING"
 }
 ```
@@ -2042,7 +2042,7 @@ Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/
 **Tool `Shell`**
 
 ```bash
-cp /root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md /root/code/database/aikv/CHANGELOG.md
+cp ../../../AiKv-Workflow/backup/aikv/CHANGELOG.md ../../CHANGELOG.md
 ```
 
 
@@ -2054,7 +2054,7 @@ cp /root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md /root/code/databas
 
 ```json
 {
-  "path": "/root/code/database/aidb/README.md",
+  "path": "../../../aidb/README.md",
   "pattern": "CONTRIBUTING|测试"
 }
 ```
@@ -2068,7 +2068,7 @@ cp /root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md /root/code/databas
 
 ```json
 {
-  "path": "/root/code/database/aikv/CONTRIBUTING.md",
+  "path": "../../CONTRIBUTING.md",
   "contents": "# 贡献指南\n\n本文说明 **如何本地验证、通过门禁、运行测试与提交 PR**. 项目概览见 [README.md](README.md); 构建与 feature 见 [DEPLOYMENT.md](DEPLOYMENT.md); CI 流程图与 job 详表见 [.github/README.md](.github/README.md).\n\n## 仓库结构\n\n```shell\nsrc/\n├── main.rs      # CLI 入口\n├── lib.rs       # 库入口 (导出 protocol/server/command/storage/cluster)\n├── error.rs     # Error / Result\n├── protocol/    # RESP2/3 编解码\n├── server/      # TCP Listener/Connection, INFO/slowlog/latency\n├── command/     # CommandRouter, 数据结构/JSON/Lua/持久化命令\n├── storage/     # KvStorage, MemoryEngine, AiDbEngine\n└── cluster/     # cluster feature — MOVED/ASK, CLUSTER 子命令\n```\n\n实现细节见 [docs/modules/](docs/modules/); 分层架构见 [ARCHITECTURE.md](ARCHITECTURE.md).\n\n## 工具链与 Monorepo\n\n[`rust-toolchain.toml`](rust-toolchain.toml) 固定 **stable**, 含 `clippy` / `rustfmt`, 与 GitHub Actions 一致. 进入仓库目录后 `rustup` 会自动切换; 可用 `rustup show` 确认.\n\n**path 依赖**: `Cargo.toml` 中 `aidb = { path = \"../aidb\" }`. 本地需 sibling 布局:\n\n```text\nparent/\n├── aidb/    # wiqun/AiDb\n└── aikv/    # wiqun/AiKv\n```\n\nCI 会 checkout 同名分支的 `wiqun/AiDb` 并 `ln -sf` 到 `../aidb`; 只改 aikv 时, 远程也应有对应分支的 AiDb.\n\n开发与 CI 以 **`--features cluster`** 为主路径. `cluster` 启用 `aidb/cluster` (gRPC), 本地 clippy/测试需本机 **protoc**:\n\n```bash\n# Debian/Ubuntu\nsudo apt-get install -y protobuf-compiler\n```\n\n详见 [aidb/DEPLOYMENT.md §构建与验证](../aidb/DEPLOYMENT.md#构建与验证).\n\n## Git hooks\n\n推送前建议安装 pre-commit (fmt + clippy, **不含 test**):\n\n```bash\n./install-hooks.sh   # 软链 hooks/* → .git/hooks/\n```\n\n[`hooks/pre-commit`](hooks/pre-commit) 依次执行:\n\n1. 检查 `../aidb/Cargo.toml` 存在\n2. `cargo fmt --check`\n3. `cargo clippy --all-targets --features cluster` (`RUSTFLAGS='-D warnings'`)\n\n**注意**: hook **不跑** `cargo test`; 测试在 CI (或 push 前手动) 执行.\n\n## 本地验证 vs CI\n\n| 层级 | 做什么 | 何时失败 |\n|------|--------|----------|\n| pre-commit | fmt + clippy (`--features cluster`) | `git commit` |\n| CI `test-cluster` | link aidb → fmt → clippy (cluster) → `cargo test --workspace --features cluster` | push / PR |\n| CI `test-server-stress` | `--test server -- --ignored` (TCP 压测) | `test-cluster` 通过后 |\n| CI `test-commands-slow` | `--test commands -- --ignored` (TTL 慢测) | `test-cluster` 通过后 |\n| CI `e2e` | release 构建 + `e2e/test_cluster_*.sh` (需 redis-cli) | `test-cluster` 通过后 |\n| Security | `cargo audit` + `cargo deny check` | push / PR / 每日 cron |\n\nSecurity ([`.github/workflows/security.yml`](.github/workflows/security.yml)) 与主 CI **并行、互不阻塞**. 同一分支新 push 会 cancel 未完成的旧 CI run.\n\n触发分支: `main`, `new/main`, `new/wiqun` (见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).\n\n### 推送前推荐命令\n\n```bash\nexport RUSTFLAGS='-D warnings'\ncargo fmt --check\ncargo clippy --all-targets --features cluster   # 需 protoc\ncargo test --workspace --features cluster -- --test-threads=1\n```\n\n慢测 (与 CI `test-server-stress` / `test-commands-slow` 一致):\n\n```bash\ncargo test --test server --features cluster -- --ignored --test-threads=1\ncargo test --test commands --features cluster -- --ignored --test-threads=1\n```\n\n与 [AGENTS.md](AGENTS.md) 速查块相同; job 细节见 [.github/README.md](.github/README.md).\n\n## 完整测试矩阵\n\nREADME 仅链入本篇; 集成测 **推荐** `--test-threads=1`. 分层说明见 [`tests/README.md`](tests/README.md).\n\n### 按层级\n\n| 层级 | 命令 | 说明 |\n|------|------|------|\n| **L0** | `cargo test --lib --features cluster` | `src/**` 单元测试 |\n| **L1** | `cargo test --test resp --features cluster -- --test-threads=1` | RESP golden + parser 边界 |\n| **L1** | `cargo test --test storage --features cluster -- --test-threads=1` | MemoryEngine + AiDb adapter |\n| **L1** | `cargo test --test commands --features cluster -- --test-threads=1` | CommandRouter 全命令族 |\n| **L2** | `cargo test --test server --features cluster -- --test-threads=1` | TCP listener + 内联命令 smoke |\n| **L3 cluster** | 见下表 | 集群协议/路由/集成 (需 `cluster` feature) |\n\n### L1 模块入口\n\n```bash\ncargo test --test resp --features cluster -- --test-threads=1\ncargo test --test storage --features cluster -- --test-threads=1\ncargo test --test commands --features cluster -- --test-threads=1\ncargo test --test server --features cluster -- --test-threads=1\n```\n\n### Cluster integration target (`--features cluster`)\n\n```bash\ncargo test --test cluster_commands --features cluster -- --test-threads=1\ncargo test --test cluster_creategroup --features cluster -- --test-threads=1\ncargo test --test cluster_integration --features cluster -- --test-threads=1\ncargo test --test cluster_routing --features cluster -- --test-threads=1\ncargo test --test cluster_skeleton --features cluster -- --test-threads=1\n```\n\n### `#[ignore]` 慢测\n\n| 测试 | test target | CI job |\n|------|-------------|--------|\n| `test_tcp_malicious_slow_send` | `server` | `test-server-stress` |\n| `test_tcp_pipeline_large_buffer` | `server` | `test-server-stress` |\n| `test_px_expiry_real_wait` | `commands` | `test-commands-slow` |\n\n`test-cluster` 默认跳过上述用例.\n\n### Feature 与 CI\n\n| Feature | 本地验证 | CI |\n|---------|----------|-----|\n| `cluster` | clippy + 全量 test (主路径) | `test-cluster` 及下游 3 job |\n| `monitoring` | `cargo build --features cluster,monitoring` | **无独立 job** |\n| default (无 feature) | `cargo build` | **无独立 job** |\n\n### CI 全量 (与 push 门禁一致)\n\n```bash\ncargo test --workspace --features cluster -- --test-threads=1\n```\n\n### E2E\n\n**本地** (需 `redis-cli`; 多数脚本用 memory 引擎):\n\n```bash\ncargo build --release --features cluster\nchmod +x e2e/*.sh\n./e2e/test_basic.sh\n# … 共 21 个 test_*.sh, 见 e2e/README.md\n```\n\n**CI `e2e` job** 仅跑 `e2e/test_cluster_*.sh` (9 个): formation, routing, slots, failover, forget, announce, 3node_routing, data_consistency, aidb_persistence.\n\nAidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/README.md](e2e/README.md).\n\n### 示例\n\n| 示例 | 命令 |\n|------|------|\n| basic | `cargo run --example basic` |\n| cluster | `cargo run --features cluster --example cluster` |\n\n见 [examples/README.md](examples/README.md).\n\n## 开发与 PR 规范\n\n1. **TDD (建议)**: 先写测试 → 实现 → 重构.\n2. **提交格式**: `type: 中文描述` — `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`.\n3. **修 bug**: 同一 PR 在对应 `tests/modules/*` 或 cluster integration test 添加复现用例.\n4. **用户面向变更**: 更新 [CHANGELOG.md](CHANGELOG.md) 对应版本或 `[Unreleased]`.\n5. **PR**: CI + Security 须绿; 相关文档一并更新.\n\n### PR 检查清单\n\n- [ ] `cargo fmt --check` 通过 (或已跑 `./install-hooks.sh`)\n- [ ] `cargo clippy --all-targets --features cluster` 无警告 (`RUSTFLAGS='-D warnings'`)\n- [ ] `cargo test --workspace --features cluster -- --test-threads=1` 通过\n- [ ] 若改 TCP 压测/TTL 慢测相关: 对应 `--ignored` job 命令通过\n- [ ] 用户面向 API/行为变更已写 CHANGELOG\n- [ ] 模块文档或根文档已更新 (若适用)\n\n## 相关文档\n\n| 文档 | 内容 |\n|------|------|\n| [DEPLOYMENT.md](DEPLOYMENT.md) | 构建、feature、CLI、集群部署 |\n| [.github/README.md](.github/README.md) | CI / Security 详表 |\n| [tests/README.md](tests/README.md) | 测试分层与新增约定 |\n| [e2e/README.md](e2e/README.md) | E2E smoke 脚本 |\n| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |\n| [ISSUES.md](ISSUES.md) | 待核实项 |\n"
 }
 ```
@@ -2078,7 +2078,7 @@ cp /root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md /root/code/databas
 
 ```json
 {
-  "path": "/root/code/database/aikv/README.md",
+  "path": "../../README.md",
   "old_string": "| [AGENTS.md](AGENTS.md) | AI 助手与 CI 入口 |\n| [docs/modules/protocol.md](docs/modules/protocol.md) | RESP parser/encoder |",
   "new_string": "| [AGENTS.md](AGENTS.md) | AI 助手与 CI 入口 |\n| [CONTRIBUTING.md](CONTRIBUTING.md) | hooks、CI、测试矩阵、提交/PR 规范 |\n| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |\n| [docs/modules/protocol.md](docs/modules/protocol.md) | RESP parser/encoder |"
 }
@@ -2089,7 +2089,7 @@ cp /root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md /root/code/databas
 
 ```json
 {
-  "path": "/root/code/database/aikv/DEPLOYMENT.md",
+  "path": "../../DEPLOYMENT.md",
   "old_string": "| [CONTRIBUTING.md](CONTRIBUTING.md) (步 23) | CI/hook/贡献流程细节 |",
   "new_string": "| [CONTRIBUTING.md](CONTRIBUTING.md) | CI/hook/贡献流程细节 |"
 }
@@ -2100,7 +2100,7 @@ cp /root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md /root/code/databas
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `CHANGELOG.md` | 待开始 | `backup/aikv/CHANGELOG.md` | 已移出 aikv | 保留历史条目, 按需续写 |\n| `CONTRIBUTING.md` | 待开始 | `backup/aikv/CONTRIBUTING.md` | 已移出 aikv | |",
   "new_string": "| `CONTRIBUTING.md` | ✅ | backup/aikv/CONTRIBUTING; oldmain CONTRIBUTING + ci.yml (过时跳过); wiqun-kv (重复跳过) | 已写 `aikv/CONTRIBUTING.md` | 删覆盖率/CLI/过时树; 完整测试矩阵与现 CI |\n| `CHANGELOG.md` | ✅ | `backup/aikv/CHANGELOG.md`; wiqun-kv (重复跳过) | 已写 `aikv/CHANGELOG.md` | 保留 0.0.1–0.10.5; [Unreleased] 空 |"
 }
@@ -2111,7 +2111,7 @@ cp /root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md /root/code/databas
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "| 23 | `CONTRIBUTING.md` / `CHANGELOG.md` | ⬜ 待开始 | |",
   "new_string": "| 23 | `CONTRIBUTING.md` / `CHANGELOG.md` | ✅ 完成 | 2026-06-18 |"
 }
@@ -2125,7 +2125,7 @@ cp /root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md /root/code/databas
 **Tool `Shell`**
 
 ```bash
-head -12 /root/code/database/aikv/CHANGELOG.md && echo "---" && rg '^version' /root/code/database/aikv/Cargo.toml && wc -l /root/code/database/aikv/CHANGELOG.md /root/code/database/aikv/CONTRIBUTING.md && diff -q /root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md /root/code/database/aikv/CHANGELOG.md
+head -12 ../../CHANGELOG.md && echo "---" && rg '^version' ../../Cargo.toml && wc -l ../../CHANGELOG.md ../../CONTRIBUTING.md && diff -q ../../../AiKv-Workflow/backup/aikv/CHANGELOG.md ../../CHANGELOG.md
 ```
 
 

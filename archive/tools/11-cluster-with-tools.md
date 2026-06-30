@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 1. `AiKv-Workflow/backup/design.md` — 总规程
@@ -69,7 +69,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -78,7 +78,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -87,7 +87,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -103,7 +103,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv/src/cluster"
+  "target_directory": "../../src/cluster"
 }
 ```
 
@@ -113,7 +113,7 @@
 ```json
 {
   "glob_pattern": "**/cluster*",
-  "target_directory": "/root/code/database/aikv/src"
+  "target_directory": "../../src"
 }
 ```
 
@@ -123,7 +123,7 @@
 ```json
 {
   "pattern": "cluster",
-  "path": "/root/code/database/aikv/src/command",
+  "path": "../../src/command",
   "output_mode": "files_with_matches"
 }
 ```
@@ -133,7 +133,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/storage.md",
+  "path": "../../docs/modules/storage.md",
   "limit": 80
 }
 ```
@@ -143,7 +143,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/modules/cluster.md",
+  "path": "../../../aidb/docs/modules/cluster.md",
   "limit": 80
 }
 ```
@@ -157,7 +157,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster/mod.rs"
+  "path": "../../src/cluster/mod.rs"
 }
 ```
 
@@ -167,7 +167,7 @@
 ```json
 {
   "pattern": "cluster",
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "glob": "**/mod.rs"
 }
 ```
@@ -178,7 +178,7 @@
 ```json
 {
   "glob_pattern": "**/*cluster*",
-  "target_directory": "/root/code/database/aikv"
+  "target_directory": "../../../aikv"
 }
 ```
 
@@ -188,7 +188,7 @@
 ```json
 {
   "pattern": "cluster",
-  "path": "/root/code/database/aikv/src/command",
+  "path": "../../src/command",
   "output_mode": "content",
   "head_limit": 40
 }
@@ -204,7 +204,7 @@
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aikv/src/cluster/commands.rs"
+  "path": "../../src/cluster/commands.rs"
 }
 ```
 
@@ -214,7 +214,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/src/cluster/router.rs"
+  "path": "../../src/cluster/router.rs"
 }
 ```
 
@@ -224,7 +224,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/src/cluster/state.rs"
+  "path": "../../src/cluster/state.rs"
 }
 ```
 
@@ -233,7 +233,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "pattern": "mod cluster|feature.*cluster|CLUSTER",
   "glob": "lib.rs"
 }
@@ -245,7 +245,7 @@
 ```json
 {
   "glob_pattern": "**/*cluster*",
-  "target_directory": "/root/code/database/WiQunTools"
+  "target_directory": "../../../WiQunTools"
 }
 ```
 
@@ -258,7 +258,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/lib.rs"
+  "path": "../../src/lib.rs"
 }
 ```
 
@@ -267,7 +267,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "cluster|CLUSTER",
   "glob": "main.rs",
   "head_limit": 50
@@ -280,7 +280,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/07-cluster-protocol.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/07-cluster-protocol.md"
 }
 ```
 
@@ -289,7 +289,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/commands-core.md",
+  "path": "../../docs/modules/commands-core.md",
   "pattern": "cluster|MOVED|ASK",
   "head_limit": 30
 }
@@ -301,7 +301,7 @@
 ```json
 {
   "glob_pattern": "**/*cluster*",
-  "target_directory": "/root/code/database/aikv-oldmain"
+  "target_directory": "../../../aikv-oldmain"
 }
 ```
 
@@ -314,7 +314,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "cluster_commands"
 }
 ```
@@ -325,7 +325,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/src/cluster/forward.rs"
+  "path": "../../src/cluster/forward.rs"
 }
 ```
 
@@ -335,7 +335,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/src/cluster/gossip.rs"
+  "path": "../../src/cluster/gossip.rs"
 }
 ```
 
@@ -345,7 +345,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/src/cluster/replication.rs"
+  "path": "../../src/cluster/replication.rs"
 }
 ```
 
@@ -355,7 +355,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/src/cluster/connection.rs"
+  "path": "../../src/cluster/connection.rs"
 }
 ```
 
@@ -365,7 +365,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/src/cluster/announce.rs"
+  "path": "../../src/cluster/announce.rs"
 }
 ```
 
@@ -375,7 +375,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/src/cluster/config_auto_save.rs"
+  "path": "../../src/cluster/config_auto_save.rs"
 }
 ```
 
@@ -388,7 +388,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "pattern": "failover|dispatch_cluster|READONLY|READWRITE|ASKING",
   "head_limit": 40
 }
@@ -401,7 +401,7 @@
 {
   "offset": 400,
   "limit": 120,
-  "path": "/root/code/database/aikv/src/main.rs"
+  "path": "../../src/main.rs"
 }
 ```
 
@@ -410,7 +410,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster/commands.rs",
+  "path": "../../src/cluster/commands.rs",
   "pattern": "^pub (async )?fn|^async fn cluster_",
   "head_limit": 50
 }
@@ -422,7 +422,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/03-cluster.md"
+  "path": "../../../aikv-oldmain/docs/development/architecture/03-cluster.md"
 }
 ```
 
@@ -436,7 +436,7 @@
 ```json
 {
   "head_limit": 30,
-  "path": "/root/code/database/aikv/src/server",
+  "path": "../../src/server",
   "pattern": "cluster"
 }
 ```
@@ -447,7 +447,7 @@
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/src/storage/cluster_adapter.rs"
+  "path": "../../src/storage/cluster_adapter.rs"
 }
 ```
 
@@ -456,7 +456,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/Cargo.toml",
+  "path": "../../Cargo.toml",
   "pattern": "cluster"
 }
 ```
@@ -465,7 +465,7 @@
 **Tool `Shell`**
 
 ```bash
-wc -l /root/code/database/aikv/src/cluster/*.rs /root/code/database/aikv/src/main.rs /root/code/database/aikv/src/command/router.rs /root/code/database/aikv/src/storage/cluster_adapter.rs 2>/dev/null | sort -n
+wc -l ../../src/cluster/*.rs ../../src/main.rs ../../src/command/router.rs ../../src/storage/cluster_adapter.rs 2>/dev/null | sort -n
 ```
 
 
@@ -477,7 +477,7 @@ wc -l /root/code/database/aikv/src/cluster/*.rs /root/code/database/aikv/src/mai
 
 ```json
 {
-  "path": "/root/code/database/aikv/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -487,7 +487,7 @@ wc -l /root/code/database/aikv/src/cluster/*.rs /root/code/database/aikv/src/mai
 ```json
 {
   "head_limit": 20,
-  "path": "/root/code/database/aikv/docs/modules/commands-extended.md",
+  "path": "../../docs/modules/commands-extended.md",
   "pattern": "cluster|MIGRATE"
 }
 ```
@@ -502,7 +502,7 @@ wc -l /root/code/database/aikv/src/cluster/*.rs /root/code/database/aikv/src/mai
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv-oldmain/src/cluster"
+  "target_directory": "../../../aikv-oldmain/src/cluster"
 }
 ```
 
@@ -512,7 +512,7 @@ wc -l /root/code/database/aikv/src/cluster/*.rs /root/code/database/aikv/src/mai
 ```json
 {
   "head_limit": 15,
-  "path": "/root/code/database/aikv/src/server/info.rs",
+  "path": "../../src/server/info.rs",
   "pattern": "cluster"
 }
 ```
@@ -724,7 +724,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster/state.rs"
+  "path": "../../src/cluster/state.rs"
 }
 ```
 
@@ -733,7 +733,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster/router.rs"
+  "path": "../../src/cluster/router.rs"
 }
 ```
 
@@ -742,7 +742,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster/forward.rs"
+  "path": "../../src/cluster/forward.rs"
 }
 ```
 
@@ -751,7 +751,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster/connection.rs"
+  "path": "../../src/cluster/connection.rs"
 }
 ```
 
@@ -760,7 +760,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster/gossip.rs"
+  "path": "../../src/cluster/gossip.rs"
 }
 ```
 
@@ -775,7 +775,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 {
   "offset": 160,
   "limit": 200,
-  "path": "/root/code/database/aikv/src/command/router.rs"
+  "path": "../../src/command/router.rs"
 }
 ```
 
@@ -786,7 +786,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 {
   "offset": 500,
   "limit": 260,
-  "path": "/root/code/database/aikv/src/command/router.rs"
+  "path": "../../src/command/router.rs"
 }
 ```
 
@@ -797,7 +797,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 {
   "offset": 155,
   "limit": 360,
-  "path": "/root/code/database/aikv/src/main.rs"
+  "path": "../../src/main.rs"
 }
 ```
 
@@ -808,7 +808,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 {
   "offset": 1550,
   "limit": 200,
-  "path": "/root/code/database/aikv/src/cluster/commands.rs"
+  "path": "../../src/cluster/commands.rs"
 }
 ```
 
@@ -823,7 +823,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 {
   "limit": 120,
   "offset": 950,
-  "path": "/root/code/database/aikv/src/cluster/commands.rs"
+  "path": "../../src/cluster/commands.rs"
 }
 ```
 
@@ -834,7 +834,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 {
   "limit": 120,
   "offset": 870,
-  "path": "/root/code/database/aikv/src/cluster/commands.rs"
+  "path": "../../src/cluster/commands.rs"
 }
 ```
 
@@ -845,7 +845,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 {
   "limit": 100,
   "offset": 620,
-  "path": "/root/code/database/aikv/src/cluster/commands.rs"
+  "path": "../../src/cluster/commands.rs"
 }
 ```
 
@@ -856,7 +856,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 {
   "limit": 100,
   "offset": 80,
-  "path": "/root/code/database/aikv/src/cluster/commands.rs"
+  "path": "../../src/cluster/commands.rs"
 }
 ```
 
@@ -865,7 +865,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster/announce.rs"
+  "path": "../../src/cluster/announce.rs"
 }
 ```
 
@@ -874,7 +874,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/connection.rs",
+  "path": "../../src/server/connection.rs",
   "pattern": "ASKING|READONLY|READWRITE|cluster",
   "-B": 2,
   "-A": 8
@@ -892,7 +892,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 {
   "limit": 150,
   "offset": 1745,
-  "path": "/root/code/database/aikv/src/cluster/commands.rs"
+  "path": "../../src/cluster/commands.rs"
 }
 ```
 
@@ -901,7 +901,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster/config_auto_save.rs"
+  "path": "../../src/cluster/config_auto_save.rs"
 }
 ```
 
@@ -911,7 +911,7 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 ```json
 {
   "head_limit": 30,
-  "path": "/root/code/database/aikv/tests",
+  "path": "../../tests",
   "pattern": "^fn |^async fn ",
   "glob": "cluster*.rs"
 }
@@ -1142,7 +1142,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/backup/aikv",
+  "path": "../../../backup/aikv",
   "pattern": "cluster|MOVED|ASK|CLUSTER",
   "glob": "*.md",
   "head_limit": 40
@@ -1155,7 +1155,7 @@ e2e/test_cluster_failover.sh
 ```json
 {
   "glob_pattern": "**/*cluster*",
-  "target_directory": "/root/code/database/backup/aikv"
+  "target_directory": "../../../backup/aikv"
 }
 ```
 
@@ -1164,7 +1164,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/03-cluster.md"
+  "path": "../../../aikv-oldmain/docs/development/architecture/03-cluster.md"
 }
 ```
 
@@ -1174,7 +1174,7 @@ e2e/test_cluster_failover.sh
 ```json
 {
   "limit": 150,
-  "path": "/root/code/database/aikv-oldmain/docs/development/api/02-cluster-api.md"
+  "path": "../../../aikv-oldmain/docs/development/api/02-cluster-api.md"
 }
 ```
 
@@ -1189,7 +1189,7 @@ e2e/test_cluster_failover.sh
 {
   "glob": "*.md",
   "head_limit": 50,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv",
+  "path": "../../../AiKv-Workflow/backup/aikv",
   "pattern": "cluster|MOVED|ASK|CLUSTER"
 }
 ```
@@ -1200,7 +1200,7 @@ e2e/test_cluster_failover.sh
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/07-cluster-protocol.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/07-cluster-protocol.md"
 }
 ```
 
@@ -1210,7 +1210,7 @@ e2e/test_cluster_failover.sh
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv-oldmain/docs/archive/CLUSTER_REFACTORING_SUMMARY.md"
+  "path": "../../../aikv-oldmain/docs/archive/CLUSTER_REFACTORING_SUMMARY.md"
 }
 ```
 
@@ -1220,7 +1220,7 @@ e2e/test_cluster_failover.sh
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/wiqun-kv/src/cluster"
+  "target_directory": "../../../wiqun-kv/src/cluster"
 }
 ```
 
@@ -1233,7 +1233,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "METARAFT|CLUSTER RESET|cluster-preferred"
 }
 ```
@@ -1245,7 +1245,7 @@ e2e/test_cluster_failover.sh
 {
   "glob": "*.md",
   "head_limit": 40,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/DESIGN.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/DESIGN.md",
   "pattern": "cluster|MOVED|Gossip"
 }
 ```
@@ -1257,7 +1257,7 @@ e2e/test_cluster_failover.sh
 {
   "glob": "*.md",
   "head_limit": 40,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/ARCHITECTURE.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/ARCHITECTURE.md",
   "pattern": "cluster|MOVED|Gossip"
 }
 ```
@@ -1269,7 +1269,7 @@ e2e/test_cluster_failover.sh
 {
   "limit": 80,
   "offset": 120,
-  "path": "/root/code/database/aikv-oldmain/docs/development/api/02-cluster-api.md"
+  "path": "../../../aikv-oldmain/docs/development/api/02-cluster-api.md"
 }
 ```
 
@@ -1278,7 +1278,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/07-cluster-protocol.md",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/07-cluster-protocol.md",
   "pattern": "^## |^### |FAILOVER|RESET|METARAFT|Gossip|PING"
 }
 ```
@@ -1294,7 +1294,7 @@ e2e/test_cluster_failover.sh
 {
   "limit": 100,
   "offset": 30,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/ARCHITECTURE.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/ARCHITECTURE.md"
 }
 ```
 
@@ -1303,7 +1303,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster/commands.rs",
+  "path": "../../src/cluster/commands.rs",
   "pattern": "cluster_state|RESET|saveconfig|cluster_saveconfig"
 }
 ```
@@ -1315,7 +1315,7 @@ e2e/test_cluster_failover.sh
 {
   "limit": 50,
   "offset": 700,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/07-cluster-protocol.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/07-cluster-protocol.md"
 }
 ```
 
@@ -1324,7 +1324,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/cluster",
+  "path": "../../../aikv-oldmain/src/cluster",
   "pattern": ".",
   "output_mode": "files_with_matches"
 }
@@ -1341,7 +1341,7 @@ e2e/test_cluster_failover.sh
 {
   "limit": 40,
   "offset": 768,
-  "path": "/root/code/database/aikv/src/cluster/commands.rs"
+  "path": "../../src/cluster/commands.rs"
 }
 ```
 
@@ -1350,7 +1350,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "GossipState|gossip::"
 }
 ```
@@ -1361,7 +1361,7 @@ e2e/test_cluster_failover.sh
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aikv-oldmain/src/cluster/mod.rs"
+  "path": "../../../aikv-oldmain/src/cluster/mod.rs"
 }
 ```
 
@@ -1372,7 +1372,7 @@ e2e/test_cluster_failover.sh
 {
   "glob": "*.md",
   "head_limit": 20,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/README.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/README.md",
   "pattern": "Gossip|METARAFT|aikv-tool"
 }
 ```
@@ -1386,7 +1386,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster",
+  "path": "../../src/cluster",
   "pattern": "gossip|GossipState"
 }
 ```
@@ -1398,7 +1398,7 @@ e2e/test_cluster_failover.sh
 {
   "limit": 80,
   "offset": 150,
-  "path": "/root/code/database/aikv/src/cluster/commands.rs"
+  "path": "../../src/cluster/commands.rs"
 }
 ```
 
@@ -1407,7 +1407,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster/commands.rs",
+  "path": "../../src/cluster/commands.rs",
   "pattern": "assigned.*16384|cluster_state:fail"
 }
 ```
@@ -1423,7 +1423,7 @@ e2e/test_cluster_failover.sh
 {
   "limit": 80,
   "offset": 228,
-  "path": "/root/code/database/aikv/src/cluster/commands.rs"
+  "path": "../../src/cluster/commands.rs"
 }
 ```
 
@@ -1432,7 +1432,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "on_gossip|gossip\\.get"
 }
 ```
@@ -1443,7 +1443,7 @@ e2e/test_cluster_failover.sh
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/AGENTS.md"
+  "path": "../../AGENTS.md"
 }
 ```
 
@@ -1456,7 +1456,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain",
+  "path": "../../../aikv-oldmain",
   "pattern": "CLUSTER METARAFT|cluster_reset|RESET",
   "head_limit": 15
 }
@@ -1467,7 +1467,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv/src/cluster/commands.rs",
+  "path": "../../../wiqun-kv/src/cluster/commands.rs",
   "pattern": "cluster_state:ok|METARAFT"
 }
 ```
@@ -1597,7 +1597,7 @@ e2e/test_cluster_failover.sh
 ```json
 {
   "limit": 45,
-  "path": "/root/code/database/aikv/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1607,7 +1607,7 @@ e2e/test_cluster_failover.sh
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aikv-oldmain/src/cluster/commands.rs"
+  "path": "../../../aikv-oldmain/src/cluster/commands.rs"
 }
 ```
 
@@ -1616,7 +1616,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/cluster/node.rs"
+  "path": "../../../aikv-oldmain/src/cluster/node.rs"
 }
 ```
 
@@ -1626,7 +1626,7 @@ e2e/test_cluster_failover.sh
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aikv-oldmain/src/storage/cluster_raft.rs"
+  "path": "../../../aikv-oldmain/src/storage/cluster_raft.rs"
 }
 ```
 
@@ -1640,7 +1640,7 @@ e2e/test_cluster_failover.sh
 ```json
 {
   "head_limit": 40,
-  "path": "/root/code/database/aikv-oldmain/src",
+  "path": "../../../aikv-oldmain/src",
   "pattern": "cluster_route|RouteDecision|forward_command|check_cross_slot"
 }
 ```
@@ -1651,7 +1651,7 @@ e2e/test_cluster_failover.sh
 ```json
 {
   "head_limit": 50,
-  "path": "/root/code/database/aikv-oldmain/src/cluster/commands.rs",
+  "path": "../../../aikv-oldmain/src/cluster/commands.rs",
   "pattern": "CLUSTER|dispatch|creategroup|rebalance|METARAFT|RESET"
 }
 ```
@@ -1662,7 +1662,7 @@ e2e/test_cluster_failover.sh
 ```json
 {
   "head_limit": 40,
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs",
+  "path": "../../../aikv-oldmain/src/server/connection.rs",
   "pattern": "MOVED|ASKING|readonly|cluster"
 }
 ```
@@ -1673,7 +1673,7 @@ e2e/test_cluster_failover.sh
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/src/storage/cluster_adapter.rs"
+  "path": "../../src/storage/cluster_adapter.rs"
 }
 ```
 
@@ -1688,7 +1688,7 @@ e2e/test_cluster_failover.sh
 {
   "limit": 120,
   "offset": 3680,
-  "path": "/root/code/database/aikv-oldmain/src/cluster/commands.rs"
+  "path": "../../../aikv-oldmain/src/cluster/commands.rs"
 }
 ```
 
@@ -1699,7 +1699,7 @@ e2e/test_cluster_failover.sh
 {
   "limit": 80,
   "offset": 870,
-  "path": "/root/code/database/aikv-oldmain/src/cluster/commands.rs"
+  "path": "../../../aikv-oldmain/src/cluster/commands.rs"
 }
 ```
 
@@ -1708,7 +1708,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/cluster/commands.rs",
+  "path": "../../../aikv-oldmain/src/cluster/commands.rs",
   "pattern": "ADDSLOTSRANGE|ADDREPLICATION|BUMPEPOCH|REBALANCE|CREATEGROUP"
 }
 ```
@@ -1718,7 +1718,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster/commands.rs",
+  "path": "../../src/cluster/commands.rs",
   "pattern": "ADDSLOTSRANGE|ADDREPLICATION|BUMPEPOCH|REBALANCE|CREATEGROUP"
 }
 ```
@@ -1732,7 +1732,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain",
+  "path": "../../../aikv-oldmain",
   "pattern": "forward_command|transparent"
 }
 ```
@@ -1744,7 +1744,7 @@ e2e/test_cluster_failover.sh
 {
   "limit": 60,
   "offset": 380,
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs"
+  "path": "../../../aikv-oldmain/src/server/connection.rs"
 }
 ```
 
@@ -1757,7 +1757,7 @@ e2e/test_cluster_failover.sh
 
 ```json
 {
-  "path": "/root/code/database/aikv/ISSUES.md",
+  "path": "../../ISSUES.md",
   "old_string": "<!-- 按 ISSUE-NNN 倒序追加 -->\n\n### ISSUE-002: AiDbEngine::open 固定 Options::for_testing()",
   "new_string": "<!-- 按 ISSUE-NNN 倒序追加 -->\n\n### ISSUE-019: SET-CONFIG-EPOCH / COUNT-FAILURE-REPORTS 为 stub\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 11 / 章节 `docs/modules/cluster.md` (步 2–3)\n- **相关 src**: `src/cluster/commands.rs` (`dispatch_cluster`)\n- **oldmain 代码**: `aikv-oldmain/src/cluster/commands.rs` — `SET-CONFIG-EPOCH` 有实现; `COUNT-FAILURE-REPORTS` 部分逻辑\n- **现象**: 现码 `SET-CONFIG-EPOCH` 恒 OK; `COUNT-FAILURE-REPORTS` 恒 0\n- **影响**: module「已知限制」; redis-cli 部分检查路径可能跳过\n- **下一步**: doc-only — 文档注明 stub; 按需补实现\n\n### ISSUE-018: CLUSTER FAILOVER 仅 FORCE/TAKEOVER 手动升主\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 11 / 章节 `docs/modules/cluster.md` (步 2–3)\n- **相关 src**: `src/cluster/commands.rs` (`cluster_failover`)\n- **旧文档**: `aikv-oldmain/docs/development/api/02-cluster-api.md` — 称 openraft 自动故障切换\n- **oldmain 代码**: `FailoverMode::Default|Force|Takeover`; 部分路径经 MetaRaft leader 转发\n- **现象**: 现码仅 `FORCE|TAKEOVER`; replica 上 `change_group_membership` 升主; 无 Redis 标准选举等待\n- **影响**: module 说明手动 failover 模型; 与 Redis 全兼容 FAILOVER 语义不同\n- **下一步**: doc-only\n\n### ISSUE-017: CLUSTER REPLICATE 仅本地 ReplicationRole 元数据\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 11 / 章节 `docs/modules/cluster.md` (步 2–3)\n- **相关 src**: `src/cluster/commands.rs` (`cluster_replicate`, `cluster_failover`)\n- **oldmain 代码**: oldmain `cluster_replicate` 调 membership/MultiRaft 路径更完整\n- **现象**: 现码只写 `ReplicationRole::Replica { primary_id }`; 注释声明 replicas 不服务数据读取\n- **影响**: FAILOVER 前需 REPLICATE; replica 读依赖 `READONLY` + 本地 group; module 已知限制\n- **下一步**: doc-only — 与 storage/cluster_adapter 读路径一并描述\n\n### ISSUE-016: CLUSTER RESET 未实现\n\n- **状态**: open\n- **发现于**: PROGRESS 步 11 / 章节 `docs/modules/cluster.md` (步 2)\n- **相关 src**: (无) — `dispatch_cluster` 无 RESET 分支\n- **旧文档**: `aikv-oldmain/docs/development/architecture/03-cluster.md` §排障 — `CLUSTER RESET SOFT`\n- **现象**: oldmain 排障脚本依赖 RESET; 现码 unknown subcommand\n- **影响**: 运维重置集群需手动清数据目录或 aidb 工具; redis-cli 工作流不兼容\n- **下一步**: 待核实 — 实现 SOFT/HARD 或文档声明不支持 + 替代步骤\n\n### ISSUE-015: CLUSTER METARAFT * 子命令已移除\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 11 / 章节 `docs/modules/cluster.md` (步 2–3)\n- **相关 src**: (无 aikv RESP 层)\n- **旧文档**: `aikv-oldmain/docs/development/api/02-cluster-api.md`, `03-cluster.md` §METARAFT\n- **oldmain 代码**: `aikv-oldmain/src/server/connection.rs` — ADDLEARNER/PROMOTE/MEMBERS/STATUS/SETSTATUS\n- **现象**: 重构后 MetaRaft 运维不在 aikv CLUSTER 子命令暴露; 由 aidb gRPC/内部 API 承担\n- **影响**: module 一行指向 [aidb cluster.md](../../aidb/docs/modules/cluster.md); 勿写 aikv 支持 METARAFT\n- **下一步**: doc-only\n\n### ISSUE-014: GossipState 后台刷新但未接入 CLUSTER NODES\n\n- **状态**: open\n- **发现于**: PROGRESS 步 11 / 章节 `docs/modules/cluster.md` (步 2–3)\n- **相关 src**: `src/cluster/gossip.rs`, `src/main.rs`, `src/cluster/commands.rs` (`cluster_nodes`)\n- **旧文档**: WiQunTools `07-cluster-protocol.md` — Gossip 供 NODES timestamps; `AGENTS.md` 称刷新 NODES 展示\n- **现象**: `start_background_refresh` 更新 `GossipState` + metrics; `cluster_nodes()` 只读 MetaRaft, 不读 gossip; 无 PING/PONG 网络\n- **影响**: 文档勿称「Gossip 驱动 NODES」; 可能是 dead code 或未完成 wiring\n- **下一步**: 待核实 — 接入 NODES ping 字段或删 unused GossipState 读路径/简化模块\n\n### ISSUE-013: CLUSTER INFO 恒输出 cluster_state:ok\n\n- **状态**: open\n- **发现于**: PROGRESS 步 11 / 章节 `docs/modules/cluster.md` (步 3)\n- **相关 src**: `src/cluster/commands.rs` (`cluster_info`)\n- **oldmain 代码**: `aikv-oldmain/src/cluster/commands.rs` — slot 未满 16384 或无 leader 时 `cluster_state:fail`\n- **现象**: 现码硬编码 `cluster_state:ok\\n`; wiqun-kv 同形\n- **影响**: `redis-cli --cluster check` / 排障可能误判; 与 oldmain 行为回归\n- **下一步**: 待核实 — 恢复 oldmain 判定逻辑或文档声明 intentional\n\n### ISSUE-002: AiDbEngine::open 固定 Options::for_testing()"
 }
@@ -1932,7 +1932,7 @@ oldmain 无对等模块; MOVED 用 `node_info.addr` 直出. 现码 `UnknownEndpo
 ```json
 {
   "glob_pattern": "**/cluster.md",
-  "target_directory": "/root/code/database/aikv"
+  "target_directory": "../../../aikv"
 }
 ```
 
@@ -1942,7 +1942,7 @@ oldmain 无对等模块; MOVED 用 `node_info.addr` 直出. 现码 `UnknownEndpo
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aikv/docs/modules/commands-core.md"
+  "path": "../../docs/modules/commands-core.md"
 }
 ```
 
@@ -1979,7 +1979,7 @@ oldmain 无对等模块; MOVED 用 `node_info.addr` 直出. 现码 `UnknownEndpo
 {
   "limit": 80,
   "offset": 780,
-  "path": "/root/code/database/aikv/src/cluster/commands.rs"
+  "path": "../../src/cluster/commands.rs"
 }
 ```
 
@@ -2292,7 +2292,7 @@ cargo test --features cluster -p aikv --test cluster_creategroup
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/cluster.md",
+  "path": "../../docs/modules/cluster.md",
   "contents": "---\nname: aikv-cluster\ndescription: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTER subcommands, connection ASKING/READONLY, init_cluster wiring to aidb MetaRaft/MultiRaft, AnnounceResolver, slot migration hooks. Use when changing src/cluster/*, command/router cluster_route, main init_cluster, debugging redirects, CLUSTER MEET/SETSLOT/FAILOVER, or cluster feature startup.\n---\n\n# AiKv Cluster (Redis Cluster 协议层)\n\n## 何时读本文\n\n- 改 `src/cluster/*`、`main.rs` 的 `init_cluster`, 或 `command/router.rs` 的 `cluster_route`\n- 排查 MOVED/ASK/CROSSSLOT/CLUSTERDOWN、slot 迁移 (SETSLOT/MIGRATE)、failover、节点 MEET/FORGET\n- 理解 aikv 与 aidb 在集群上的分工\n- **不覆盖**: MetaRaft/MultiRaft/Router 实现、slot 迁移状态机、gRPC → [aidb cluster.md](../../aidb/docs/modules/cluster.md)\n- **不覆盖**: 数据面 `propose_group` / `ClusterDataAdapter` → [storage.md](storage.md)\n- **不覆盖**: 命令分发骨架 / CROSSSLOT 前置插入点 → [commands-core.md](commands-core.md)\n- **不覆盖**: MIGRATE TCP/RESTORE → [commands-extended.md](commands-extended.md)\n- **不覆盖**: `aikv_cluster_redirects_total` / INFO cluster 段 → [observability.md](observability.md) (步 12)\n- **构建**: `--features cluster` (启用 `aidb/cluster`); aidb 侧需 `protoc`\n\n## 与 aidb 的分工\n\n| 层 | 仓库 | 职责 |\n|----|------|------|\n| 共识与拓扑 | aidb | MetaRaft (group 0)、MultiRaft 数据 group、Router/slot 表、MembershipCoordinator、SlotMigrationManager |\n| RESP 适配 | aikv (本章) | MOVED/ASK 决策、CLUSTER 子命令 RESP、连接态、client 地址通告、进程装配 |\n| KV 读写 | aikv storage | slot 已分配时写经 Raft (`ClusterDataAdapter`) |\n\n权威拓扑 **始终** 来自 MetaRaft; aikv **不** 独立维护 slot/成员状态.\n\n## 架构一览\n\n```mermaid\nflowchart TB\n  CLI[\"Redis client\"]\n  Conn[\"Connection\\nClusterConnectionState\"]\n  CR[\"CommandRouter::cluster_route\"]\n  DEC[\"ClusterRouter::decide\"]\n  FWD[\"forward_command\"]\n  DIS[\"dispatch_cluster\"]\n  CSM[\"CLUSTER_STATE_MGR\"]\n  MR[\"aidb MetaRaftNode\"]\n  MRN[\"aidb MultiRaftNode\"]\n  CDA[\"ClusterDataAdapter\"]\n\n  CLI --> Conn --> CR\n  CR --> DEC\n  DEC -->|Execute| CDA\n  DEC -->|Moved/Ask| FWD\n  CR -->|CLUSTER| DIS\n  DIS --> MR\n  DIS --> MRN\n  CSM --> MR\n  CSM --> MRN\n  CDA --> MRN\n```\n\n## 代码地图\n\n| 路径 | 职责 | 入口 |\n|------|------|------|\n| `cluster/mod.rs` | 模块根; re-export `key_to_slot`/`extract_hash_tag` | `pub mod cluster` |\n| `cluster/state.rs` | 全局单例; leader 缓存; coordinator 注入 | `CLUSTER_STATE_MGR`, `ClusterStateManager` |\n| `cluster/router.rs` | 同步路由决策 | `ClusterRouter::decide`, `check_cross_slot` |\n| `cluster/forward.rs` | 单端点透明 TCP 转发; EVAL 路由 key | `forward_command`, `cluster_routing_key` |\n| `cluster/connection.rs` | 每连接 asking/readonly | `ClusterConnectionState` |\n| `cluster/announce.rs` | MOVED/SLOTS 客户端地址; 内部转发 TCP 地址 | `AnnounceResolver`, `AnnounceMode` |\n| `cluster/commands.rs` | CLUSTER 子命令 + `dispatch_cluster` | `cluster_meet`, `cluster_set_slot`, … |\n| `cluster/gossip.rs` | 从 MetaRaft 刷新 GossipState (metrics) | `start_background_refresh` |\n| `cluster/config_auto_save.rs` | MetaRaft version → `nodes.conf` | `ConfigAutoSave::run` |\n| `cluster/replication.rs` | HELLO/INFO role 标签 | `node_replication_role` |\n| `command/router.rs` | 普通命令 cluster 前置 + `CLUSTER` dispatch | `cluster_route`, `execute_with_client` |\n| `server/connection.rs` | ASKING/READONLY/READWRITE; 传/重置 asking | `Connection::run` |\n| `main.rs` | CLI + `init_cluster` + `build_storage` 包 adapter | `init_cluster` (~L209–501) |\n\n> 实现文件为 `cluster/commands.rs`, **非** `command/cluster_commands.rs`.\n\n## 关键 invariant (勿破坏)\n\n- **`CLUSTER_STATE_MGR`**: `init_cluster` 成功后才 `set`; 未 set 时 `cluster_route` 跳过 (非 cluster 单机行为).\n- **Assigned slot 写**: 必须经数据面 Raft (`ClusterDataAdapter`); **禁止** 写 local fallback (见 storage.md).\n- **`ClusterRouter::decide` 同步**: 只读缓存 + MetaRaft 快照; 不 `.await` OpenRaft.\n- **IMPORTING 写窗口**: 目标节点 `importing_slots` 或连接 `ASKING` + Migrating/IMPORTING 状态 → `Execute`; 与 MIGRATE RESTORE 配合.\n- **ASKING 一次性**: `Connection` 每命令执行后 `reset_asking`.\n- **readonly replica 读**: `READONLY` + `CommandType::Read` + 本地 group → 本地读; 写仍 MOVED 到 leader.\n- **admin 白名单**: `cluster_route` 内命令 (PING/MIGRATE/SCAN/INFO/…) **不** 按 key 路由.\n- **CROSSSLOT**: 多 key 命令 (MGET/MSET/DEL/BLPOP/…) 须同 slot; MSET key 在偶数下标.\n- **Announce unknown 模式**: 客户端见 `:port`; 进程内 `forward_command` 用 `tcp_connect_addr` (rpc host + client port).\n\n## 数据流\n\n### 进程启动 (`init_cluster`)\n\n1. 打开/复用 aidb `DB` (`use_wal: true`)\n2. `MetaRaftNode` + 共享 `RaftServiceDispatcher` + Meta gRPC (`--cluster-rpc-addr`)\n3. bootstrap (`peers` 空) 或 join peers; 后台 `AIKV_CLIENT_ADDR` → MetaRaft\n4. `Router` + `LifecycleManager` + `MultiRaftNode::start_lifecycle_with_data`\n5. 数据面 gRPC: `rpc_port + cluster_data_port_offset` (默认 +10000)\n6. `MembershipCoordinator` + `SlotMigrationManager` 注入 `ClusterStateManager` → `CLUSTER_STATE_MGR.set`\n7. 后台: Gossip tick、`LeaderChangeWatcher` → `apply_observed_group_leader`、`ConfigAutoSave` → `nodes.conf`\n\n`build_storage` (aidb 路径): `StorageAdapter` → `ClusterDataAdapter` → `KvStorageAdapter`.\n\n### 普通命令 (非 CLUSTER)\n\n```mermaid\nsequenceDiagram\n  participant C as Connection\n  participant R as CommandRouter\n  participant D as ClusterRouter\n  participant F as forward_command\n  participant K as KvStorage\n\n  C->>R: execute_with_client(..., cluster_state)\n  R->>R: cluster_route (若 mgr 已 set)\n  alt admin 白名单\n    R->>K: execute_inner\n  else CROSSSLOT\n    R-->>C: -CROSSSLOT\n  else decide Execute\n    R->>K: execute_inner\n  else Moved/Ask\n    R->>F: TCP 转发 (可选 ASKING)\n    F-->>C: 目标节点响应\n  end\n  C->>C: reset_asking\n```\n\n### Slot 迁移 (Kv 侧协调)\n\n1. 源: `CLUSTER SETSLOT <slot> MIGRATING <target-id>` → `SlotMigrationManager::start_migration`\n2. 目标: `CLUSTER SETSLOT <slot> IMPORTING <source-id>` → 本地 `importing_slots`\n3. `MIGRATE` + `ASKING` + RESTORE (commands-extended)\n4. `CLUSTER SETSLOT <slot> STABLE` → 清 `importing_slots` + `commit_migration`\n\n源节点 Migrating 写 → **ASK**; 目标 IMPORTING 写 → **Execute** (含 router `importing_slots` 短路).\n\n## 关键类型\n\n| 类型 | 说明 |\n|------|------|\n| `RouteDecision` | `Execute` / `Moved` / `Ask` / `ClusterDown` |\n| `CommandType` | `Read` / `Write` / `Admin` |\n| `ClusterConnectionState` | `asking`, `readonly` |\n| `AnnounceMode` | `Fixed` (完整 host:port) / `UnknownEndpoint` (默认 `:port`) |\n| `ReplicationRole` | `Primary` / `Replica { primary_id }` (由 `CLUSTER REPLICATE` 设置) |\n\n## CLUSTER 子命令\n\n### Redis 标准 (已实现)\n\n| 子命令 | 入口 | 说明 |\n|--------|------|------|\n| KEYSLOT, MYID | `cluster_keyslot`, `cluster_myid` | |\n| INFO, NODES, SLOTS, SHARDS, MYSHARDID | `cluster_*` | NODES 用 group leader 判 master/slave |\n| COUNTKEYSINSLOT, GETKEYSINSLOT | scan 本地 group SM | |\n| MEET, FORGET [FORCE] | `MembershipCoordinator` | MEET NotLeader 退避重试 |\n| ADDSLOTS [NODE id], DELSLOTS | MetaRaft `AssignSlots`/`UnassignSlots` | 无 group 时 ADDSLOTS 可自动 CreateGroup |\n| SETSLOT MIGRATING/IMPORTING/NODE/STABLE | migration mgr + 本地 map | |\n| REPLICATE, REPLICAS | 元数据 / 列表 | REPLICATE 仅本地 role |\n| FAILOVER [FORCE\\|TAKEOVER] | `change_group_membership` 升主 | 需 replica role |\n| SAVECONFIG, BUMPEPOCH | `nodes.conf` / MetaRaft propose | |\n\n### AiKv 扩展\n\n| 子命令 | 说明 |\n|--------|------|\n| CREATEGROUP | 空 data group, 不分配 slot |\n| ADD_REPLICA / DEL_REPLICA | group 成员变更 (跨 group 可仅 MetaRaft 元数据) |\n| REBALANCE | `SlotMigrationManager` 再均衡 |\n\n### 未实现 / stub\n\n| 子命令 | 行为 |\n|--------|------|\n| CLUSTER RESET | 未实现 |\n| CLUSTER METARAFT * | 不在 aikv; 见 aidb cluster |\n| SET-CONFIG-EPOCH | 恒 OK |\n| COUNT-FAILURE-REPORTS | 恒 0 |\n\nNotLeader (MetaRaft propose): `map_propose_error` → `MOVED 0 <addr>` 或 CLUSTERDOWN.\n\n## 配置与 feature flags\n\n| 项 | 位置 | 说明 |\n|----|------|------|\n| `feature cluster` | `Cargo.toml` | `cluster = [\"aidb/cluster\"]` |\n| `--cluster-node-id` | `main.rs` CLI | 节点 ID |\n| `--cluster-rpc-addr` | `main.rs` CLI | MetaRaft gRPC |\n| `--cluster-peers` | `main.rs` CLI | 加入集群 peer 列表 |\n| `--cluster-data-port-offset` | `main.rs` CLI | 默认 10000 |\n| `AIKV_CLIENT_ADDR` | env | 写入 MetaRaft `client_addr` |\n| `AIKV_CLUSTER_ANNOUNCE_MODE` | env | `unknown` (默认) / `fixed` |\n| gossip / lifecycle / autosave 间隔 | `main.rs` CLI | 传入 `init_cluster` |\n\n## 常见任务\n\n### 排查 MOVED 循环\n\n1. 目标节点 `CLUSTER NODES` 中 `client_addr` 是否可达 (`AIKV_CLIENT_ADDR`)\n2. `AIKV_CLUSTER_ANNOUNCE_MODE=fixed` 是否更适合 LAN\n3. `LeaderChangeWatcher` / Gossip tick 是否刷新 router (`apply_observed_group_leader`)\n4. 对比 aidb Router slot 表: `CLUSTER SLOTS` vs MetaRaft\n\n### 手动 failover\n\n1. 副本节点: `CLUSTER REPLICATE <master-id>` (元数据)\n2. `CLUSTER FAILOVER FORCE` → 本节点 `change_group_membership` 为 sole voter\n3. 验证 `CLUSTER NODES` 中 `myself,master`; 数据可读性依赖 prior Raft 复制 (storage adapter)\n\n### 在线迁槽\n\n1. 源 `SETSLOT MIGRATING`; 目标 `SETSLOT IMPORTING`\n2. `MIGRATE` (源) → 目标 RESTORE (自动 ASKING)\n3. 双方 `SETSLOT STABLE`\n\n### 新增 CLUSTER 子命令\n\n1. 在 `cluster/commands.rs` 实现 handler\n2. 注册 `dispatch_cluster` match arm\n3. 若影响路由: 同步 `cluster_route` admin 白名单 / `is_multi_key_cmd`\n4. 若写 MetaRaft: 用 `map_propose_error` 统一 NotLeader\n\n## 测试\n\n```bash\ncargo test --features cluster cluster_ -- --test-threads=1\ncargo test --features cluster -p aikv --test cluster_integration\ncargo test --features cluster -p aikv --test cluster_routing\ncargo test --features cluster -p aikv --test cluster_commands\ncargo test --features cluster -p aikv --test cluster_creategroup\n\n# e2e\n./e2e/test_cluster_formation.sh\n./e2e/test_cluster_routing.sh\n./e2e/test_cluster_failover.sh\n```\n\n## 已知限制\n\n- **非 Redis Gossip**: 无 cluster bus PING/PONG; 拓扑靠 MetaRaft + MEET (见 Gossip 节).\n- **REPLICATE/FAILOVER**: 手动模型; replica 不自动服务写; 非 Redis 全自动 failover.\n- **无 CLUSTER RESET / METARAFT RESP 子命令**.\n- **无 ADDSLOTSRANGE** (redis-cli 常用 ADDSLOTS 仍可用).\n- **CLUSTER INFO** 当前恒 `cluster_state:ok` (见 ISSUE-013).\n- **透明转发**: 仅 server 侧; smart client (`redis-cli -c`) 仍靠 MOVED/ASK 字符串.\n\n## Gossip (轻量)\n\n`GossipState` 后台从 MetaRaft 刷新节点列表并计 metrics; **不** 发送 PING/PONG, **不** 决策 PFAIL/FAIL. `cluster_nodes()` 直接读 MetaRaft, 不读 GossipState (见 ISSUE-014). 故障检测与成员变更以 MetaRaft/Raft 为准.\n\n## 待核实\n\n- 见 [ISSUES.md](../../ISSUES.md#ISSUE-013) — CLUSTER INFO 恒 ok.\n- 见 [ISSUES.md](../../ISSUES.md#ISSUE-014) — GossipState 未接入 NODES.\n- 见 [ISSUES.md](../../ISSUES.md#ISSUE-016) — CLUSTER RESET 未实现.\n- 见 [ISSUES.md](../../ISSUES.md#ISSUE-004) — cluster_route 预留 msetnx dead branch.\n"
 }
 ```
@@ -2302,7 +2302,7 @@ cargo test --features cluster -p aikv --test cluster_creategroup
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `docs/modules/cluster.md` | 待开始 | | | `cluster/*` + cluster_commands |",
   "new_string": "| `docs/modules/cluster.md` | ✅ | backup/aikv {README,ARCHITECTURE,CHANGELOG,announce plan}; WiQunTools 07-cluster-protocol; oldmain 03-cluster + api/02-cluster (过时段); wiqun-kv cluster (查漏) | 已写 aikv/docs/modules/cluster.md | ISSUE-013/014/016 open; 015/017–019 doc-only; 加深 router/commands/forward/init_cluster |"
 }
@@ -2313,7 +2313,7 @@ cargo test --features cluster -p aikv --test cluster_creategroup
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "**当前阶段**: 阶段 1 — modules (步 11/12 待开始)",
   "new_string": "**当前阶段**: 阶段 1 — modules (步 12/12 待开始)"
 }
@@ -2324,7 +2324,7 @@ cargo test --features cluster -p aikv --test cluster_creategroup
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "| 11 | aikv | `docs/modules/cluster.md` | cluster/* | ⬜ 待开始 | |",
   "new_string": "| 11 | aikv | `docs/modules/cluster.md` | cluster/* | ✅ 完成 | 2026-06-18 |"
 }

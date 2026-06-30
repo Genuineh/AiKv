@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 
@@ -63,7 +63,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -72,7 +72,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -81,7 +81,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -97,7 +97,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv/src/command"
+  "target_directory": "../../src/command"
 }
 ```
 
@@ -106,7 +106,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/mod.rs"
+  "path": "../../src/command/mod.rs"
 }
 ```
 
@@ -116,7 +116,7 @@
 ```json
 {
   "pattern": "command::",
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "glob": "*.rs",
   "head_limit": 40
 }
@@ -127,7 +127,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/storage.md",
+  "path": "../../docs/modules/storage.md",
   "limit": 80
 }
 ```
@@ -142,7 +142,7 @@
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aikv/src/command/router.rs"
+  "path": "../../src/command/router.rs"
 }
 ```
 
@@ -152,7 +152,7 @@
 ```json
 {
   "limit": 150,
-  "path": "/root/code/database/aikv/src/command/registry.rs"
+  "path": "../../src/command/registry.rs"
 }
 ```
 
@@ -162,7 +162,7 @@
 ```json
 {
   "pattern": "scan_util",
-  "path": "/root/code/database/aikv/src/command"
+  "path": "../../src/command"
 }
 ```
 
@@ -172,7 +172,7 @@
 ```json
 {
   "glob_pattern": "**/02-storage-commands*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -185,7 +185,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/router.rs",
+  "path": "../../src/command/router.rs",
   "pattern": "pub async fn|fn dispatch|match cmd"
 }
 ```
@@ -196,7 +196,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/src/command/key.rs"
+  "path": "../../src/command/key.rs"
 }
 ```
 
@@ -206,7 +206,7 @@
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/02-storage-commands.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/02-storage-commands.md"
 }
 ```
 
@@ -215,7 +215,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "pattern": "cluster_commands|ClusterCommands"
 }
 ```
@@ -224,7 +224,7 @@
 **Tool `Shell`**
 
 ```bash
-wc -l /root/code/database/aikv/src/command/{string,hash,list,set,zset,key,database,registry,router,scan_util}.rs 2>/dev/null
+wc -l ../../src/command/{string,hash,list,set,zset,key,database,registry,router,scan_util}.rs 2>/dev/null
 ```
 
 
@@ -238,7 +238,7 @@ wc -l /root/code/database/aikv/src/command/{string,hash,list,set,zset,key,databa
 {
   "offset": 160,
   "limit": 220,
-  "path": "/root/code/database/aikv/src/command/router.rs"
+  "path": "../../src/command/router.rs"
 }
 ```
 
@@ -247,7 +247,7 @@ wc -l /root/code/database/aikv/src/command/{string,hash,list,set,zset,key,databa
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/key.rs",
+  "path": "../../src/command/key.rs",
   "pattern": "pub async fn|migrate|restore|dump|scan|keys|rename",
   "-i": true
 }
@@ -258,7 +258,7 @@ wc -l /root/code/database/aikv/src/command/{string,hash,list,set,zset,key,databa
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/list.rs",
+  "path": "../../src/command/list.rs",
   "pattern": "blocking|BLPOP|pub async fn"
 }
 ```
@@ -269,7 +269,7 @@ wc -l /root/code/database/aikv/src/command/{string,hash,list,set,zset,key,databa
 ```json
 {
   "glob_pattern": "**/*command*",
-  "target_directory": "/root/code/database/AiKv-Workflow/backup/aikv"
+  "target_directory": "../../../AiKv-Workflow/backup/aikv"
 }
 ```
 
@@ -279,7 +279,7 @@ wc -l /root/code/database/aikv/src/command/{string,hash,list,set,zset,key,databa
 ```json
 {
   "glob_pattern": "**/*command*",
-  "target_directory": "/root/code/database/aikv-oldmain"
+  "target_directory": "../../../aikv-oldmain"
 }
 ```
 
@@ -293,7 +293,7 @@ wc -l /root/code/database/aikv/src/command/{string,hash,list,set,zset,key,databa
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv-oldmain/docs/development/api/01-commands.md"
+  "path": "../../../aikv-oldmain/docs/development/api/01-commands.md"
 }
 ```
 
@@ -304,7 +304,7 @@ wc -l /root/code/database/aikv/src/command/{string,hash,list,set,zset,key,databa
 {
   "offset": 150,
   "limit": 140,
-  "path": "/root/code/database/aikv/src/command/registry.rs"
+  "path": "../../src/command/registry.rs"
 }
 ```
 
@@ -313,7 +313,7 @@ wc -l /root/code/database/aikv/src/command/{string,hash,list,set,zset,key,databa
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/server.md",
+  "path": "../../docs/modules/server.md",
   "pattern": "CommandRouter|commands-core"
 }
 ```
@@ -324,7 +324,7 @@ wc -l /root/code/database/aikv/src/command/{string,hash,list,set,zset,key,databa
 ```json
 {
   "glob_pattern": "**/commands*.rs",
-  "target_directory": "/root/code/database/aikv/tests"
+  "target_directory": "../../tests"
 }
 ```
 
@@ -338,7 +338,7 @@ wc -l /root/code/database/aikv/src/command/{string,hash,list,set,zset,key,databa
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv/tests/modules"
+  "target_directory": "../../tests/modules"
 }
 ```
 
@@ -348,7 +348,7 @@ wc -l /root/code/database/aikv/src/command/{string,hash,list,set,zset,key,databa
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/tests/commands.rs"
+  "path": "../../tests/commands.rs"
 }
 ```
 
@@ -357,7 +357,7 @@ wc -l /root/code/database/aikv/src/command/{string,hash,list,set,zset,key,databa
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/router.rs",
+  "path": "../../src/command/router.rs",
   "pattern": "^            \\\"",
   "head_limit": 80
 }
@@ -373,7 +373,7 @@ wc -l /root/code/database/aikv/src/command/{string,hash,list,set,zset,key,databa
 ```json
 {
   "glob_pattern": "commands-core.md",
-  "target_directory": "/root/code/database/aikv"
+  "target_directory": "../../../aikv"
 }
 ```
 
@@ -383,7 +383,7 @@ wc -l /root/code/database/aikv/src/command/{string,hash,list,set,zset,key,databa
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/docs/modules/server.md",
+  "path": "../../docs/modules/server.md",
   "offset": 110
 }
 ```
@@ -561,7 +561,7 @@ pub use script::ScriptCommands;
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `docs/modules/commands-core.md` | 待开始 | | | string/hash/list/set/zset/key/db + router |",
   "new_string": "| `docs/modules/commands-core.md` | 🔄 步 0 ✅ | (步 2 填) backup/aikv; WiQunTools 02-storage-commands; aikv-oldmain 01-commands | | `command/{string,hash,list,set,zset,key,database,registry,router}` + `scan_util`; 阻塞/MIGRATE 跨 extended; cluster_route → cluster.md |"
 }
@@ -572,7 +572,7 @@ pub use script::ScriptCommands;
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/database.rs"
+  "path": "../../src/command/database.rs"
 }
 ```
 
@@ -581,7 +581,7 @@ pub use script::ScriptCommands;
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/scan_util.rs"
+  "path": "../../src/command/scan_util.rs"
 }
 ```
 
@@ -591,7 +591,7 @@ pub use script::ScriptCommands;
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aikv/src/command/string.rs"
+  "path": "../../src/command/string.rs"
 }
 ```
 
@@ -601,7 +601,7 @@ pub use script::ScriptCommands;
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aikv/src/command/hash.rs"
+  "path": "../../src/command/hash.rs"
 }
 ```
 
@@ -616,7 +616,7 @@ pub use script::ScriptCommands;
 {
   "limit": 80,
   "offset": 108,
-  "path": "/root/code/database/aikv/src/command/router.rs"
+  "path": "../../src/command/router.rs"
 }
 ```
 
@@ -627,7 +627,7 @@ pub use script::ScriptCommands;
 {
   "limit": 80,
   "offset": 430,
-  "path": "/root/code/database/aikv/src/command/router.rs"
+  "path": "../../src/command/router.rs"
 }
 ```
 
@@ -638,7 +638,7 @@ pub use script::ScriptCommands;
 {
   "limit": 80,
   "offset": 650,
-  "path": "/root/code/database/aikv/src/command/router.rs"
+  "path": "../../src/command/router.rs"
 }
 ```
 
@@ -648,7 +648,7 @@ pub use script::ScriptCommands;
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aikv/src/command/set.rs"
+  "path": "../../src/command/set.rs"
 }
 ```
 
@@ -658,7 +658,7 @@ pub use script::ScriptCommands;
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aikv/src/command/list.rs"
+  "path": "../../src/command/list.rs"
 }
 ```
 
@@ -673,7 +673,7 @@ pub use script::ScriptCommands;
 {
   "limit": 80,
   "offset": 500,
-  "path": "/root/code/database/aikv/src/command/router.rs"
+  "path": "../../src/command/router.rs"
 }
 ```
 
@@ -684,7 +684,7 @@ pub use script::ScriptCommands;
 {
   "limit": 120,
   "offset": 120,
-  "path": "/root/code/database/aikv/src/command/string.rs"
+  "path": "../../src/command/string.rs"
 }
 ```
 
@@ -694,7 +694,7 @@ pub use script::ScriptCommands;
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aikv/src/command/zset.rs"
+  "path": "../../src/command/zset.rs"
 }
 ```
 
@@ -705,7 +705,7 @@ pub use script::ScriptCommands;
 {
   "limit": 100,
   "offset": 130,
-  "path": "/root/code/database/aikv/src/command/key.rs"
+  "path": "../../src/command/key.rs"
 }
 ```
 
@@ -715,7 +715,7 @@ pub use script::ScriptCommands;
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aikv/tests/modules/command/mod.rs"
+  "path": "../../tests/modules/command/mod.rs"
 }
 ```
 
@@ -730,7 +730,7 @@ pub use script::ScriptCommands;
 {
   "limit": 80,
   "offset": 250,
-  "path": "/root/code/database/aikv/src/command/hash.rs"
+  "path": "../../src/command/hash.rs"
 }
 ```
 
@@ -741,7 +741,7 @@ pub use script::ScriptCommands;
 {
   "limit": 80,
   "offset": 400,
-  "path": "/root/code/database/aikv/src/command/list.rs"
+  "path": "../../src/command/list.rs"
 }
 ```
 
@@ -750,7 +750,7 @@ pub use script::ScriptCommands;
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/router.rs",
+  "path": "../../src/command/router.rs",
   "pattern": "normalize|to_ascii|execute_inner"
 }
 ```
@@ -759,7 +759,7 @@ pub use script::ScriptCommands;
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aikv && cargo test --test commands string:: hash:: list:: set:: zset:: key:: database:: router:: -- --test-threads=4 2>&1 | tail -30
+cd ../../../aikv && cargo test --test commands string:: hash:: list:: set:: zset:: key:: database:: router:: -- --test-threads=4 2>&1 | tail -30
 ```
 
 
@@ -773,7 +773,7 @@ cd /root/code/database/aikv && cargo test --test commands string:: hash:: list::
 {
   "limit": 40,
   "offset": 730,
-  "path": "/root/code/database/aikv/src/command/router.rs"
+  "path": "../../src/command/router.rs"
 }
 ```
 
@@ -781,7 +781,7 @@ cd /root/code/database/aikv && cargo test --test commands string:: hash:: list::
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aikv && cargo test --test commands 2>&1 | tail -20
+cd ../../../aikv && cargo test --test commands 2>&1 | tail -20
 ```
 
 
@@ -793,7 +793,7 @@ cd /root/code/database/aikv && cargo test --test commands 2>&1 | tail -20
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/connection.rs",
+  "path": "../../src/server/connection.rs",
   "pattern": "execute_with_client|to_ascii_uppercase|cmd_name",
   "head_limit": 30
 }
@@ -805,7 +805,7 @@ cd /root/code/database/aikv && cargo test --test commands 2>&1 | tail -20
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/tests/modules/command/router.rs"
+  "path": "../../tests/modules/command/router.rs"
 }
 ```
 
@@ -1002,7 +1002,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv",
+  "path": "../../../AiKv-Workflow/backup/aikv",
   "pattern": "command|CommandRouter|Phase 9|HSET|registry",
   "glob": "*.md",
   "head_limit": 60
@@ -1015,7 +1015,7 @@ cd aikv && cargo test --test commands
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv-oldmain/src/command"
+  "target_directory": "../../../aikv-oldmain/src/command"
 }
 ```
 
@@ -1025,7 +1025,7 @@ cd aikv && cargo test --test commands
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/wiqun-kv/src/command"
+  "target_directory": "../../../wiqun-kv/src/command"
 }
 ```
 
@@ -1034,7 +1034,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/02-storage-commands.md",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/02-storage-commands.md",
   "pattern": "CommandRouter|registry|List|ZSet|Phase 10",
   "head_limit": 40
 }
@@ -1051,7 +1051,7 @@ cd aikv && cargo test --test commands
 {
   "glob": "*.md",
   "head_limit": 40,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/ARCHITECTURE.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/ARCHITECTURE.md",
   "pattern": "command|CommandRouter|KeyLock|registry"
 }
 ```
@@ -1063,7 +1063,7 @@ cd aikv && cargo test --test commands
 {
   "glob": "*.md",
   "head_limit": 40,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/DESIGN.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/DESIGN.md",
   "pattern": "command|CommandRouter|KeyLock|registry|WRONGTYPE"
 }
 ```
@@ -1073,7 +1073,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/aikv/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1082,7 +1082,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/mod.rs"
+  "path": "../../../aikv-oldmain/src/command/mod.rs"
 }
 ```
 
@@ -1092,7 +1092,7 @@ cd aikv && cargo test --test commands
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/AiKv-Workflow/backup/archive"
+  "target_directory": "../../../AiKv-Workflow/backup/archive"
 }
 ```
 
@@ -1105,7 +1105,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain",
+  "path": "../../../aikv-oldmain",
   "pattern": "KeyLock|registry|CommandRouter|BlockingRegistry|GETRANGE|BLPOP",
   "glob": "*.rs",
   "head_limit": 40
@@ -1117,7 +1117,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/string.rs",
+  "path": "../../src/command/string.rs",
   "pattern": "GETRANGE|SETRANGE"
 }
 ```
@@ -1129,7 +1129,7 @@ cd aikv && cargo test --test commands
 {
   "limit": 80,
   "offset": 140,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/ARCHITECTURE.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/ARCHITECTURE.md"
 }
 ```
 
@@ -1138,7 +1138,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/development/api/01-commands.md",
+  "path": "../../../aikv-oldmain/docs/development/api/01-commands.md",
   "pattern": "DUMP|HSCAN|registry|CommandExecutor",
   "head_limit": 30
 }
@@ -1153,7 +1153,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command",
+  "path": "../../src/command",
   "pattern": "GETRANGE|SETRANGE|UNLINK|TOUCH"
 }
 ```
@@ -1163,7 +1163,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/list.rs",
+  "path": "../../../aikv-oldmain/src/command/list.rs",
   "pattern": "BLPOP|blocking"
 }
 ```
@@ -1174,7 +1174,7 @@ cd aikv && cargo test --test commands
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/ARCHITECTURE.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/ARCHITECTURE.md"
 }
 ```
 
@@ -1183,7 +1183,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/02-storage-commands.md",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/02-storage-commands.md",
   "pattern": "GETRANGE|registry|HSCAN|DUMP|blocking"
 }
 ```
@@ -1197,7 +1197,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv/src/command",
+  "path": "../../../wiqun-kv/src/command",
   "pattern": "GETRANGE|registry"
 }
 ```
@@ -1207,7 +1207,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/development/api/01-commands.md",
+  "path": "../../../aikv-oldmain/docs/development/api/01-commands.md",
   "pattern": "GETRANGE"
 }
 ```
@@ -1218,7 +1218,7 @@ cd aikv && cargo test --test commands
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv-oldmain/docs/development/api/01-commands.md"
+  "path": "../../../aikv-oldmain/docs/development/api/01-commands.md"
 }
 ```
 
@@ -1228,7 +1228,7 @@ cd aikv && cargo test --test commands
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv-oldmain/docs/development"
+  "target_directory": "../../../aikv-oldmain/docs/development"
 }
 ```
 
@@ -1241,7 +1241,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command",
+  "path": "../../src/command",
   "pattern": "MSETNX|GETRANGE|UNLINK"
 }
 ```
@@ -1251,7 +1251,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/mod.rs",
+  "path": "../../../aikv-oldmain/src/command/mod.rs",
   "pattern": "MSETNX|GETRANGE"
 }
 ```
@@ -1262,7 +1262,7 @@ cd aikv && cargo test --test commands
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/01-overview.md"
+  "path": "../../../aikv-oldmain/docs/development/architecture/01-overview.md"
 }
 ```
 
@@ -1271,7 +1271,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/CHANGELOG.md",
   "pattern": "List|ZSet|registry|KeyLock|GETRANGE|blocking"
 }
 ```
@@ -1285,7 +1285,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "MSETNX"
 }
 ```
@@ -1295,7 +1295,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/key.rs",
+  "path": "../../../aikv-oldmain/src/command/key.rs",
   "pattern": "dump|DUMP",
   "head_limit": 15
 }
@@ -1308,7 +1308,7 @@ cd aikv && cargo test --test commands
 {
   "limit": 50,
   "offset": 330,
-  "path": "/root/code/database/aikv-oldmain/docs/development/api/01-commands.md"
+  "path": "../../../aikv-oldmain/docs/development/api/01-commands.md"
 }
 ```
 
@@ -1321,7 +1321,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv",
+  "path": "../../../wiqun-kv",
   "pattern": "GETRANGE|MSETNX"
 }
 ```
@@ -1333,7 +1333,7 @@ cd aikv && cargo test --test commands
 {
   "limit": 30,
   "offset": 720,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/02-storage-commands.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/02-storage-commands.md"
 }
 ```
 
@@ -1346,7 +1346,7 @@ cd aikv && cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database",
+  "path": "<workspace>",
   "pattern": "MSETNX|msetnx",
   "glob": "**/aikv/**"
 }
@@ -1495,7 +1495,7 @@ cd aikv && cargo test --test commands
 {
   "new_string": "| `docs/modules/commands-core.md` | 🔄 步 2 ✅ | backup/aikv CHANGELOG,DESIGN; WiQunTools 02-storage-commands; aikv-oldmain 01-commands + src/command/mod.rs; wiqun-kv src/command (查漏) | | ISSUE-001 引用; ISSUE-003/004 open |",
   "old_string": "| `docs/modules/commands-core.md` | 🔄 步 0 ✅ | (步 2 填) backup/aikv; WiQunTools 02-storage-commands; aikv-oldmain 01-commands | | `command/{string,hash,list,set,zset,key,database,registry,router}` + `scan_util`; 阻塞/MIGRATE 跨 extended; cluster_route → cluster.md |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1506,7 +1506,7 @@ cd aikv && cargo test --test commands
 {
   "new_string": "- **下一步**: 对照 Redis 7 语义; 统一 `mget` 实现; 补 compat 测试.\n\n### ISSUE-004: cluster_route 预留 MSETNX 但命令未注册/未实现\n\n- **状态**: open\n- **发现于**: PROGRESS 步 7 / 章节 `docs/modules/commands-core.md`\n- **相关 src**: `src/command/router.rs` (`cluster_route` `is_mset` 含 `msetnx`); `src/command/registry.rs` 无 `MSETNX`\n- **现象**: CROSSSLOT 分支引用不存在的命令; 客户端发 MSETNX → `ERR unknown command`\n- **影响**: cluster 多 key 语义文档需注明 dead branch; 或补实现/删注释\n- **下一步**: 待核实 — 实现 MSETNX 或从 cluster 注释移除 `msetnx`\n\n### ISSUE-003: GETRANGE/SETRANGE oldmain 有、现码未实现\n\n- **状态**: open\n- **发现于**: PROGRESS 步 7 / 章节 `docs/modules/commands-core.md`\n- **相关 src**: (无) — `registry`/`router`/`string.rs` 均无\n- **旧文档**: `aikv-oldmain/docs/development/api/01-commands.md` §GETRANGE\n- **oldmain 代码**: `aikv-oldmain/src/command/string.rs`, `mod.rs` match\n- **现象**: 重构线 (aikv/wiqun-kv) 移除; oldmain 测试 `data_types_test.rs` 仍覆盖\n- **影响**: module「已知限制」; Redis 客户端 substring 命令不可用\n- **下一步**: 待核实是否刻意裁剪或遗漏\n",
   "old_string": "- **下一步**: 对照 Redis 7 语义; 统一 `mget` 实现; 补 compat 测试.\n",
-  "path": "/root/code/database/aikv/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1516,7 +1516,7 @@ cd aikv && cargo test --test commands
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv-oldmain/src/command/string.rs"
+  "path": "../../../aikv-oldmain/src/command/string.rs"
 }
 ```
 
@@ -1526,7 +1526,7 @@ cd aikv && cargo test --test commands
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aikv-oldmain/src/command/database.rs"
+  "path": "../../../aikv-oldmain/src/command/database.rs"
 }
 ```
 
@@ -1536,7 +1536,7 @@ cd aikv && cargo test --test commands
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aikv-oldmain/src/command/hash.rs"
+  "path": "../../../aikv-oldmain/src/command/hash.rs"
 }
 ```
 
@@ -1544,7 +1544,7 @@ cd aikv && cargo test --test commands
 **Tool `Shell`**
 
 ```bash
-diff -q /root/code/database/aikv/src/command/string.rs /root/code/database/wiqun-kv/src/command/string.rs 2>/dev/null; diff -q /root/code/database/aikv/src/command/registry.rs /root/code/database/wiqun-kv/src/command/registry.rs 2>/dev/null; diff -q /root/code/database/aikv/src/command/router.rs /root/code/database/wiqun-kv/src/command/router.rs 2>/dev/null; wc -l /root/code/database/aikv-oldmain/src/command/*.rs | tail -1
+diff -q ../../src/command/string.rs ../../../wiqun-kv/src/command/string.rs 2>/dev/null; diff -q ../../src/command/registry.rs ../../../wiqun-kv/src/command/registry.rs 2>/dev/null; diff -q ../../src/command/router.rs ../../../wiqun-kv/src/command/router.rs 2>/dev/null; wc -l ../../../aikv-oldmain/src/command/*.rs | tail -1
 ```
 
 
@@ -1556,7 +1556,7 @@ diff -q /root/code/database/aikv/src/command/string.rs /root/code/database/wiqun
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/storage/types.rs",
+  "path": "../../src/storage/types.rs",
   "pattern": "DB_COUNT"
 }
 ```
@@ -1566,7 +1566,7 @@ diff -q /root/code/database/aikv/src/command/string.rs /root/code/database/wiqun
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command",
+  "path": "../../../aikv-oldmain/src/command",
   "pattern": "BLPOP|HSCAN|blocking"
 }
 ```
@@ -1576,7 +1576,7 @@ diff -q /root/code/database/aikv/src/command/string.rs /root/code/database/wiqun
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/list.rs",
+  "path": "../../../aikv-oldmain/src/command/list.rs",
   "pattern": "pub fn"
 }
 ```
@@ -1586,7 +1586,7 @@ diff -q /root/code/database/aikv/src/command/string.rs /root/code/database/wiqun
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/key.rs",
+  "path": "../../../aikv-oldmain/src/command/key.rs",
   "pattern": "pub fn"
 }
 ```
@@ -1595,7 +1595,7 @@ diff -q /root/code/database/aikv/src/command/string.rs /root/code/database/wiqun
 **Tool `Shell`**
 
 ```bash
-diff --stat /root/code/database/aikv/src/command/ /root/code/database/wiqun-kv/src/command/ 2>/dev/null | tail -5; diff /root/code/database/aikv/src/command/string.rs /root/code/database/wiqun-kv/src/command/string.rs | head -40
+diff --stat ../../src/command/ ../../../wiqun-kv/src/command/ 2>/dev/null | tail -5; diff ../../src/command/string.rs ../../../wiqun-kv/src/command/string.rs | head -40
 ```
 
 
@@ -1607,7 +1607,7 @@ diff --stat /root/code/database/aikv/src/command/ /root/code/database/wiqun-kv/s
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/zset.rs",
+  "path": "../../../aikv-oldmain/src/command/zset.rs",
   "pattern": "pub fn z"
 }
 ```
@@ -1617,7 +1617,7 @@ diff --stat /root/code/database/aikv/src/command/ /root/code/database/wiqun-kv/s
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/set.rs",
+  "path": "../../../aikv-oldmain/src/command/set.rs",
   "pattern": "pub fn s"
 }
 ```
@@ -1629,7 +1629,7 @@ diff --stat /root/code/database/aikv/src/command/ /root/code/database/wiqun-kv/s
 {
   "limit": 50,
   "offset": 78,
-  "path": "/root/code/database/aikv-oldmain/src/command/string.rs"
+  "path": "../../../aikv-oldmain/src/command/string.rs"
 }
 ```
 
@@ -1640,7 +1640,7 @@ diff --stat /root/code/database/aikv/src/command/ /root/code/database/wiqun-kv/s
 {
   "limit": 40,
   "offset": 88,
-  "path": "/root/code/database/aikv-oldmain/src/command/key.rs"
+  "path": "../../../aikv-oldmain/src/command/key.rs"
 }
 ```
 
@@ -1653,7 +1653,7 @@ diff --stat /root/code/database/aikv/src/command/ /root/code/database/wiqun-kv/s
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/string.rs",
+  "path": "../../src/command/string.rs",
   "pattern": "EXAT|PXAT|GETEX"
 }
 ```
@@ -1663,7 +1663,7 @@ diff --stat /root/code/database/aikv/src/command/ /root/code/database/wiqun-kv/s
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/string.rs",
+  "path": "../../../aikv-oldmain/src/command/string.rs",
   "pattern": "mget|fn mget"
 }
 ```
@@ -1675,7 +1675,7 @@ diff --stat /root/code/database/aikv/src/command/ /root/code/database/wiqun-kv/s
 {
   "limit": 30,
   "offset": 91,
-  "path": "/root/code/database/aikv/src/command/key.rs"
+  "path": "../../src/command/key.rs"
 }
 ```
 
@@ -1688,7 +1688,7 @@ diff --stat /root/code/database/aikv/src/command/ /root/code/database/wiqun-kv/s
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain",
+  "path": "../../../aikv-oldmain",
   "pattern": "ZINTER|ZUNION|ZDIFF"
 }
 ```
@@ -1698,7 +1698,7 @@ diff --stat /root/code/database/aikv/src/command/ /root/code/database/wiqun-kv/s
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/string.rs",
+  "path": "../../../aikv-oldmain/src/command/string.rs",
   "pattern": "SETEX|GETEX|EXAT"
 }
 ```
@@ -1712,7 +1712,7 @@ diff --stat /root/code/database/aikv/src/command/ /root/code/database/wiqun-kv/s
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/string.rs",
+  "path": "../../../aikv-oldmain/src/command/string.rs",
   "pattern": "EXAT|KEEPTTL"
 }
 ```
@@ -1724,7 +1724,7 @@ diff --stat /root/code/database/aikv/src/command/ /root/code/database/wiqun-kv/s
 {
   "limit": 80,
   "offset": 380,
-  "path": "/root/code/database/aikv/src/command/string.rs"
+  "path": "../../src/command/string.rs"
 }
 ```
 
@@ -1860,7 +1860,7 @@ diff --stat /root/code/database/aikv/src/command/ /root/code/database/wiqun-kv/s
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aikv/docs/modules/storage.md"
+  "path": "../../docs/modules/storage.md"
 }
 ```
 
@@ -2151,7 +2151,7 @@ cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/commands-core.md",
+  "path": "../../docs/modules/commands-core.md",
   "contents": "---\nname: aikv-commands-core\ndescription: AiKv core Redis commands — String/Hash/List/Set/ZSet/Key/Database handlers, CommandRouter dispatch, registry metadata, KeyLock. Use when changing src/command/{string,hash,list,set,zset,key,database,registry,router}, adding core data-structure commands, debugging WRONGTYPE/routing/key_indices, or cluster CROSSSLOT before handler runs.\n---\n\n# AiKv Commands Core (核心命令层)\n\n## 何时读本文\n\n- 改 `src/command/{string,hash,list,set,zset,key,database,registry,router}` 或 `scan_util.rs`\n- 新增/修改 **核心数据结构** Redis 命令 (非 JSON/Lua/INFO/SAVE)\n- 排查 WRONGTYPE、命令未注册、`COMMAND GETKEYS`、写路径竞态\n- 理解 `Connection` 如何进入命令 handler (上游见 [server.md](server.md))\n- **不覆盖**: `KvStorage` / `StoredValue` 契约 → [storage.md](storage.md)\n- **不覆盖**: JSON/Lua/阻塞基础设施/MIGRATE TCP/持久化/Server 命令 → [commands-extended.md](commands-extended.md)\n- **不覆盖**: MOVED/ASK / CLUSTER 子命令详述 → [cluster.md](cluster.md)\n\n## 架构一览\n\n```mermaid\nflowchart TB\n  Conn[\"Connection\\ncurrent_db + cluster_state\"]\n  Reg[\"registry::lookup\\nkey_indices\"]\n  R[\"CommandRouter\\nexecute_with_client\"]\n  CR[\"cluster_route\\nfeature cluster\"]\n  H[\"*Commands handlers\"]\n  KV[\"Arc dyn KvStorage\"]\n\n  Conn --> R\n  Conn -.-> Reg\n  R --> CR\n  CR --> H\n  R --> H\n  H --> KV\n```\n\n**装配** (`server/config.rs`):\n\n| 构造 | 用途 |\n|------|------|\n| `CommandRouter::new(storage)` | 测试; 无 INFO/SAVE |\n| `CommandRouter::new_with_shared(storage, state)` | 生产; 注入 `ServerCommands` / `PersistenceCommands` / metrics |\n\n共享 **1024 桶** `KeyLock` 注入 String/Hash/List/Set/ZSet/Key/Json/Script handler.\n\n## 代码地图\n\n| 路径 | 职责 | 入口 |\n|------|------|------|\n| `command/mod.rs` | 模块根; re-export | `CommandRouter`, `lookup`, `KeyLock` |\n| `command/router.rs` | 分发、KeyLock、RESP helper、metrics 钩子 | `execute_with_client`, `execute_inner` |\n| `command/registry.rs` | 全量命令元数据 (~131+ 条, 含 extended 条目) | `lookup`, `key_indices`, `all_commands` |\n| `command/string.rs` | String + DEL/EXISTS | `StringCommands` |\n| `command/hash.rs` | Hash + HSCAN | `HashCommands` |\n| `command/list.rs` | List + BLPOP/BRPOP/BLMOVE | `ListCommands` |\n| `command/set.rs` | Set + 集合运算 + SSCAN | `SetCommands` |\n| `command/zset.rs` | ZSet + 聚合 + BZPOP* + ZSCAN | `ZSetCommands` |\n| `command/database.rs` | 逻辑 DB | `DatabaseCommands` |\n| `command/key.rs` | 过期/KEYS/SCAN/rename/DUMP/RESTORE/MIGRATE 入口 | `KeyCommands` |\n| `command/scan_util.rs` | HSCAN/SSCAN/ZSCAN 共用分页 | `parse_scan_options`, `paginate_slice` |\n\nExtended handler (`json`, `script`, `server`, `persistence`) 由 Router match 转发; 实现见 [commands-extended.md](commands-extended.md).\n\n## 关键 invariant (勿破坏)\n\n- **类型分轨**: String 用 `get`/`set`; Hash/List/Set/ZSet 用 `get_typed`/`set_typed`; 混用 → `WRONGTYPE`.\n- **空容器删除**: 结构化类型删至空 → `delete`, 不留空 key.\n- **二进制 key**: handler 使用 `&[u8]`/`Bytes`, 不做 UTF-8 强制转换.\n- **KeyLock 写路径**: SET NX/XX、INCR、HSET、LPUSH 等 mutating 单 key 写需 `lock(key)`; RENAME/COPY 等双 key 用 `lock_two` (字典序, 同 key 不重入).\n- **registry ↔ router 双维护**: 新命令须同时更新 `COMMAND_TABLE` 与 `execute_inner` match (或子 dispatch).\n- **SELECT**: 唯一在 handler 内修改 `*db` 的核心命令 (`database::select`).\n- **HMSET**: 走 HSET 逻辑, 返回 `OK` (非新增字段数).\n- **DUMP 格式**: `[u8 version=0][bincode(StoredValue)]` — 非 Redis DUMP; 与 [storage.md](storage.md) `dump.rs` 一致.\n\n## 数据流\n\n### 请求分发\n\n```mermaid\nsequenceDiagram\n  participant C as Connection\n  participant R as CommandRouter\n  participant H as handler\n  participant K as KvStorage\n\n  C->>C: cmd = UPPERCASE\n  C->>R: execute_with_client(cmd, args, db, client_id, proto, cluster_state)\n  opt feature cluster\n    R->>R: cluster_route → MOVED/ASK/none\n  end\n  R->>R: execute_inner match cmd\n  R->>H: domain handler\n  H->>K: get / set / get_typed / set_typed\n  H-->>R: RespValue\n  R-->>C: Result\n```\n\n`Connection` 另用 `registry::lookup` + `key_indices` 做 ATOM WATCH 键追踪与写命令判定 (见 [server.md](server.md)).\n\n### Typed 写路径 (Hash/List/Set/ZSet 共用模式)\n\n1. `require_*` 校验参数\n2. `key_lock.lock(key)` (写路径)\n3. `load_or_create_*` 或 `get_typed` → 改 `ValueType::*`\n4. `set_typed` 或空则 `delete`\n\n### 阻塞 pop (handler 在 core)\n\n1. `try_pop` / `try_pop_any` 非阻塞尝试\n2. 失败 → `BlockingRegistry::register` + 轮询 (详见 extended)\n3. `LPUSH`/`ZADD` 等写成功后 `BlockingRegistry::notify(key, …)` 唤醒等待者\n\n## CommandRouter\n\n| API | 说明 |\n|-----|------|\n| `execute(cmd, args, db)` | 测试便捷; 无 client_id/cluster |\n| `execute_with_client(...)` | 生产路径; 可选 `cluster_route` + metrics |\n| `storage()` | 克隆 `Arc<dyn KvStorage>` (Script/测试用) |\n\n**metrics** (仅 `new_with_shared`): GET/MGET/HGET/EXISTS 等记录 keyspace hit/miss; 每条命令 `on_command` 成功/失败.\n\n**cluster 前置** (`feature cluster`): `cluster_route` 在 `execute_inner` 之前 — admin 白名单 (SCAN/MIGRATE/SELECT/…)、多 key CROSSSLOT、单 key MOVED/ASK. 详述 → [cluster.md](cluster.md).\n\n## registry (命令元数据)\n\n```rust\npub struct CommandInfo {\n    pub name: &'static str,\n    pub arity: i64,           // 负值 = 至少 |arity| 个参数\n    pub flags: &'static [&'static str],\n    pub first_key: i64,\n    pub last_key: i64,\n    pub step: i64,\n}\n```\n\n| 函数 | 用途 |\n|------|------|\n| `lookup(name)` | 大小写不敏感查表 |\n| `key_indices(info, argc)` | Redis COMMAND GETKEYS 语义; `first_key=0` → 无 key |\n| `all_commands()` / `command_count()` | `COMMAND` 子命令 |\n\n表内包含 JSON/Lua/INFO/CLUSTER 等条目; **本章只维护机制**, 扩展命令语义见对应 module.\n\n## KeyLock\n\n| API | 场景 |\n|-----|------|\n| `lock(key)` | 单 key 写 |\n| `lock_two(a, b)` | RENAME、LMOVE、SMOVE、COPY (双 key) |\n| `lock_keys_sorted(keys)` | 多 key 字典序 (Lua/JSON.MSET 等) |\n\n分桶 `DefaultHasher(key) % 1024`; 避免同 key Mutex 重入死锁.\n\n## 命令域速查\n\n| 域 | 文件 | 代表命令 | 备注 |\n|----|------|----------|------|\n| String | `string.rs` | GET/SET/MGET/MSET, INCR*, SETBIT, SETEX, GETEX | DEL/EXISTS 在此文件 |\n| Hash | `hash.rs` | HSET/HGET/HSCAN, HINCRBY(FLOAT) | `scan_util` 分页 |\n| List | `list.rs` | LPUSH/LRANGE/LMOVE, BLPOP/BRPOP/BLMOVE | 阻塞链 extended |\n| Set | `set.rs` | SADD/SINTER/SUNION/SDIFF*, SMOVE, SSCAN | store 类多 key 读不加锁 |\n| ZSet | `zset.rs` | ZADD/ZRANGE, ZINTER/ZUNION/ZDIFF, BZPOP* | score: `BTreeMap<member, f64>` |\n| Database | `database.rs` | SELECT/DBSIZE/FLUSH*/SWAPDB/MOVE | `DB_COUNT=16` |\n| Key | `key.rs` | EXPIRE/TTL, KEYS/SCAN, RENAME/TYPE/COPY, DUMP/RESTORE/MIGRATE | SCAN→`storage.scan`; MIGRATE 发送见 extended |\n\n## 两类 SCAN\n\n| 命令 | 实现 | 注意 |\n|------|------|------|\n| `SCAN` | `key.rs` → `KvStorage::scan` | 引擎级游标 (memory/aidb 各自实现) |\n| `HSCAN`/`SSCAN`/`ZSCAN` | 读全量 → filter → `scan_util::paginate_slice` | 大 key O(n); 非 Redis incremental |\n\n## 常见任务\n\n### 新增核心命令\n\n1. 在 `registry.rs` `COMMAND_TABLE` 增加 `cmd!(...)`.\n2. 在 `router.rs` `execute_inner` 增加 match 分支 → handler 方法.\n3. 在对应 `*Commands` 实现 handler; 写路径评估是否需 `KeyLock`.\n4. 写路径用正确 API: String → `get`/`set`; 其它 → `get_typed`/`set_typed`.\n5. 补测试: `tests/modules/command/<domain>.rs`.\n6. 若影响 cluster 多 key/slot: 同步 `cluster_route` / `is_multi_key_cmd` (见 cluster.md).\n\n### 排查 WRONGTYPE\n\n1. 确认 key 上实际 `ValueType` (`TYPE` 或 `get_typed`).\n2. String 命令误用 `get`/`set` 访问 Hash 等 → 预期 WRONGTYPE.\n3. MGET 遇非 String: 见 ISSUE-001 (memory nil vs aidb WRONGTYPE).\n\n### 排查命令 unknown\n\n1. `registry::lookup` 是否命中.\n2. `execute_inner` 是否有对应分支 (表内有但 match 漏 → bug).\n3. 扩展命令 (JSON/EVAL/INFO) 是否误在本章范围.\n\n## 配置与 feature flags\n\n| 项 | 位置 | 说明 |\n|----|------|------|\n| `feature cluster` | `router::cluster_route` | MOVED/ASK/CROSSSLOT 前置 |\n| `ServerMetrics` | `new_with_shared` | keyspace + command 计数 |\n| `DB_COUNT` | `storage/types.rs` | SELECT/MOVE 上限 16 |\n\n## 测试\n\n```bash\ncd aikv\ncargo test --test commands\n# 核心: tests/modules/command/{string,hash,list,set,zset,key,database,router}.rs\n# L2: tests/modules/server/tcp.rs\n```\n\n## 已知限制\n\n- **GETRANGE/SETRANGE**: 未实现 (oldmain 曾有).\n- **DUMP/RESTORE**: 内部 bincode 格式, 与 Redis 不互操作.\n- **HSCAN/SSCAN/ZSCAN**: 内存全量分页, 大 key 开销高.\n- **OBJECT ENCODING**: 固定 embstr/raw/listpack, 非真实探测.\n- **KEYS**: 直调 `storage.keys`, 无 oldmain 60s 线程超时.\n- **MSETNX**: 未实现; cluster 注释预留 (ISSUE-004).\n\n## 待核实\n\n- 见 [ISSUES.md](../../ISSUES.md#ISSUE-001) — MGET 非 String 时 memory vs aidb 语义不一致.\n- 见 [ISSUES.md](../../ISSUES.md#ISSUE-003) — GETRANGE/SETRANGE 是否刻意裁剪.\n- 见 [ISSUES.md](../../ISSUES.md#ISSUE-004) — MSETNX cluster dead branch.\n"
 }
 ```
@@ -2163,7 +2163,7 @@ cargo test --test commands
 {
   "new_string": "| `docs/modules/commands-core.md` | ✅ | backup/aikv CHANGELOG,DESIGN; WiQunTools 02-storage-commands; aikv-oldmain 01-commands + src/command/mod.rs; wiqun-kv src/command (查漏) | 已写 aikv/docs/modules/commands-core.md | ISSUE-001 引用; ISSUE-003/004 open; oldmain CommandExecutor→Router |",
   "old_string": "| `docs/modules/commands-core.md` | 🔄 步 2 ✅ | backup/aikv CHANGELOG,DESIGN; WiQunTools 02-storage-commands; aikv-oldmain 01-commands + src/command/mod.rs; wiqun-kv src/command (查漏) | | ISSUE-001 引用; ISSUE-003/004 open |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -2174,7 +2174,7 @@ cargo test --test commands
 {
   "new_string": "**当前阶段**: 阶段 1 — modules (步 8/12 待开始)",
   "old_string": "**当前阶段**: 阶段 1 — modules (步 7/12 待开始)",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -2185,7 +2185,7 @@ cargo test --test commands
 {
   "new_string": "| 7 | aikv | `docs/modules/commands-core.md` | string~router | ✅ 完成 | 2026-06-18 |",
   "old_string": "| 7 | aikv | `docs/modules/commands-core.md` | string~router | ⬜ 待开始 | |",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -2230,7 +2230,7 @@ cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/vibe-coding/scripts/archive-cursor-session.sh"
+  "path": "../../../vibe-coding/scripts/archive-cursor-session.sh"
 }
 ```
 
@@ -2240,7 +2240,7 @@ cargo test --test commands
 ```json
 {
   "glob_pattern": "**/archive-cursor-session*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 

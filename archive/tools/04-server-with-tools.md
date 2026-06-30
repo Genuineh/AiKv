@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 
@@ -61,7 +61,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -70,7 +70,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -79,7 +79,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -95,7 +95,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv/src/server"
+  "target_directory": "../../src/server"
 }
 ```
 
@@ -104,7 +104,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/protocol.md",
+  "path": "../../docs/modules/protocol.md",
   "limit": 80
 }
 ```
@@ -115,7 +115,7 @@
 ```json
 {
   "pattern": "mod server|server::",
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "glob": "*.rs",
   "head_limit": 40
 }
@@ -130,7 +130,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/mod.rs"
+  "path": "../../src/server/mod.rs"
 }
 ```
 
@@ -140,7 +140,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/src/server/listener.rs"
+  "path": "../../src/server/listener.rs"
 }
 ```
 
@@ -150,7 +150,7 @@
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aikv/src/server/connection.rs"
+  "path": "../../src/server/connection.rs"
 }
 ```
 
@@ -160,7 +160,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/src/server/config.rs"
+  "path": "../../src/server/config.rs"
 }
 ```
 
@@ -174,7 +174,7 @@
 ```json
 {
   "pattern": "^(pub )?(async )?fn |^impl ",
-  "path": "/root/code/database/aikv/src/server/connection.rs"
+  "path": "../../src/server/connection.rs"
 }
 ```
 
@@ -184,7 +184,7 @@
 ```json
 {
   "pattern": "adapt_for_protocol|HELLO|process_value|pipeline|fatal",
-  "path": "/root/code/database/aikv/src/server"
+  "path": "../../src/server"
 }
 ```
 
@@ -194,7 +194,7 @@
 ```json
 {
   "glob_pattern": "**/server*",
-  "target_directory": "/root/code/database/aikv/tests"
+  "target_directory": "../../tests"
 }
 ```
 
@@ -204,7 +204,7 @@
 ```json
 {
   "glob_pattern": "**/*connection*",
-  "target_directory": "/root/code/database/aikv"
+  "target_directory": "../../../aikv"
 }
 ```
 
@@ -219,7 +219,7 @@
 {
   "offset": 100,
   "limit": 220,
-  "path": "/root/code/database/aikv/src/server/connection.rs"
+  "path": "../../src/server/connection.rs"
 }
 ```
 
@@ -229,7 +229,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/tests/server.rs"
+  "path": "../../tests/server.rs"
 }
 ```
 
@@ -238,7 +238,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/main.rs",
+  "path": "../../src/main.rs",
   "pattern": "Server|ServerSharedState|ConnectionConfig"
 }
 ```
@@ -253,7 +253,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv/tests/modules/server"
+  "target_directory": "../../tests/modules/server"
 }
 ```
 
@@ -262,7 +262,7 @@
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools",
+  "path": "../../../WiQunTools",
   "pattern": "server|listener|connection|TCP",
   "glob": "*wiqun-kv*",
   "head_limit": 30
@@ -274,7 +274,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain",
+  "path": "../../../aikv-oldmain",
   "pattern": "server|connection|listener",
   "glob": "*.md",
   "head_limit": 25
@@ -290,7 +290,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests/modules/server/mod.rs"
+  "path": "../../tests/modules/server/mod.rs"
 }
 ```
 
@@ -301,7 +301,7 @@
 {
   "limit": 120,
   "offset": 296,
-  "path": "/root/code/database/aikv/src/server/connection.rs"
+  "path": "../../src/server/connection.rs"
 }
 ```
 
@@ -311,7 +311,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/src/server/slowlog.rs"
+  "path": "../../src/server/slowlog.rs"
 }
 ```
 
@@ -321,7 +321,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/src/server/info.rs"
+  "path": "../../src/server/info.rs"
 }
 ```
 
@@ -333,7 +333,7 @@
 **Tool `Shell`**
 
 ```bash
-wc -l /root/code/database/aikv/src/server/*.rs /root/code/database/aikv/tests/modules/server/*.rs 2>/dev/null | sort -n
+wc -l ../../src/server/*.rs ../../tests/modules/server/*.rs 2>/dev/null | sort -n
 ```
 
 
@@ -343,7 +343,7 @@ wc -l /root/code/database/aikv/src/server/*.rs /root/code/database/aikv/tests/mo
 {
   "glob": "*.md",
   "head_limit": 15,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv",
+  "path": "../../../AiKv-Workflow/backup/aikv",
   "pattern": "server|connection|listener|TCP"
 }
 ```
@@ -354,7 +354,7 @@ wc -l /root/code/database/aikv/src/server/*.rs /root/code/database/aikv/tests/mo
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/src/cluster/connection.rs"
+  "path": "../../src/cluster/connection.rs"
 }
 ```
 
@@ -368,7 +368,7 @@ wc -l /root/code/database/aikv/src/server/*.rs /root/code/database/aikv/tests/mo
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/src/command/server.rs"
+  "path": "../../src/command/server.rs"
 }
 ```
 
@@ -378,7 +378,7 @@ wc -l /root/code/database/aikv/src/server/*.rs /root/code/database/aikv/tests/mo
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/tests/modules/server/tcp.rs"
+  "path": "../../tests/modules/server/tcp.rs"
 }
 ```
 
@@ -550,7 +550,7 @@ description: AiKv TCP server — Listener, Connection read loop, pipeline, HELLO
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/connection.rs",
+  "path": "../../src/server/connection.rs",
   "offset": 415,
   "limit": 550
 }
@@ -561,7 +561,7 @@ description: AiKv TCP server — Listener, Connection read loop, pipeline, HELLO
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/config.rs",
+  "path": "../../src/server/config.rs",
   "offset": 74
 }
 ```
@@ -571,7 +571,7 @@ description: AiKv TCP server — Listener, Connection read loop, pipeline, HELLO
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/router.rs",
+  "path": "../../src/command/router.rs",
   "pattern": "execute_with_client|pub fn router",
   "-A": 15
 }
@@ -588,7 +588,7 @@ description: AiKv TCP server — Listener, Connection read loop, pipeline, HELLO
 {
   "limit": 80,
   "offset": 960,
-  "path": "/root/code/database/aikv/src/server/connection.rs"
+  "path": "../../src/server/connection.rs"
 }
 ```
 
@@ -598,7 +598,7 @@ description: AiKv TCP server — Listener, Connection read loop, pipeline, HELLO
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/tests/modules/server/helpers.rs"
+  "path": "../../tests/modules/server/helpers.rs"
 }
 ```
 
@@ -607,7 +607,7 @@ description: AiKv TCP server — Listener, Connection read loop, pipeline, HELLO
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests/modules/server",
+  "path": "../../tests/modules/server",
   "pattern": "^async fn test_|^fn test_"
 }
 ```
@@ -619,7 +619,7 @@ description: AiKv TCP server — Listener, Connection read loop, pipeline, HELLO
 {
   "limit": 50,
   "offset": 600,
-  "path": "/root/code/database/aikv/src/main.rs"
+  "path": "../../src/main.rs"
 }
 ```
 
@@ -634,7 +634,7 @@ description: AiKv TCP server — Listener, Connection read loop, pipeline, HELLO
 {
   "limit": 30,
   "offset": 1195,
-  "path": "/root/code/database/aikv/src/server/connection.rs"
+  "path": "../../src/server/connection.rs"
 }
 ```
 
@@ -645,7 +645,7 @@ description: AiKv TCP server — Listener, Connection read loop, pipeline, HELLO
 {
   "limit": 40,
   "offset": 665,
-  "path": "/root/code/database/aikv/src/main.rs"
+  "path": "../../src/main.rs"
 }
 ```
 
@@ -656,7 +656,7 @@ description: AiKv TCP server — Listener, Connection read loop, pipeline, HELLO
 {
   "limit": 50,
   "offset": 178,
-  "path": "/root/code/database/aikv/src/command/router.rs"
+  "path": "../../src/command/router.rs"
 }
 ```
 
@@ -668,7 +668,7 @@ description: AiKv TCP server — Listener, Connection read loop, pipeline, HELLO
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aikv && cargo test --test server -- --test-threads=1 2>&1 | tail -30
+cd ../../../aikv && cargo test --test server -- --test-threads=1 2>&1 | tail -30
 ```
 
 
@@ -856,7 +856,7 @@ cargo test --test server -- --test-threads=1
 {
   "glob": "*.md",
   "head_limit": 40,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv",
+  "path": "../../../AiKv-Workflow/backup/aikv",
   "pattern": "server|connection|listener|TCP|HELLO|pipeline|MONITOR|adapt_for"
 }
 ```
@@ -867,7 +867,7 @@ cargo test --test server -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv-oldmain/docs"
+  "target_directory": "../../../aikv-oldmain/docs"
 }
 ```
 
@@ -876,7 +876,7 @@ cargo test --test server -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/01-resp-tcp.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/01-resp-tcp.md"
 }
 ```
 
@@ -891,7 +891,7 @@ cargo test --test server -- --test-threads=1
 {
   "glob": "*.md",
   "head_limit": 30,
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture",
+  "path": "../../../aikv-oldmain/docs/development/architecture",
   "pattern": "server|Connection|Listener|HELLO|pipeline|MONITOR|adapt_for|ATOM"
 }
 ```
@@ -903,7 +903,7 @@ cargo test --test server -- --test-threads=1
 {
   "glob": "*.md",
   "head_limit": 25,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/ARCHITECTURE.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/ARCHITECTURE.md",
   "pattern": "server|Connection|TCP|HELLO"
 }
 ```
@@ -914,7 +914,7 @@ cargo test --test server -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/server/**",
-  "target_directory": "/root/code/database/wiqun-kv/src"
+  "target_directory": "../../../wiqun-kv/src"
 }
 ```
 
@@ -924,7 +924,7 @@ cargo test --test server -- --test-threads=1
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -938,7 +938,7 @@ cargo test --test server -- --test-threads=1
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/ARCHITECTURE.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/ARCHITECTURE.md"
 }
 ```
 
@@ -949,7 +949,7 @@ cargo test --test server -- --test-threads=1
 {
   "limit": 80,
   "offset": 150,
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/01-overview.md"
+  "path": "../../../aikv-oldmain/docs/development/architecture/01-overview.md"
 }
 ```
 
@@ -960,7 +960,7 @@ cargo test --test server -- --test-threads=1
 {
   "glob": "*.md",
   "head_limit": 30,
-  "path": "/root/code/database",
+  "path": "<workspace>",
   "pattern": "adapt_for_protocol|ATOM\\.|protocol_negotiated|JSON batch|cmd_atom"
 }
 ```
@@ -975,7 +975,7 @@ cargo test --test server -- --test-threads=1
 ```json
 {
   "glob_pattern": "**/server/**",
-  "target_directory": "/root/code/database/aikv-oldmain/src"
+  "target_directory": "../../../aikv-oldmain/src"
 }
 ```
 
@@ -986,7 +986,7 @@ cargo test --test server -- --test-threads=1
 {
   "limit": 50,
   "offset": 370,
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/01-overview.md"
+  "path": "../../../aikv-oldmain/docs/development/architecture/01-overview.md"
 }
 ```
 
@@ -997,7 +997,7 @@ cargo test --test server -- --test-threads=1
 {
   "glob": "*wiqun-kv-inventory*",
   "head_limit": 20,
-  "path": "/root/code/database/WiQunTools",
+  "path": "../../../WiQunTools",
   "pattern": "MONITOR|maxclients|ATOM|HELLO|adapt"
 }
 ```
@@ -1008,7 +1008,7 @@ cargo test --test server -- --test-threads=1
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/DESIGN.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/DESIGN.md"
 }
 ```
 
@@ -1021,7 +1021,7 @@ cargo test --test server -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/server",
+  "path": "../../../aikv-oldmain/src/server",
   "pattern": "adapt_for|protocol_negotiated|ATOM|max_clients|broadcast"
 }
 ```
@@ -1032,7 +1032,7 @@ cargo test --test server -- --test-threads=1
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aikv-oldmain/src/server/mod.rs"
+  "path": "../../../aikv-oldmain/src/server/mod.rs"
 }
 ```
 
@@ -1043,7 +1043,7 @@ cargo test --test server -- --test-threads=1
 {
   "glob": "*.md",
   "head_limit": 15,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/docs/superpowers",
+  "path": "../../../AiKv-Workflow/backup/aikv/docs/superpowers",
   "pattern": "server|connection|MONITOR|ATOM"
 }
 ```
@@ -1057,7 +1057,7 @@ cargo test --test server -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs",
+  "path": "../../../aikv-oldmain/src/server/connection.rs",
   "pattern": "HELLO|ProtocolVersion|protocol_version",
   "head_limit": 25
 }
@@ -1068,7 +1068,7 @@ cargo test --test server -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv/src/server/connection.rs",
+  "path": "../../../wiqun-kv/src/server/connection.rs",
   "pattern": "adapt_for_protocol|protocol_negotiated|ATOM",
   "head_limit": 15
 }
@@ -1192,7 +1192,7 @@ cargo test --test server -- --test-threads=1
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs"
+  "path": "../../../aikv-oldmain/src/server/connection.rs"
 }
 ```
 
@@ -1202,7 +1202,7 @@ cargo test --test server -- --test-threads=1
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv-oldmain/src/server/mod.rs"
+  "path": "../../../aikv-oldmain/src/server/mod.rs"
 }
 ```
 
@@ -1211,7 +1211,7 @@ cargo test --test server -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/server",
+  "path": "../../../aikv-oldmain/src/server",
   "pattern": "^(pub )?(async )?fn |^impl |pub struct "
 }
 ```
@@ -1221,7 +1221,7 @@ cargo test --test server -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv/src/server",
+  "path": "../../../wiqun-kv/src/server",
   "pattern": "^(pub )?(async )?fn |^impl |pub struct "
 }
 ```
@@ -1235,7 +1235,7 @@ cargo test --test server -- --test-threads=1
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs",
+  "path": "../../../aikv-oldmain/src/server/connection.rs",
   "pattern": "adapt_for|protocol_negotiated|ATOM|max_clients|shutdown|write_response|is_fatal|TransactionState|broadcast"
 }
 ```
@@ -1247,7 +1247,7 @@ cargo test --test server -- --test-threads=1
 {
   "limit": 100,
   "offset": 250,
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs"
+  "path": "../../../aikv-oldmain/src/server/connection.rs"
 }
 ```
 
@@ -1258,7 +1258,7 @@ cargo test --test server -- --test-threads=1
 {
   "limit": 80,
   "offset": 500,
-  "path": "/root/code/database/aikv-oldmain/src/server/mod.rs"
+  "path": "../../../aikv-oldmain/src/server/mod.rs"
 }
 ```
 
@@ -1266,7 +1266,7 @@ cargo test --test server -- --test-threads=1
 **Tool `Shell`**
 
 ```bash
-diff -q /root/code/database/aikv/src/server/connection.rs /root/code/database/wiqun-kv/src/server/connection.rs 2>/dev/null; diff -q /root/code/database/aikv/src/server/listener.rs /root/code/database/wiqun-kv/src/server/listener.rs; diff -q /root/code/database/aikv/src/server/config.rs /root/code/database/wiqun-kv/src/server/config.rs
+diff -q ../../src/server/connection.rs ../../../wiqun-kv/src/server/connection.rs 2>/dev/null; diff -q ../../src/server/listener.rs ../../../wiqun-kv/src/server/listener.rs; diff -q ../../src/server/config.rs ../../../wiqun-kv/src/server/config.rs
 ```
 
 
@@ -1277,7 +1277,7 @@ diff -q /root/code/database/aikv/src/server/connection.rs /root/code/database/wi
 **Tool `Shell`**
 
 ```bash
-diff -u /root/code/database/aikv/src/server/listener.rs /root/code/database/wiqun-kv/src/server/listener.rs | head -40; echo "---"; diff -u /root/code/database/aikv/src/server/config.rs /root/code/database/wiqun-kv/src/server/config.rs | head -60; echo "---"; diff -u /root/code/database/aikv/src/server/connection.rs /root/code/database/wiqun-kv/src/server/connection.rs | head -80
+diff -u ../../src/server/listener.rs ../../../wiqun-kv/src/server/listener.rs | head -40; echo "---"; diff -u ../../src/server/config.rs ../../../wiqun-kv/src/server/config.rs | head -60; echo "---"; diff -u ../../src/server/connection.rs ../../../wiqun-kv/src/server/connection.rs | head -80
 ```
 
 
@@ -1287,7 +1287,7 @@ diff -u /root/code/database/aikv/src/server/listener.rs /root/code/database/wiqu
 {
   "limit": 80,
   "offset": 1000,
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs"
+  "path": "../../../aikv-oldmain/src/server/connection.rs"
 }
 ```
 
@@ -1296,7 +1296,7 @@ diff -u /root/code/database/aikv/src/server/listener.rs /root/code/database/wiqu
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs",
+  "path": "../../../aikv-oldmain/src/server/connection.rs",
   "pattern": "READONLY|READWRITE|RESET|PING|ECHO|QUIT|timeout|idle"
 }
 ```
@@ -1309,7 +1309,7 @@ diff -u /root/code/database/aikv/src/server/listener.rs /root/code/database/wiqu
 **Tool `Shell`**
 
 ```bash
-diff /root/code/database/aikv/src/server/connection.rs /root/code/database/wiqun-kv/src/server/connection.rs | rg '^[<>]' | head -40; echo "line count:"; wc -l /root/code/database/aikv/src/server/connection.rs /root/code/database/wiqun-kv/src/server/connection.rs
+diff ../../src/server/connection.rs ../../../wiqun-kv/src/server/connection.rs | rg '^[<>]' | head -40; echo "line count:"; wc -l ../../src/server/connection.rs ../../../wiqun-kv/src/server/connection.rs
 ```
 
 
@@ -1317,7 +1317,7 @@ diff /root/code/database/aikv/src/server/connection.rs /root/code/database/wiqun
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs",
+  "path": "../../../aikv-oldmain/src/server/connection.rs",
   "pattern": "handle_normal|read_timeout|idle|max_buffer|parse\\("
 }
 ```
@@ -1329,7 +1329,7 @@ diff /root/code/database/aikv/src/server/connection.rs /root/code/database/wiqun
 {
   "limit": 80,
   "offset": 120,
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs"
+  "path": "../../../aikv-oldmain/src/server/connection.rs"
 }
 ```
 
@@ -1342,7 +1342,7 @@ diff /root/code/database/aikv/src/server/connection.rs /root/code/database/wiqun
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain",
+  "path": "../../../aikv-oldmain",
   "pattern": "protocol_negotiated|adapt_for|max_clients|CancellationToken"
 }
 ```
@@ -1352,7 +1352,7 @@ diff /root/code/database/aikv/src/server/connection.rs /root/code/database/wiqun
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv/src/server/connection.rs",
+  "path": "../../../wiqun-kv/src/server/connection.rs",
   "pattern": "flush\\("
 }
 ```
@@ -1362,7 +1362,7 @@ diff /root/code/database/aikv/src/server/connection.rs /root/code/database/wiqun
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/connection.rs",
+  "path": "../../src/server/connection.rs",
   "pattern": "flush\\("
 }
 ```
@@ -1378,7 +1378,7 @@ diff /root/code/database/aikv/src/server/connection.rs /root/code/database/wiqun
 {
   "limit": 15,
   "offset": 1055,
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs"
+  "path": "../../../aikv-oldmain/src/server/connection.rs"
 }
 ```
 
@@ -1387,7 +1387,7 @@ diff /root/code/database/aikv/src/server/connection.rs /root/code/database/wiqun
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs",
+  "path": "../../../aikv-oldmain/src/server/connection.rs",
   "pattern": "PING|ECHO|QUIT"
 }
 ```
@@ -1401,7 +1401,7 @@ diff /root/code/database/aikv/src/server/connection.rs /root/code/database/wiqun
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs",
+  "path": "../../../aikv-oldmain/src/server/connection.rs",
   "pattern": "\"PING\"|\"ECHO\"|handle_ping"
 }
 ```
@@ -1411,7 +1411,7 @@ diff /root/code/database/aikv/src/server/connection.rs /root/code/database/wiqun
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command",
+  "path": "../../../aikv-oldmain/src/command",
   "pattern": "fn ping|fn echo|fn hello",
   "head_limit": 15
 }
@@ -1427,7 +1427,7 @@ diff /root/code/database/aikv/src/server/connection.rs /root/code/database/wiqun
 ```json
 {
   "head_limit": 20,
-  "path": "/root/code/database/aikv-oldmain/src/command",
+  "path": "../../../aikv-oldmain/src/command",
   "pattern": "PING|ECHO|HELLO"
 }
 ```
@@ -1567,7 +1567,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/protocol.md"
+  "path": "../../docs/modules/protocol.md"
 }
 ```
 
@@ -1907,7 +1907,7 @@ cargo test --test server -- --ignored --test-threads=1   # 可选压测
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/server.md",
+  "path": "../../docs/modules/server.md",
   "contents": "---\nname: aikv-server\ndescription: AiKv TCP server — Listener accept loop, Connection read/pipeline loop, HELLO negotiation, adapt_for_protocol, CommandRouter dispatch, ATOM transaction. Use when changing src/server/{listener,connection,config}, debugging connection lifecycle, pipeline, protocol negotiation on the wire, or max_clients/shutdown.\n---\n\n# AiKv Server (TCP 连接层)\n\n## 何时读本文\n\n- 改 `server/{listener,connection,config}` 或 TCP 读写循环、pipeline、连接级命令分发\n- 排查 HELLO 协商、`protocol_negotiated` 门控、响应 null 线格式 (`$-1` vs `_`)、fatal 协议断连\n- 排查 MONITOR 模式、ATOM 事务 (MULTI/EXEC/WATCH)、`max_clients` 拒绝连接\n- **不覆盖**: RESP 帧语法 / parser limits → [protocol.md](protocol.md); 命令实现 → [commands-core.md](commands-core.md) / [commands-extended.md](commands-extended.md); MOVED/ASK 路由 → [cluster.md](cluster.md); slowlog/latency/INFO/metrics 数据结构 → [observability.md](observability.md)\n\n## 代码地图\n\n| 路径 | 职责 | 入口 |\n|------|------|------|\n| `server/mod.rs` | 模块根; re-export | `Server`, `Connection`, `ServerSharedState`, `ConnectionConfig` |\n| `server/listener.rs` | TCP accept; shutdown; max_clients gate | `Server::run`, `run_with_listener` |\n| `server/connection.rs` | 单连接读写、pipeline、分发、HELLO、响应编码、ATOM/MONITOR | `Connection::handle`, `run`, `process_value`, `adapt_for_protocol` |\n| `server/config.rs` | 连接配置 + 进程共享状态 | `ConnectionConfig`, `ServerSharedState::new_with_backup_dir`, `router()` |\n| `main.rs` (~L621–699) | 构造 `ServerSharedState`; 可选 Metrics 后台任务; `Server::run` | 非 server 模块正文, 启动关联 |\n\n同目录 **不归本文正文**: `slowlog.rs`, `latency.rs`, `info.rs`, `metrics.rs`, `metrics_server.rs`, `process_metrics.rs` → [observability.md](observability.md).\n\n公共 re-export (`lib.rs`): `pub mod server`; `Server`, `Connection`, `ServerSharedState` 等.\n\n## 关键 invariant (勿破坏)\n\n- **每连接一 task**: accept 后 `tokio::spawn(Connection::handle)`; 连接状态 (`current_db`, `parser`, `tx_state`) 不跨连接共享.\n- **Pipeline 内层循环**: 单次 `read` 后 `feed`, 然后 `loop { parse_frame → process_value }` 直到 `Ok(None)`; 与 [protocol.md](protocol.md) 单帧语义一致.\n- **Buffer 超限断连**: `parser.buffer_len() + n > max_buffer_size()` 时直接 break, 不写 ERR.\n- **Fatal vs recoverable**: `is_fatal_protocol` (depth / too large / buffer size / line too long) → 断连; 其它 `Protocol` → `write_error` 后继续.\n- **命令请求形态**: 顶层须为 `Array`; 命令名与参数须为 `BulkString` (`process_value` 校验).\n- **HELLO 门控线格式**: 默认 `ProtocolVersion::Resp3`, 但 `protocol_negotiated = false` 直到客户端发 `HELLO 2|3`; 仅协商 Resp3 后 `adapt_for_protocol` 才把 `$-1`/`*-1` 转为 `_`.\n- **Router 懒加载**: `ServerSharedState::router()` 用 `OnceLock` 首次调用时建 `CommandRouter`.\n- **Observability 钩子**: 经 Router 的命令 (非内联列表) 成功后写 latency/slowlog/metrics; 详情见 [observability.md](observability.md).\n\n## 数据流\n\n### 进程启动 → 首连接\n\n```mermaid\nsequenceDiagram\n  participant M as main\n  participant S as ServerSharedState\n  participant L as Server\n  participant C as Connection\n  M->>S: new_with_backup_dir\n  M->>L: Server::run(bind, state)\n  L->>L: accept + try_register_connection\n  L->>C: spawn Connection::handle\n  C->>C: alloc_client_id / register_client / run\n```\n\n### 单连接读-解析-写 (pipeline)\n\n```mermaid\nflowchart TD\n  R[read_buf 4096B] --> F{buffer + n > max_buffer?}\n  F -->|是| X[断连]\n  F -->|否| FEED[parser.feed]\n  FEED --> P[parse_frame]\n  P -->|None| R\n  P -->|Some| PV[process_value]\n  P -->|fatal Err| X\n  P -->|recoverable Err| ERR[write_error]\n  PV --> PC[process_command]\n  PC -->|内联 / ATOM / cluster conn| H[connection 内处理]\n  PC -->|其它| RT[router.execute_with_client]\n  H --> WR[adapt_for_protocol → serialize → write]\n  RT --> WR\n  WR --> P\n  ERR --> P\n```\n\n## 关键类型与 API\n\n### `ConnectionConfig`\n\n```rust\npub struct ConnectionConfig {\n    pub read_timeout: Option<Duration>,   // 默认 Some(60s)\n    pub idle_timeout: Option<Duration>,  // 默认 Some(300s)\n    pub max_clients: usize,               // 默认 10000; 0 = 不限制\n}\n```\n\n测试 helpers 常设 timeout 为 `None` (`tests/modules/server/helpers.rs`).\n\n### `ServerSharedState`\n\n进程级 `Arc` 共享: `storage`, `metrics`, `slow_query_log`, `latency_stats`, `config_map`, `clients`, `monitor_tx`, `shutdown`, `key_versions` (WATCH), `router` (`OnceLock`).\n\n| 方法 | 用途 |\n|------|------|\n| `router()` | 懒初始化 `CommandRouter` |\n| `try_register_connection()` | max_clients 检查; 拒绝时 `on_rejected_connection` |\n| `alloc_client_id` / `register_client` / `unregister_client` | CLIENT LIST 数据源 |\n| `increment_key_version` / `get_key_version` | ATOM WATCH 冲突检测 |\n| `refresh_runtime_metrics()` | `[monitoring]` 后台 15s tick |\n\n### `Connection`\n\n每连接持有: `RespParser`, `protocol_version`, `protocol_negotiated`, `current_db`, `client_id`, `mode` (Normal/Monitor), `tx_state`, `[cluster] cluster_state`.\n\n入口:\n\n```rust\nConnection::handle(stream, remote, state: Arc<ServerSharedState>).await\n// 内部: run() → process_value → process_command\n```\n\n### `CommandRouter::execute_with_client` (调用方视角)\n\n```rust\nrouter().execute_with_client(\n    cmd, args,\n    &mut self.current_db,\n    Some(self.client_id),\n    self.protocol_version,\n    #[cfg(feature = \"cluster\")] Some(&self.cluster_state),\n).await\n```\n\n集群 MOVED/ASK/CROSSSLOT 在 Router 内; 连接级 ASKING/READONLY/READWRITE 在 `process_command` 内.\n\n## 连接内联命令\n\n| 命令 | 处理位置 | 备注 |\n|------|----------|------|\n| `PING` | `cmd_ping` | 无参 → `+PONG`; 一参 → bulk 回显 |\n| `ECHO` | `cmd_echo` | 恰好一参 |\n| `HELLO` | `cmd_hello` | 见下节 |\n| `QUIT` | `cmd_quit` | `+OK` 后 `quit = true` |\n| `MONITOR` | `cmd_monitor` | `+OK` 后进入 Monitor 模式 |\n| `MULTI` / `ATOM.MULTI` 等 | ATOM 事务 | 见下节 |\n| `[cluster] ASKING` / `READONLY` / `READWRITE` | `process_command` | 改 `ClusterConnectionState`; 不进 Router |\n\n其余命令 → Router. `SHUTDOWN` 成功后 connection 设 `quit = true`.\n\n## HELLO 与 `adapt_for_protocol`\n\n### HELLO 语义\n\n| 客户端 | 行为 |\n|--------|------|\n| `HELLO` (无参) | 返回 `hello_map`; **不**改 `protocol_version`; **不**设 `protocol_negotiated` |\n| `HELLO 2` / `HELLO 3` | 设置版本 + `protocol_negotiated = true`; 返回 `hello_map` |\n| 非法版本 | `-ERR invalid protocol version` |\n\n`hello_map`: Resp3 → `Map` (key 均为 BulkString, `proto`/`id` 为 Integer); Resp2 → flat `Array`. 含 `server`, `version`, `proto`, `id`, `mode`, `role`; `[cluster]` 时 mode/role 读集群状态.\n\n### `adapt_for_protocol`\n\n仅在 `protocol_negotiated && protocol_version == Resp3` 时:\n\n- `BulkString(None)` / `Array(None)` → `Null` (`_`)\n- 递归处理 `Array`, `Map`, `Set`, `Push`, `Attribute`\n\n未协商的 Resp3 默认连接仍发 `$-1`/`*-1`, 避免破坏 RESP2 客户端 (及 redis-py RESP3 解析兼容).\n\n编码路径: `write_response` → `encode` → `adapt_for_protocol(value).serialize()`.\n\n## ATOM 事务 (AiKv 扩展)\n\n连接级 `TransactionState`: `in_multi`, `tx_queue`, `watched_keys`.\n\n| 命令 | 行为 |\n|------|------|\n| `MULTI` / `ATOM.MULTI` | 进入 multi; 清空队列 |\n| 非事务命令 (multi 中) | 入队, 回复 `+QUEUED` |\n| `EXEC` / `ATOM.EXEC` (multi 中) | WATCH 冲突 → null bulk; 否则顺序 `execute_with_client`, 返回 Array |\n| `EXEC` + JSON arg (无 multi) | `cmd_atom_exec_json_batch`: DUMP/RESTORE 快照回滚; **非 Redis 标准** |\n| `WATCH` / `UNWATCH` | 记录/清除 key 版本 (`ServerSharedState.key_versions`) |\n| `DISCARD` | 重置事务状态 |\n\n写命令成功后 `track_command_keys` 递增 key 版本.\n\n## MONITOR 模式\n\n1. `MONITOR` → `+OK`, `mode = Monitor`, 订阅 `state.monitor_tx`\n2. `run_monitor_loop`: `select!` 读客户端 (仅处理 `QUIT`) + 收 broadcast 行写 socket\n3. 正常模式下 `broadcast_monitor` 向 `monitor_tx` 发送 `\"timestamp [db N] \\\"CMD\\\" \\\"arg\\\"...\\r\\n\"` (MONITOR 命令本身不广播)\n\nMonitor 模式 **不支持 RESET** (oldmain 有; 当前仅 QUIT).\n\n## 常见任务\n\n### 调试 pipeline 无响应\n\n1. 确认客户端一次 send 多帧或 TCP_NODELAY\n2. 在 connection 看 `parse_frame`: `Ok(None)` 表示等更多数据\n3. 查 buffer 是否触顶 `max_buffer_size` 导致静默断连\n4. 参考 `tests/modules/server/tcp.rs::test_tcp_pipeline`\n\n### 调试 HELLO / null 线格式\n\n1. 未发 `HELLO 3` 时 GET 缺失 key 应见 `$-1`, 不是 `_`\n2. `HELLO 3` 后同场景应见 `_\\r\\n`\n3. 参考 `test_tcp_hello_resp3`, `test_tcp_hello_version_switch_in_pipeline`\n\n### 调试 max_clients 拒绝\n\n1. `ConnectionConfig.max_clients` + `main --max-clients`\n2. 超限: listener drop stream, `on_rejected_connection`\n3. 参考 `tests/modules/server/observability.rs::test_maxclients_rejection_metrics`\n\n### 新增连接级命令 (不进 Router)\n\n1. 在 `process_command` match 加分支 (或 ATOM 相关)\n2. 若需改连接态, 勿经 Router\n3. 在 `tests/modules/server/tcp.rs` 加集成测试\n\n### 修改 observability 记录范围\n\n1. 改 `should_track_observability` 排除列表\n2. 数据结构 / SLOWLOG 命令 → [observability.md](observability.md)\n\n## 配置与 feature flags\n\n| 项 | 位置 | 说明 |\n| --- | --- | --- |\n| `read_timeout` / `idle_timeout` | `ConnectionConfig` | CLI 未单独暴露; main 用 `Default` |\n| `max_clients` | `ConnectionConfig` + CLI `--max-clients` | 0 = 不限 |\n| `shutdown` | `ServerSharedState.shutdown` | `CancellationToken`; listener select 退出 |\n| `feature = \"cluster\"` | `connection.rs` | `cluster_state`; ASKING/READONLY/READWRITE; HELLO mode/role |\n| `feature = \"monitoring\"` | `main.rs` | Metrics HTTP + `refresh_runtime_metrics` 后台任务 (非 listener 本体) |\n\n## 测试\n\n```bash\ncargo test --test server -- --test-threads=1\n# 33 passed; 2 ignored (slow send / large pipeline stress)\n\ncargo test --test server -- --ignored --test-threads=1   # 可选压测\n```\n\n| 文件 | 覆盖 |\n|------|------|\n| `tests/modules/server/tcp.rs` | PING/ECHO/HELLO/pipeline/MONITOR/路由命令 E2E |\n| `tests/modules/server/listen.rs` | accept |\n| `tests/modules/server/helpers.rs` | `start_server` 测试夹具 |\n| `tests/modules/server/observability.rs` | 连接 metrics / maxclients (跨 observability 边界) |\n| `connection.rs` `mod tests` | `hello_map` 格式, JSON batch helpers |\n\n## 已知限制\n\n- **AiKv 扩展**: `ATOM.*` 别名、`EXEC <json>` 无 MULTI 批量 (DUMP/RESTORE 回滚); 非 Redis 官方 MULTI 文档的一一对应说明.\n- **MONITOR**: 无 RESET; 无 monitor 客户端注册计数 (oldmain `MonitorBroadcaster` 已移除).\n- **内联命令**: 不支持非数组 `PING\\r\\n` telnet 格式.\n- **PING/ECHO**: 在 connection 内联 (oldmain 在 command 层); 行为等价.\n- **write_response**: 无 `flush()`; 依赖 tokio 缓冲 (与 oldmain 差异, 无已知问题).\n\n## 待核实\n\n- 无.\n"
 }
 ```
@@ -1917,7 +1917,7 @@ cargo test --test server -- --ignored --test-threads=1   # 可选压测
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `docs/modules/server.md` | 待开始 | | | `server/*` |",
   "new_string": "| `docs/modules/server.md` | ✅ | backup/aikv ARCHITECTURE,DESIGN,CHANGELOG; WiQunTools 01-resp-tcp; aikv-oldmain architecture/01-overview + src/server; wiqun-kv src/server (查漏) | 已写 aikv/docs/modules/server.md | listener/connection/config; observability 子模块见 observability.md |"
 }
@@ -1928,7 +1928,7 @@ cargo test --test server -- --ignored --test-threads=1   # 可选压测
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "**当前阶段**: 阶段 1 — modules (步 4/12 待开始)",
   "new_string": "**当前阶段**: 阶段 1 — modules (步 5/12 待开始)"
 }
@@ -1939,7 +1939,7 @@ cargo test --test server -- --ignored --test-threads=1   # 可选压测
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "| 4 | aikv | `docs/modules/server.md` | server/* | ⬜ 待开始 | |",
   "new_string": "| 4 | aikv | `docs/modules/server.md` | server/* | ✅ 完成 | 2026-06-18 |"
 }
@@ -1981,7 +1981,7 @@ cargo test --test server -- --ignored --test-threads=1   # 可选压测
 
 ```json
 {
-  "path": "/root/code/database/vibe-coding/scripts/archive-cursor-session.sh"
+  "path": "../../../vibe-coding/scripts/archive-cursor-session.sh"
 }
 ```
 
@@ -1991,7 +1991,7 @@ cargo test --test server -- --ignored --test-threads=1   # 可选压测
 ```json
 {
   "glob_pattern": "**/archive-cursor-session*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 

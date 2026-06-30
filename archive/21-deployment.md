@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 1. `AiKv-Workflow/backup/design.md` — 总规程
@@ -216,7 +216,7 @@
 2. 系统要求
 3. Cargo feature 矩阵
 4. 构建与验证 (链 AGENTS / aidb DEPLOYMENT)
-5. 仓库布局 (`database/aikv` + `../aidb`)
+5. 仓库布局 (`<workspace>/aikv` + `../aidb`)
 6. 单机部署 (memory / aidb 示例)
 7. 集群部署 (CLI 表 + 多节点示例 + env + 槽位/MEET 简要)
 8. 监控与可观测性 (HTTP、env、可选 observability 栈)
@@ -313,7 +313,7 @@ aikv/
     └── test_cluster_*.sh      # 集群 smoke (CI 跑)
 ```
 
-**Monorepo 布局**: `database/aikv` + sibling `database/aidb`; CI 用 `ln -sf .aidb ../aidb`.
+**Monorepo 布局**: `<workspace>/aikv` + sibling `aidb`; CI 用 `ln -sf .aidb ../aidb`.
 
 ---
 
@@ -847,7 +847,7 @@ chmod +x e2e/*.sh
 ## Monorepo 布局
 
 ```shell
-database/
+<workspace>/
 ├── aidb/          # LSM + 可选 MetaRaft/MultiRaft (path 依赖)
 └── aikv/          # 本仓库 — RESP bin
     ├── src/main.rs

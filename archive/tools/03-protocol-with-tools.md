@@ -4,7 +4,7 @@
 
 ## 1. User
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>`
 
 请先阅读 (不要跳过):
 
@@ -54,7 +54,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -63,7 +63,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -72,7 +72,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -88,7 +88,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv/src/protocol"
+  "target_directory": "../../src/protocol"
 }
 ```
 
@@ -98,7 +98,7 @@
 ```json
 {
   "pattern": "protocol",
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "glob": "lib.rs"
 }
 ```
@@ -109,7 +109,7 @@
 ```json
 {
   "pattern": "mod protocol|use.*protocol",
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "glob": "*.rs",
   "head_limit": 40
 }
@@ -124,7 +124,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/protocol/mod.rs"
+  "path": "../../src/protocol/mod.rs"
 }
 ```
 
@@ -133,7 +133,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/protocol/types.rs",
+  "path": "../../src/protocol/types.rs",
   "limit": 80
 }
 ```
@@ -143,7 +143,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/protocol/parser.rs",
+  "path": "../../src/protocol/parser.rs",
   "limit": 80
 }
 ```
@@ -153,7 +153,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/protocol/encoder.rs",
+  "path": "../../src/protocol/encoder.rs",
   "limit": 80
 }
 ```
@@ -164,7 +164,7 @@
 ```json
 {
   "glob_pattern": "**/*protocol*",
-  "target_directory": "/root/code/database/aikv"
+  "target_directory": "../../../aikv"
 }
 ```
 
@@ -178,7 +178,7 @@
 ```json
 {
   "glob": "**/*",
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "protocol|RespParser|RespValue",
   "output_mode": "files_with_matches",
   "head_limit": 30
@@ -191,7 +191,7 @@
 ```json
 {
   "glob": "**/*",
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv",
+  "path": "../../../AiKv-Workflow/backup/aikv",
   "pattern": "protocol|RESP|RespParser",
   "output_mode": "files_with_matches",
   "head_limit": 20
@@ -204,7 +204,7 @@
 ```json
 {
   "glob": "**/*",
-  "path": "/root/code/database/aikv-oldmain",
+  "path": "../../../aikv-oldmain",
   "pattern": "protocol|RESP",
   "output_mode": "files_with_matches",
   "head_limit": 20
@@ -220,7 +220,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests",
+  "path": "../../tests",
   "pattern": "RespParser|protocol::",
   "output_mode": "files_with_matches"
 }
@@ -231,7 +231,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/protocol",
+  "path": "../../src/protocol",
   "pattern": "#\\[cfg\\(test\\)\\]|mod tests"
 }
 ```
@@ -241,7 +241,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv",
+  "path": "../../../AiKv-Workflow/backup/aikv",
   "pattern": "protocol|RESP|RespParser",
   "output_mode": "files_with_matches"
 }
@@ -252,7 +252,7 @@
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools",
+  "path": "../../../WiQunTools",
   "pattern": "protocol|RESP",
   "glob": "*wiqun-kv*",
   "output_mode": "files_with_matches",
@@ -271,7 +271,7 @@
 {
   "offset": 68,
   "limit": 120,
-  "path": "/root/code/database/aikv/src/protocol/parser.rs"
+  "path": "../../src/protocol/parser.rs"
 }
 ```
 
@@ -280,7 +280,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain",
+  "path": "../../../aikv-oldmain",
   "pattern": "protocol|RESP|RespParser",
   "output_mode": "files_with_matches"
 }
@@ -291,7 +291,7 @@
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv",
+  "path": "../../../wiqun-kv",
   "pattern": "protocol",
   "output_mode": "files_with_matches",
   "head_limit": 15
@@ -303,7 +303,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests/modules/resp/parser.rs",
+  "path": "../../tests/modules/resp/parser.rs",
   "limit": 40
 }
 ```
@@ -313,7 +313,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests/modules/resp/types.rs",
+  "path": "../../tests/modules/resp/types.rs",
   "limit": 40
 }
 ```
@@ -328,7 +328,7 @@
 ```json
 {
   "glob_pattern": "docs/modules/*",
-  "target_directory": "/root/code/database/aikv"
+  "target_directory": "../../../aikv"
 }
 ```
 
@@ -338,7 +338,7 @@
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aikv/src/server/connection.rs"
+  "path": "../../src/server/connection.rs"
 }
 ```
 
@@ -347,7 +347,7 @@
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory.md",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory.md",
   "pattern": "protocol|RESP|parser|encoder",
   "-i": true,
   "head_limit": 30
@@ -359,7 +359,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/protocol/mod.rs"
+  "path": "../../../aikv-oldmain/src/protocol/mod.rs"
 }
 ```
 
@@ -373,7 +373,7 @@
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv-oldmain/src/protocol"
+  "target_directory": "../../../aikv-oldmain/src/protocol"
 }
 ```
 
@@ -383,7 +383,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/01-resp-tcp.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/01-resp-tcp.md"
 }
 ```
 
@@ -393,7 +393,7 @@
 ```json
 {
   "head_limit": 20,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/ARCHITECTURE.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/ARCHITECTURE.md",
   "pattern": "protocol|RESP"
 }
 ```
@@ -407,7 +407,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/protocol",
+  "path": "../../../aikv-oldmain/src/protocol",
   "pattern": "serialize|encode"
 }
 ```
@@ -418,7 +418,7 @@
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/src/error.rs"
+  "path": "../../src/error.rs"
 }
 ```
 
@@ -427,7 +427,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/protocol",
+  "path": "../../src/protocol",
   "pattern": "pub fn|pub struct|pub enum"
 }
 ```
@@ -583,7 +583,7 @@ aikv/src/protocol/
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `docs/modules/protocol.md` | 待开始 | | | `protocol/*` |",
   "new_string": "| `docs/modules/protocol.md` | 步 0 ✅ | | | `protocol/*` — types, parser, encoder; 测试 `tests/modules/resp/` |"
 }
@@ -594,7 +594,7 @@ aikv/src/protocol/
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/protocol/types.rs"
+  "path": "../../src/protocol/types.rs"
 }
 ```
 
@@ -603,7 +603,7 @@ aikv/src/protocol/
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/protocol/encoder.rs"
+  "path": "../../src/protocol/encoder.rs"
 }
 ```
 
@@ -612,7 +612,7 @@ aikv/src/protocol/
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/protocol/parser.rs"
+  "path": "../../src/protocol/parser.rs"
 }
 ```
 
@@ -625,7 +625,7 @@ aikv/src/protocol/
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/connection.rs",
+  "path": "../../src/server/connection.rs",
   "pattern": "parser\\.|RespParser|protocol_version|protocol_negotiated|HELLO",
   "head_limit": 40
 }
@@ -636,7 +636,7 @@ aikv/src/protocol/
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests/modules/resp/parser.rs",
+  "path": "../../tests/modules/resp/parser.rs",
   "offset": 40,
   "limit": 120
 }
@@ -646,7 +646,7 @@ aikv/src/protocol/
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aikv && cargo test --test modules resp_ 2>&1 | tail -30
+cd ../../../aikv && cargo test --test modules resp_ 2>&1 | tail -30
 ```
 
 
@@ -657,7 +657,7 @@ cd /root/code/database/aikv && cargo test --test modules resp_ 2>&1 | tail -30
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aikv && cargo test --test resp 2>&1 | tail -25
+cd ../../../aikv && cargo test --test resp 2>&1 | tail -25
 ```
 
 
@@ -667,7 +667,7 @@ cd /root/code/database/aikv && cargo test --test resp 2>&1 | tail -25
 {
   "limit": 80,
   "offset": 120,
-  "path": "/root/code/database/aikv/src/server/connection.rs"
+  "path": "../../src/server/connection.rs"
 }
 ```
 
@@ -678,7 +678,7 @@ cd /root/code/database/aikv && cargo test --test resp 2>&1 | tail -25
 {
   "limit": 80,
   "offset": 270,
-  "path": "/root/code/database/aikv/src/server/connection.rs"
+  "path": "../../src/server/connection.rs"
 }
 ```
 
@@ -689,7 +689,7 @@ cd /root/code/database/aikv && cargo test --test resp 2>&1 | tail -25
 {
   "limit": 80,
   "offset": 155,
-  "path": "/root/code/database/aikv/tests/modules/resp/parser.rs"
+  "path": "../../tests/modules/resp/parser.rs"
 }
 ```
 
@@ -704,7 +704,7 @@ cd /root/code/database/aikv && cargo test --test resp 2>&1 | tail -25
 {
   "limit": 100,
   "offset": 230,
-  "path": "/root/code/database/aikv/tests/modules/resp/parser.rs"
+  "path": "../../tests/modules/resp/parser.rs"
 }
 ```
 
@@ -713,7 +713,7 @@ cd /root/code/database/aikv && cargo test --test resp 2>&1 | tail -25
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/connection.rs",
+  "path": "../../src/server/connection.rs",
   "pattern": "is_fatal_protocol|write_error",
   "-A": 8
 }
@@ -724,7 +724,7 @@ cd /root/code/database/aikv && cargo test --test resp 2>&1 | tail -25
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests",
+  "path": "../../tests",
   "pattern": "mod resp"
 }
 ```
@@ -738,7 +738,7 @@ cd /root/code/database/aikv && cargo test --test resp 2>&1 | tail -25
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests/resp.rs"
+  "path": "../../tests/resp.rs"
 }
 ```
 
@@ -746,7 +746,7 @@ cd /root/code/database/aikv && cargo test --test resp 2>&1 | tail -25
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database/aikv && cargo test --test resp parser 2>&1 | tail -20
+cd ../../../aikv && cargo test --test resp parser 2>&1 | tail -20
 ```
 
 
@@ -900,7 +900,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv",
+  "path": "../../../AiKv-Workflow/backup/aikv",
   "pattern": "protocol|RESP|RespParser|RespValue|encoder|parser",
   "glob": "*.md",
   "head_limit": 40
@@ -912,7 +912,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs",
+  "path": "../../../aikv-oldmain/docs",
   "pattern": "protocol|RESP|RespParser",
   "glob": "**/*",
   "head_limit": 40
@@ -924,7 +924,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/protocol/types.rs",
+  "path": "../../../aikv-oldmain/src/protocol/types.rs",
   "limit": 80
 }
 ```
@@ -934,7 +934,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/protocol/parser.rs",
+  "path": "../../../aikv-oldmain/src/protocol/parser.rs",
   "limit": 100
 }
 ```
@@ -950,7 +950,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 {
   "limit": 90,
   "offset": 1,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/ARCHITECTURE.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/ARCHITECTURE.md"
 }
 ```
 
@@ -960,7 +960,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/DESIGN.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/DESIGN.md"
 }
 ```
 
@@ -971,7 +971,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 {
   "limit": 150,
   "offset": 50,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/01-resp-tcp.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/01-resp-tcp.md"
 }
 ```
 
@@ -980,7 +980,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs",
+  "path": "../../../aikv-oldmain/docs",
   "pattern": "protocol|RESP|parser",
   "glob": "*.md",
   "head_limit": 30
@@ -998,7 +998,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 {
   "limit": 120,
   "offset": 195,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/01-resp-tcp.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/01-resp-tcp.md"
 }
 ```
 
@@ -1009,7 +1009,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 {
   "limit": 80,
   "offset": 100,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/ARCHITECTURE.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/ARCHITECTURE.md"
 }
 ```
 
@@ -1018,7 +1018,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/protocol/parser.rs",
+  "path": "../../../aikv-oldmain/src/protocol/parser.rs",
   "pattern": "recoverable|max_bulk|with_limits|streamed|is_recoverable"
 }
 ```
@@ -1028,7 +1028,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv/src/protocol",
+  "path": "../../../wiqun-kv/src/protocol",
   "pattern": "recoverable|with_limits|encoder"
 }
 ```
@@ -1042,7 +1042,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/aikv/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1051,7 +1051,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/01-resp-tcp.md",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/01-resp-tcp.md",
   "pattern": "默认 RESP|default.*Resp|Resp3|Resp2"
 }
 ```
@@ -1061,7 +1061,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs",
+  "path": "../../../aikv-oldmain/src/server/connection.rs",
   "pattern": "ProtocolVersion|protocol_version|Resp2|Resp3",
   "head_limit": 20
 }
@@ -1073,7 +1073,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv-oldmain/src/protocol/mod.rs"
+  "path": "../../../aikv-oldmain/src/protocol/mod.rs"
 }
 ```
 
@@ -1088,7 +1088,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 {
   "limit": 50,
   "offset": 860,
-  "path": "/root/code/database/aikv/src/server/connection.rs"
+  "path": "../../src/server/connection.rs"
 }
 ```
 
@@ -1099,7 +1099,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 {
   "limit": 50,
   "offset": 470,
-  "path": "/root/code/database/aikv/src/server/connection.rs"
+  "path": "../../src/server/connection.rs"
 }
 ```
 
@@ -1108,7 +1108,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/protocol/parser.rs",
+  "path": "../../../aikv-oldmain/src/protocol/parser.rs",
   "pattern": "max_bulk|max_buffer|depth"
 }
 ```
@@ -1122,7 +1122,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/connection.rs",
+  "path": "../../src/server/connection.rs",
   "pattern": "fn hello_map",
   "-A": 40
 }
@@ -1135,7 +1135,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 {
   "limit": 40,
   "offset": 330,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/CHANGELOG.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/CHANGELOG.md"
 }
 ```
 
@@ -1149,7 +1149,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 ```json
 {
   "-A": 25,
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs",
+  "path": "../../../aikv-oldmain/src/server/connection.rs",
   "pattern": "HELLO|cmd_hello"
 }
 ```
@@ -1159,7 +1159,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests",
+  "path": "../../tests",
   "pattern": "HELLO",
   "head_limit": 15
 }
@@ -1176,7 +1176,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 {
   "limit": 80,
   "offset": 25,
-  "path": "/root/code/database/aikv/tests/modules/server/tcp.rs"
+  "path": "../../tests/modules/server/tcp.rs"
 }
 ```
 
@@ -1187,7 +1187,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 {
   "limit": 30,
   "offset": 205,
-  "path": "/root/code/database/aikv/tests/modules/resp/types.rs"
+  "path": "../../tests/modules/resp/types.rs"
 }
 ```
 
@@ -1201,7 +1201,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 ```json
 {
   "limit": 15,
-  "path": "/root/code/database/wiqun-kv/src/protocol/mod.rs"
+  "path": "../../../wiqun-kv/src/protocol/mod.rs"
 }
 ```
 
@@ -1210,7 +1210,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/01-overview.md",
+  "path": "../../../aikv-oldmain/docs/development/architecture/01-overview.md",
   "pattern": "value\\.rs|types\\.rs|encoder"
 }
 ```
@@ -1222,7 +1222,7 @@ cargo test --test resp types    # 仅 golden encode (29)
 {
   "limit": 80,
   "offset": 130,
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/01-overview.md"
+  "path": "../../../aikv-oldmain/docs/development/architecture/01-overview.md"
 }
 ```
 
@@ -1354,7 +1354,7 @@ module 待核实一行 (步 4):
 {
   "new_string": "| `docs/modules/protocol.md` | 步 2 ✅ | backup/aikv ARCHITECTURE,DESIGN; WiQunTools 01-resp-tcp; aikv-oldmain src/protocol; wiqun-kv src/protocol | 待步 4 写正文 | `protocol/*`; 默认 Resp3 (用户确认); 无 ISSUE |",
   "old_string": "| `docs/modules/protocol.md` | 步 0 ✅ | | | `protocol/*` — types, parser, encoder; 测试 `tests/modules/resp/` |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1365,7 +1365,7 @@ module 待核实一行 (步 4):
 {
   "limit": 120,
   "offset": 95,
-  "path": "/root/code/database/aikv-oldmain/src/protocol/parser.rs"
+  "path": "../../../aikv-oldmain/src/protocol/parser.rs"
 }
 ```
 
@@ -1376,7 +1376,7 @@ module 待核实一行 (步 4):
 {
   "limit": 100,
   "offset": 160,
-  "path": "/root/code/database/aikv-oldmain/src/protocol/types.rs"
+  "path": "../../../aikv-oldmain/src/protocol/types.rs"
 }
 ```
 
@@ -1385,7 +1385,7 @@ module 待核实一行 (步 4):
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/protocol",
+  "path": "../../../aikv-oldmain/src/protocol",
   "pattern": "pub fn|impl Resp"
 }
 ```
@@ -1399,7 +1399,7 @@ module 待核实一行 (步 4):
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/protocol",
+  "path": "../../../aikv-oldmain/src/protocol",
   "pattern": "nan|NEG_INFINITY|-0"
 }
 ```
@@ -1409,7 +1409,7 @@ module 待核实一行 (步 4):
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv/src/protocol/types.rs",
+  "path": "../../../wiqun-kv/src/protocol/types.rs",
   "pattern": "Default|ProtocolVersion"
 }
 ```
@@ -1418,7 +1418,7 @@ module 待核实一行 (步 4):
 **Tool `Shell`**
 
 ```bash
-diff -q /root/code/database/aikv/src/protocol/mod.rs /root/code/database/wiqun-kv/src/protocol/mod.rs 2>/dev/null; diff -q /root/code/database/aikv/src/protocol/types.rs /root/code/database/wiqun-kv/src/protocol/types.rs 2>/dev/null; wc -l /root/code/database/aikv-oldmain/src/protocol/*.rs /root/code/database/aikv/src/protocol/*.rs
+diff -q ../../src/protocol/mod.rs ../../../wiqun-kv/src/protocol/mod.rs 2>/dev/null; diff -q ../../src/protocol/types.rs ../../../wiqun-kv/src/protocol/types.rs 2>/dev/null; wc -l ../../../aikv-oldmain/src/protocol/*.rs ../../src/protocol/*.rs
 ```
 
 
@@ -1426,7 +1426,7 @@ diff -q /root/code/database/aikv/src/protocol/mod.rs /root/code/database/wiqun-k
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs",
+  "path": "../../../aikv-oldmain/src/server/connection.rs",
   "pattern": "RespParser::new|parser\\.parse|is_fatal|recoverable"
 }
 ```
@@ -1441,7 +1441,7 @@ diff -q /root/code/database/aikv/src/protocol/mod.rs /root/code/database/wiqun-k
 ```json
 {
   "limit": 55,
-  "path": "/root/code/database/wiqun-kv/src/protocol/types.rs"
+  "path": "../../../wiqun-kv/src/protocol/types.rs"
 }
 ```
 
@@ -1450,7 +1450,7 @@ diff -q /root/code/database/aikv/src/protocol/mod.rs /root/code/database/wiqun-k
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/server/connection.rs",
+  "path": "../../../aikv-oldmain/src/server/connection.rs",
   "pattern": "protocol_version|ProtocolVersion",
   "head_limit": 15
 }
@@ -1463,7 +1463,7 @@ diff -q /root/code/database/aikv/src/protocol/mod.rs /root/code/database/wiqun-k
 {
   "limit": 50,
   "offset": 28,
-  "path": "/root/code/database/aikv-oldmain/src/protocol/parser.rs"
+  "path": "../../../aikv-oldmain/src/protocol/parser.rs"
 }
 ```
 
@@ -1478,7 +1478,7 @@ diff -q /root/code/database/aikv/src/protocol/mod.rs /root/code/database/wiqun-k
 {
   "limit": 15,
   "offset": 200,
-  "path": "/root/code/database/aikv-oldmain/src/protocol/types.rs"
+  "path": "../../../aikv-oldmain/src/protocol/types.rs"
 }
 ```
 
@@ -1487,7 +1487,7 @@ diff -q /root/code/database/aikv/src/protocol/mod.rs /root/code/database/wiqun-k
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/protocol/parser.rs",
+  "path": "../../../aikv-oldmain/src/protocol/parser.rs",
   "pattern": "depth|max_"
 }
 ```
@@ -1632,7 +1632,7 @@ diff -q /root/code/database/aikv/src/protocol/mod.rs /root/code/database/wiqun-k
 {
   "new_string": "| `docs/modules/protocol.md` | 步 3 ✅ | 同上 | 待步 4 写正文 | oldmain→aikv: +encoder/limits/recoverable; ProtocolVersion 迁入且默认 Resp3; wiqun-kv≈当前 |",
   "old_string": "| `docs/modules/protocol.md` | 步 2 ✅ | backup/aikv ARCHITECTURE,DESIGN; WiQunTools 01-resp-tcp; aikv-oldmain src/protocol; wiqun-kv src/protocol | 待步 4 写正文 | `protocol/*`; 默认 Resp3 (用户确认); 无 ISSUE |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1653,7 +1653,7 @@ diff -q /root/code/database/aikv/src/protocol/mod.rs /root/code/database/wiqun-k
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aidb/docs/modules/engine.md"
+  "path": "../../../aidb/docs/modules/engine.md"
 }
 ```
 
@@ -1909,7 +1909,7 @@ cargo test --test resp types     # 仅 golden encode (29)
 ```json
 {
   "glob_pattern": "docs/**/*",
-  "target_directory": "/root/code/database/aikv"
+  "target_directory": "../../../aikv"
 }
 ```
 
@@ -1918,7 +1918,7 @@ cargo test --test resp types     # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "limit": 50,
   "offset": 33
 }
@@ -1933,7 +1933,7 @@ cargo test --test resp types     # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/protocol.md",
+  "path": "../../docs/modules/protocol.md",
   "contents": "---\nname: aikv-protocol\ndescription: AiKv RESP2/RESP3 codec — RespValue, RespParser feed/parse, serialize, parse limits, recoverable errors. Use when changing src/protocol/*, debugging RESP frame parse/encode, pipeline buffering, or ProtocolVersion types.\n---\n\n# AiKv Protocol (RESP 编解码)\n\n## 何时读本文\n\n- 改 `protocol/{types,parser,encoder}` 或 `RespParser` / `RespValue` 公共 API\n- 排查 RESP 帧解析失败、编码 roundtrip、buffer 超限、嵌套深度错误\n- **不覆盖**: TCP 读写循环 / HELLO 协商 / null 线格式转换 → [server.md](server.md); 命令参数拆解 → [commands-core.md](commands-core.md)\n\n## 代码地图\n\n| 路径 | 职责 | 入口 |\n|------|------|------|\n| `protocol/mod.rs` | 模块根; re-export | `RespParser`, `RespValue`, `ProtocolVersion` |\n| `protocol/types.rs` | RESP 值 AST; 协议版本枚举 | `RespValue`, `ProtocolVersion` |\n| `protocol/parser.rs` | 流式解析; limits; recoverable 策略 | `RespParser::new`, `with_limits`, `feed`, `parse` |\n| `protocol/encoder.rs` | 值 → 字节帧 | `RespValue::serialize` |\n\n公共 re-export (`lib.rs`): `protocol` 模块同上.\n\n解析错误类型: `crate::error::Error::Protocol(String)`.\n\n## 关键 invariant (勿破坏)\n\n- **单帧语义**: 每次 `parse()` 至多消费 buffer 头部 **一个** 完整顶层 `RespValue`; pipeline 由调用方循环 `parse()` (见 [server.md](server.md)).\n- **不完整不消费**: 数据不足 → `Ok(None)`, cursor 回退, buffer 保留待 `feed`.\n- **可恢复错误**: `is_recoverable` 命中时 `advance(1)` 后返回 `Err`; 调用方可写 ERR 响应并继续 (fatal 判定在 server).\n- **不可恢复错误**: depth / too large / line too long / length 类错误不 advance; server 应断连.\n- **默认 limits**: 见下表; 生产路径 `RespParser::new()` 使用默认值.\n- **命令请求形态**: AiKv 期望顶层 `Array` of bulk strings; 由 `server::process_value` 校验, parser 不 enforce.\n\n### 默认 limits\n\n| 字段 | 默认值 | 超限错误 |\n|------|--------|----------|\n| `max_bulk_len` | 512 MiB | `bulk string too large` |\n| `max_buffer_size` | 64 MiB | server 在 `feed` 前检查并断连 |\n| `max_parse_depth` | 128 | `parse depth exceeded` |\n| `max_array_len` | 4 MiB 元素 | `array/map/set/push/attribute too large` |\n| `max_line_len` | 1 MiB | `line too long` |\n\n## 数据流\n\n```mermaid\nflowchart LR\n  TCP[TCP bytes] --> F[RespParser::feed]\n  F --> P[RespParser::parse]\n  P -->|Ok Some| V[RespValue]\n  P -->|Ok None| W[等待更多数据]\n  P -->|Err recoverable| S[skip 1 byte]\n  V --> E[RespValue::serialize]\n  E --> OUT[Bytes 帧]\n```\n\nPipeline (协议层视角): 连续帧留在同一 `BytesMut`; 每次 `parse()` 成功后 buffer 已 `advance`, 剩余字节留给下一帧.\n\n## 关键类型与 API\n\n### `RespValue`\n\nRESP2 + RESP3 共 17 变体. 命令层最常用: `SimpleString`, `Error`, `Integer`, `BulkString`, `Array`, `Null`, `Map`.\n\n| marker | 变体 | 备注 |\n|--------|------|------|\n| `+` | `SimpleString` | |\n| `-` | `Error` | |\n| `:` | `Integer` | |\n| `$` | `BulkString` | `None` = `$-1` |\n| `*` | `Array` | `None` = `*-1` |\n| `_` | `Null` | RESP3 |\n| `#` | `Boolean` | |\n| `,` | `Double` | nan/inf/-inf/-0 特判 |\n| `(` | `BigNumber` | |\n| `!` | `BulkError` | |\n| `=` | `VerbatimString` | `format` 须 3 字符 + `:` + data |\n| `%` | `Map` | |\n| `~` | `Set` | |\n| `>` | `Push` | |\n| `\\|` | `Attribute` | attrs + `data` |\n| `$?`…`;0` | `StreamedString` | 多块 bulk |\n\n载荷用 `bytes::Bytes`, bulk string 二进制安全.\n\n### `ProtocolVersion`\n\n```rust\npub enum ProtocolVersion { Resp2, Resp3 }  // Default = Resp3\n```\n\n- 定义在 `protocol/types.rs`; 默认 **Resp3**\n- `HELLO` 协商、`protocol_negotiated` 门控、响应 null 线格式 (`$-1` vs `_`) 在 [server.md](server.md), 不在本模块\n\n### `RespParser`\n\n```rust\nimpl RespParser {\n    pub fn new() -> Self;\n    pub fn with_limits(max_bulk_len, max_buffer_size, max_parse_depth,\n                       max_array_len, max_line_len) -> Self;\n    pub fn feed(&mut self, data: &[u8]);\n    pub fn buffer_len(&self) -> usize;\n    pub fn max_buffer_size(&self) -> usize;\n    pub fn parse(&mut self) -> Result<Option<RespValue>>;\n}\n```\n\n`parse()` 返回语义:\n\n| 结果 | 含义 |\n|------|------|\n| `Ok(Some(v))` | 完整帧已解析并消费 |\n| `Ok(None)` | 需更多字节 |\n| `Err(e)` recoverable | 已 skip 1 字节, 可重试 |\n| `Err(e)` fatal | buffer 未前进, 应断连 |\n\n## 常见任务\n\n### 调试 RESP roundtrip\n\n1. 构造 `RespValue`\n2. `let bytes = value.serialize()`\n3. `parser.feed(&bytes)` → `parser.parse()?`\n4. `assert_eq!(parsed, value)` 且 `parser.buffer_len() == 0`\n\n参考 `tests/modules/resp/parser.rs` 中 `roundtrip()` helper.\n\n### 复现 pipeline 解析\n\n```rust\nlet mut parser = RespParser::new();\nparser.feed(b\"+PONG\\r\\n+PONG\\r\\n\");\nassert_eq!(parser.parse()?.unwrap(), RespValue::SimpleString(\"PONG\".into()));\nassert_eq!(parser.parse()?.unwrap(), RespValue::SimpleString(\"PONG\".into()));\nassert!(parser.parse()?.is_none());\n```\n\n### 调低 limits 写边界测试\n\n用 `RespParser::with_limits(...)` 注入小阈值, 见 `test_parse_depth_limit`, `test_parse_bulk_string_too_large` 等.\n\n### 新增 RESP3 变体编解码\n\n1. 在 `types.rs` 加枚举变体\n2. `parser.rs` `parse_value` match 加分支 + 私有解析函数\n3. `encoder.rs` `encode_into` 加分支\n4. 在 `tests/modules/resp/{types,parser}.rs` 加 golden + roundtrip\n\n## 配置与 feature flags\n\n| 项 | 位置 | 说明 |\n| --- | --- | --- |\n| 解析 limits | `parser.rs` 常量 + `with_limits` | 无运行时配置; 默认见上表 |\n| feature flags | — | protocol 模块无 `cfg(feature)` |\n\n## 测试\n\n```bash\ncargo test --test resp           # types + parser (66)\ncargo test --test resp parser    # 仅 parser (37)\ncargo test --test resp types     # 仅 golden encode (29)\n```\n\n集成: `tests/modules/server/tcp.rs` 覆盖 HELLO/PING pipeline (属 server, 非本模块单元测试).\n\n## 已知限制\n\n- 顶层孤立 `;` chunk marker 返回 `unexpected streamed chunk marker` (须在 `$?` streamed string 上下文内).\n- `StreamedString` / `Attribute` / `Push` 已编解码, 命令层未必使用.\n- `ProtocolVersion` 不影响 `serialize()` 输出; 版本相关线格式适配在 server `adapt_for_protocol`.\n\n## 待核实\n\n- 无.\n"
 }
 ```
@@ -1945,7 +1945,7 @@ cargo test --test resp types     # 仅 golden encode (29)
 {
   "new_string": "| `docs/modules/protocol.md` | ✅ | backup/aikv ARCHITECTURE,DESIGN; WiQunTools 01-resp-tcp; aikv-oldmain src/protocol; wiqun-kv src/protocol | 已写 aikv/docs/modules/protocol.md | 默认 Resp3; 无 ISSUE |",
   "old_string": "| `docs/modules/protocol.md` | 步 3 ✅ | 同上 | 待步 4 写正文 | oldmain→aikv: +encoder/limits/recoverable; ProtocolVersion 迁入且默认 Resp3; wiqun-kv≈当前 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1956,7 +1956,7 @@ cargo test --test resp types     # 仅 golden encode (29)
 {
   "new_string": "**当前阶段**: 阶段 1 — modules (步 4/12 待开始)",
   "old_string": "**当前阶段**: 阶段 1 — modules (步 3/12 待开始)",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -1967,7 +1967,7 @@ cargo test --test resp types     # 仅 golden encode (29)
 {
   "new_string": "| 3 | aikv | `docs/modules/protocol.md` | protocol/* | ✅ 完成 | 2026-06-18 |",
   "old_string": "| 3 | aikv | `docs/modules/protocol.md` | protocol/* | ⬜ 待开始 | |",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -2012,7 +2012,7 @@ cargo test --test resp types     # 仅 golden encode (29)
 
 ```json
 {
-  "path": "/root/code/database/vibe-coding/scripts/archive-cursor-session.sh"
+  "path": "../../../vibe-coding/scripts/archive-cursor-session.sh"
 }
 ```
 
@@ -2022,7 +2022,7 @@ cargo test --test resp types     # 仅 golden encode (29)
 ```json
 {
   "glob_pattern": "**/archive/**",
-  "target_directory": "/root/code/database/aidb"
+  "target_directory": "../../../aidb"
 }
 ```
 
@@ -2032,7 +2032,7 @@ cargo test --test resp types     # 仅 golden encode (29)
 ```json
 {
   "glob_pattern": "**/archive/**",
-  "target_directory": "/root/code/database/aikv"
+  "target_directory": "../../../aikv"
 }
 ```
 

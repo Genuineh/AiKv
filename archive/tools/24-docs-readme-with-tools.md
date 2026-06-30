@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 1. `AiKv-Workflow/backup/design.md` — 总规程
@@ -84,7 +84,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -93,7 +93,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -102,7 +102,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -111,7 +111,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/README.md"
+  "path": "../../../aidb/docs/README.md"
 }
 ```
 
@@ -120,7 +120,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/README.md"
+  "path": "../../README.md"
 }
 ```
 
@@ -144,7 +144,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/archive/18-docs-readme.md",
+  "path": "../../../aidb/archive/18-docs-readme.md",
   "limit": 120
 }
 ```
@@ -154,7 +154,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/AGENTS.md",
+  "path": "../../AGENTS.md",
   "limit": 80
 }
 ```
@@ -165,7 +165,7 @@
 ```json
 {
   "pattern": "docs/README|index\\.md|文档",
-  "path": "/root/code/database/backup/aikv"
+  "path": "../../../backup/aikv"
 }
 ```
 
@@ -187,7 +187,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/index.md"
+  "path": "../../../aikv-oldmain/docs/index.md"
 }
 ```
 
@@ -196,7 +196,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/README.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/README.md",
   "pattern": "文档|docs/"
 }
 ```
@@ -208,7 +208,7 @@
 {
   "offset": 115,
   "limit": 150,
-  "path": "/root/code/database/aidb/archive/18-docs-readme.md"
+  "path": "../../../aidb/archive/18-docs-readme.md"
 }
 ```
 
@@ -217,7 +217,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules",
+  "path": "../../docs/modules",
   "pattern": "^description:"
 }
 ```
@@ -228,7 +228,7 @@
 ```json
 {
   "offset": 76,
-  "path": "/root/code/database/aikv/AGENTS.md"
+  "path": "../../AGENTS.md"
 }
 ```
 
@@ -243,7 +243,7 @@
 {
   "offset": 125,
   "limit": 40,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/README.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/README.md"
 }
 ```
 
@@ -252,7 +252,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/archive/23-contributing-changelog.md",
+  "path": "../../archive/23-contributing-changelog.md",
   "pattern": "development|docs/README|A1|C1|B1"
 }
 ```
@@ -262,7 +262,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/README.md",
+  "path": "../../../aidb/README.md",
   "offset": 70,
   "limit": 35
 }
@@ -273,7 +273,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "docs/README"
 }
 ```
@@ -287,7 +287,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/README.md",
+  "path": "../../../aidb/README.md",
   "pattern": "docs/README"
 }
 ```
@@ -297,7 +297,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/observability.md",
+  "path": "../../docs/modules/observability.md",
   "pattern": "observability-reference"
 }
 ```
@@ -524,7 +524,7 @@ design: **不在主文档体系内**; 根 README 已链 `examples/`、`e2e/`; AG
 
 ```json
 {
-  "path": "/root/code/database/aidb/docs/README.md"
+  "path": "../../../aidb/docs/README.md"
 }
 ```
 
@@ -533,7 +533,7 @@ design: **不在主文档体系内**; 根 README 已链 `examples/`、`e2e/`; AG
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules",
+  "path": "../../docs/modules",
   "pattern": "^## 何时读本文",
   "-A": 8
 }
@@ -554,7 +554,7 @@ design: **不在主文档体系内**; 根 README 已链 `examples/`、`e2e/`; AG
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/docs/modules/protocol.md"
+  "path": "../../docs/modules/protocol.md"
 }
 ```
 
@@ -564,7 +564,7 @@ design: **不在主文档体系内**; 根 README 已链 `examples/`、`e2e/`; AG
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/docs/modules/observability.md"
+  "path": "../../docs/modules/observability.md"
 }
 ```
 
@@ -578,7 +578,7 @@ design: **不在主文档体系内**; 根 README 已链 `examples/`、`e2e/`; AG
 ```json
 {
   "limit": 25,
-  "path": "/root/code/database/aikv/ARCHITECTURE.md"
+  "path": "../../ARCHITECTURE.md"
 }
 ```
 
@@ -588,7 +588,7 @@ design: **不在主文档体系内**; 根 README 已链 `examples/`、`e2e/`; AG
 ```json
 {
   "limit": 15,
-  "path": "/root/code/database/aikv/README.md",
+  "path": "../../README.md",
   "offset": 78
 }
 ```
@@ -597,7 +597,7 @@ design: **不在主文档体系内**; 根 README 已链 `examples/`、`e2e/`; AG
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database && for f in aikv/ARCHITECTURE.md aikv/DESIGN.md aikv/DEPLOYMENT.md aikv/CONTRIBUTING.md aikv/CHANGELOG.md aikv/AGENTS.md aikv/ISSUES.md aikv/docs/modules/protocol.md aikv/docs/modules/server.md aikv/docs/modules/storage.md aikv/docs/modules/commands-core.md aikv/docs/modules/commands-extended.md aikv/docs/modules/cluster.md aikv/docs/modules/observability.md aikv/docs/modules/observability-reference.md aidb/docs/README.md; do test -f "$f" && echo "OK $f" || echo "MISSING $f"; done
+cd <workspace> && for f in aikv/ARCHITECTURE.md aikv/DESIGN.md aikv/DEPLOYMENT.md aikv/CONTRIBUTING.md aikv/CHANGELOG.md aikv/AGENTS.md aikv/ISSUES.md aikv/docs/modules/protocol.md aikv/docs/modules/server.md aikv/docs/modules/storage.md aikv/docs/modules/commands-core.md aikv/docs/modules/commands-extended.md aikv/docs/modules/cluster.md aikv/docs/modules/observability.md aikv/docs/modules/observability-reference.md aidb/docs/README.md; do test -f "$f" && echo "OK $f" || echo "MISSING $f"; done
 ```
 
 
@@ -747,7 +747,7 @@ aikv/
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv",
+  "path": "../../../AiKv-Workflow/backup/aikv",
   "pattern": "docs/|文档|README|index",
   "glob": "*.md"
 }
@@ -767,7 +767,7 @@ aikv/
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools",
+  "path": "../../../WiQunTools",
   "pattern": "docs/README|文档索引|development\\.md",
   "glob": "**/wiqun-kv*"
 }
@@ -778,7 +778,7 @@ aikv/
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv",
+  "path": "../../../wiqun-kv",
   "pattern": "docs/README|index\\.md"
 }
 ```
@@ -793,7 +793,7 @@ aikv/
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv-oldmain/README.md"
+  "path": "../../../aikv-oldmain/README.md"
 }
 ```
 
@@ -803,7 +803,7 @@ aikv/
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv-oldmain/docs/development/workflow.md"
+  "path": "../../../aikv-oldmain/docs/development/workflow.md"
 }
 ```
 
@@ -821,7 +821,7 @@ aikv/
 
 ```json
 {
-  "path": "/root/code/database/aikv/archive/22-readme.md",
+  "path": "../../archive/22-readme.md",
   "pattern": "oldmain|index\\.md|docs/README"
 }
 ```
@@ -835,7 +835,7 @@ aikv/
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/README.md",
+  "path": "../../../aikv-oldmain/README.md",
   "pattern": "文档|docs/"
 }
 ```
@@ -847,7 +847,7 @@ aikv/
 {
   "limit": 80,
   "offset": 400,
-  "path": "/root/code/database/aidb/archive/18-docs-readme.md"
+  "path": "../../../aidb/archive/18-docs-readme.md"
 }
 ```
 
@@ -856,7 +856,7 @@ aikv/
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools",
+  "path": "../../../WiQunTools",
   "pattern": "docs/README|文档导航|index\\.md",
   "glob": "**/wiqun-kv*"
 }
@@ -993,7 +993,7 @@ aikv/
 {
   "limit": 120,
   "offset": 478,
-  "path": "/root/code/database/aidb/archive/18-docs-readme.md"
+  "path": "../../../aidb/archive/18-docs-readme.md"
 }
 ```
 
@@ -1003,7 +1003,7 @@ aikv/
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/ARCHITECTURE.md",
+  "path": "../../ARCHITECTURE.md",
   "offset": 24
 }
 ```
@@ -1130,7 +1130,7 @@ aikv hub 为 aidb 范本的 **同构扩展**, 非 second INDEX.
 {
   "limit": 15,
   "offset": 62,
-  "path": "/root/code/database/aidb/README.md"
+  "path": "../../../aidb/README.md"
 }
 ```
 
@@ -1141,7 +1141,7 @@ aikv hub 为 aidb 范本的 **同构扩展**, 非 second INDEX.
 {
   "limit": 30,
   "offset": 78,
-  "path": "/root/code/database/aikv/README.md"
+  "path": "../../README.md"
 }
 ```
 
@@ -1284,7 +1284,7 @@ aikv hub 为 aidb 范本的 **同构扩展**, 非 second INDEX.
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/README.md",
+  "path": "../../docs/README.md",
   "contents": "# AiKv 开发文档\n\n`docs/` 域的开发文档导航. 项目介绍与快速开始见 [README.md](../README.md).\n\n## 阅读路径\n\n- **首次了解** — [README.md](../README.md) → [ARCHITECTURE.md](../ARCHITECTURE.md) → 按需打开下方 modules\n- **改某域代码** — 查 [按域阅读](#按域阅读-modules) WHEN → 对应 module; 跨域边界见 module 内「不覆盖」\n- **构建 / 测试 / PR** — [DEPLOYMENT.md](../DEPLOYMENT.md) + [CONTRIBUTING.md](../CONTRIBUTING.md); AI 助手速览见 [AGENTS.md](../AGENTS.md)\n- **底层 LSM / Raft** — 存储与共识在 sibling [AiDb](../aidb/docs/README.md); AiKv 侧重 RESP 与命令层\n\n## 汇总文档\n\n| 文档 | 内容 |\n|------|------|\n| [ARCHITECTURE.md](../ARCHITECTURE.md) | 分层、数据流、与 AiDb 边界 |\n| [DESIGN.md](../DESIGN.md) | 跨模块设计决策与已知限制 |\n| [DEPLOYMENT.md](../DEPLOYMENT.md) | 构建、feature、CLI、集群部署、监控 |\n| [CONTRIBUTING.md](../CONTRIBUTING.md) | hooks、CI、测试矩阵、提交/PR 规范 |\n| [CHANGELOG.md](../CHANGELOG.md) | 版本变更记录 |\n| [AGENTS.md](../AGENTS.md) | AI 助手与 CI 入口 |\n| [ISSUES.md](../ISSUES.md) | 待核实与已知疑点 |\n\n## 按域阅读 (modules)\n\n| Module | 何时读 |\n|--------|--------|\n| [protocol.md](modules/protocol.md) | 改 `protocol/*`; RESP2/3 parse/encode、buffer/深度限制、ProtocolVersion |\n| [server.md](modules/server.md) | 改 `server/{listener,connection,config}`; TCP 读写/pipeline、HELLO、ATOM 事务、`max_clients` |\n| [storage.md](modules/storage.md) | 改 `storage/*`; KvStorage、MemoryEngine/AiDbEngine、TTL/StoredValue、集群数据面 Raft 写 |\n| [commands-core.md](modules/commands-core.md) | 改核心数据结构命令与 Router; String~ZSet/Key/DB、WRONGTYPE、KeyLock、CROSSSLOT 前路由 |\n| [commands-extended.md](modules/commands-extended.md) | 改 JSON/Lua/阻塞/MIGRATE/SAVE/INFO/CONFIG 等扩展命令与 router extended dispatch |\n| [cluster.md](modules/cluster.md) | 改 `cluster/*`、`init_cluster`; MOVED/ASK、CLUSTER 子命令、slot 迁移/failover (`cluster` feature) |\n| [observability.md](modules/observability.md) | 改 slowlog/latency/info/metrics; INFO/SLOWLOG/LATENCY、`/metrics` (`monitoring`); 指标表 → [observability-reference.md](modules/observability-reference.md) |\n\n依赖顺序: protocol → server → storage → commands-core → commands-extended; cluster 依赖 storage + aidb cluster; observability 横切 (INFO 命令 dispatch 仍见 commands-extended).\n\n## 构建与测试\n\n构建、Cargo feature 与完整测试矩阵见 [DEPLOYMENT.md](../DEPLOYMENT.md) 与 [CONTRIBUTING.md](../CONTRIBUTING.md).\n\n## 待核实\n\n详情见 [ISSUES.md](../ISSUES.md) (module 内一行引用, 不在此展开).\n"
 }
 ```
@@ -1294,7 +1294,7 @@ aikv hub 为 aidb 范本的 **同构扩展**, 非 second INDEX.
 
 ```json
 {
-  "path": "/root/code/database/aikv/README.md",
+  "path": "../../README.md",
   "old_string": "## 文档\n\n| 文档 | 内容 |",
   "new_string": "## 文档\n\n开发文档 hub: [docs/README.md](docs/README.md) (汇总文档 + modules WHEN 路由).\n\n| 文档 | 内容 |"
 }
@@ -1305,7 +1305,7 @@ aikv hub 为 aidb 范本的 **同构扩展**, 非 second INDEX.
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `CHANGELOG.md` | ✅ | `backup/aikv/CHANGELOG.md`; wiqun-kv (重复跳过) | 已写 `aikv/CHANGELOG.md` | 保留 0.0.1–0.10.5; [Unreleased] 空 |\n\n### aikv 旧文档来源速查",
   "new_string": "| `CHANGELOG.md` | ✅ | `backup/aikv/CHANGELOG.md`; wiqun-kv (重复跳过) | 已写 `aikv/CHANGELOG.md` | 保留 0.0.1–0.10.5; [Unreleased] 空 |\n| `docs/README.md` (导航) | ✅ | `backup/aikv/README.md` §设计文档; `oldmain/docs/index.md` + README §文档 (分组查漏); aidb 步 18 范本; WiQunTools/wiqun-kv **跳过** | 已写 `aikv/docs/README.md` | 纯链接 hub; 7 modules WHEN; A1/B1/C1/D1/E1 |\n\n### aikv 旧文档来源速查"
 }
@@ -1316,7 +1316,7 @@ aikv hub 为 aidb 范本的 **同构扩展**, 非 second INDEX.
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "- [ ] aikv: 新建根目录文档 (同上) — 可先占位\n- [ ] aikv: `docs/README.md`, `docs/development.md`\n- [ ] aikv: `docs/modules/` — protocol, server, storage, commands-core, commands-extended, cluster, observability (7 篇)",
   "new_string": "- [x] aikv: 新建根目录文档 (README, ARCHITECTURE, DESIGN, DEPLOYMENT, CHANGELOG, CONTRIBUTING)\n- [x] aikv: `docs/README.md` (hub); `docs/development.md` 未建 (hub 链 DEPLOYMENT + CONTRIBUTING)\n- [x] aikv: `docs/modules/` — protocol, server, storage, commands-core, commands-extended, cluster, observability (7 篇)"
 }
@@ -1327,7 +1327,7 @@ aikv hub 为 aidb 范本的 **同构扩展**, 非 second INDEX.
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "| 24 | `docs/README.md` (导航) | ⬜ 待开始 | |",
   "new_string": "| 24 | `docs/README.md` (导航) | ✅ 完成 | 2026-06-18 |"
 }
@@ -1338,7 +1338,7 @@ aikv hub 为 aidb 范本的 **同构扩展**, 非 second INDEX.
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "- [ ] 阶段 2b: aikv 根文档与 `docs/README.md` 全部 ✅",
   "new_string": "- [x] 阶段 2b: aikv 根文档与 `docs/README.md` 全部 ✅"
 }
@@ -1355,7 +1355,7 @@ aikv hub 为 aidb 范本的 **同构扩展**, 非 second INDEX.
 {
   "new_string": "**当前阶段**: 阶段 2b ✅ 完成 — 可进入 Step 3 全仓验收",
   "old_string": "**当前阶段**: 阶段 2a ✅ 完成 — 可进入阶段 2b (aikv 汇总, 步 19+)",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -1366,7 +1366,7 @@ aikv hub 为 aidb 范本的 **同构扩展**, 非 second INDEX.
 {
   "new_string": "| 23 | `CONTRIBUTING.md` / `CHANGELOG.md` | ✅ 完成 | 2026-06-18 |\n| 24 | `docs/README.md` (导航) | ✅ 完成 | 2026-06-18 |\n\n`docs/development.md`: 未单独创建; hub 链 DEPLOYMENT + CONTRIBUTING (步 24 A1).\n\n---",
   "old_string": "| 23 | `CONTRIBUTING.md` / `CHANGELOG.md` | ✅ 完成 | 2026-06-18 |\n| 24 | `docs/README.md` (导航) | ✅ 完成 | 2026-06-18 |\n\n---",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -1374,7 +1374,7 @@ aikv hub 为 aidb 范本的 **同构扩展**, 非 second INDEX.
 **Tool `Shell`**
 
 ```bash
-cd /root/code/database && for f in aikv/docs/README.md aikv/ARCHITECTURE.md aikv/DESIGN.md aikv/DEPLOYMENT.md aikv/CONTRIBUTING.md aikv/CHANGELOG.md aikv/AGENTS.md aikv/ISSUES.md aikv/docs/modules/protocol.md aikv/docs/modules/server.md aikv/docs/modules/storage.md aikv/docs/modules/commands-core.md aikv/docs/modules/commands-extended.md aikv/docs/modules/cluster.md aikv/docs/modules/observability.md aikv/docs/modules/observability-reference.md aidb/docs/README.md; do test -f "$f" && echo "OK $f" || echo "MISSING $f"; done
+cd <workspace> && for f in aikv/docs/README.md aikv/ARCHITECTURE.md aikv/DESIGN.md aikv/DEPLOYMENT.md aikv/CONTRIBUTING.md aikv/CHANGELOG.md aikv/AGENTS.md aikv/ISSUES.md aikv/docs/modules/protocol.md aikv/docs/modules/server.md aikv/docs/modules/storage.md aikv/docs/modules/commands-core.md aikv/docs/modules/commands-extended.md aikv/docs/modules/cluster.md aikv/docs/modules/observability.md aikv/docs/modules/observability-reference.md aidb/docs/README.md; do test -f "$f" && echo "OK $f" || echo "MISSING $f"; done
 ```
 
 
@@ -1427,7 +1427,7 @@ Step 4 删旧仓库         ⬜
 
 ```json
 {
-  "path": "/root/code/database/vibe-coding/scripts/archive-cursor-session.sh"
+  "path": "../../../vibe-coding/scripts/archive-cursor-session.sh"
 }
 ```
 

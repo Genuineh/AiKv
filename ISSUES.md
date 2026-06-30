@@ -54,7 +54,7 @@
 - **相关 src**: `src/server/info.rs`, `src/server/metrics.rs`, `src/server/process_metrics.rs`
 - **现象**: INFO memory 已输出 `mem_fragmentation_ratio` / `mem_fragmentation_bytes` (rss/used); 无独立 OTel fragmentation gauge
 - **影响**: Grafana 若只查 OTLP 仍无 fragmentation series; INFO/redis_exporter 解析可用
-- **下一步**: 可选 `aikv_mem_fragmentation_ratio` gauge sync; 见 AiFactory `dashboards/README.md`
+- **下一步**: 可选 `aikv_mem_fragmentation_ratio` gauge sync; 见 [aifactory `dashboards/README.md`](../aifactory/monitor/config/grafana/dashboards/README.md)
 
 ### ISSUE-023: Slowlog 默认阈值 100ms vs Redis/oldmain 10ms
 

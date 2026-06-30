@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 1. `AiKv-Workflow/backup/design.md` — 总规程
@@ -86,7 +86,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -95,7 +95,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -104,7 +104,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -113,7 +113,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/main.rs",
+  "path": "../../src/main.rs",
   "limit": 200
 }
 ```
@@ -129,7 +129,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/DEPLOYMENT.md",
+  "path": "../../../aidb/DEPLOYMENT.md",
   "limit": 120
 }
 ```
@@ -139,7 +139,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/DEPLOYMENT.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/DEPLOYMENT.md",
   "limit": 100
 }
 ```
@@ -149,7 +149,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/Cargo.toml"
+  "path": "../../Cargo.toml"
 }
 ```
 
@@ -159,7 +159,7 @@
 ```json
 {
   "pattern": "AIKV_|RUST_LOG|OTLP",
-  "path": "/root/code/database/aikv"
+  "path": "../../../aikv"
 }
 ```
 
@@ -169,7 +169,7 @@
 ```json
 {
   "glob_pattern": "e2e/*",
-  "target_directory": "/root/code/database/aikv"
+  "target_directory": "../../../aikv"
 }
 ```
 
@@ -183,7 +183,7 @@
 ```json
 {
   "offset": 200,
-  "path": "/root/code/database/aikv/src/main.rs"
+  "path": "../../src/main.rs"
 }
 ```
 
@@ -193,7 +193,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/AGENTS.md"
+  "path": "../../AGENTS.md"
 }
 ```
 
@@ -202,7 +202,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/ARCHITECTURE.md",
+  "path": "../../ARCHITECTURE.md",
   "pattern": "端口|6379|9191|cluster"
 }
 ```
@@ -213,7 +213,7 @@
 ```json
 {
   "glob_pattern": "**/03-cluster*",
-  "target_directory": "/root/code/database/aikv-oldmain"
+  "target_directory": "../../../aikv-oldmain"
 }
 ```
 
@@ -223,7 +223,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/archive/15-deployment.md"
+  "path": "../../archive/15-deployment.md"
 }
 ```
 
@@ -237,7 +237,7 @@
 ```json
 {
   "offset": 100,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/DEPLOYMENT.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/DEPLOYMENT.md"
 }
 ```
 
@@ -247,7 +247,7 @@
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aikv/e2e/README.md"
+  "path": "../../e2e/README.md"
 }
 ```
 
@@ -257,7 +257,7 @@
 ```json
 {
   "glob_pattern": "**/guide/**",
-  "target_directory": "/root/code/database/aikv-oldmain"
+  "target_directory": "../../../aikv-oldmain"
 }
 ```
 
@@ -270,7 +270,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "AIKV_EXTERNAL_HOST"
 }
 ```
@@ -281,7 +281,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv-oldmain/docs/guide/02-deployment.md"
+  "path": "../../../aikv-oldmain/docs/guide/02-deployment.md"
 }
 ```
 
@@ -294,7 +294,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server",
+  "path": "../../src/server",
   "pattern": "/health|health"
 }
 ```
@@ -305,7 +305,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/archive/20-design.md"
+  "path": "../../archive/20-design.md"
 }
 ```
 
@@ -438,7 +438,7 @@
 2. 系统要求
 3. Cargo feature 矩阵
 4. 构建与验证 (链 AGENTS / aidb DEPLOYMENT)
-5. 仓库布局 (`database/aikv` + `../aidb`)
+5. 仓库布局 (`<workspace>/aikv` + `../aidb`)
 6. 单机部署 (memory / aidb 示例)
 7. 集群部署 (CLI 表 + 多节点示例 + env + 槽位/MEET 简要)
 8. 监控与可观测性 (HTTP、env、可选 observability 栈)
@@ -479,7 +479,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/.github/workflows/ci.yml"
+  "path": "../../.github/workflows/ci.yml"
 }
 ```
 
@@ -488,7 +488,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/e2e/utils.sh"
+  "path": "../../e2e/utils.sh"
 }
 ```
 
@@ -498,7 +498,7 @@
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aikv/e2e/test_cluster_formation.sh"
+  "path": "../../e2e/test_cluster_formation.sh"
 }
 ```
 
@@ -507,7 +507,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster/state.rs",
+  "path": "../../src/cluster/state.rs",
   "pattern": "DEFAULT_DATA_PORT_OFFSET"
 }
 ```
@@ -517,7 +517,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/metrics_server.rs",
+  "path": "../../src/server/metrics_server.rs",
   "limit": 120
 }
 ```
@@ -531,7 +531,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "pattern": "backup_dir|BGSAVE|SAVE",
   "glob": "*.rs",
   "head_limit": 40
@@ -543,7 +543,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/rust-toolchain.toml"
+  "path": "../../rust-toolchain.toml"
 }
 ```
 
@@ -552,7 +552,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server",
+  "path": "../../src/server",
   "pattern": "max_clients|backup_dir"
 }
 ```
@@ -568,7 +568,7 @@
 {
   "offset": 110,
   "limit": 40,
-  "path": "/root/code/database/aikv/src/server/config.rs"
+  "path": "../../src/server/config.rs"
 }
 ```
 
@@ -578,7 +578,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/src/command/persistence.rs"
+  "path": "../../src/command/persistence.rs"
 }
 ```
 
@@ -587,7 +587,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "monitoring",
   "glob": "Cargo.toml"
 }
@@ -599,7 +599,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/.github/README.md"
+  "path": "../../.github/README.md"
 }
 ```
 
@@ -612,7 +612,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/main.rs",
+  "path": "../../src/main.rs",
   "pattern": "cluster_node_id|cluster_rpc"
 }
 ```
@@ -623,7 +623,7 @@
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/src/cluster/announce.rs"
+  "path": "../../src/cluster/announce.rs"
 }
 ```
 
@@ -688,7 +688,7 @@ aikv/
     └── test_cluster_*.sh      # 集群 smoke (CI 跑)
 ```
 
-**Monorepo 布局**: `database/aikv` + sibling `database/aidb`; CI 用 `ln -sf .aidb ../aidb`.
+**Monorepo 布局**: `<workspace>/aikv` + sibling `aidb`; CI 用 `ln -sf .aidb ../aidb`.
 
 ---
 
@@ -887,7 +887,7 @@ cargo run --release --features cluster -- \
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/DEPLOYMENT.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/DEPLOYMENT.md"
 }
 ```
 
@@ -897,7 +897,7 @@ cargo run --release --features cluster -- \
 ```json
 {
   "limit": 150,
-  "path": "/root/code/database/aikv-oldmain/docs/guide/02-deployment.md"
+  "path": "../../../aikv-oldmain/docs/guide/02-deployment.md"
 }
 ```
 
@@ -907,7 +907,7 @@ cargo run --release --features cluster -- \
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aikv-oldmain/docs/guide/01-quick-start.md"
+  "path": "../../../aikv-oldmain/docs/guide/01-quick-start.md"
 }
 ```
 
@@ -917,7 +917,7 @@ cargo run --release --features cluster -- \
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/03-cluster.md"
+  "path": "../../../aikv-oldmain/docs/development/architecture/03-cluster.md"
 }
 ```
 
@@ -927,7 +927,7 @@ cargo run --release --features cluster -- \
 ```json
 {
   "limit": 150,
-  "path": "/root/code/database/wiqun-factory/docs/MONITORING.md"
+  "path": "../../../wiqun-factory/docs/MONITORING.md"
 }
 ```
 
@@ -941,7 +941,7 @@ cargo run --release --features cluster -- \
 ```json
 {
   "pattern": "deploy|DEPLOY|9191|cluster-rpc|aikv-tool",
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory",
   "head_limit": 40
 }
 ```
@@ -952,7 +952,7 @@ cargo run --release --features cluster -- \
 ```json
 {
   "glob_pattern": "**/DEPLOYMENT*",
-  "target_directory": "/root/code/database/wiqun-kv"
+  "target_directory": "../../../wiqun-kv"
 }
 ```
 
@@ -961,7 +961,7 @@ cargo run --release --features cluster -- \
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/guide/02-deployment.md",
+  "path": "../../../aikv-oldmain/docs/guide/02-deployment.md",
   "pattern": "--cluster|--bind|--port|cluster-mode",
   "head_limit": 30
 }
@@ -972,7 +972,7 @@ cargo run --release --features cluster -- \
 
 ```json
 {
-  "path": "/root/code/database/aikv/ISSUES.md",
+  "path": "../../ISSUES.md",
   "pattern": "ISSUE-020|ISSUE-021|ISSUE-022|ISSUE-023"
 }
 ```
@@ -987,7 +987,7 @@ cargo run --release --features cluster -- \
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/wiqun-kv/DEPLOYMENT.md"
+  "path": "../../../wiqun-kv/DEPLOYMENT.md"
 }
 ```
 
@@ -996,7 +996,7 @@ cargo run --release --features cluster -- \
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/observability.md",
+  "path": "../../docs/modules/observability.md",
   "pattern": "kv_command|aikv_command|slow_queries"
 }
 ```
@@ -1008,7 +1008,7 @@ cargo run --release --features cluster -- \
 {
   "offset": 150,
   "limit": 100,
-  "path": "/root/code/database/aikv-oldmain/docs/guide/02-deployment.md"
+  "path": "../../../aikv-oldmain/docs/guide/02-deployment.md"
 }
 ```
 
@@ -1021,7 +1021,7 @@ cargo run --release --features cluster -- \
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/metrics.rs",
+  "path": "../../src/server/metrics.rs",
   "pattern": "register_|aikv_|kv_",
   "head_limit": 30
 }
@@ -1033,7 +1033,7 @@ cargo run --release --features cluster -- \
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/archive/12-observability.md",
+  "path": "../../archive/12-observability.md",
   "offset": 430
 }
 ```
@@ -1047,7 +1047,7 @@ cargo run --release --features cluster -- \
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server",
+  "path": "../../src/server",
   "pattern": "opts!\\(|register_|aikv_",
   "glob": "*metrics*"
 }
@@ -1059,7 +1059,7 @@ cargo run --release --features cluster -- \
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/docs/modules/observability-reference.md"
+  "path": "../../docs/modules/observability-reference.md"
 }
 ```
 
@@ -1072,7 +1072,7 @@ cargo run --release --features cluster -- \
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/cluster.md",
+  "path": "../../docs/modules/cluster.md",
   "pattern": "CLUSTER MEET",
   "head_limit": 15
 }
@@ -1084,7 +1084,7 @@ cargo run --release --features cluster -- \
 ```json
 {
   "glob_pattern": "scripts/cluster*",
-  "target_directory": "/root/code/database/aikv"
+  "target_directory": "../../../aikv"
 }
 ```
 
@@ -1098,7 +1098,7 @@ cargo run --release --features cluster -- \
 ```json
 {
   "head_limit": 20,
-  "path": "/root/code/database/aikv-oldmain/docs/guide/04-best-practices.md",
+  "path": "../../../aikv-oldmain/docs/guide/04-best-practices.md",
   "pattern": "deploy|9191|cluster|AIKV"
 }
 ```
@@ -1227,7 +1227,7 @@ cargo run --release --features cluster -- \
 ```json
 {
   "glob_pattern": "**/main.rs",
-  "target_directory": "/root/code/database/aikv-oldmain"
+  "target_directory": "../../../aikv-oldmain"
 }
 ```
 
@@ -1237,7 +1237,7 @@ cargo run --release --features cluster -- \
 ```json
 {
   "glob_pattern": "**/main.rs",
-  "target_directory": "/root/code/database/wiqun-kv"
+  "target_directory": "../../../wiqun-kv"
 }
 ```
 
@@ -1246,7 +1246,7 @@ cargo run --release --features cluster -- \
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src",
+  "path": "../../../aikv-oldmain/src",
   "pattern": "struct Args|cluster_mode|cluster_rpc|metrics_port"
 }
 ```
@@ -1256,7 +1256,7 @@ cargo run --release --features cluster -- \
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv/src",
+  "path": "../../../wiqun-kv/src",
   "pattern": "struct Args|cluster_mode|cluster_rpc|metrics_port"
 }
 ```
@@ -1271,7 +1271,7 @@ cargo run --release --features cluster -- \
 ```json
 {
   "limit": 150,
-  "path": "/root/code/database/aikv-oldmain/src/main.rs"
+  "path": "../../../aikv-oldmain/src/main.rs"
 }
 ```
 
@@ -1281,7 +1281,7 @@ cargo run --release --features cluster -- \
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/wiqun-kv/src/main.rs"
+  "path": "../../../wiqun-kv/src/main.rs"
 }
 ```
 
@@ -1290,7 +1290,7 @@ cargo run --release --features cluster -- \
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain",
+  "path": "../../../aikv-oldmain",
   "pattern": "cluster-node-id|cluster_mode|--port"
 }
 ```
@@ -1304,7 +1304,7 @@ cargo run --release --features cluster -- \
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv/src",
+  "path": "../../../wiqun-kv/src",
   "pattern": "WIQUN_|AIKV_"
 }
 ```
@@ -1314,7 +1314,7 @@ cargo run --release --features cluster -- \
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src",
+  "path": "../../../aikv-oldmain/src",
   "pattern": "init_cluster|MetaRaft|cluster",
   "glob": "main.rs"
 }
@@ -1327,7 +1327,7 @@ cargo run --release --features cluster -- \
 {
   "limit": 80,
   "offset": 150,
-  "path": "/root/code/database/aikv-oldmain/src/main.rs"
+  "path": "../../../aikv-oldmain/src/main.rs"
 }
 ```
 
@@ -1336,7 +1336,7 @@ cargo run --release --features cluster -- \
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain",
+  "path": "../../../aikv-oldmain",
   "pattern": "WIQUN_EXTERNAL|AIKV_CLIENT|EXTERNAL_HOST"
 }
 ```
@@ -1349,7 +1349,7 @@ cargo run --release --features cluster -- \
 **Tool `Shell`**
 
 ```bash
-diff -u /root/code/database/wiqun-kv/src/main.rs /root/code/database/aikv/src/main.rs | head -80
+diff -u ../../../wiqun-kv/src/main.rs ../../src/main.rs | head -80
 ```
 
 
@@ -1357,7 +1357,7 @@ diff -u /root/code/database/wiqun-kv/src/main.rs /root/code/database/aikv/src/ma
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src",
+  "path": "../../../aikv-oldmain/src",
   "pattern": "initialize_cluster|metrics_port|9191"
 }
 ```
@@ -1368,7 +1368,7 @@ diff -u /root/code/database/wiqun-kv/src/main.rs /root/code/database/aikv/src/ma
 ```json
 {
   "glob_pattern": "**/metrics_server.rs",
-  "target_directory": "/root/code/database/aikv-oldmain"
+  "target_directory": "../../../aikv-oldmain"
 }
 ```
 
@@ -1381,7 +1381,7 @@ diff -u /root/code/database/wiqun-kv/src/main.rs /root/code/database/aikv/src/ma
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv",
+  "path": "../../../wiqun-kv",
   "pattern": "cluster-mode|cluster_mode|--port"
 }
 ```
@@ -1393,7 +1393,7 @@ diff -u /root/code/database/wiqun-kv/src/main.rs /root/code/database/aikv/src/ma
 {
   "limit": 80,
   "offset": 130,
-  "path": "/root/code/database/aikv-oldmain/src/server/mod.rs"
+  "path": "../../../aikv-oldmain/src/server/mod.rs"
 }
 ```
 
@@ -1402,7 +1402,7 @@ diff -u /root/code/database/wiqun-kv/src/main.rs /root/code/database/aikv/src/ma
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src",
+  "path": "../../../aikv-oldmain/src",
   "pattern": "metrics|9191|/health"
 }
 ```
@@ -1415,7 +1415,7 @@ diff -u /root/code/database/wiqun-kv/src/main.rs /root/code/database/aikv/src/ma
 **Tool `Shell`**
 
 ```bash
-diff -q /root/code/database/wiqun-kv/src/main.rs /root/code/database/aikv/src/main.rs && wc -l /root/code/database/wiqun-kv/src/main.rs /root/code/database/aikv/src/main.rs
+diff -q ../../../wiqun-kv/src/main.rs ../../src/main.rs && wc -l ../../../wiqun-kv/src/main.rs ../../src/main.rs
 ```
 
 
@@ -1423,7 +1423,7 @@ diff -q /root/code/database/wiqun-kv/src/main.rs /root/code/database/aikv/src/ma
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain",
+  "path": "../../../aikv-oldmain",
   "pattern": "data_port|10000|port.offset"
 }
 ```
@@ -1561,7 +1561,7 @@ diff -q /root/code/database/wiqun-kv/src/main.rs /root/code/database/aikv/src/ma
 
 ```json
 {
-  "path": "/root/code/database/aidb/DEPLOYMENT.md"
+  "path": "../../../aidb/DEPLOYMENT.md"
 }
 ```
 
@@ -1571,7 +1571,7 @@ diff -q /root/code/database/wiqun-kv/src/main.rs /root/code/database/aikv/src/ma
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/DESIGN.md"
+  "path": "../../DESIGN.md"
 }
 ```
 
@@ -1580,7 +1580,7 @@ diff -q /root/code/database/wiqun-kv/src/main.rs /root/code/database/aikv/src/ma
 
 ```json
 {
-  "path": "/root/code/database/aikv/ISSUES.md",
+  "path": "../../ISSUES.md",
   "pattern": "ISSUE-020|ISSUE-021|ISSUE-022",
   "-A": 8
 }
@@ -1595,7 +1595,7 @@ diff -q /root/code/database/wiqun-kv/src/main.rs /root/code/database/aikv/src/ma
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/cluster.md",
+  "path": "../../docs/modules/cluster.md",
   "pattern": "CLUSTER MEET|MEET",
   "head_limit": 15
 }
@@ -1607,7 +1607,7 @@ diff -q /root/code/database/wiqun-kv/src/main.rs /root/code/database/aikv/src/ma
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/e2e/test_cluster_3node_routing.sh"
+  "path": "../../e2e/test_cluster_3node_routing.sh"
 }
 ```
 
@@ -1705,7 +1705,7 @@ chmod +x e2e/*.sh
 ## Monorepo 布局
 
 ```shell
-database/
+<workspace>/
 ├── aidb/          # LSM + 可选 MetaRaft/MultiRaft (path 依赖)
 └── aikv/          # 本仓库 — RESP bin
     ├── src/main.rs
@@ -2000,7 +2000,7 @@ CMD ["aikv", "--bind", "0.0.0.0:6379", "--engine", "aidb", \
 
 ```json
 {
-  "path": "/root/code/database/aikv/DEPLOYMENT.md",
+  "path": "../../DEPLOYMENT.md",
   "contents": "# AiKv 部署与运行\n\n本文说明 **如何构建、启用 Cargo feature、启动单机/集群、CLI/端口/环境变量、监控 scrape 与持久化运维**. **是什么、怎么分层** 见 [ARCHITECTURE.md](ARCHITECTURE.md); **设计取舍** 见 [DESIGN.md](DESIGN.md); 命令语义与域实现见 [docs/modules/](docs/modules/).\n\nAiDb 侧 protoc、LSM 数据目录、库侧 cluster API 见 [aidb/DEPLOYMENT.md](../aidb/DEPLOYMENT.md) — 本文 **不重复** LSM/Raft 运维细节.\n\n## 文档分工\n\n| 文档 | 回答 |\n|------|------|\n| [ARCHITECTURE.md](ARCHITECTURE.md) | 分层、数据流、端口在架构中的角色 |\n| [DESIGN.md](DESIGN.md) | 为何 feature gate、为何无 RDB 主路径等 |\n| **DEPLOYMENT.md (本篇)** | 构建、运行、CLI、端口、集群部署、监控 scrape |\n| [CONTRIBUTING.md](CONTRIBUTING.md) (步 23) | CI/hook/贡献流程细节 |\n| [docs/modules/](docs/modules/) | 域级实现 |\n\n## 系统要求\n\n| 项 | 要求 |\n|----|------|\n| Rust | **stable** (见 [rust-toolchain.toml](rust-toolchain.toml); 含 clippy、rustfmt) |\n| 操作系统 | Linux / macOS (CI 为 `ubuntu-latest`) |\n| Monorepo | sibling 布局 `../aidb` (path 依赖); CI checkout 同名分支 AiDb 并 `ln -sf` |\n| 磁盘 | 持久化 (`--engine aidb`) 推荐 SSD; 容量随数据量 |\n| 内存 | `memory` 引擎全量驻内存; 生产集群推荐 `--engine aidb` |\n| protoc | **`cluster` feature** 本地 clippy/测试需要; 见 [aidb DEPLOYMENT §构建与验证](../aidb/DEPLOYMENT.md#构建与验证) |\n| 可选 | `redis-cli` — 运行 [e2e/](e2e/) smoke 与集群运维 |\n\n## Cargo feature 矩阵\n\n定义见 [Cargo.toml](Cargo.toml).\n\n| Feature | 默认 | 启用内容 | 典型用途 |\n|---------|------|----------|----------|\n| (none) | ✅ | 单机 RESP; 无 `init_cluster`; 无 HTTP `/metrics` | 最小二进制 |\n| `cluster` | ❌ | `src/cluster/*`, `storage/cluster_adapter`, `main::init_cluster`; `aidb/cluster` | 开发与 CI 主路径 |\n| `monitoring` | ❌ | `MetricsServer`, OTel, Prometheus; `aidb/monitoring` | 生产 scrape / tracing |\n\n**常见组合**:\n\n| 场景 | 命令 |\n|------|------|\n| 开发 / CI (与 `.github/workflows/ci.yml` 一致) | `cargo build --release --features cluster` |\n| 生产单机 + scrape | `cargo build --release --features cluster,monitoring` |\n| 仅验证 monitoring 本地 | `cargo build --features cluster,monitoring` |\n\n> **注意**: `cargo build --release` **不含** cluster/monitoring. `--metrics-port` 等 CLI 始终可解析, 但 HTTP metrics **仅** 在编译进 `monitoring` 时生效.\n\n## 构建与验证\n\n完整流程见 [AGENTS.md](AGENTS.md)、[.github/README.md](.github/README.md).\n\n```bash\n# 确保 ../aidb 存在 (或 CI 等价 link)\n./install-hooks.sh   # 可选; pre-commit: fmt + clippy\n\nexport RUSTFLAGS='-D warnings'\ncargo fmt --check\ncargo clippy --all-targets --features cluster\ncargo test --workspace --features cluster\n```\n\n慢测 (CI 独立 job):\n\n```bash\ncargo test --test server --features cluster -- --ignored --test-threads=1\ncargo test --test commands --features cluster -- --ignored --test-threads=1\n```\n\nE2E (需 `redis-cli`; CI job `e2e`):\n\n```bash\ncargo build --release --features cluster\nchmod +x e2e/*.sh\n./e2e/test_cluster_formation.sh\n```\n\n见 [e2e/README.md](e2e/README.md). **`monitoring` 无独立 CI job** — 本地可 `cargo build --features cluster,monitoring`.\n\n## Monorepo 布局\n\n```shell\ndatabase/\n├── aidb/          # LSM + 可选 MetaRaft/MultiRaft (path 依赖)\n└── aikv/          # 本仓库 — RESP bin\n    ├── src/main.rs\n    └── Cargo.toml # aidb = { path = \"../aidb\" }\n```\n\n## 命令行参数\n\n权威定义: [`src/main.rs`](src/main.rs) `Args`. 监听地址为 **单一** `--bind host:port` (无独立 `--port`).\n\n| 参数 | 默认 | Feature | 说明 |\n|------|------|---------|------|\n| `--bind` | `127.0.0.1:6379` | 始终 | RESP 客户端 TCP |\n| `--engine` | `memory` | 始终 | `memory` \\| `aidb` |\n| `--data-dir` | — | 始终 | **`aidb` 必填**; **cluster 必填** |\n| `--backup-dir` | `{data_dir}/backup` | 可选 | SAVE/BGSAVE checkpoint 目标 |\n| `--cluster-node-id` | — | `cluster` | u64 节点 ID |\n| `--cluster-rpc-addr` | — | `cluster` | MetaRaft gRPC `host:port` |\n| `--cluster-peers` | `[]` | `cluster` | 已有节点 RPC 列表 (逗号分隔); 空 = bootstrap |\n| `--raft-election-timeout-min` | `1000` | `cluster` | ms |\n| `--raft-election-timeout-max` | `2000` | `cluster` | ms |\n| `--raft-rpc-timeout-ms` | `500` | `cluster` | 须 < `election_timeout_min` |\n| `--raft-heartbeat-interval` | `300` | `cluster` | 须 < `election_timeout_min` |\n| `--lifecycle-tick-ms` | `1000` | `cluster` | LifecycleManager tick |\n| `--gossip-interval` | `1` | `cluster` | 秒; CLUSTER NODES 刷新 |\n| `--config-auto-save-ms` | `2000` | `cluster` | 集群配置自动保存 |\n| `--cluster-data-port-offset` | `10000` | `cluster` | `data_port = rpc_port + offset`; 全集群一致 |\n| `--metrics-port` | `9191` | CLI 始终 | HTTP 仅 `[monitoring]` |\n| `--metrics-addr` | `127.0.0.1` | CLI 始终 | 同上 |\n| `--max-clients` | `10000` | 始终 | `0` = 不限制 |\n\n> **集群门控**: 仅当 **`--cluster-node-id` 与 `--cluster-rpc-addr` 同时提供** 时执行 `init_cluster`. 只设其一则 **静默以单机启动** (无集群).\n\n## 环境变量\n\n| 变量 | 默认 / 条件 | 说明 |\n|------|-------------|------|\n| `RUST_LOG` | 默认 directive `info` | tracing 过滤 (`EnvFilter`) |\n| `AIKV_JSON_LOG` | 默认 `true` | `true` → JSON 日志; `false` → compact |\n| `AIKV_OTLP_ENDPOINT` | 空则跳过 | `[monitoring]` OTel gRPC exporter |\n| `AIKV_CLIENT_ADDR` | 从 rpc host + `--bind` port 推导 | 外部可达 `host:port` → MetaRaft `client_addr` |\n| `AIKV_CLUSTER_ANNOUNCE_MODE` | 默认 `unknown` | `fixed` \\| `unknown` — MOVED / CLUSTER SLOTS 通告; 见 [cluster.md](docs/modules/cluster.md) |\n\nE2E 可选: `WIKV_HOST`, `WIKV_PORT`, `WIKV_CLUSTER_BASE_PORT` ([e2e/utils.sh](e2e/utils.sh)).\n\n## 单机部署\n\n### 内存引擎 (开发 / 测试)\n\n数据 **不持久**; 启动时 stderr WARN.\n\n```bash\ncargo run --release --features cluster -- \\\n  --bind 127.0.0.1:6379 \\\n  --engine memory\n```\n\n### AiDb 引擎 (生产推荐)\n\n```bash\nmkdir -p /var/lib/aikv/data\ncargo run --release --features cluster,monitoring -- \\\n  --bind 0.0.0.0:6379 \\\n  --engine aidb \\\n  --data-dir /var/lib/aikv/data \\\n  --metrics-addr 0.0.0.0 \\\n  --metrics-port 9191\n```\n\n验证:\n\n```bash\nredis-cli -h 127.0.0.1 -p 6379 PING\n# [monitoring] 另开:\ncurl -s http://127.0.0.1:9191/health\ncurl -s http://127.0.0.1:9191/metrics | head\n```\n\n## 集群部署\n\n编译 **必须** `--features cluster`. 每个节点需要 **三个端口角色**:\n\n| 角色 | 配置 | 示例 |\n|------|------|------|\n| RESP 客户端 | `--bind` | `127.0.0.1:6379` |\n| MetaRaft 控制面 | `--cluster-rpc-addr` | `127.0.0.1:16379` |\n| MultiRaft 数据面 | `rpc_port + --cluster-data-port-offset` | `16379 + 10000 = 26379` |\n\n约束: `rpc_port + offset ≤ 65535`; 各节点 **offset 必须相同**; 变更 offset 需 **重启整个集群**.\n\n### 三节点示例 (bootstrap + join)\n\n**节点 1** (bootstrap, `--cluster-peers` 省略):\n\n```bash\ncargo run --release --features cluster,monitoring -- \\\n  --bind 127.0.0.1:6379 \\\n  --engine aidb --data-dir /var/lib/aikv/node1 \\\n  --cluster-node-id 1 \\\n  --cluster-rpc-addr 127.0.0.1:16379 \\\n  --metrics-port 9191\n```\n\n**节点 2** (join):\n\n```bash\ncargo run --release --features cluster,monitoring -- \\\n  --bind 127.0.0.1:6380 \\\n  --engine aidb --data-dir /var/lib/aikv/node2 \\\n  --cluster-node-id 2 \\\n  --cluster-rpc-addr 127.0.0.1:16380 \\\n  --cluster-peers 127.0.0.1:16379 \\\n  --metrics-port 9192\n```\n\n**节点 3** (join):\n\n```bash\ncargo run --release --features cluster,monitoring -- \\\n  --bind 127.0.0.1:6381 \\\n  --engine aidb --data-dir /var/lib/aikv/node3 \\\n  --cluster-node-id 3 \\\n  --cluster-rpc-addr 127.0.0.1:16381 \\\n  --cluster-peers 127.0.0.1:16379 \\\n  --metrics-port 9193\n```\n\n### 初始化拓扑 (redis-cli)\n\n`CLUSTER MEET` 第三参数为 **MetaRaft RPC 端口** (cluster bus), 与 e2e 一致:\n\n```bash\nredis-cli -p 6379 CLUSTER MEET 127.0.0.1 6380 16380\nredis-cli -p 6379 CLUSTER MEET 127.0.0.1 6381 16381\nsleep 2   # MetaRaft 同步可能需要数秒\n\nredis-cli -p 6379 CLUSTER NODES\nredis-cli -p 6379 CLUSTER INFO    # 期望 cluster_state:ok\n```\n\n分配槽位 (3 主示例):\n\n```bash\nredis-cli -p 6379 CLUSTER ADDSLOTS $(seq 0 5460)\nredis-cli -p 6380 CLUSTER ADDSLOTS $(seq 5461 10922)\nredis-cli -p 6381 CLUSTER ADDSLOTS $(seq 10923 16383)\n```\n\nSmart client:\n\n```bash\nredis-cli -c -p 6379\n```\n\nMOVED/ASK、failover、slot 迁移语义见 [docs/modules/cluster.md](docs/modules/cluster.md). MetaRaft/MultiRaft 实现见 [aidb cluster.md](../aidb/docs/modules/cluster.md).\n\n### 跨 NAT / GUI 客户端 (可选)\n\nWSL2 / Docker 端口转发、LAN 远程 GUI (如 Tiny RDM) 时, 客户端须能连通告地址:\n\n```bash\nexport AIKV_CLIENT_ADDR=127.0.0.1:6379    # 或 LAN IP:port\nexport AIKV_CLUSTER_ANNOUNCE_MODE=fixed   # LAN/GUI; 默认 unknown 适合单种子连接\n```\n\n`AIKV_CLIENT_ADDR` 由后台 task 同步至 MetaRaft (含 bootstrap 节点).\n\n## 监控与可观测性\n\n### 编译与端点\n\n| 项 | 说明 |\n|----|------|\n| Feature | **`monitoring`** 必须启用 |\n| HTTP | `--metrics-addr`:`--metrics-port` (默认 `127.0.0.1:9191`) |\n| 路径 | `/metrics` (Prometheus text), `/health` (`200 OK`), `/` (索引页) |\n| Tracing | `RUST_LOG`; JSON 默认开 (`AIKV_JSON_LOG`) |\n| OTel | `[monitoring]` + `AIKV_OTLP_ENDPOINT` (gRPC, 如 `http://127.0.0.1:4317`) |\n\n同一 `/metrics` 另含 `aidb::metrics::register_into` 的 `aidb_*` (及 cluster 时 `aidb_raft_*`). 指标全表见 [observability-reference.md](docs/modules/observability-reference.md).\n\n### 外部监控栈对接 (摘要)\n\n1. 构建 `--features cluster,monitoring`; 远程 scrape 时 `--metrics-addr 0.0.0.0`.\n2. Prometheus `scrape_configs` 指向各节点 `host:9191` (集群每节点独立 metrics 端口).\n3. 验证: `curl -s http://<host>:9191/metrics | head`.\n4. OTel: 设 `AIKV_OTLP_ENDPOINT` 指向 Collector `:4317`; `service.name=aikv`.\n5. JSON 日志 (`AIKV_JSON_LOG=true`) 可经 Promtail → Loki; 面板 PromQL 前缀 **`aikv_*`** / **`aidb_*`** (非历史 `wiqun_kv_*`).\n\n详情: [docs/modules/observability.md](docs/modules/observability.md).\n\n### 告警参考 (可选)\n\n| 指标 | 说明 | 提示 |\n|------|------|------|\n| `aikv_connected_clients` | 当前连接 | 接近 `--max-clients` |\n| `aikv_commands_total{status=\"error\"}` | 错误命令 | 突增 |\n| `aikv_command_duration_seconds` | 延迟直方图 | p99 关注 |\n| `aikv_slow_queries_total` | 慢查询 | 突增 |\n| `aikv_cluster_redirects_total` | MOVED/ASK | 突增可能路由/迁移问题 |\n| `aikv_blocked_clients` | 阻塞客户端 | **恒 0** — 见 ISSUES |\n\n## 备份与持久化运维\n\n- 仅 **`--engine aidb`**; `memory` 返回 `ERR Persistence not supported on memory engine`.\n- **非** Redis RDB/AOF 主路径 — `SAVE`/`BGSAVE` 走 AiDb **checkpoint** (见 [DESIGN.md §持久化](DESIGN.md#持久化与-savebgsave)).\n- 默认 checkpoint 目录: `{data_dir}/backup/` (可用 `--backup-dir` 覆盖).\n\n```bash\nredis-cli SAVE      # 同步 flush + checkpoint\nredis-cli BGSAVE    # 后台 checkpoint\nredis-cli LASTSAVE\n```\n\nAiDb `BackupManager` 全量备份 API 见 [aidb DEPLOYMENT §备份](../aidb/DEPLOYMENT.md#备份与恢复); AiKv `BGSAVE` **不** 经 `BackupManager`.\n\n命令细节: [commands-extended.md](docs/modules/commands-extended.md).\n\n## Docker 简例\n\n```dockerfile\nFROM rust:bookworm AS builder\nWORKDIR /build\nCOPY aikv/ aikv/\nCOPY aidb/ aidb/\nWORKDIR /build/aikv\nRUN cargo build --release --features cluster,monitoring\n\nFROM debian:bookworm-slim\nCOPY --from=builder /build/aikv/target/release/aikv /usr/local/bin/\nEXPOSE 6379 9191\nCMD [\"aikv\", \"--bind\", \"0.0.0.0:6379\", \"--engine\", \"aidb\", \\\n     \"--data-dir\", \"/data\", \"--metrics-addr\", \"0.0.0.0\", \"--metrics-port\", \"9191\"]\n```\n\n集群 compose 需为每节点映射 RESP、RPC、data 端口及独立 `--data-dir`; 可参考 [e2e/utils.sh](e2e/utils.sh) 端口间距.\n\n## 相关文档\n\n- [ARCHITECTURE.md](ARCHITECTURE.md) — 分层、启动顺序、AiDb 边界\n- [DESIGN.md](DESIGN.md) — feature gate、持久化 why\n- [AGENTS.md](AGENTS.md) — AI 助手与 CI 速查\n- [aidb/DEPLOYMENT.md](../aidb/DEPLOYMENT.md) — protoc、aidb 数据目录、库侧 cluster\n- [docs/modules/](docs/modules/) — 域级实现\n- [ISSUES.md](ISSUES.md) — 待核实项\n\n## 待核实\n\n- `aikv_blocked_clients` 恒 0 — 见 [ISSUES.md#ISSUE-020](ISSUES.md#issue-020-blocked_clients-无写入点).\n- 无 `[monitoring]` 时 runtime metrics 不自动 refresh — 见 [ISSUES.md#ISSUE-021](ISSUES.md#issue-021-refresh_runtime_metrics-仅-monitoring-后台-tick).\n- metrics 后台 tick **15s** (非 1s spec) — 见 [ISSUES.md#ISSUE-022](ISSUES.md#issue-022-metrics-refresh-周期-15s-vs-设计-spec-1s).\n"
 }
 ```
@@ -2010,7 +2010,7 @@ CMD ["aikv", "--bind", "0.0.0.0:6379", "--engine", "aidb", \
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `DEPLOYMENT.md` | 待开始 | `backup/aikv/DEPLOYMENT.md` | 已移出 aikv | |",
   "new_string": "| `DEPLOYMENT.md` (汇总) | ✅ | `backup/aikv/DEPLOYMENT.md` (主, CLI 过时); oldmain `guide/02-deployment`, `01-quick-start`, `architecture/03-cluster` (概念/过时); wiqun-factory `MONITORING.md` (运维); wiqun-kv 跳过 | 已写 `aikv/DEPLOYMENT.md` | 模块级; CLI/env 以 `main.rs`; 链 `aidb/DEPLOYMENT.md`; ISSUE-020~022 根文档一行 |"
 }
@@ -2021,7 +2021,7 @@ CMD ["aikv", "--bind", "0.0.0.0:6379", "--engine", "aidb", \
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "| 21 | `DEPLOYMENT.md` | ⬜ 待开始 | |",
   "new_string": "| 21 | `DEPLOYMENT.md` | ✅ 完成 | 2026-06-18 |"
 }
@@ -2036,7 +2036,7 @@ CMD ["aikv", "--bind", "0.0.0.0:6379", "--engine", "aidb", \
 
 ```json
 {
-  "path": "/root/code/database/aikv/DESIGN.md",
+  "path": "../../DESIGN.md",
   "pattern": "持久化|SAVE|BGSAVE"
 }
 ```
@@ -2046,7 +2046,7 @@ CMD ["aikv", "--bind", "0.0.0.0:6379", "--engine", "aidb", \
 
 ```json
 {
-  "path": "/root/code/database/aikv/ISSUES.md",
+  "path": "../../ISSUES.md",
   "pattern": "issue-020|issue-021|issue-022",
   "-i": true
 }
@@ -2061,7 +2061,7 @@ CMD ["aikv", "--bind", "0.0.0.0:6379", "--engine", "aidb", \
 
 ```json
 {
-  "path": "/root/code/database/aikv/DESIGN.md",
+  "path": "../../DESIGN.md",
   "pattern": "^## "
 }
 ```
@@ -2077,7 +2077,7 @@ CMD ["aikv", "--bind", "0.0.0.0:6379", "--engine", "aidb", \
 {
   "offset": 87,
   "limit": 40,
-  "path": "/root/code/database/aikv/DESIGN.md"
+  "path": "../../DESIGN.md"
 }
 ```
 
@@ -2092,7 +2092,7 @@ CMD ["aikv", "--bind", "0.0.0.0:6379", "--engine", "aidb", \
 {
   "limit": 30,
   "offset": 235,
-  "path": "/root/code/database/aikv/DESIGN.md"
+  "path": "../../DESIGN.md"
 }
 ```
 
@@ -2109,7 +2109,7 @@ CMD ["aikv", "--bind", "0.0.0.0:6379", "--engine", "aidb", \
 {
   "new_string": "- **非** Redis RDB/AOF 主路径 — `SAVE`/`BGSAVE` 走 AiDb **checkpoint** (见 [DESIGN.md §决策总表](DESIGN.md#决策总表) — 持久化主路径).",
   "old_string": "- **非** Redis RDB/AOF 主路径 — `SAVE`/`BGSAVE` 走 AiDb **checkpoint** (见 [DESIGN.md §持久化](DESIGN.md#持久化与-savebgsave)).",
-  "path": "/root/code/database/aikv/DEPLOYMENT.md"
+  "path": "../../DEPLOYMENT.md"
 }
 ```
 

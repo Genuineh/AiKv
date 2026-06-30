@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 1. `AiKv-Workflow/backup/design.md` — 总规程
@@ -82,7 +82,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -91,7 +91,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -100,7 +100,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -115,7 +115,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aidb/DESIGN.md",
+  "path": "../../../aidb/DESIGN.md",
   "limit": 120
 }
 ```
@@ -125,7 +125,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/ARCHITECTURE.md",
+  "path": "../../ARCHITECTURE.md",
   "limit": 100
 }
 ```
@@ -135,7 +135,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/DESIGN.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/DESIGN.md",
   "limit": 150
 }
 ```
@@ -145,7 +145,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/archive/19-architecture.md",
+  "path": "../../archive/19-architecture.md",
   "limit": 80
 }
 ```
@@ -160,7 +160,7 @@
 ```json
 {
   "offset": 120,
-  "path": "/root/code/database/aidb/DESIGN.md"
+  "path": "../../../aidb/DESIGN.md"
 }
 ```
 
@@ -170,7 +170,7 @@
 ```json
 {
   "offset": 100,
-  "path": "/root/code/database/aikv/ARCHITECTURE.md"
+  "path": "../../ARCHITECTURE.md"
 }
 ```
 
@@ -180,7 +180,7 @@
 ```json
 {
   "pattern": "^## ISSUE-",
-  "path": "/root/code/database/aikv/ISSUES.md",
+  "path": "../../ISSUES.md",
   "-A": 1
 }
 ```
@@ -191,7 +191,7 @@
 ```json
 {
   "pattern": "步 0",
-  "path": "/root/code/database/aikv/archive/19-architecture.md",
+  "path": "../../archive/19-architecture.md",
   "-A": 80
 }
 ```
@@ -206,7 +206,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -215,7 +215,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules",
+  "path": "../../docs/modules",
   "pattern": "^## 已知限制|^## 待核实|设计|trade-off|为什么",
   "glob": "*.md",
   "head_limit": 40
@@ -228,7 +228,7 @@
 ```json
 {
   "glob_pattern": "aidb/archive/14-design.md",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -242,7 +242,7 @@
 ```json
 {
   "-A": 120,
-  "path": "/root/code/database/aidb/archive/14-design.md",
+  "path": "../../../aidb/archive/14-design.md",
   "pattern": "步 0",
   "head_limit": 150
 }
@@ -253,7 +253,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules",
+  "path": "../../docs/modules",
   "pattern": "^### |^## ",
   "glob": "*.md",
   "head_limit": 80
@@ -487,7 +487,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/protocol.md",
+  "path": "../../docs/modules/protocol.md",
   "offset": 150
 }
 ```
@@ -497,7 +497,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/server.md",
+  "path": "../../docs/modules/server.md",
   "offset": 230
 }
 ```
@@ -507,7 +507,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/storage.md",
+  "path": "../../docs/modules/storage.md",
   "offset": 200
 }
 ```
@@ -517,7 +517,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/commands-core.md",
+  "path": "../../docs/modules/commands-core.md",
   "offset": 200
 }
 ```
@@ -527,7 +527,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/commands-extended.md",
+  "path": "../../docs/modules/commands-extended.md",
   "offset": 230
 }
 ```
@@ -537,7 +537,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/cluster.md",
+  "path": "../../docs/modules/cluster.md",
   "offset": 220
 }
 ```
@@ -547,7 +547,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/observability.md",
+  "path": "../../docs/modules/observability.md",
   "offset": 250
 }
 ```
@@ -562,7 +562,7 @@
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aikv/docs/modules/protocol.md"
+  "path": "../../docs/modules/protocol.md"
 }
 ```
 
@@ -572,7 +572,7 @@
 ```json
 {
   "limit": 90,
-  "path": "/root/code/database/aikv/docs/modules/storage.md"
+  "path": "../../docs/modules/storage.md"
 }
 ```
 
@@ -582,7 +582,7 @@
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aikv/docs/modules/commands-core.md"
+  "path": "../../docs/modules/commands-core.md"
 }
 ```
 
@@ -592,7 +592,7 @@
 ```json
 {
   "limit": 90,
-  "path": "/root/code/database/aikv/docs/modules/cluster.md"
+  "path": "../../docs/modules/cluster.md"
 }
 ```
 
@@ -602,7 +602,7 @@
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aikv/docs/modules/observability.md"
+  "path": "../../docs/modules/observability.md"
 }
 ```
 
@@ -611,7 +611,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/Cargo.toml"
+  "path": "../../Cargo.toml"
 }
 ```
 
@@ -625,7 +625,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/AGENTS.md"
+  "path": "../../AGENTS.md"
 }
 ```
 
@@ -634,7 +634,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/main.rs",
+  "path": "../../src/main.rs",
   "pattern": "spawn_blocking|for_testing|build_storage|init_cluster|interval"
 }
 ```
@@ -645,7 +645,7 @@
 ```json
 {
   "offset": 78,
-  "path": "/root/code/database/aikv/ISSUES.md",
+  "path": "../../ISSUES.md",
   "limit": 120
 }
 ```
@@ -882,7 +882,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/DESIGN.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/DESIGN.md"
 }
 ```
 
@@ -891,7 +891,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/ARCHITECTURE.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/ARCHITECTURE.md",
   "pattern": "设计|决策|为什么|trade"
 }
 ```
@@ -902,7 +902,7 @@ flowchart LR
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv-oldmain/docs"
+  "target_directory": "../../../aikv-oldmain/docs"
 }
 ```
 
@@ -912,7 +912,7 @@ flowchart LR
 ```json
 {
   "glob_pattern": "wiqun-kv-inventory/*.md",
-  "target_directory": "/root/code/database/WiQunTools/docs"
+  "target_directory": "../../../WiQunTools/docs"
 }
 ```
 
@@ -927,7 +927,7 @@ flowchart LR
 {
   "offset": 110,
   "limit": 40,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/ARCHITECTURE.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/ARCHITECTURE.md"
 }
 ```
 
@@ -937,7 +937,7 @@ flowchart LR
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/01-overview.md"
+  "path": "../../../aikv-oldmain/docs/development/architecture/01-overview.md"
 }
 ```
 
@@ -946,7 +946,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/05-lua-scripting.md"
+  "path": "../../../aikv-oldmain/docs/development/architecture/05-lua-scripting.md"
 }
 ```
 
@@ -955,7 +955,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/07-cluster-protocol.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/07-cluster-protocol.md"
 }
 ```
 
@@ -964,7 +964,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/08-observability.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/08-observability.md"
 }
 ```
 
@@ -974,7 +974,7 @@ flowchart LR
 ```json
 {
   "glob_pattern": "DESIGN.md",
-  "target_directory": "/root/code/database/wiqun-kv"
+  "target_directory": "../../../wiqun-kv"
 }
 ```
 
@@ -988,7 +988,7 @@ flowchart LR
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/wiqun-kv/DESIGN.md"
+  "path": "../../../wiqun-kv/DESIGN.md"
 }
 ```
 
@@ -997,7 +997,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/01-resp-tcp.md",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/01-resp-tcp.md",
   "pattern": "设计决策|为什么|trade"
 }
 ```
@@ -1007,7 +1007,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/02-storage-commands.md",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/02-storage-commands.md",
   "pattern": "设计决策|为什么"
 }
 ```
@@ -1019,7 +1019,7 @@ flowchart LR
 {
   "limit": 80,
   "offset": 120,
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/01-overview.md"
+  "path": "../../../aikv-oldmain/docs/development/architecture/01-overview.md"
 }
 ```
 
@@ -1173,7 +1173,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src",
+  "path": "../../../aikv-oldmain/src",
   "pattern": "lock_timeout|30|KeyLock",
   "glob": "**/script*"
 }
@@ -1184,7 +1184,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/cluster",
+  "path": "../../../aikv-oldmain/src/cluster",
   "pattern": "cluster_state|cluster_info"
 }
 ```
@@ -1194,7 +1194,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src",
+  "path": "../../../aikv-oldmain/src",
   "pattern": "SLOWLOG|threshold|10_000|100_000"
 }
 ```
@@ -1204,7 +1204,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster/gossip.rs",
+  "path": "../../src/cluster/gossip.rs",
   "limit": 80
 }
 ```
@@ -1214,7 +1214,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/router.rs",
+  "path": "../../src/command/router.rs",
   "pattern": "KeyLock|lock_timeout"
 }
 ```
@@ -1230,7 +1230,7 @@ flowchart LR
 {
   "limit": 50,
   "offset": 875,
-  "path": "/root/code/database/aikv-oldmain/src/cluster/commands.rs"
+  "path": "../../../aikv-oldmain/src/cluster/commands.rs"
 }
 ```
 
@@ -1239,7 +1239,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/cluster/commands.rs",
+  "path": "../../src/cluster/commands.rs",
   "pattern": "cluster_state|cluster_info"
 }
 ```
@@ -1249,7 +1249,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/server/slowlog.rs",
+  "path": "../../src/server/slowlog.rs",
   "pattern": "DEFAULT_SLOWLOG"
 }
 ```
@@ -1259,7 +1259,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/cluster",
+  "path": "../../../aikv-oldmain/src/cluster",
   "pattern": "gossip|PING|PONG",
   "head_limit": 30
 }
@@ -1270,7 +1270,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv/src",
+  "path": "../../../wiqun-kv/src",
   "pattern": "cluster_state|DEFAULT_SLOWLOG|KeyLockManager",
   "head_limit": 25
 }
@@ -1287,7 +1287,7 @@ flowchart LR
 {
   "limit": 40,
   "offset": 80,
-  "path": "/root/code/database/aikv/src/cluster/commands.rs"
+  "path": "../../src/cluster/commands.rs"
 }
 ```
 
@@ -1296,7 +1296,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/storage",
+  "path": "../../../aikv-oldmain/src/storage",
   "pattern": "Options::|for_testing|sync_wal"
 }
 ```
@@ -1306,7 +1306,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/storage/aidb.rs",
+  "path": "../../src/storage/aidb.rs",
   "pattern": "Options::|for_testing"
 }
 ```
@@ -1317,7 +1317,7 @@ flowchart LR
 ```json
 {
   "limit": 90,
-  "path": "/root/code/database/aikv/src/command/router.rs"
+  "path": "../../src/command/router.rs"
 }
 ```
 
@@ -1327,7 +1327,7 @@ flowchart LR
 ```json
 {
   "head_limit": 20,
-  "path": "/root/code/database/aikv-oldmain/src/command",
+  "path": "../../../aikv-oldmain/src/command",
   "pattern": "CommandExecutor|execute_with_client"
 }
 ```
@@ -1342,7 +1342,7 @@ flowchart LR
 ```json
 {
   "head_limit": 15,
-  "path": "/root/code/database/wiqun-kv/src/cluster",
+  "path": "../../../wiqun-kv/src/cluster",
   "pattern": "gossip|PING"
 }
 ```
@@ -1353,7 +1353,7 @@ flowchart LR
 ```json
 {
   "head_limit": 15,
-  "path": "/root/code/database/aikv-oldmain/src/storage/memory_adapter.rs",
+  "path": "../../../aikv-oldmain/src/storage/memory_adapter.rs",
   "pattern": "fn mget|WRONGTYPE"
 }
 ```
@@ -1364,7 +1364,7 @@ flowchart LR
 ```json
 {
   "head_limit": 15,
-  "path": "/root/code/database/aikv/src/storage/memory.rs",
+  "path": "../../src/storage/memory.rs",
   "pattern": "fn mget",
   "-A": 8
 }
@@ -1377,7 +1377,7 @@ flowchart LR
 {
   "limit": 35,
   "offset": 45,
-  "path": "/root/code/database/aikv/src/storage/aidb.rs"
+  "path": "../../src/storage/aidb.rs"
 }
 ```
 
@@ -1387,7 +1387,7 @@ flowchart LR
 ```json
 {
   "head_limit": 10,
-  "path": "/root/code/database/aikv-oldmain/src/storage",
+  "path": "../../../aikv-oldmain/src/storage",
   "pattern": "16.*DB|db_count|MemoryAdapter"
 }
 ```
@@ -1402,7 +1402,7 @@ flowchart LR
 ```json
 {
   "head_limit": 10,
-  "path": "/root/code/database/aikv-oldmain/src",
+  "path": "../../../aikv-oldmain/src",
   "pattern": "fn mget"
 }
 ```
@@ -1412,7 +1412,7 @@ flowchart LR
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv/src/storage",
+  "path": "../../../wiqun-kv/src/storage",
   "pattern": "for_testing|Options::"
 }
 ```
@@ -1424,7 +1424,7 @@ flowchart LR
 {
   "limit": 30,
   "offset": 75,
-  "path": "/root/code/database/aikv-oldmain/src/cluster/gossip.rs"
+  "path": "../../../aikv-oldmain/src/cluster/gossip.rs"
 }
 ```
 
@@ -1439,7 +1439,7 @@ flowchart LR
 {
   "limit": 30,
   "offset": 138,
-  "path": "/root/code/database/aikv-oldmain/src/command/string.rs"
+  "path": "../../../aikv-oldmain/src/command/string.rs"
 }
 ```
 
@@ -1449,7 +1449,7 @@ flowchart LR
 ```json
 {
   "head_limit": 8,
-  "path": "/root/code/database/aikv-oldmain/src/storage",
+  "path": "../../../aikv-oldmain/src/storage",
   "pattern": "get_from_db|WRONGTYPE"
 }
 ```
@@ -1464,7 +1464,7 @@ flowchart LR
 ```json
 {
   "-A": 15,
-  "path": "/root/code/database/aikv-oldmain/src/storage/memory_adapter.rs",
+  "path": "../../../aikv-oldmain/src/storage/memory_adapter.rs",
   "pattern": "fn get_from_db"
 }
 ```
@@ -1476,7 +1476,7 @@ flowchart LR
 {
   "limit": 25,
   "offset": 475,
-  "path": "/root/code/database/aikv-oldmain/src/storage/aidb_adapter.rs"
+  "path": "../../../aikv-oldmain/src/storage/aidb_adapter.rs"
 }
 ```
 
@@ -1945,7 +1945,7 @@ Redis Cluster 协议: 服务器返回 `MOVED`/`ASK` 字符串, smart client 重�
 
 ```json
 {
-  "path": "/root/code/database/aikv/DESIGN.md",
+  "path": "../../DESIGN.md",
   "contents": "# AiKv 设计决策\n\n本文回答 **为什么** 这样设计: 选型理由、放弃的替代方案、已知限制. **是什么、怎么分层、数据怎么走** 见 [ARCHITECTURE.md](ARCHITECTURE.md); LSM/Raft/WAL/Checkpoint 等存储内核 why 见 [aidb/DESIGN.md](../aidb/DESIGN.md); 实现细节与入口见 [docs/modules/](docs/modules/).\n\n## 阅读导航\n\n| 域 | 深入阅读 |\n|----|----------|\n| RESP2/3、Pipeline、解析 limits | [protocol.md](docs/modules/protocol.md) |\n| TCP 循环、HELLO、内联命令 | [server.md](docs/modules/server.md) |\n| `KvStorage`、memory/aidb、`StoredValue` | [storage.md](docs/modules/storage.md) |\n| 核心命令、Router、KeyLock | [commands-core.md](docs/modules/commands-core.md) |\n| JSON/Lua/SAVE/INFO/MIGRATE | [commands-extended.md](docs/modules/commands-extended.md) |\n| MOVED/ASK、CLUSTER 子命令 | [cluster.md](docs/modules/cluster.md) |\n| slowlog、INFO、`/metrics` | [observability.md](docs/modules/observability.md) |\n| LSM、WAL、MetaRaft/MultiRaft | [aidb engine](../aidb/docs/modules/engine.md)、[aidb cluster](../aidb/docs/modules/cluster.md) |\n\n## 产品形态与横切取舍\n\n### 为什么是网络服务, 而不是嵌入式 lib?\n\nAiKv 是 **bin + lib** 的 Redis RESP 服务 (Tokio async). [AiDb](../aidb/DESIGN.md) 提供同步 LSM + 可选 Raft; AiKv 在其上实现 TCP、命令语义与 Redis Cluster **客户端协议**. 协议层可独立演进, 存储与共识复用 sibling 库.\n\n### 为什么 Tokio async + `spawn_blocking`?\n\n- **Async**: 高并发 TCP、pipeline 读写在单连接上 multiplex.\n- **AiDb 同步 API**: `DB::put/get` 等阻塞; 在 `AiDbEngine` 内用 `spawn_blocking` 桥接, **避免** 在协议层重写 async LSM.\n- **trade-off**: blocking pool 线程切换开销; 换来不 fork LSM 实现.\n\n### 为什么 `cluster` / `monitoring` feature gate?\n\n| Feature | 默认 | 理由 |\n|---------|------|------|\n| (none) | — | 单机二进制无 tonic/OpenRaft/Prometheus 传递依赖 |\n| `cluster` | off | 与 `aidb/cluster` 对齐; CI 主测 `--features cluster` |\n| `monitoring` | off | 避免默认 Prom/OTel 依赖与 scrape 开销 |\n\n### 与 Redis: 兼容什么, 放弃什么?\n\n**兼容 (目标)**:\n\n- RESP2/RESP3 (HELLO 协商)、标准 **数组形** 命令、BulkString 二进制安全 key.\n- 16384 slot、`{hash tag}`、MOVED/ASK、ASKING/READONLY、多数数据结构与 admin 命令子集.\n- 集群客户端协作 (`redis-cli -c` 等 smart client).\n\n**刻意不实现或延后 (YAGNI)**:\n\n| 项 | 说明 |\n|----|------|\n| telnet 内联 (`PING\\r\\n`) | 仅数组命令; 见 [server.md](docs/modules/server.md) |\n| 标准 `dump.rdb` / memory AOF | 持久化走 aidb `Checkpoint`; memory 无生产持久化 |\n| Redis DUMP 互操作 | 内部 `version + bincode(StoredValue)` |\n| `CONFIG REWRITE` | 未实现 |\n| Serf / Redis 16379 gossip **共识** | 拓扑与成员变更走 MetaRaft; 见 [集群](#集群) |\n| 100% 命令兼容 | stub/未实现命令见各 module「已知限制」 |\n\n### 双引擎: MemoryEngine vs AiDbEngine\n\n- **MemoryEngine**: 测试、无盘开发; **无** checkpoint 生产路径.\n- **AiDbEngine**: WAL + LSM; **集群生产推荐** `--engine aidb`.\n- 命令层只依赖 `KvStorage`; 切换引擎不改 handler.\n\n---\n\n## 协议\n\n### 为什么 RESP2 + RESP3?\n\n- RESP2: redis-cli 与主流客户端默认.\n- RESP3: Map/Set/Push 等; HELLO 在连接级协商.\n- **渐进**: 编解码支持全类型; 命令层 RESP3 富类型逐步采用; null 线格式 (`$-1` vs `_`) 在 server `adapt_for_protocol`.\n\n### 为什么 Pipeline + `Ok(None)`?\n\nRedis 性能关键路径. `RespParser::feed` + 循环 `parse()`: 一次 read 多命令; 数据不足 **不消费** buffer. Tokio connection 循环自然 pipeline.\n\n### 为什么 parser / encoder 分离?\n\n`parser.rs` 流式解析与 recoverable 策略; `encoder.rs` 纯 `serialize()`. 职责分离, 与 WiQunTools inventory 01 一致.\n\n### 默认 limits (512MiB bulk / 64MiB buffer / depth 128)\n\n防 OOM 与恶意帧; **无** 运行时 CONFIG 调 limits. 不可恢复错误断连; 可恢复错误 skip 1 byte (server 判定 fatal).\n\n---\n\n## 存储\n\n### 为什么 `KvStorage` trait?\n\n命令层只调 trait; memory / aidb 可切换; 测试注入 `MemoryEngine`. **放弃** oldmain `StorageEngine` enum + 字符串 `get_from_db` — 现 typed 分轨 + `&[u8]` key.\n\n### 为什么 16 逻辑 db (memory)?\n\nRedis `SELECT 0–15`. MemoryEngine 每 db 独立容器 + 过期队列; `FLUSHDB`/`SWAPDB` 隔离.\n\n### 为什么 AiDb 单 `DB` + `{db_index}:{user_key}`?\n\n**演进**: oldmain / wiqun-kv 曾为每逻辑库独立 `DB` 目录; 现 **单 `aidb::DB` + ASCII 前缀** 模拟多库.\n\n- **理由**: 减实例数; cluster 每 **数据 group** 一 `DB` 目录更清晰.\n- **trade-off**: scan/sort 在大 keyspace 上 O(n); 见 [storage.md](docs/modules/storage.md).\n\n### 为什么 `spawn_blocking` 包装 AiDb?\n\nAiDb `DB` 同步; Tokio 服务不能直接阻塞 runtime. 所有 aidb I/O 经 `AiDbEngine::blocking()`.\n\n### 为什么类型编码在 aikv (`StoredValue`), 不在 aidb?\n\nAiDb 字节 KV + tombstone; **Redis 类型语义** 属协议/命令层. bincode(`StoredValue`) 与内部 DUMP 一致; **非** Redis DUMP.\n\n### 为什么 cluster 写走 `ClusterDataAdapter`?\n\nAssigned slot 写 **必须** `propose_group` → Raft apply; **禁止** local fallback (防 SET 成功 GET 空). 读本地 group 或 `CLUSTERDOWN`. 数据面细节链 [aidb cluster](../aidb/docs/modules/cluster.md).\n\n### 已知限制 (摘要)\n\n- `AiDbEngine::open` → `Options::for_testing()` + `sync_wal: true` — 见 [ISSUES.md#ISSUE-002](ISSUES.md#issue-002-aidbengineopen-固定-optionsfortesting).\n- MGET 对 non-String key: memory 静默 nil vs aidb WRONGTYPE — 见 [ISSUES.md#ISSUE-001](ISSUES.md#issue-001-memoryengine-mget-对非-string-key-静默返回-none).\n- aidb 路径 `scan`/`keys` 全量 sort; memory `write_batch` 非原子.\n\n---\n\n## 命令\n\n### 为什么 `CommandRouter` 为中枢?\n\n单点: `[cluster]` `cluster_route`、metrics、`execute_inner` 分发、KeyLock 注入. **放弃** oldmain `CommandExecutor` 单类 — 域 handler 分文件 + registry 元数据.\n\n### 为什么 KeyLock 字典序?\n\n单 key `lock`; 双 key `lock_two` (a<b); Lua `lock_keys_sorted` 去重排序. **避免** 交叉死锁. 1024 桶 `tokio::Mutex` — 与 oldmain `KeyLockManager` + Condvar **不同**; 现 **无** script 专用锁超时 — 见 [ISSUES.md#ISSUE-012](ISSUES.md#issue-012-eval-声明-key-的-keylock-无超时-oldmain-30s).\n\n### 为什么 JSON 存 `ValueType::String`?\n\n全文档 RMW + `serde_json`; **放弃** RedisJSON 专用存储与 partial update 优化; AiDb 无 JSON 抽象.\n\n### 为什么 Lua: mlua vendored lua54?\n\nRedis 官方脚本语言; 零系统 lua 依赖; 沙箱裁 StdLib. **放弃** rhai/自研 DSL.\n\n### 为什么 `ScriptTransaction` + WriteBatch?\n\n`redis.call` 多写原子提交; 读见己写; 失败 drop buffer. aidb 路径单 `WriteBatch` WAL 原子; memory 路径语义见 [commands-extended.md](docs/modules/commands-extended.md).\n\n### 为什么 PING/ECHO/HELLO 在 connection?\n\n减 Router 路径延迟; 行为与走 command 层等价.\n\n### 已知限制 (摘要)\n\n- GETRANGE/SETRANGE、MSETNX (cluster dead branch) — ISSUE-003/004.\n- Lua 无 SCRIPT KILL; MIGRATE 无 AUTH2 — ISSUE-007/010.\n- SHUTDOWN 仅 SAVE/NOSAVE — ISSUE-011.\n\n---\n\n## 集群\n\n### 为什么 `#[cfg(feature = \"cluster\")]`?\n\n单机零 cluster 依赖; 与 `aidb/cluster` 一条 feature 对齐.\n\n### 为什么 MetaRaft 共识, 而非 Redis gossip?\n\n| 方案 | 结论 |\n|------|------|\n| Redis 16379 gossip 共识 | **不采用** — 成员/slot 变更无强一致保证 |\n| **MetaRaft + MultiRaft (aidb)** | **选用** — 权威拓扑与数据复制 |\n| aikv **轻量 Gossip** | 从 MetaRaft 刷新 `GossipState` + metrics; **无** PING/PONG bus |\n\nWiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障与成员变更以 Raft 为准. 勿将 Gossip 写作 NODES 权威源 — 见 [ISSUES.md#ISSUE-014](ISSUES.md#issue-014-gossipstate-后台刷新但未接入-cluster-nodes).\n\n### 为什么 MOVED/ASK 由客户端处理?\n\nRedis Cluster 协议: 服务器返回 `MOVED`/`ASK` 字符串, smart client 重定向. **放弃** 服务端透明代理 (除 `forward_command` 单端点辅助). 客户端可缓存 slot 表.\n\n### 为什么 `ClusterRouter::decide` 同步?\n\n只读 MetaRaft 快照 + 本地 leader 缓存; **不** `.await` OpenRaft. `CLUSTER_STATE_MGR` 全局 `OnceLock` — 热路径零额外 `Arc` 间接 (inventory 07 rationale).\n\n### 为什么 READONLY + replica read?\n\n`READONLY` 后副本上读命令本地执行; 写仍 MOVED leader — Redis 官方行为.\n\n### aidb 与 aikv 分工 (集群)\n\n| 能力 | AiDb | AiKv |\n|------|------|------|\n| MetaRaft / MultiRaft / Router / slot 迁移执行 | ✅ | `init_cluster` wiring |\n| `ClusterDataAdapter` / `propose_group` | Raft 实现 | ✅ 包装写路径 |\n| MOVED/ASK / CLUSTER RESP / ASKING | — | ✅ |\n| METARAFT * RESP 子命令 | gRPC/内部 API | **已移除** — ISSUE-015 |\n\n### 已知限制 (摘要)\n\n- CLUSTER INFO 恒 `cluster_state:ok` — [ISSUES.md#ISSUE-013](ISSUES.md#issue-013-cluster-info-恒输出-cluster_stateok).\n- 无 CLUSTER RESET; FAILOVER 仅 FORCE/TAKEOVER — ISSUE-016/018.\n- SET-CONFIG-EPOCH / COUNT-FAILURE-REPORTS stub — ISSUE-019.\n\n---\n\n## 可观测性\n\n### 为什么 tracing 始终编译, Prometheus 在 `monitoring` feature?\n\n- **tracing**: 命令/连接 span; 未订阅零开销; 与 aidb 一致.\n- **Prometheus + OTel + HTTP `/metrics`**: 可选 feature; 默认无 Prom 依赖.\n\n### 为什么 HTTP `/metrics` 在 aikv 进程?\n\n与 [aidb/DESIGN.md](../aidb/DESIGN.md) 对齐: aidb `register_into`; **RESP 端口不能兼 HTTP**. 进程决定 scrape 端点.\n\n### 为什么 `ServerMetrics` 为 INFO 唯一数据源?\n\n`InfoRenderer` / `CLUSTER INFO` stats 只读 `ServerMetrics` (及 refresh 后 gauge); Prometheus 为 **镜像**. **放弃** INFO 独立计数公式 — invariant 见 [observability.md](docs/modules/observability.md).\n\n### 为什么 Slowlog 独立于 tracing?\n\n`SLOWLOG GET` 需环形缓冲最近 N 条; tracing span 流式, 不适合「保留 N 条」查询 — inventory 08 与 Redis 行为一致.\n\n### 默认与 refresh (与 Redis/spec 差异)\n\n| 项 | 现默认 | 备注 |\n|----|--------|------|\n| slowlog 阈值 | **100ms** (`100_000` µs) | Redis/oldmain 10ms — ISSUE-023 |\n| metrics refresh | **15s** (`main` 后台 tick) | design spec 1s — ISSUE-022 |\n| 无 `monitoring` | 无自动 refresh | stats 可能滞后 — ISSUE-021 |\n| `blocked_clients` / `evicted_keys` | 恒 0 | 无 maxmemory eviction — ISSUE-020 |\n\n指标前缀: **`aikv_*`** (非历史 `wiqun_kv_*`). `aidb_*` 不进 Redis INFO, 仅 `/metrics`.\n\n---\n\n## 决策总表\n\n| 决策 | 选择 | 理由 | 放弃 / 限制 |\n|------|------|------|-------------|\n| 产品形态 | RESP 网络服务 | Redis 兼容入口 | 非嵌入式 DB |\n| 运行时 | Tokio + spawn_blocking | 高并发 TCP + sync LSM | async 内嵌 LSM |\n| 存储抽象 | `KvStorage` trait | 双引擎可切换 | StorageEngine enum |\n| AiDb 多库 | 单 DB + key 前缀 | 减实例; cluster 每 group 一库 | 16 独立 DB 目录 |\n| 协议 | RESP2 + RESP3 | 客户端覆盖 | telnet 内联 |\n| Pipeline | feed + 循环 parse | RTT | — |\n| 命令中枢 | CommandRouter | cluster/metrics/KeyLock | CommandExecutor |\n| KeyLock | 桶 + 字典序 | 防死锁 | script 30s 超时 (oldmain) |\n| JSON | String + serde_json | 简单 | RedisJSON 路径 |\n| Lua | mlua vendored | Redis 脚本生态 | rhai |\n| 集群 feature | `cfg(cluster)` | 单机精简二进制 | 始终链 cluster |\n| 共识 | aidb MetaRaft/MultiRaft | 强一致 | gossip 共识 |\n| Gossip | 轻量 MetaRaft 刷新 | metrics/telemetry | PING/PONG 决策 |\n| 重定向 | MOVED/ASK 字符串 | smart client 兼容 | 默认透明代理 |\n| 持久化主路径 | aidb Checkpoint | LSM 对齐 | 标准 RDB/AOF |\n| DUMP | 内部 bincode | 与 StoredValue 一致 | Redis DUMP |\n| 指标 | tracing + 可选 Prom | 库/进程分离 | 默认 HTTP scrape |\n| INFO 数据源 | ServerMetrics | INFO↔Prom 一致 | 双计数 |\n\n---\n\n## 进一步阅读\n\n- [ARCHITECTURE.md](ARCHITECTURE.md) — 分层、数据流、AiDb 边界\n- [AGENTS.md](AGENTS.md) — AI 入口与 CI\n- [docs/modules/](docs/modules/) — 域级实现与常见任务\n- [aidb/DESIGN.md](../aidb/DESIGN.md) — LSM/Raft/Checkpoint why\n- [aidb/ARCHITECTURE.md](../aidb/ARCHITECTURE.md) — AiDb 嵌入关系\n- [DEPLOYMENT.md](DEPLOYMENT.md) — 构建、feature、运行 (步 21)\n- [ISSUES.md](ISSUES.md) — 待核实与跟踪\n\n## 已知限制 (根文档摘要)\n\n- AiDb 打开参数未收敛生产 preset — [ISSUES.md#ISSUE-002](ISSUES.md#issue-002-aidbengineopen-固定-optionsfortesting).\n- 双引擎 MGET wrong-type 语义不一致 — [ISSUES.md#ISSUE-001](ISSUES.md#issue-001-memoryengine-mget-对非-string-key-静默返回-none).\n- 集群 CLUSTER INFO / Gossip 与 oldmain 行为差异 — [ISSUES.md](ISSUES.md) (ISSUE-013/014 等).\n\n## 待核实\n\n- 集群 failover / stub 子命令 — 见 [ISSUES.md](ISSUES.md) (ISSUE-013~016, ISSUE-019; modules 一行引用).\n- 可观测性默认与 metrics 刷新 — 见 [ISSUES.md](ISSUES.md) (ISSUE-020~023).\n"
 }
 ```
@@ -1955,7 +1955,7 @@ Redis Cluster 协议: 服务器返回 `MOVED`/`ASK` 字符串, smart client 重�
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `DESIGN.md` (总审) | 待开始 | `backup/aikv/DESIGN.md` | 已移出 aikv | modules 完成后定稿 |",
   "new_string": "| `DESIGN.md` (总审) | ✅ | `backup/aikv/DESIGN.md`; oldmain `01-overview`, `05-lua-scripting`; WiQunTools 01–08 §设计决策; wiqun-kv 与 backup 重复跳过 | 已写 `aikv/DESIGN.md` | 模块级; 无新 ISSUE; ISSUE-001/002/013–016/019/020–023 根文档一行 |"
 }
@@ -1966,7 +1966,7 @@ Redis Cluster 协议: 服务器返回 `MOVED`/`ASK` 字符串, smart client 重�
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md",
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md",
   "old_string": "| 20 | `DESIGN.md` | ⬜ 待开始 | |",
   "new_string": "| 20 | `DESIGN.md` | ✅ 完成 | 2026-06-18 |"
 }

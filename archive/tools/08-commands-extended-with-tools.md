@@ -6,7 +6,7 @@
 
 ## 文档整理 — 新会话
 
-工作目录: `/root/code/database`
+工作目录: `<workspace>` (含 aidb/、aikv/、aifactory/)
 
 请先阅读 (不要跳过):
 
@@ -68,7 +68,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/design.md"
+  "path": "../../../AiKv-Workflow/backup/design.md"
 }
 ```
 
@@ -77,7 +77,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -86,7 +86,7 @@
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -102,7 +102,7 @@
 ```json
 {
   "glob_pattern": "aikv/src/command/**/*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -111,7 +111,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/commands-core.md",
+  "path": "../../docs/modules/commands-core.md",
   "limit": 120
 }
 ```
@@ -122,7 +122,7 @@
 ```json
 {
   "pattern": "mod (json|jsonpath|script|blocking|migrate|persistence|server)",
-  "path": "/root/code/database/aikv/src/command"
+  "path": "../../src/command"
 }
 ```
 
@@ -135,7 +135,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/mod.rs"
+  "path": "../../src/command/mod.rs"
 }
 ```
 
@@ -144,7 +144,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/router.rs",
+  "path": "../../src/command/router.rs",
   "pattern": "(Json|Script|Server|Persistence|Blocking|Migrate|json|script|server|persistence|migrate)"
 }
 ```
@@ -155,7 +155,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/src/command/blocking.rs"
+  "path": "../../src/command/blocking.rs"
 }
 ```
 
@@ -165,7 +165,7 @@
 ```json
 {
   "glob_pattern": "**/wiqun-kv-inventory/**",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -180,7 +180,7 @@
 {
   "offset": 490,
   "limit": 180,
-  "path": "/root/code/database/aikv/src/command/router.rs"
+  "path": "../../src/command/router.rs"
 }
 ```
 
@@ -190,7 +190,7 @@
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aikv/src/command/json.rs"
+  "path": "../../src/command/json.rs"
 }
 ```
 
@@ -200,7 +200,7 @@
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aikv/src/command/script.rs"
+  "path": "../../src/command/script.rs"
 }
 ```
 
@@ -210,7 +210,7 @@
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aikv/src/command/migrate.rs"
+  "path": "../../src/command/migrate.rs"
 }
 ```
 
@@ -220,7 +220,7 @@
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/src/command/persistence.rs"
+  "path": "../../src/command/persistence.rs"
 }
 ```
 
@@ -230,7 +230,7 @@
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/aikv/src/command/server.rs"
+  "path": "../../src/command/server.rs"
 }
 ```
 
@@ -239,7 +239,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -253,7 +253,7 @@
 ```json
 {
   "pattern": "pub (async )?fn ",
-  "path": "/root/code/database/aikv/src/command/json.rs"
+  "path": "../../src/command/json.rs"
 }
 ```
 
@@ -263,7 +263,7 @@
 ```json
 {
   "pattern": "migrate|send_restore",
-  "path": "/root/code/database/aikv/src/command/key.rs"
+  "path": "../../src/command/key.rs"
 }
 ```
 
@@ -273,7 +273,7 @@
 ```json
 {
   "glob_pattern": "aikv/src/command/script/*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -283,7 +283,7 @@
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/aikv/src/command/jsonpath.rs"
+  "path": "../../src/command/jsonpath.rs"
 }
 ```
 
@@ -293,7 +293,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/docs/modules/commands-extended.md"
+  "path": "../../docs/modules/commands-extended.md"
 }
 ```
 
@@ -306,7 +306,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/server.rs",
+  "path": "../../src/command/server.rs",
   "pattern": "pub async fn "
 }
 ```
@@ -317,7 +317,7 @@
 ```json
 {
   "glob_pattern": "aikv/tests/**/*json*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -327,7 +327,7 @@
 ```json
 {
   "glob_pattern": "aikv/tests/**/*script*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -337,7 +337,7 @@
 ```json
 {
   "glob_pattern": "aikv/tests/**/*block*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -347,7 +347,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/03-extended-commands.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/03-extended-commands.md"
 }
 ```
 
@@ -357,7 +357,7 @@
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/04-json.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/04-json.md"
 }
 ```
 
@@ -370,7 +370,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests",
+  "path": "../../tests",
   "pattern": "blocking|migrate|bgsave|eval|json\\.",
   "glob": "*.rs",
   "output_mode": "files_with_matches"
@@ -382,7 +382,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/script.rs",
+  "path": "../../src/command/script.rs",
   "pattern": "pub async fn "
 }
 ```
@@ -393,7 +393,7 @@
 ```json
 {
   "limit": 30,
-  "path": "/root/code/database/aikv/src/command/blocking.rs",
+  "path": "../../src/command/blocking.rs",
   "offset": 75
 }
 ```
@@ -403,7 +403,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/registry.rs",
+  "path": "../../src/command/registry.rs",
   "pattern": "(JSON|EVAL|SCRIPT|SAVE|INFO|MIGRATE|OBJECT)",
   "head_limit": 40
 }
@@ -418,7 +418,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "pattern": "ATOM|atom",
   "glob": "*.rs",
   "head_limit": 30
@@ -430,7 +430,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv/tests",
+  "path": "../../tests",
   "pattern": "BLPOP|BlockingRegistry"
 }
 ```
@@ -444,7 +444,7 @@
 
 ```json
 {
-  "path": "/root/code/database/aikv",
+  "path": "../../../aikv",
   "pattern": "BlockingRegistry|BLPOP",
   "glob": "*.rs",
   "head_limit": 20
@@ -457,7 +457,7 @@
 ```json
 {
   "glob_pattern": "aikv/tests/**/*.rs",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -646,7 +646,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md",
+  "path": "../../../AiKv-Workflow/backup/INDEX.md",
   "old_string": "| `docs/modules/commands-extended.md` | 待开始 | | | json/lua/blocking/migrate/persistence/server |",
   "new_string": "| `docs/modules/commands-extended.md` | 🔄 步 0 ✅ | (步 2 填) | — | `json/jsonpath/script/blocking/migrate/persistence/server` + router extended dispatch (`OBJECT`/`CONFIG`/`CLIENT`); MIGRATE 编排 `key.rs::migrate` → `migrate::send_restore`; 阻塞 pop handler 在 core, `BlockingRegistry` 在本章 |"
 }
@@ -657,7 +657,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/migrate.rs"
+  "path": "../../src/command/migrate.rs"
 }
 ```
 
@@ -666,7 +666,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/persistence.rs"
+  "path": "../../src/command/persistence.rs"
 }
 ```
 
@@ -675,7 +675,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/script.rs"
+  "path": "../../src/command/script.rs"
 }
 ```
 
@@ -684,7 +684,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/blocking.rs"
+  "path": "../../src/command/blocking.rs"
 }
 ```
 
@@ -697,7 +697,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/server.rs",
+  "path": "../../src/command/server.rs",
   "offset": 100
 }
 ```
@@ -707,7 +707,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/script/execute.rs",
+  "path": "../../src/command/script/execute.rs",
   "limit": 120
 }
 ```
@@ -717,7 +717,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/script/transaction.rs",
+  "path": "../../src/command/script/transaction.rs",
   "limit": 100
 }
 ```
@@ -727,7 +727,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/script/cache.rs"
+  "path": "../../src/command/script/cache.rs"
 }
 ```
 
@@ -736,7 +736,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/key.rs",
+  "path": "../../src/command/key.rs",
   "offset": 270,
   "limit": 150
 }
@@ -747,7 +747,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/list.rs",
+  "path": "../../src/command/list.rs",
   "offset": 390,
   "limit": 130
 }
@@ -764,7 +764,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 {
   "limit": 180,
   "offset": 110,
-  "path": "/root/code/database/aikv/src/command/json.rs"
+  "path": "../../src/command/json.rs"
 }
 ```
 
@@ -773,7 +773,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/jsonpath.rs",
+  "path": "../../src/command/jsonpath.rs",
   "pattern": "^\\s*pub (fn|async fn)"
 }
 ```
@@ -783,7 +783,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/script/sandbox.rs"
+  "path": "../../src/command/script/sandbox.rs"
 }
 ```
 
@@ -793,7 +793,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/aikv/src/command/script/json_exec.rs"
+  "path": "../../src/command/script/json_exec.rs"
 }
 ```
 
@@ -804,7 +804,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 {
   "limit": 50,
   "offset": 115,
-  "path": "/root/code/database/aikv/src/command/router.rs"
+  "path": "../../src/command/router.rs"
 }
 ```
 
@@ -813,7 +813,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/script/execute.rs",
+  "path": "../../src/command/script/execute.rs",
   "pattern": "^        \\\"",
   "head_limit": 60
 }
@@ -830,7 +830,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 {
   "limit": 80,
   "offset": 640,
-  "path": "/root/code/database/aikv/src/command/json.rs"
+  "path": "../../src/command/json.rs"
 }
 ```
 
@@ -839,7 +839,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "pattern": "evict_expired|BlockingRegistry"
 }
 ```
@@ -850,7 +850,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 ```json
 {
   "limit": 70,
-  "path": "/root/code/database/aikv/src/command/list.rs"
+  "path": "../../src/command/list.rs"
 }
 ```
 
@@ -860,7 +860,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aikv/src/command/jsonpath_util.rs"
+  "path": "../../src/command/jsonpath_util.rs"
 }
 ```
 
@@ -875,7 +875,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 {
   "limit": 80,
   "offset": 500,
-  "path": "/root/code/database/aikv/src/command/zset.rs"
+  "path": "../../src/command/zset.rs"
 }
 ```
 
@@ -886,7 +886,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 {
   "limit": 80,
   "offset": 560,
-  "path": "/root/code/database/aikv/src/command/json.rs"
+  "path": "../../src/command/json.rs"
 }
 ```
 
@@ -895,7 +895,7 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/jsonpath.rs",
+  "path": "../../src/command/jsonpath.rs",
   "pattern": "\\[\\?\\(@|wildcard|\\[\\*\\]",
   "head_limit": 15
 }
@@ -1096,7 +1096,7 @@ sequenceDiagram
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/aikv-oldmain/docs"
+  "target_directory": "../../../aikv-oldmain/docs"
 }
 ```
 
@@ -1105,7 +1105,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv",
+  "path": "../../../AiKv-Workflow/backup/aikv",
   "pattern": "JSON|EVAL|Lua|MIGRATE|SAVE|BGSAVE|Blocking|SCRIPT|INFO|SLOWLOG",
   "glob": "*.md",
   "head_limit": 40
@@ -1118,7 +1118,7 @@ sequenceDiagram
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/wiqun-kv/src/command"
+  "target_directory": "../../../wiqun-kv/src/command"
 }
 ```
 
@@ -1128,7 +1128,7 @@ sequenceDiagram
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/05-lua.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/05-lua.md"
 }
 ```
 
@@ -1138,7 +1138,7 @@ sequenceDiagram
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/06-persistence.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/06-persistence.md"
 }
 ```
 
@@ -1151,7 +1151,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/development/api/01-commands.md",
+  "path": "../../../aikv-oldmain/docs/development/api/01-commands.md",
   "pattern": "JSON\\.|EVAL|MIGRATE|SAVE|BGSAVE|OBJECT|SLOWLOG|BLPOP|SCRIPT"
 }
 ```
@@ -1162,7 +1162,7 @@ sequenceDiagram
 ```json
 {
   "limit": 120,
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/05-lua-scripting.md"
+  "path": "../../../aikv-oldmain/docs/development/architecture/05-lua-scripting.md"
 }
 ```
 
@@ -1171,7 +1171,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/01-overview.md",
+  "path": "../../../aikv-oldmain/docs/development/architecture/01-overview.md",
   "pattern": "JSON|Lua|MIGRATE|SAVE|blocking|persist"
 }
 ```
@@ -1181,7 +1181,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/DESIGN.md",
+  "path": "../../../AiKv-Workflow/backup/aikv/DESIGN.md",
   "pattern": "JSON|Lua|MIGRATE|SAVE|Blocking|persist|OBJECT"
 }
 ```
@@ -1192,7 +1192,7 @@ sequenceDiagram
 ```json
 {
   "limit": 100,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/03-extended-commands.md",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/03-extended-commands.md",
   "offset": 1700
 }
 ```
@@ -1206,7 +1206,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/script/execute.rs",
+  "path": "../../src/command/script/execute.rs",
   "pattern": "JSON\\.MGET|MGET"
 }
 ```
@@ -1216,7 +1216,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/05-lua-scripting.md",
+  "path": "../../../aikv-oldmain/docs/development/architecture/05-lua-scripting.md",
   "pattern": "SCRIPT KILL|pcall|NOSCRIPT|write_batch|localhost"
 }
 ```
@@ -1226,7 +1226,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/development/api/01-commands.md",
+  "path": "../../../aikv-oldmain/docs/development/api/01-commands.md",
   "pattern": "JSON\\.UPDATE|JSON\\.MSET|JSON\\.NUMINCRBY|localhost"
 }
 ```
@@ -1236,7 +1236,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command",
+  "path": "../../../aikv-oldmain/src/command",
   "pattern": "localhost|MIGRATE|send_restore"
 }
 ```
@@ -1247,7 +1247,7 @@ sequenceDiagram
 ```json
 {
   "limit": 80,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/08-observability.md"
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/08-observability.md"
 }
 ```
 
@@ -1260,7 +1260,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/script/execute.rs",
+  "path": "../../src/command/script/execute.rs",
   "pattern": "JSON\\.MGET|exec_json"
 }
 ```
@@ -1270,7 +1270,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command",
+  "path": "../../../aikv-oldmain/src/command",
   "pattern": "JSON\\.UPDATE|JSON\\.MSET|json_update|json_mset"
 }
 ```
@@ -1280,7 +1280,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command",
+  "path": "../../../aikv-oldmain/src/command",
   "pattern": "BlockingRegistry|blocking"
 }
 ```
@@ -1292,7 +1292,7 @@ sequenceDiagram
 {
   "limit": 50,
   "offset": 450,
-  "path": "/root/code/database/aikv-oldmain/docs/development/architecture/05-lua-scripting.md"
+  "path": "../../../aikv-oldmain/docs/development/architecture/05-lua-scripting.md"
 }
 ```
 
@@ -1301,7 +1301,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/wiqun-kv/src/command/key.rs",
+  "path": "../../../wiqun-kv/src/command/key.rs",
   "pattern": "MIGRATE KEYS|copy"
 }
 ```
@@ -1317,7 +1317,7 @@ sequenceDiagram
 {
   "limit": 90,
   "offset": 285,
-  "path": "/root/code/database/wiqun-kv/src/command/key.rs"
+  "path": "../../../wiqun-kv/src/command/key.rs"
 }
 ```
 
@@ -1326,7 +1326,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/key.rs",
+  "path": "../../../aikv-oldmain/src/command/key.rs",
   "pattern": "KEYS|copy",
   "glob": "key.rs",
   "head_limit": 30
@@ -1339,7 +1339,7 @@ sequenceDiagram
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/AiKv-Workflow/backup/aikv/DESIGN.md"
+  "path": "../../../AiKv-Workflow/backup/aikv/DESIGN.md"
 }
 ```
 
@@ -1348,7 +1348,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/development/api/01-commands.md",
+  "path": "../../../aikv-oldmain/docs/development/api/01-commands.md",
   "pattern": "OBJECT |BLPOP|BGSAVE"
 }
 ```
@@ -1364,7 +1364,7 @@ sequenceDiagram
 {
   "limit": 100,
   "offset": 838,
-  "path": "/root/code/database/aikv-oldmain/src/command/key.rs"
+  "path": "../../../aikv-oldmain/src/command/key.rs"
 }
 ```
 
@@ -1373,7 +1373,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/development/api/01-commands.md",
+  "path": "../../../aikv-oldmain/docs/development/api/01-commands.md",
   "pattern": "^### OBJECT|^### BLPOP|^### INFO"
 }
 ```
@@ -1383,7 +1383,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/backup/aikv",
+  "path": "../../../backup/aikv",
   "pattern": ".",
   "output_mode": "files_with_matches"
 }
@@ -1400,7 +1400,7 @@ sequenceDiagram
 {
   "limit": 40,
   "offset": 935,
-  "path": "/root/code/database/aikv-oldmain/src/command/key.rs"
+  "path": "../../../aikv-oldmain/src/command/key.rs"
 }
 ```
 
@@ -1409,7 +1409,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/development/api/01-commands.md",
+  "path": "../../../aikv-oldmain/docs/development/api/01-commands.md",
   "pattern": "BLPOP|OBJECT ENCODING"
 }
 ```
@@ -1420,7 +1420,7 @@ sequenceDiagram
 ```json
 {
   "glob_pattern": "**/*",
-  "target_directory": "/root/code/database/AiKv-Workflow/backup/aikv/docs"
+  "target_directory": "../../../AiKv-Workflow/backup/aikv/docs"
 }
 ```
 
@@ -1435,7 +1435,7 @@ sequenceDiagram
 {
   "limit": 40,
   "offset": 973,
-  "path": "/root/code/database/aikv-oldmain/src/command/key.rs"
+  "path": "../../../aikv-oldmain/src/command/key.rs"
 }
 ```
 
@@ -1444,7 +1444,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src",
+  "path": "../../../aikv-oldmain/src",
   "pattern": "BlockingRegistry|blpop|BLPOP"
 }
 ```
@@ -1455,7 +1455,7 @@ sequenceDiagram
 ```json
 {
   "limit": 50,
-  "path": "/root/code/database/WiQunTools/docs/wiqun-kv-inventory/04-json.md",
+  "path": "../../../WiQunTools/docs/wiqun-kv-inventory/04-json.md",
   "offset": 38
 }
 ```
@@ -1469,7 +1469,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/key.rs",
+  "path": "../../src/command/key.rs",
   "pattern": "AUTH2"
 }
 ```
@@ -1479,7 +1479,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/script/convert.rs",
+  "path": "../../src/command/script/convert.rs",
   "pattern": "pcall_error"
 }
 ```
@@ -1490,7 +1490,7 @@ sequenceDiagram
 ```json
 {
   "limit": 40,
-  "path": "/root/code/database/aikv/src/command/script/convert.rs"
+  "path": "../../src/command/script/convert.rs"
 }
 ```
 
@@ -1499,7 +1499,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/development/api/01-commands.md",
+  "path": "../../../aikv-oldmain/docs/development/api/01-commands.md",
   "pattern": "JSON\\.NUMINCRBY|JSON\\.ARRAPPEND|JSON\\.UPDATE"
 }
 ```
@@ -1513,7 +1513,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/docs/development/api/01-commands.md",
+  "path": "../../../aikv-oldmain/docs/development/api/01-commands.md",
   "pattern": "SHUTDOWN|NOW|FORCE",
   "head_limit": 15
 }
@@ -1524,7 +1524,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv/src",
+  "path": "../../src",
   "pattern": "evict_expired"
 }
 ```
@@ -1647,7 +1647,7 @@ sequenceDiagram
 {
   "new_string": "| `docs/modules/commands-extended.md` | 🔄 步 2 ✅ | backup/aikv README,CHANGELOG,DESIGN; oldmain `01-commands`, `05-lua-scripting`; WiQunTools 03/04/05/06 (+08 分界); wiqun-kv `src/command` 查漏 | 步 4 写正文; 无整篇旧稿删除 | ISSUE-005~011; `json/jsonpath/script/blocking/migrate/persistence/server` + router extended dispatch |",
   "old_string": "| `docs/modules/commands-extended.md` | 🔄 步 0 ✅ | (步 2 填) | — | `json/jsonpath/script/blocking/migrate/persistence/server` + router extended dispatch (`OBJECT`/`CONFIG`/`CLIENT`); MIGRATE 编排 `key.rs::migrate` → `migrate::send_restore`; 阻塞 pop handler 在 core, `BlockingRegistry` 在本章 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1658,7 +1658,7 @@ sequenceDiagram
 {
   "new_string": "### ISSUE-011: SHUTDOWN NOW/FORCE/ABORT 未实现\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 2)\n- **相关 src**: `src/command/persistence.rs` (`parse_shutdown_mode` — 仅 Default/SAVE/NOSAVE)\n- **旧文档**: `aikv-oldmain/docs/development/api/01-commands.md` §SHUTDOWN\n- **现象**: oldmain API 文档列 NOW/FORCE/ABORT; 现码仅 SAVE/NOSAVE; 未知 mode → ERR\n- **影响**: module「已知限制」; Redis 全兼容客户端可能发未支持 flag\n- **下一步**: doc-only — 文档注明; 或按需补实现\n\n### ISSUE-010: MIGRATE 无 AUTH2 (username+password)\n\n- **状态**: open\n- **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 2)\n- **相关 src**: `src/command/key.rs` (`migrate`), `src/command/migrate.rs` (`send_restore` — 仅 AUTH password)\n- **oldmain 代码**: `aikv-oldmain/src/command/key.rs` — AUTH2 user/pass 分支\n- **现象**: 目标需 ACL username+password 时现码无法 MIGRATE\n- **影响**: 集群/多租户迁移场景; module 一行引用\n- **下一步**: 待核实 — 补 AUTH2 或文档声明不支持\n\n### ISSUE-009: Lua redis.call JSON.MGET 未实现\n\n- **状态**: open\n- **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 1–2)\n- **相关 src**: `src/command/script/execute.rs` (`command_key_indices` 含 `JSON.MGET`; dispatch match 无)\n- **现象**: 脚本内 `redis.call('JSON.MGET', …)` → unknown command; 顶层也无 `JSON.MGET` Redis 命令\n- **影响**: Lua JSON 子集不完整; key_indices 表误导\n- **下一步**: 待核实 — 实现 exec_json_mget 或从 key_indices 移除\n\n### ISSUE-008: SAVE 日志 target 为 bgsave.complete\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 1)\n- **相关 src**: `src/command/persistence.rs` (`save` — `tracing::info!(target: \"persist\", …, \"bgsave.complete\")`)\n- **现象**: 同步 SAVE 成功日志复用 BGSAVE 事件名\n- **影响**: 日志检索/告警可能混淆; 行为无影响\n- **下一步**: doc-only 或改 log message\n\n### ISSUE-007: SCRIPT KILL 恒 NOTBUSY\n\n- **状态**: doc-only\n- **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 2)\n- **相关 src**: `src/command/script.rs` (`script_kill`)\n- **旧文档**: `aikv-oldmain/docs/development/architecture/05-lua-scripting.md` Limitations — 已承认不可用\n- **现象**: 无运行中脚本跟踪; 始终 `NOTBUSY No scripts in execution right now.`\n- **影响**: module「已知限制」; `backup/aikv/README.md` 标 SCRIPT KILL ✅ 与事实不符\n- **下一步**: doc-only\n\n### ISSUE-006: MIGRATE KEYS 忽略 COPY, 批量路径始终 delete\n\n- **状态**: open\n- **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 1–2)\n- **相关 src**: `src/command/key.rs` (`migrate` KEYS 分支 L334 无条件 delete)\n- **oldmain 代码**: `aikv-oldmain/src/command/key.rs` L990 `if !copy { delete }`\n- **现象**: 单 key 路径尊重 COPY; `MIGRATE … KEYS k1 k2 COPY` 仍删源 key; wiqun-kv 同形\n- **影响**: 与 Redis/oldmain 语义偏离; 批量 COPY 迁移不可用\n- **下一步**: 待核实 — 修 KEYS 分支或文档声明\n\n### ISSUE-005: BlockingRegistry evict_expired 无后台调用\n\n- **状态**: open\n- **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 1)\n- **相关 src**: `src/command/blocking.rs` (`evict_expired`); 全仓库无 caller\n- **oldmain 代码**: (无 BlockingRegistry — 重构新增)\n- **现象**: 过期 waiter 仅靠 handler poll 超时; `waiters` DashMap 可能滞留至 notify 或进程结束\n- **影响**: 长时间阻塞 + 大量 key 时内存; `deadline` 字段未主动清理\n- **下一步**: 待核实 — 接 server 定时 task 或删除 dead API\n\n### ISSUE-004: cluster_route 预留 MSETNX 但命令未注册/未实现",
   "old_string": "### ISSUE-004: cluster_route 预留 MSETNX 但命令未注册/未实现",
-  "path": "/root/code/database/aikv/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -1667,7 +1667,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/script.rs",
+  "path": "../../../aikv-oldmain/src/command/script.rs",
   "pattern": "pub fn eval|execute_script|redis_call|ScriptTransaction|write_batch"
 }
 ```
@@ -1677,7 +1677,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/json.rs",
+  "path": "../../../aikv-oldmain/src/command/json.rs",
   "pattern": "pub fn json_"
 }
 ```
@@ -1688,7 +1688,7 @@ sequenceDiagram
 ```json
 {
   "glob_pattern": "aikv-oldmain/src/command/*",
-  "target_directory": "/root/code/database"
+  "target_directory": "<workspace>"
 }
 ```
 
@@ -1701,7 +1701,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command",
+  "path": "../../../aikv-oldmain/src/command",
   "pattern": "save|bgsave|persist|Blocking|blpop|jsonpath|JsonPath",
   "-i": true
 }
@@ -1712,7 +1712,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/server.rs",
+  "path": "../../../aikv-oldmain/src/command/server.rs",
   "pattern": "pub fn (info|slowlog|latency|config|command|time)"
 }
 ```
@@ -1724,7 +1724,7 @@ sequenceDiagram
 {
   "limit": 80,
   "offset": 650,
-  "path": "/root/code/database/aikv-oldmain/src/command/script.rs"
+  "path": "../../../aikv-oldmain/src/command/script.rs"
 }
 ```
 
@@ -1734,7 +1734,7 @@ sequenceDiagram
 ```json
 {
   "limit": 60,
-  "path": "/root/code/database/aikv-oldmain/src/command/json.rs"
+  "path": "../../../aikv-oldmain/src/command/json.rs"
 }
 ```
 
@@ -1747,7 +1747,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/list.rs",
+  "path": "../../../aikv-oldmain/src/command/list.rs",
   "pattern": "blpop|BLPOP|blocking"
 }
 ```
@@ -1757,7 +1757,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/script.rs",
+  "path": "../../../aikv-oldmain/src/command/script.rs",
   "pattern": "declared|undeclared|sha1|ScriptCache|timeout|memory_limit"
 }
 ```
@@ -1767,7 +1767,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/script.rs",
+  "path": "../../../aikv-oldmain/src/command/script.rs",
   "pattern": "json_exec|JSON\\."
 }
 ```
@@ -1779,7 +1779,7 @@ sequenceDiagram
 {
   "limit": 50,
   "offset": 2320,
-  "path": "/root/code/database/aikv-oldmain/src/command/server.rs"
+  "path": "../../../aikv-oldmain/src/command/server.rs"
 }
 ```
 
@@ -1788,7 +1788,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/mod.rs",
+  "path": "../../../aikv-oldmain/src/command/mod.rs",
   "pattern": "OBJECT|dispatch_object"
 }
 ```
@@ -1802,7 +1802,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/script.rs",
+  "path": "../../../aikv-oldmain/src/command/script.rs",
   "pattern": "undeclared|declared"
 }
 ```
@@ -1814,7 +1814,7 @@ sequenceDiagram
 {
   "limit": 50,
   "offset": 770,
-  "path": "/root/code/database/aikv-oldmain/src/command/script.rs"
+  "path": "../../../aikv-oldmain/src/command/script.rs"
 }
 ```
 
@@ -1823,7 +1823,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/mod.rs",
+  "path": "../../../aikv-oldmain/src/command/mod.rs",
   "pattern": "BLPOP|OBJECT"
 }
 ```
@@ -1835,7 +1835,7 @@ sequenceDiagram
 {
   "limit": 45,
   "offset": 380,
-  "path": "/root/code/database/aikv-oldmain/src/command/script.rs"
+  "path": "../../../aikv-oldmain/src/command/script.rs"
 }
 ```
 
@@ -1850,7 +1850,7 @@ sequenceDiagram
 {
   "limit": 40,
   "offset": 818,
-  "path": "/root/code/database/aikv-oldmain/src/command/script.rs"
+  "path": "../../../aikv-oldmain/src/command/script.rs"
 }
 ```
 
@@ -1859,7 +1859,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/script.rs",
+  "path": "../../../aikv-oldmain/src/command/script.rs",
   "pattern": "pcall|Nil|err",
   "head_limit": 30
 }
@@ -1870,7 +1870,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv/src/command/script/execute.rs",
+  "path": "../../src/command/script/execute.rs",
   "pattern": "pcall_error_table|throw_error",
   "head_limit": 20
 }
@@ -1887,7 +1887,7 @@ sequenceDiagram
 {
   "limit": 50,
   "offset": 880,
-  "path": "/root/code/database/aikv-oldmain/src/command/script.rs"
+  "path": "../../../aikv-oldmain/src/command/script.rs"
 }
 ```
 
@@ -1896,7 +1896,7 @@ sequenceDiagram
 
 ```json
 {
-  "path": "/root/code/database/aikv-oldmain/src/command/script.rs",
+  "path": "../../../aikv-oldmain/src/command/script.rs",
   "pattern": "throw_error|LuaValue::Nil",
   "head_limit": 25
 }
@@ -1913,7 +1913,7 @@ sequenceDiagram
 {
   "new_string": "| `docs/modules/commands-extended.md` | 🔄 步 3 ✅ | backup/aikv README,CHANGELOG,DESIGN; oldmain `01-commands`, `05-lua-scripting`, `src/command/{json,script,server,key}`; WiQunTools 03/04/05/06 (+08 分界); wiqun-kv `src/command` 查漏 | 步 4 写正文; 无整篇旧稿删除 | ISSUE-005~011; oldmain 无 blocking/migrate 模块、无 BLPOP/OBJECT |",
   "old_string": "| `docs/modules/commands-extended.md` | 🔄 步 2 ✅ | backup/aikv README,CHANGELOG,DESIGN; oldmain `01-commands`, `05-lua-scripting`; WiQunTools 03/04/05/06 (+08 分界); wiqun-kv `src/command` 查漏 | 步 4 写正文; 无整篇旧稿删除 | ISSUE-005~011; `json/jsonpath/script/blocking/migrate/persistence/server` + router extended dispatch |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -1930,7 +1930,7 @@ sequenceDiagram
 {
   "new_string": "| `docs/modules/commands-extended.md` | 🔄 步 2 ✅ | backup/aikv README,CHANGELOG,DESIGN; oldmain `01-commands`, `05-lua-scripting`, `src/command/{json,script,server,key}`; WiQunTools 03/04/05/06 (+08 分界); wiqun-kv `src/command` 查漏 | 步 4 写正文; 无整篇旧稿删除 | ISSUE-005~011; 步 3 模块级差异见会话 |",
   "old_string": "| `docs/modules/commands-extended.md` | 🔄 步 3 ✅ | backup/aikv README,CHANGELOG,DESIGN; oldmain `01-commands`, `05-lua-scripting`, `src/command/{json,script,server,key}`; WiQunTools 03/04/05/06 (+08 分界); wiqun-kv `src/command` 查漏 | 步 4 写正文; 无整篇旧稿删除 | ISSUE-005~011; oldmain 无 blocking/migrate 模块、无 BLPOP/OBJECT |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -2111,7 +2111,7 @@ sequenceDiagram
 {
   "new_string": "| `docs/modules/commands-extended.md` | 🔄 步 3 ✅ | backup/aikv README,CHANGELOG,DESIGN; oldmain `01-commands`, `05-lua-scripting`, `src/command/{json,script,server,key}`; WiQunTools 03/04/05/06 (+08 分界); wiqun-kv `src/command` 查漏 | 步 4 草稿待确认 | ISSUE-005~012 |",
   "old_string": "| `docs/modules/commands-extended.md` | 🔄 步 2 ✅ | backup/aikv README,CHANGELOG,DESIGN; oldmain `01-commands`, `05-lua-scripting`, `src/command/{json,script,server,key}`; WiQunTools 03/04/05/06 (+08 分界); wiqun-kv `src/command` 查漏 | 步 4 写正文; 无整篇旧稿删除 | ISSUE-005~011; 步 3 模块级差异见会话 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -2122,7 +2122,7 @@ sequenceDiagram
 {
   "new_string": "### ISSUE-012: EVAL 声明 key 的 KeyLock 无超时 (oldmain 30s)\n\n- **状态**: open\n- **发现于**: PROGRESS 步 8 / 章节 `docs/modules/commands-extended.md` (步 3)\n- **相关 src**: `src/command/script.rs` (`lock_keys_sorted`); `src/command/router.rs` (`KeyLock`)\n- **oldmain 代码**: `aikv-oldmain/src/command/script.rs` — `KeyLockManager` 默认 30s, 超时 `script_lock_timeouts` + ERR\n- **现象**: 现码 `KeyLock` 无 script 专用超时; 同 key 长时间脚本或死锁可能永久占桶\n- **影响**: 与 oldmain 行为不同; 高并发同 key EVAL 风险\n- **下一步**: 待核实 — 恢复 script 锁超时或文档声明 intentional\n\n### ISSUE-011: SHUTDOWN NOW/FORCE/ABORT 未实现",
   "old_string": "### ISSUE-011: SHUTDOWN NOW/FORCE/ABORT 未实现",
-  "path": "/root/code/database/aikv/ISSUES.md"
+  "path": "../../ISSUES.md"
 }
 ```
 
@@ -2132,7 +2132,7 @@ sequenceDiagram
 ```json
 {
   "offset": 115,
-  "path": "/root/code/database/aikv/docs/modules/commands-core.md"
+  "path": "../../docs/modules/commands-core.md"
 }
 ```
 
@@ -2453,7 +2453,7 @@ cargo test --test commands
 
 ```json
 {
-  "path": "/root/code/database/aikv/docs/modules/commands-extended.md",
+  "path": "../../docs/modules/commands-extended.md",
   "contents": "---\nname: aikv-commands-extended\ndescription: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, BlockingRegistry, MIGRATE TCP restore, SAVE/BGSAVE/SHUTDOWN, server admin (INFO/CONFIG/CLIENT/COMMAND/OBJECT). Use when changing src/command/{json,jsonpath,script,blocking,migrate,persistence,server}, router extended dispatch, debugging JSONPath/Lua sandbox/MIGRATE/checkpoint, or blocking wait/notify integration.\n---\n\n# AiKv Commands Extended (扩展命令层)\n\n## 何时读本文\n\n- 改 `src/command/{json,jsonpath,jsonpath_util,script,blocking,migrate,persistence,server}` 或 `router.rs` 中 extended match / `dispatch_object|config|client`\n- 新增/修改 JSON.*、EVAL/SCRIPT、SAVE/BGSAVE、INFO/CONFIG/CLIENT/COMMAND、MIGRATE 网络传输\n- 排查 JSONPath filter、Lua `redis.call`、脚本沙箱/超时、BGSAVE/checkpoint、阻塞唤醒\n- **不覆盖**: String~ZSet/Key/DB handler、KeyLock 机制 → [commands-core.md](commands-core.md)\n- **不覆盖**: ATOM.MULTI/EXEC/WATCH → [server.md](server.md) (`connection.rs`)\n- **不覆盖**: MOVED/ASK、CLUSTER 子命令 → [cluster.md](cluster.md)\n- **不覆盖**: slowlog 环形缓冲、latency 直方图、InfoRenderer 字段、Prometheus → [observability.md](observability.md)\n\n## 架构一览\n\n```mermaid\nflowchart TB\n  Conn[\"Connection\"]\n  R[\"CommandRouter\\nexecute_inner\"]\n  J[\"JsonCommands\"]\n  S[\"ScriptCommands\"]\n  SC[\"ServerCommands\"]\n  PC[\"PersistenceCommands\"]\n  BR[\"BlockingRegistry::global()\"]\n  KV[\"Arc dyn KvStorage\"]\n  SS[\"ServerSharedState\"]\n\n  Conn --> R\n  R --> J\n  R --> S\n  R --> SC\n  R --> PC\n  J --> KV\n  S --> KV\n  SC --> SS\n  SC --> KV\n  PC --> SS\n  PC --> KV\n  ListZset[\"list.rs / zset.rs handlers\"] -.->|notify| BR\n  KeyM[\"key.rs migrate\"] --> MigTCP[\"migrate::send_restore\"]\n```\n\n**装配** (见 [commands-core.md](commands-core.md)):\n\n| 构造 | extended 能力 |\n|------|----------------|\n| `CommandRouter::new(storage)` | JSON + Lua; **无** INFO/SAVE (`require_server` → ERR) |\n| `CommandRouter::new_with_shared(storage, shared)` | + `ServerCommands` + `PersistenceCommands` + JSON/Lua metrics |\n\n## 代码地图\n\n| 路径 | 职责 | 入口 |\n|------|------|------|\n| `command/json.rs` | 11 条 `JSON.*` | `JsonCommands::{json_set, json_get, …}` |\n| `command/jsonpath.rs` | JSONPath extract/set/delete/incr/append | `JsonPathEngine` |\n| `command/jsonpath_util.rs` | 表达式拆分、JSON 比较 | `split_top_level`, `json_compare` |\n| `command/script.rs` | EVAL / EVALSHA / SCRIPT | `ScriptCommands::{eval, evalsha, script}` |\n| `command/script/cache.rs` | SCRIPT LOAD LRU 缓存 | `ScriptCache` (max 256) |\n| `command/script/sandbox.rs` | mlua 沙箱 | `new_sandbox_lua` |\n| `command/script/execute.rs` | `redis.call` / `redis.pcall` | `redis_call_async` |\n| `command/script/json_exec.rs` | Lua 内 JSON 子集 | `exec_json_*` |\n| `command/script/transaction.rs` | 脚本写缓冲 + commit | `ScriptTransaction::commit` |\n| `command/script/convert.rs` | Lua ↔ RESP | `lua_to_resp`, `pcall_error_table` |\n| `command/blocking.rs` | 阻塞等待基础设施 | `BlockingRegistry::{register, notify}` |\n| `command/migrate.rs` | MIGRATE 目标 TCP 客户端 | `send_restore`, `RestoreTarget` |\n| `command/persistence.rs` | SAVE / BGSAVE / LASTSAVE / SHUTDOWN | `PersistenceCommands` |\n| `command/server.rs` | INFO / TIME / CONFIG / CLIENT / COMMAND / SLOWLOG / LATENCY | `ServerCommands` |\n| `command/router.rs` | extended match; `dispatch_object/config/client` | `require_server`, `require_persistence` |\n| `command/key.rs` | MIGRATE **编排** (DUMP → TCP) | `KeyCommands::migrate` |\n\n## 关键 invariant (勿破坏)\n\n- **JSON 存 String KV**: `storage.get/set/set_with_ttl` (非 typed 写路径); 文档为 `serde_json::Value` 序列化 bytes.\n- **JSON TTL 写回**: 子路径修改走 `write_back_json` — 先 `get_typed` 取 `expires_at`, 再 `set` / `set_with_ttl`.\n- **JSON.MSET**: `key_lock.lock_keys_sorted` 覆盖 batch 内全部 key.\n- **JSONPath 根**: `$` 与 `.` 等价; filter `[?(@…)]` 裸 `@` 表示数组元素本身.\n- **Lua 原子性**: 脚本内写操作进 `ScriptTransaction`; 成功结束后 **单次** `commit` 落盘; 失败 drop buffer.\n- **Lua KEYS 校验**: `redis.call/pcall` 访问的 key 须在 EVAL 声明 KEYS 集合内.\n- **Lua 缓存**: 仅 `SCRIPT LOAD` 写入 LRU; **EVAL 不**自动缓存.\n- **pcall 错误**: 返回 `{err=\"…\"}` 表 (非 oldmain 的 `Nil`).\n- **BlockingRegistry**: 超时返回 **nil Array** (`RespValue::Array(None)`), 非 nil bulk.\n- **MIGRATE payload**: 与 [commands-core.md](commands-core.md) DUMP 相同 — `[u8 version=0][bincode(StoredValue)]`.\n- **持久化**: SAVE/BGSAVE/SHUTDOWN SAVE 仅 `StorageEngineKind::AiDb`; memory → ERR.\n- **INFO**: 仅委托 `InfoRenderer`; 不在此 module 维护字段清单.\n\n## 数据流\n\n### JSON.SET (子路径)\n\n```mermaid\nsequenceDiagram\n  participant R as Router\n  participant J as JsonCommands\n  participant L as KeyLock\n  participant P as JsonPathEngine\n  participant K as KvStorage\n\n  R->>J: json_set(db, args)\n  J->>L: lock(key)\n  J->>K: get / exists\n  J->>P: set(json_doc, path, value)\n  J->>K: write_back_json or set_with_ttl\n  J-->>R: OK / nil\n```\n\n### Lua EVAL\n\n```mermaid\nsequenceDiagram\n  participant S as ScriptCommands\n  participant L as KeyLock\n  participant VM as mlua\n  participant E as execute.rs\n  participant T as ScriptTransaction\n  participant K as KvStorage\n\n  S->>L: lock_keys_sorted(KEYS)\n  S->>VM: sandbox + hook timeout\n  S->>VM: load(script)\n  VM->>E: redis.call(...)\n  E->>T: buffer ops\n  VM-->>S: LuaValue\n  S->>T: commit(K)\n  S-->>S: lua_to_resp\n```\n\n### BlockingRegistry (机制; handler 在 core)\n\n1. **Wait**: `list`/`zset` handler 先非阻塞 pop; 失败 → `register(key, timeout)` + poll `try_recv` (10ms).\n2. **Wake**: `LPUSH`/`RPUSH`/`ZADD` 成功后 `notify(key, OK)`.\n3. **Timeout**: `timeout=0` → 立即 nil Array; `timeout<0` → 300s 上限.\n\n### MIGRATE (单 key)\n\n1. `key.rs::migrate` 解析 host/port/key/dest_db/timeout + COPY/REPLACE/AUTH/KEYS.\n2. `get_typed` → `dump_encode` → `migrate::send_restore`.\n3. 非 COPY → 源端 `delete`.\n4. TCP: 可选 AUTH → 非 0 库 SELECT → `#[cfg(cluster)] ASKING` → RESTORE.\n\n### SAVE / BGSAVE\n\n1. `ensure_persistent_engine()`.\n2. `flush_engine()` → `create_checkpoint(shared.backup_dir)`.\n3. SAVE: 同步; BGSAVE: CAS `bgsave_in_progress` + `tokio::spawn`; 成功 `record_save_success()`.\n\n## JSON 命令\n\n| 命令 | 写 | KeyLock | 要点 |\n|------|:--:|:-------:|------|\n| JSON.GET | | | path 默认 `$`; 无 key → nil bulk |\n| JSON.SET | ✓ | ✓ | NX/XX/XE/TTL; 根路径 `$`/`.` |\n| JSON.DEL | ✓ | ✓ | 根路径 delete key; 子路径 path delete |\n| JSON.TYPE / STRLEN / ARRLEN / OBJLEN | | | 只读; path 可选 |\n| JSON.NUMINCRBY | ✓ | ✓ | path incr |\n| JSON.ARRAPPEND | ✓ | ✓ | |\n| JSON.UPDATE | ✓ | ✓ | wherePath + 多 path/value; 可选 NN |\n| JSON.MSET | ✓ | sorted multi | triplets: key path value |\n\nJSONPath 能力 (`jsonpath.rs`): `$`, `.`, `$.field`, `$[N]`, `[*]`, 多字段、`[?(@…)]` filter; `jsonpath_util` 提供比较/拆分.\n\n## Lua / SCRIPT\n\n| 项 | 值 / 行为 |\n|----|-----------|\n| 默认超时 | 5s (`DEFAULT_SCRIPT_TIMEOUT`) |\n| 内存上限 | 128MB (`DEFAULT_MEMORY_LIMIT`) |\n| 沙箱 StdLib | TABLE, STRING, MATH, UTF8; Nil: load/require/rawget/rawset/… |\n| SCRIPT LOAD | SHA1 hex; LRU 256 |\n| SCRIPT EXISTS / FLUSH | 标准语义 |\n| SCRIPT KILL | 恒 NOTBUSY (见 ISSUE-007) |\n\n**`redis.call` 支持子集** (`execute.rs`, 按域): String (GET/SET/INCR*/APPEND/STRLEN…), Hash, List, Set, ZSet 常用读写, EXPIRE, JSON.* (9 条 via `json_exec`; **无 JSON.MGET** — ISSUE-009).\n\n## Server 命令 (handler + router dispatch)\n\n| 命令 | 实现 | 说明 |\n|------|------|------|\n| INFO | `ServerCommands::info` → `InfoRenderer` | section 可选; 字段 → observability |\n| TIME | `time` | Unix sec + micros |\n| CONFIG GET/SET | `config_get/set` | `shared.config_map`; `slowlog-*` 联动; `appendonly` SET → ERR |\n| CONFIG REWRITE/RESETSTAT | `router.dispatch_config` | OK no-op |\n| CLIENT LIST/SETNAME/GETNAME | `client_*` | `shared.clients` |\n| COMMAND * | `command` | 读 `registry` |\n| SLOWLOG * | `slowlog` | 读 `shared.slow_query_log` |\n| LATENCY * | `latency` | 读 `shared.latency_stats`; RESP2/3 格式分支 |\n| OBJECT * | `router.dispatch_object` | ENCODING 按 `ValueType`; REFCOUNT/IDLETIME/FREQ **stub** |\n\n## CommandRouter 扩展分支 (索引)\n\n`execute_inner` match: `JSON.*` (11), `EVAL`/`EVALSHA`/`SCRIPT`, `INFO`/`TIME`/`CONFIG`/`CLIENT`/`SLOWLOG`/`LATENCY`/`COMMAND`, `SAVE`/`BGSAVE`/`LASTSAVE`/`SHUTDOWN`, `MIGRATE` → `key_cmds`. `CLUSTER` → cluster (步 11).\n\n## 常见任务\n\n### 新增 JSON.* 命令\n\n1. `registry.rs` + `router.rs` match.\n2. `JsonCommands` 方法; 写路径 `KeyLock` + `write_back_json` 模式.\n3. 若需 JSONPath → `JsonPathEngine` 扩展.\n4. 测试 `tests/modules/command/json.rs`.\n\n### 扩展 Lua redis.call 子集\n\n1. `execute.rs` match + handler; 同步 `command_key_indices` (KEYS 校验).\n2. 写操作走 `ScriptTransaction`; 读走 `txn.get/get_value`.\n3. 测试 `tests/modules/command/script.rs`.\n\n### 排查 BGSAVE 失败\n\n1. 确认 `--engine aidb` (`engine_kind == AiDb`).\n2. 查 `shared.bgsave_in_progress` 是否卡住.\n3. 日志 target `persist` / span `bgsave_checkpoint`.\n4. checkpoint 路径 `shared.backup_dir`.\n\n### 排查 BLPOP 永不返回\n\n1. handler 在 [commands-core.md](commands-core.md) `list.rs`; 本章查 `BlockingRegistry`.\n2. 确认写侧是否 `notify` (LPUSH/ZADD).\n3. 见 ISSUE-005 (`evict_expired` 未接线).\n\n## 配置与 feature flags\n\n| 项 | 位置 | 说明 |\n|----|------|------|\n| `backup_dir` | `ServerSharedState` | SAVE/BGSAVE checkpoint 目标 |\n| `bgsave_in_progress` | `ServerSharedState` | BGSAVE 互斥 |\n| `feature cluster` | `migrate.rs` | RESTORE 前 ASKING; MIGRATE 路由豁免见 cluster |\n| `ServerMetrics` | JSON/Lua `with_metrics` | `on_json_command`, `on_lua_command` |\n\n## 测试\n\n```bash\ncd aikv\ncargo test --test commands\n# extended: tests/modules/command/{json,script,persistence,server,key}.rs\n# INFO golden: tests/modules/command/info_golden.rs, info_alignment.rs\n# L2: tests/modules/server/tcp.rs\n```\n\n## 已知限制\n\n- **JSON**: 全文档 RMW, 无 RedisJSON 内存优化; 非 String key → WRONGTYPE/解析失败.\n- **Lua**: 无 SCRIPT KILL; 无 JSON.MGET in script; 命令子集小于 Redis.\n- **Lua pcall**: Redis `{err}` 表 (非 oldmain Nil).\n- **KeyLock (script)**: 无 oldmain 30s 锁超时 (ISSUE-012).\n- **MIGRATE**: 无 AUTH2; KEYS 批量忽略 COPY (ISSUE-006/010).\n- **BGSAVE 重入**: 第二次返回 **ERR** (非 oldmain SimpleString OK).\n- **SHUTDOWN**: 仅 Default/SAVE/NOSAVE (ISSUE-011).\n- **OBJECT**: REFCOUNT/IDLETIME/FREQ 固定 stub.\n- **BlockingRegistry**: `evict_expired` 无后台任务 (ISSUE-005).\n- **SAVE 日志**: 成功事件名 `bgsave.complete` (ISSUE-008).\n\n## 待核实\n\n- 见 [ISSUES.md](../../ISSUES.md#ISSUE-005) — BlockingRegistry evict_expired 无调用.\n- 见 [ISSUES.md](../../ISSUES.md#ISSUE-006) — MIGRATE KEYS 忽略 COPY.\n- 见 [ISSUES.md](../../ISSUES.md#ISSUE-007) — SCRIPT KILL stub.\n- 见 [ISSUES.md](../../ISSUES.md#ISSUE-008) — SAVE 日志 target 命名.\n- 见 [ISSUES.md](../../ISSUES.md#ISSUE-009) — Lua JSON.MGET 未实现.\n- 见 [ISSUES.md](../../ISSUES.md#ISSUE-010) — MIGRATE 无 AUTH2.\n- 见 [ISSUES.md](../../ISSUES.md#ISSUE-011) — SHUTDOWN NOW/FORCE/ABORT.\n- 见 [ISSUES.md](../../ISSUES.md#ISSUE-012) — EVAL KeyLock 无超时.\n"
 }
 ```
@@ -2465,7 +2465,7 @@ cargo test --test commands
 {
   "new_string": "| `docs/modules/commands-extended.md` | ✅ | backup/aikv README,CHANGELOG,DESIGN; oldmain `01-commands`, `05-lua-scripting`, `src/command/{json,script,server,key}`; WiQunTools 03/04/05/06 (+08 分界); wiqun-kv `src/command` 查漏 | 已写 aikv/docs/modules/commands-extended.md | ISSUE-005~012 |",
   "old_string": "| `docs/modules/commands-extended.md` | 🔄 步 3 ✅ | backup/aikv README,CHANGELOG,DESIGN; oldmain `01-commands`, `05-lua-scripting`, `src/command/{json,script,server,key}`; WiQunTools 03/04/05/06 (+08 分界); wiqun-kv `src/command` 查漏 | 步 4 草稿待确认 | ISSUE-005~012 |",
-  "path": "/root/code/database/AiKv-Workflow/backup/INDEX.md"
+  "path": "../../../AiKv-Workflow/backup/INDEX.md"
 }
 ```
 
@@ -2476,7 +2476,7 @@ cargo test --test commands
 {
   "new_string": "**当前阶段**: 阶段 1 — modules (步 9/12 待开始)",
   "old_string": "**当前阶段**: 阶段 1 — modules (步 8/12 待开始)",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 
@@ -2487,7 +2487,7 @@ cargo test --test commands
 {
   "new_string": "| 8 | aikv | `docs/modules/commands-extended.md` | json~server cmd | ✅ 完成 | 2026-06-18 |\n| 9 | aidb | `docs/modules/backup.md` | backup/* | ⬜ 待开始 | |",
   "old_string": "| 8 | aikv | `docs/modules/commands-extended.md` | json~server cmd | ⬜ 待开始 | |\n| 9 | aidb | `docs/modules/backup.md` | backup/* | ⬜ 待开始 | |",
-  "path": "/root/code/database/AiKv-Workflow/backup/PROGRESS.md"
+  "path": "../../../AiKv-Workflow/backup/PROGRESS.md"
 }
 ```
 

@@ -78,7 +78,7 @@ pub mod routing_key;
 - [ ] **Step 5: 编译验证**
 
 ```bash
-cd /root/code/workspace/aikv
+cd aikv
 export RUSTFLAGS='-D warnings'
 cargo check --features cluster
 ```
@@ -539,7 +539,7 @@ git commit -m "docs: INFO to aikv_* to redis_exporter mapping (Redis 8.8)"
 - [x] **Step 1: CI 本地等价**
 
 ```bash
-cd /root/code/workspace/aikv
+cd aikv
 export RUSTFLAGS='-D warnings'
 cargo fmt --check
 cargo clippy --all-targets --features cluster
