@@ -44,6 +44,7 @@ dependencies = [
  "prost-build",
  "ring",
  "rmp-serde",
+ "rustc-hash",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
