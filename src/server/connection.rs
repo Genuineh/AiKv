@@ -114,7 +114,7 @@ impl Connection {
         tracing::Span::current().record("db_index", self.current_db as i64);
         tracing::Span::current().record("server.port", self.state.tcp_port as i64);
         let config = Arc::clone(&self.state.connection_config);
-        let mut buf = vec![0u8; 4096];
+        let mut buf = vec![0u8; 16384];
 
         loop {
             if self.state.shutdown.is_cancelled() {

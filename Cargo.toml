@@ -13,6 +13,7 @@ path = "src/main.rs"
 default = []
 monitoring = ["dep:tracing-opentelemetry", "dep:opentelemetry-otlp", "dep:opentelemetry", "dep:opentelemetry_sdk", "dep:hyper", "dep:hyper-util", "dep:http-body-util", "aidb/monitoring"]
 cluster = ["aidb/cluster"]
+compression = ["aidb/compression"]
 
 [dependencies]
 # Async runtime
