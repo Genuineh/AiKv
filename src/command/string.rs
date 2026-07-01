@@ -27,7 +27,7 @@ impl StringCommands {
         Self { storage, key_lock }
     }
 
-    #[instrument(name = "cmd_string", skip(self, args), fields(cmd.name = "GET"))]
+    #[instrument(level = "debug", name = "cmd_string", skip(self, args), fields(cmd.name = "GET"))]
     pub async fn get(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("GET", args, 1)?;
         match self.storage.get(db, &args[0]).await? {
@@ -36,7 +36,7 @@ impl StringCommands {
         }
     }
 
-    #[instrument(name = "cmd_string", skip(self, args), fields(cmd.name = "SET"))]
+    #[instrument(level = "debug", name = "cmd_string", skip(self, args), fields(cmd.name = "SET"))]
     pub async fn set(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         if args.len() < 2 {
             return Err(router::wrong_args("SET", ""));

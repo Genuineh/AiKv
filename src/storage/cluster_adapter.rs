@@ -37,10 +37,11 @@ const GROUP_READY_MAX_ATTEMPTS: u32 = 20;
 const GROUP_READY_RETRY_DELAY: Duration = Duration::from_millis(250);
 const ERR_DATA_GROUP_NOT_READY: &str = "CLUSTERDOWN data group not ready";
 const SET_BATCH_MAX_OPS: usize = 128;
-/// 凑批等待上限. 旧值 10ms 会把 fresh 集群 SET 压在 ~700 ops/s (实测 p50≈14ms).
+/// 凑批等待上限. 1ms 平衡吞吐与延迟: 集群 50c 负载下 items 到达快, 等 1ms 足矣.
 const SET_BATCH_MAX_DELAY: Duration = Duration::from_millis(1);
-/// 已凑够该数量则不再等待, 立即 propose (低负载时仍可能 batch=1).
-const SET_BATCH_EAGER_FLUSH: usize = 4;
+/// 已凑够该数量则不再等待, 立即 propose. 原值 4 → 在 50c 集群下 29% 批次仅 4 条,
+/// 每 batch 2ms Raft 开销稀释严重. 提升至 12 降低小批比例.
+const SET_BATCH_EAGER_FLUSH: usize = 12;
 
 /// 数据面感知的存储适配器.
 pub struct ClusterDataAdapter {

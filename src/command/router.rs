@@ -209,7 +209,7 @@ impl CommandRouter {
         Arc::clone(&self.storage)
     }
 
-    #[instrument(name = "kv_command", skip(self, args), fields(cmd.name = cmd, args_len = args.len()))]
+    #[instrument(level = "debug", name = "kv_command", skip(self, args), fields(cmd.name = cmd, args_len = args.len()))]
     pub async fn execute(&self, cmd: &str, args: &[Bytes], db: &mut usize) -> Result<RespValue> {
         self.execute_with_client(
             cmd,
@@ -242,7 +242,7 @@ impl CommandRouter {
                 return result;
             }
         }
-        let span = tracing::info_span!(
+        let span = tracing::debug_span!(
             "kv_command",
             otel.kind = "server",
             cmd = cmd,
