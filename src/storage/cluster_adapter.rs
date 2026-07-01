@@ -231,7 +231,11 @@ impl ClusterDataAdapter {
         let (ack, wait) = oneshot::channel();
         batcher
             .tx
-            .send(SetBatchItem { key, value, ack })
+            .send(SetBatchItem {
+                key,
+                value,
+                ack,
+            })
             .await
             .map_err(|_| Error::Cluster("data group write batcher stopped".into()))?;
         wait.await
@@ -246,6 +250,7 @@ async fn run_set_batcher(
     mut rx: mpsc::Receiver<SetBatchItem>,
 ) {
     while let Some(first) = rx.recv().await {
+
         let mut items = Vec::with_capacity(SET_BATCH_MAX_OPS);
         items.push(first);
 
@@ -271,12 +276,10 @@ async fn run_set_batcher(
             tb.put(item.key.clone(), item.value.clone());
         }
 
-        let t0 = std::time::Instant::now();
         let result = ClusterDataAdapter::propose_group_with_retry(&mgr, gid, Request::WriteBatch(tb))
             .await
             .and_then(ClusterDataAdapter::check_response)
             .map_err(|e| e.to_string());
-        tracing::info!(target: "perf", gid, batch_size = items.len(), propose_ms = t0.elapsed().as_millis(), "set_batcher_propose");
 
         for item in items {
             let _ = item.ack.send(result.clone());
