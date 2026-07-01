@@ -400,13 +400,21 @@ impl CommandRouter {
             "MSET" => self.string.mset(*db, args).await,
             "DEL" => self.string.del(*db, args).await,
             "EXISTS" => {
+                let result = self.string.exists(*db, args).await?;
                 if self.metrics.is_some() {
-                    for key in args {
-                        let hit = self.storage.exists(*db, key).await?;
-                        record_keyspace_lookup(&self.metrics, hit);
+                    // 从 EXISTS 返回值提取 keyspace hits/misses (避免二次遍历)
+                    if let RespValue::Integer(count) = &result {
+                        let hits = *count as usize;
+                        let misses = args.len().saturating_sub(hits);
+                        for _ in 0..hits {
+                            record_keyspace_lookup(&self.metrics, true);
+                        }
+                        for _ in 0..misses {
+                            record_keyspace_lookup(&self.metrics, false);
+                        }
                     }
                 }
-                self.string.exists(*db, args).await
+                Ok(result)
             }
             "STRLEN" => self.string.strlen(*db, args).await,
             "GETRANGE" => self.string.getrange(*db, args).await,
