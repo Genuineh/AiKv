@@ -83,6 +83,22 @@ cargo test --test commands --features cluster -- --ignored --test-threads=1
 
 修 bug **必带** 回归测: 见 [CONTRIBUTING.md §回归测试](CONTRIBUTING.md#回归测试-必带).
 
+## Span 级别约定
+
+**入口 span** (`kv_command`, `cmd_string`) 级别为 **`level = "debug"`**. 原因与 AiDb 相同: OTLP 开启时每个 span 被 `tracing_opentelemetry` layer 转为 OTel span, per-span 生命周期回调累积开销. 生产 `RUST_LOG=info` 不创建入口 span, 需调试时设 `RUST_LOG=debug`.
+
+**`batcher_batch_done`** (target: `perf`) 用于测量批次延迟, 生产不启用 (`RUST_LOG=info` 不含 `perf=info`).
+
+## Batcher 调优常量 (`cluster_adapter.rs`)
+
+| 常量 | 值 | 说明 |
+|------|----|------|
+| `SET_BATCH_MAX_OPS` | 128 | 批上限 |
+| `SET_BATCH_MAX_DELAY` | 1ms | 凑批等待上限 |
+| `SET_BATCH_EAGER_FLUSH` | 12 | 已达该数则不等 timeout, 立即 propose |
+
+调整 `SET_BATCH_EAGER_FLUSH` 需权衡吞吐与延迟: 过小则 Raft per-batch 开销摊薄不够, 过大则增加尾部延迟. 当前值 12 在 50c 集群下平衡.
+
 ## 已知限制
 
 **集群**
