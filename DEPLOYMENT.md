@@ -35,13 +35,15 @@ AiDb 侧 protoc、LSM 数据目录、库侧 cluster API 见 [aidb/DEPLOYMENT.md]
 | (none) | ✅ | 单机 RESP; 无 `init_cluster`; 无 HTTP `/metrics` | 最小二进制 |
 | `cluster` | ❌ | `src/cluster/*`, `storage/cluster_adapter`, `main::init_cluster`; `aidb/cluster` | 开发与 CI 主路径 |
 | `monitoring` | ❌ | `MetricsServer` (/health), OTel metrics/traces; `aidb/monitoring` | 生产 OTLP + 探活 |
+| `compression` | ❌ | `aidb/compression` (Snap/LZ4 SSTable 块压缩) | aifactory 生产镜像默认启用; `--aidb-preset default`/`high-write` 依赖此 feature 才能真正压缩, 否则 `Options` 里选了 Snap/Lz4 会在写盘时报 `InvalidArgument` |
 
 **常见组合**:
 
 | 场景 | 命令 |
 |------|------|
 | 开发 / CI (与 `.github/workflows/ci.yml` 一致) | `cargo build --release --features cluster` |
-| 生产 + OTLP | `cargo build --release --features cluster,monitoring` |
+| 生产 (aifactory Docker 镜像, 见 `Dockerfile`) | `cargo build --release --features cluster,monitoring,compression` |
+| 生产 + OTLP (无压缩) | `cargo build --release --features cluster,monitoring` |
 | 仅验证 monitoring 本地 | `cargo build --features cluster,monitoring` |
 
 > **注意**: `cargo build --release` **不含** cluster/monitoring. `--metrics-port` 等 CLI 始终可解析; `[monitoring]` 下 `:9191` 仅 `/health`, **无** `/metrics`.
@@ -97,6 +99,7 @@ chmod +x e2e/*.sh
 | `--engine` | `memory` | 始终 | `memory` \| `aidb` |
 | `--data-dir` | — | 始终 | **`aidb` 必填**; **cluster 必填** |
 | `--sync-wal` | `false` | `aidb` / cluster | 每条写后 fsync WAL (强持久, 低吞吐) |
+| `--aidb-preset` | `default` | `aidb` | `default`\|`high-write`\|`high-read`; 见 [`aidb_options.rs`](src/storage/aidb_options.rs). `default`/`high-write` 用 `CompressionType::Snap`, 需 `compression` feature 才真正压缩; `high-read` 不压缩 |
 | `--backup-dir` | `{data_dir}/backup` | 可选 | SAVE/BGSAVE checkpoint 目标 |
 | `--cluster-node-id` | — | `cluster` | u64 节点 ID |
 | `--cluster-rpc-addr` | — | `cluster` | MetaRaft gRPC `host:port` |
@@ -129,6 +132,8 @@ chmod +x e2e/*.sh
 | `AIKV_CLUSTER_ANNOUNCE_MODE` | 默认 `unknown` | `fixed` \| `unknown` — MOVED / CLUSTER SLOTS 通告; 见 [cluster.md](docs/modules/cluster.md) |
 
 E2E 可选: `WIKV_HOST`, `WIKV_PORT`, `WIKV_CLUSTER_BASE_PORT` ([e2e/utils.sh](e2e/utils.sh)).
+
+> `AIKV_AIDB_PRESET` 不是 aikv 自身读取的环境变量 (aikv 只认 `--aidb-preset` CLI flag); 是 aifactory `entrypoint.sh`/compose 层的约定, 部署时透传为 `--aidb-preset` 传给本进程. 见 `aifactory/.env.example`.
 
 ## 单机部署
 
@@ -315,7 +320,7 @@ WORKDIR /build
 COPY aikv/ aikv/
 COPY aidb/ aidb/
 WORKDIR /build/aikv
-RUN cargo build --release --features cluster,monitoring
+RUN cargo build --release --features cluster,monitoring,compression
 
 FROM debian:bookworm-slim
 COPY --from=builder /build/aikv/target/release/aikv /usr/local/bin/
@@ -323,6 +328,8 @@ EXPOSE 6379 9191
 CMD ["aikv", "--bind", "0.0.0.0:6379", "--engine", "aidb", \
      "--data-dir", "/data", "--metrics-addr", "0.0.0.0", "--metrics-port", "9191"]
 ```
+
+真实生产镜像见 `aifactory/Dockerfile` (rsync sibling 源码 + 同样的 `cluster,monitoring,compression`); 部署 compose 见 `aifactory/docker-compose.cluster.yaml` 与其 `.env.example` 里的 `AIKV_AIDB_PRESET` 说明.
 
 集群 compose 需为每节点映射 RESP、RPC、data 端口及独立 `--data-dir`; 可参考 [e2e/utils.sh](e2e/utils.sh) 端口间距.
 

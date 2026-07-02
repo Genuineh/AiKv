@@ -55,7 +55,7 @@ cluster 包装 **仅 aidb 路径**; memory 不经 `StorageAdapter`.
 | `storage/memory.rs` | 内存引擎; 直 impl `KvStorage` | `MemoryEngine::new`, `glob_match` |
 | `storage/adapter.rs` | 扁平 KV → 多 DB 语义 | `StorageAdapter`, `KvStorageAdapter`, `AdapterWriteOp` |
 | `storage/aidb.rs` | sync `aidb::DB` 的 async 包装 | `AiDbEngine::open`, `open_for_testing`, `encode_key` / `decode_key` |
-| `storage/aidb_options.rs` | CLI / 单测 Options 构建 | `server_db_options`, `testing_db_options` |
+| `storage/aidb_options.rs` | CLI / 单测 Options 构建 | `server_db_options`, `server_db_options_with_preset`, `DbPreset`, `testing_db_options` |
 | `storage/cluster_adapter.rs` | 数据面 Raft 包装 (`#[cfg(feature = "cluster")]`) | `ClusterDataAdapter::new` |
 | `storage/dump.rs` | 内部 DUMP 格式 | `encode` / `decode`, `DUMP_VERSION` |
 | `storage/observation.rs` | 过期 key 计数 (INFO/metrics) | `StorageObservation` |
@@ -153,7 +153,9 @@ AiDbEngine::decode_key(encoded)        // Option<(db, user_key)>
 AiDbEngine::prefix_end(prefix)         // range scan 上界
 ```
 
-`open(path)`: 生产 preset (`server_db_options`, 对齐 `Options::default()`); `open_for_testing()` 供单测; `open_with_options` 可显式传入. CLI 经 `--sync-wal` 控制 fsync. 所有 DB 操作为 `spawn_blocking`.
+`open(path)`: 生产 preset (`server_db_options`, 对齐 `Options::default()` — **默认 `CompressionType::Snap` 块压缩**, 需 aidb `compression` feature; aifactory Dockerfile 已默认启用); `open_for_testing()` 供单测; `open_with_options` 可显式传入. CLI `--aidb-preset` / 环境变量 `AIKV_AIDB_PRESET` (`default`\|`high-write`\|`high-read`, 默认 `default`) 选择 preset, 仅 `high-read` 关闭压缩 (`CompressionType::None`); 详见 [`aidb_options.rs`](../../src/storage/aidb_options.rs). CLI 经 `--sync-wal` 控制 fsync. 所有 DB 操作为 `spawn_blocking`.
+
+> 2026-07-02 前 aidb 存在 SSTable 压缩 block CRC 损坏的 P0 bug (启用 Snap/Lz4 且 SST ≥ 2 个 data block 时读取报 `Corruption`), 已在 aidb 侧修复 (见 [aidb CHANGELOG](../../../aidb/CHANGELOG.md)); 使用 `default`/`high-write` preset 前必须用修复后的 aidb 重新构建 aikv 镜像.
 
 ### DUMP (内部格式, 非 Redis)
 
@@ -206,6 +208,8 @@ RESTORE 校验 version; 失败 → `ERR DUMP payload version or checksum error`.
 | `--engine memory\|aidb` | `main.rs` | 选择装配链 |
 | `--data-dir` | `main.rs` | aidb 必填 |
 | `--sync-wal` | `main.rs` | aidb 每条写后 fsync (默认 false) |
+| `--aidb-preset` / `AIKV_AIDB_PRESET` | `main.rs`, `aidb_options.rs` | `default`(Snap压缩)\|`high-write`(Snap压缩)\|`high-read`(不压缩); 默认 `default` |
+| `feature = "compression"` | `Cargo.toml` → `aidb/compression` | 启用 Snap/LZ4 块压缩; aifactory Dockerfile 默认开启 |
 | `feature = "cluster"` | `cluster_adapter.rs`, `main.rs` | 插入 `ClusterDataAdapter` |
 | `DB_COUNT` (=16) | `types.rs` | 逻辑 DB 数量 |
 | `StorageObservation` | `main.rs` → engine | 可选注入, 两路径均支持 |
