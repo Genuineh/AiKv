@@ -83,6 +83,7 @@ flowchart TB
 - **Assigned slot 写**: 必须经数据面 Raft (`ClusterDataAdapter`); **禁止** 写 local fallback (见 storage.md).
 - **`ClusterRouter::decide` 同步**: 只读缓存 + MetaRaft 快照; 不 `.await` OpenRaft.
 - **IMPORTING 写窗口**: 目标节点 `importing_slots` 或连接 `ASKING` + Migrating/IMPORTING 状态 → `Execute`; 与 MIGRATE RESTORE 配合.
+- **Migrating 源侧继续本地服务, 不盲目 ASK**: 内置迁移 executor 只把 key 正向拷贝 (source → target), 从不从 source 删除, 所以整个 Prepare/Migrating 窗口期间 source 对这批 slot 仍完全权威, 只有 `CommitSlotMigration` 才原子切换归属. `source_group` 本地时 (leader, 或只读副本 + readonly) 一律 `Execute`, **不**返回 `ASK` (2026-07-02 前会盲目 ASK 到可能尚未拷贝到该 key 的 target, 读到空); 非 leader 且非 readonly 的写仍 `MOVED` 到 source leader.
 - **ASKING 一次性**: `Connection` 每命令执行后 `reset_asking`.
 - **readonly replica 读**: `READONLY` + `CommandType::Read` + 本地 group → 本地读; 写仍 MOVED 到 leader.
 - **admin 白名单**: `cluster_route` 内命令 (PING/MIGRATE/SCAN/INFO/…) **不** 按 key 路由.
@@ -134,7 +135,7 @@ sequenceDiagram
 3. `MIGRATE` + `ASKING` + RESTORE (commands-extended)
 4. `CLUSTER SETSLOT <slot> STABLE` → 清 `importing_slots` + `commit_migration`
 
-源节点 Migrating 写 → **ASK**; 目标 IMPORTING 写 → **Execute** (含 router `importing_slots` 短路).
+源节点 Migrating 期间读写 → 本地 **Execute** (source 仍完全权威, 见上方 invariant); 目标 IMPORTING 写 → **Execute** (含 router `importing_slots` 短路, 需 `ASKING` 或 `importing_slots` 命中之一).
 
 ## 关键类型
 

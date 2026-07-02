@@ -680,9 +680,29 @@ impl Connection {
                 .snapshot_write_keys(&cmd_name, &cmd_args, &mut snapshots, &mut snapshotted)
                 .await
             {
+                // 集群拓扑变化 (slot 迁移/重新分片) 时, 快照阶段内部路由的
+                // DUMP 可能命中不在本节点的 key, 底层 routed_command 会把
+                // MOVED/ASK 包装成 Error::Command 冒泡到这里. 必须原样透传
+                // 顶层 MOVED/ASK, 让集群感知客户端 (如 StackExchange.Redis)
+                // 按标准协议重定向整个 batch 到正确节点重试, 而不是把它
+                // 裹成一个客户端无法识别的通用 "internal error".
+                let msg = format_batch_exec_error(&e);
+                if let Err(rollback_err) = self.rollback_batch_snapshots(&snapshots).await {
+                    tracing::error!(
+                      target: "kv.batch",
+                      error = %rollback_err,
+                      "CRITICAL: JSON batch rollback failed after snapshot error"
+                    );
+                    return self
+                        .write_response(RespValue::Error("ERR batch rollback failed".into()))
+                        .await;
+                }
+                if is_redirect_error_msg(&msg) {
+                    return self.write_response(RespValue::Error(msg)).await;
+                }
                 return self
                     .write_response(RespValue::Error(format!(
-                        "ERR internal error during batch snapshot: {e}"
+                        "ERR internal error during batch snapshot: {msg}"
                     )))
                     .await;
             }
@@ -959,7 +979,7 @@ fn should_track_observability(cmd: &str) -> bool {
 
 #[cfg(feature = "cluster")]
 fn is_cluster_redirect_response(resp: &RespValue) -> bool {
-    matches!(resp, RespValue::Error(msg) if msg.starts_with("MOVED ") || msg.starts_with("ASK "))
+    matches!(resp, RespValue::Error(msg) if is_redirect_error_msg(msg))
 }
 
 fn format_monitor_line(db: usize, cmd: &str, args: &[Bytes]) -> String {
@@ -1044,59 +1064,6 @@ fn hello_map(client_id: usize, proto: ProtocolVersion) -> RespValue {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn hello_map_uses_bulkstring_for_all_values() {
-        // 对齐 Redis 7 原生: RESP3 Map 中 proto/id 是 Integer, 其余是 BulkString.
-
-        // 测试 RESP3 Map 响应
-        let map = hello_map(42, ProtocolVersion::Resp3);
-        let RespValue::Map(pairs) = map else {
-            panic!("RESP3 HELLO 应返回 Map");
-        };
-        for (key, value) in &pairs {
-            assert!(
-                matches!(key, RespValue::BulkString(Some(_))),
-                "Map key 必须是 BulkString，得到: {key:?}"
-            );
-            let RespValue::BulkString(Some(key_bytes)) = key else {
-                unreachable!()
-            };
-            let key_str = String::from_utf8_lossy(key_bytes);
-            match key_str.as_ref() {
-                "proto" | "id" => {
-                    assert!(
-                        matches!(value, RespValue::Integer(_)),
-                        "字段 '{key_str}' 必须是 Integer (Redis 7 兼容), 得到: {value:?}"
-                    );
-                }
-                _ => {
-                    assert!(
-                        matches!(value, RespValue::BulkString(Some(_))),
-                        "字段 '{key_str}' 必须是 BulkString, 得到: {value:?}"
-                    );
-                }
-            }
-        }
-
-        // 测试 RESP2 Array 响应: 全部 BulkString (RESP2 无原生 Integer 语义)
-        let arr = hello_map(42, ProtocolVersion::Resp2);
-        let RespValue::Array(Some(items)) = arr else {
-            panic!("RESP2 HELLO 应返回 Array");
-        };
-        assert_eq!(items.len() % 2, 0, "Array 项数应为偶数 (交替 key-value)");
-        for item in &items {
-            assert!(
-                matches!(item, RespValue::BulkString(Some(_))),
-                "RESP2 Array 中的每一项必须是 BulkString，得到: {item:?}"
-            );
-        }
-    }
-}
-
 struct BatchRollbackFrame {
     key: Vec<u8>,
     previous: Option<StoredValue>,
@@ -1139,6 +1106,12 @@ fn batch_command_failure_message(result: &Result<RespValue>) -> Option<String> {
         Ok(RespValue::Error(msg)) => Some(msg.clone()),
         _ => None,
     }
+}
+
+/// 判断 batch 内部命令的错误消息是否为集群重定向 (MOVED/ASK),
+/// 与 [`is_cluster_redirect_response`] 对 `RespValue` 的判断逻辑保持一致.
+fn is_redirect_error_msg(msg: &str) -> bool {
+    msg.starts_with("MOVED ") || msg.starts_with("ASK ")
 }
 
 fn format_batch_exec_error(err: &Error) -> String {
@@ -1234,5 +1207,58 @@ fn is_fatal_protocol(err: &Error) -> bool {
                 || msg.contains("line too long")
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hello_map_uses_bulkstring_for_all_values() {
+        // 对齐 Redis 7 原生: RESP3 Map 中 proto/id 是 Integer, 其余是 BulkString.
+
+        // 测试 RESP3 Map 响应
+        let map = hello_map(42, ProtocolVersion::Resp3);
+        let RespValue::Map(pairs) = map else {
+            panic!("RESP3 HELLO 应返回 Map");
+        };
+        for (key, value) in &pairs {
+            assert!(
+                matches!(key, RespValue::BulkString(Some(_))),
+                "Map key 必须是 BulkString，得到: {key:?}"
+            );
+            let RespValue::BulkString(Some(key_bytes)) = key else {
+                unreachable!()
+            };
+            let key_str = String::from_utf8_lossy(key_bytes);
+            match key_str.as_ref() {
+                "proto" | "id" => {
+                    assert!(
+                        matches!(value, RespValue::Integer(_)),
+                        "字段 '{key_str}' 必须是 Integer (Redis 7 兼容), 得到: {value:?}"
+                    );
+                }
+                _ => {
+                    assert!(
+                        matches!(value, RespValue::BulkString(Some(_))),
+                        "字段 '{key_str}' 必须是 BulkString, 得到: {value:?}"
+                    );
+                }
+            }
+        }
+
+        // 测试 RESP2 Array 响应: 全部 BulkString (RESP2 无原生 Integer 语义)
+        let arr = hello_map(42, ProtocolVersion::Resp2);
+        let RespValue::Array(Some(items)) = arr else {
+            panic!("RESP2 HELLO 应返回 Array");
+        };
+        assert_eq!(items.len() % 2, 0, "Array 项数应为偶数 (交替 key-value)");
+        for item in &items {
+            assert!(
+                matches!(item, RespValue::BulkString(Some(_))),
+                "RESP2 Array 中的每一项必须是 BulkString，得到: {item:?}"
+            );
+        }
     }
 }

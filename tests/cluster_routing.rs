@@ -43,6 +43,7 @@ mod tests {
         group_nodes.insert(2u64, vec![4u64, 5u64, 6u64]);
         let mut node_addrs = HashMap::new();
         node_addrs.insert(1u64, "127.0.0.1:7001".to_string());
+        node_addrs.insert(2u64, "127.0.0.1:7002".to_string());
         node_addrs.insert(4u64, "127.0.0.1:7004".to_string());
 
         let mut table = default_slot_table();
@@ -165,8 +166,15 @@ mod tests {
         mgr_ref.local_group_leaders.write().insert(1, true);
 
         // ═══════════════════════════════════════════════════════════════
-        // 7. ASK — slot Migrating, source local, ASKING not set
+        // 7. Execute — slot Migrating, source local, ASKING not set
         // ═══════════════════════════════════════════════════════════════
+        // The built-in migration executor only copies keys forward and never
+        // deletes them from source (see SlotMigrationExecutor::execute), so
+        // source stays fully authoritative for every key in the slot until
+        // CommitSlotMigration atomically flips ownership. The source leader
+        // must therefore keep serving locally instead of blanket-ASKing to a
+        // possibly-not-yet-populated target (regression for the "read comes
+        // back empty during migration" bug).
         // Set slot 0 → Migrating(1) (migrating from group 1 → 2)
         let mut ask_table = default_slot_table();
         for s in 0u16..5 {
@@ -192,20 +200,65 @@ mod tests {
                 total: 0,
             }));
 
-        // b"\x00\x00" → slot 0 → Migrating(1), source=group 1 (local) → ASK to group 2
+        // b"\x00\x00" → slot 0 → Migrating(1), source=group 1 (local, leader) → Execute
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Write, false, false);
+        assert!(
+            matches!(r, RouteDecision::Execute),
+            "expected Execute (source keeps serving during migration), got {:?}",
+            r
+        );
         let r = ClusterRouter::decide(b"\x00\x00", CommandType::Read, false, false);
+        assert!(
+            matches!(r, RouteDecision::Execute),
+            "expected Execute (source keeps serving during migration), got {:?}",
+            r
+        );
+
+        // ═══════════════════════════════════════════════════════════════
+        // 7b. Readonly replica Execute — Migrating, source local, not leader, readonly
+        // ═══════════════════════════════════════════════════════════════
+        mgr_ref.local_group_leaders.write().insert(1, false);
+        *mgr_ref.role.write() = ReplicationRole::Replica { primary_id: 2 };
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Read, false, true);
+        assert!(
+            matches!(r, RouteDecision::Execute),
+            "expected Execute (readonly replica keeps serving during migration), got {:?}",
+            r
+        );
+
+        // ═══════════════════════════════════════════════════════════════
+        // 7c. MOVED — Migrating, source local, not leader, not readonly
+        // ═══════════════════════════════════════════════════════════════
+        // Non-readonly write on a non-leader source replica still can't
+        // execute locally; it must fall through to MOVED (to the source
+        // group's leader), exactly like the Assigned branch would. Give
+        // group 1 an explicit leader (node 2, != self) so is_local_group_leader
+        // can't short-circuit back to true via the router's own-node fallback.
+        let mut group_leaders_2 = HashMap::new();
+        group_leaders_2.insert(1u64, 2u64);
+        mgr_ref.router.refresh_from_data(
+            ask_table.clone(),
+            group_nodes.clone(),
+            node_addrs.clone(),
+            group_leaders_2,
+        );
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Write, false, false);
         match &r {
-            RouteDecision::Ask {
-                slot,
-                node_id,
-                addr,
-            } => {
+            RouteDecision::Moved { slot, node_id, .. } => {
                 assert_eq!(*slot, 0);
-                assert_eq!(*node_id, 4);
-                assert_eq!(addr, ":7004", "unknown announce mode ASK/MOVED target");
+                assert_eq!(*node_id, 2, "should redirect to source group's leader");
             }
-            _ => panic!("expected Ask, got {:?}", r),
+            _ => panic!("expected MOVED (migrating, non-leader, non-readonly), got {:?}", r),
         }
+        // Restore state for subsequent tests
+        mgr_ref.router.refresh_from_data(
+            ask_table.clone(),
+            group_nodes.clone(),
+            node_addrs.clone(),
+            HashMap::new(),
+        );
+        *mgr_ref.role.write() = ReplicationRole::Primary;
+        mgr_ref.local_group_leaders.write().insert(1, true);
 
         // ═══════════════════════════════════════════════════════════════
         // 8. ASKING flag set — target local, asking=true

@@ -70,7 +70,7 @@ cluster 包装 **仅 aidb 路径**; memory 不经 `StorageAdapter`.
 - **两套 WriteOp**: `storage::WriteOp` (命令/Lua batch) ≠ `AdapterWriteOp` (扁平 KV). 转换在 `KvStorageAdapter::write_batch`.
 - **AiDb key 编码**: 物理 key = `{db_index}:{user_key}` (ASCII). `clear`/`keys`/`scan` 依赖 `db_prefix` + `prefix_end`.
 - **bincode 值**: aidb 路径 blob = `bincode(StoredValue)`; 与 `dump.rs` 同类型, DUMP 多 1 字节 version 前缀.
-- **惰性 TTL**: 读路径遇过期删除; memory/adapter 可 `StorageObservation::record_expired_key`.
+- **惰性 TTL**: 读路径遇过期删除; memory/adapter 可 `StorageObservation::record_expired_key`. 物理删除是否真正发起由 `StorageAdapter::allow_lazy_expire_delete` 决定 (默认恒真); `ClusterDataAdapter` 覆盖为仅当本节点是该 key 所在 data group 的 Raft leader 时才允许 —— 只读副本上惰性过期发现的 key 直接跳过物理删除 (副本 `propose_group` 必然 `NotLeader` 失败, 之前会把一次普通 GET 变成硬错误), 留给 leader 或后续写连接清理.
 - **cluster 写路径**: slot 已分配时写 **必须** `propose_group`; **禁止** 写 local fallback (防 SET 成功 GET 空). 仅 `Unallocated` 或未初始化 cluster 写 local.
 - **cluster 读路径**: Assigned / 本地 Migrating group → `get_local`; 否则 `CLUSTERDOWN data group not ready`.
 - **持久化面**: memory 默认 `create_checkpoint` → ERR; aidb 委托 `DB::flush` / `Checkpoint::create`.

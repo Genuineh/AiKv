@@ -552,6 +552,17 @@ impl StorageAdapter for ClusterDataAdapter {
     fn approximate_memory_bytes(&self) -> Option<u64> {
         self.local.approximate_memory_bytes()
     }
+
+    fn allow_lazy_expire_delete(&self, key: &[u8]) -> bool {
+        match Self::route_read(key) {
+            // 只有本节点是该 group 的 Raft leader 时, 惰性过期才值得发起 propose;
+            // 副本上 propose 必然以 NotLeader 失败 (见 node.rs::propose 不做网络转发),
+            // 交给 leader 自己的读路径或后续写连接去清理即可.
+            Some((mgr, gid)) => mgr.is_local_group_leader(gid),
+            // 未路由到 data group (单机模式或 slot 未分配): 走本地引擎, 始终允许.
+            None => true,
+        }
+    }
 }
 
 #[cfg(test)]

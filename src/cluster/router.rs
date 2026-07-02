@@ -112,6 +112,35 @@ impl ClusterRouter {
                 }
             }
             SlotStatus::Migrating(source_group) => {
+                if mgr.multi_raft.is_group_local(source_group) {
+                    // The built-in migration executor only *copies* keys forward
+                    // (get_key_from_group(source) -> PutConditional(target); see
+                    // SlotMigrationExecutor::execute) and never deletes them from
+                    // source. Source therefore stays fully authoritative for every
+                    // key in the slot for the whole Prepare/Migrating window; only
+                    // the atomic CommitSlotMigration flips slot_table to
+                    // Assigned(target). Blanket-ASKing every request to a
+                    // partially-populated target here would make not-yet-copied
+                    // keys read back as missing, so keep serving locally exactly
+                    // like Assigned(source_group) until commit actually happens.
+                    return if should_execute_locally(mgr, source_group, &cmd_type, readonly) {
+                        RouteDecision::Execute
+                    } else {
+                        let has_group_meta = mgr
+                            .meta_raft
+                            .get_cluster_meta()
+                            .groups
+                            .contains_key(&source_group);
+                        if has_group_meta {
+                            mgr.refresh();
+                            refresh_router_cache(mgr);
+                            if should_execute_locally(mgr, source_group, &cmd_type, readonly) {
+                                return RouteDecision::Execute;
+                            }
+                        }
+                        leader_moved(mgr, source_group, slot)
+                    };
+                }
                 let mig_state = mgr.meta_raft.get_migration_state();
                 let target_group = match &mig_state {
                     Some(aidb::cluster::SlotMigrationState::Prepare { target_group, .. })
@@ -124,9 +153,7 @@ impl ClusterRouter {
                         )
                     }
                 };
-                if mgr.multi_raft.is_group_local(source_group) {
-                    leader_ask(mgr, target_group, slot)
-                } else if mgr.multi_raft.is_group_local(target_group) {
+                if mgr.multi_raft.is_group_local(target_group) {
                     // IMPORTING node: accept one-shot writes (e.g. MIGRATE RESTORE) when ASKING
                     // or local importing_slots tracking from CLUSTER SETSLOT IMPORTING.
                     let is_importing = mgr.importing_slots.read().contains_key(&slot);
@@ -180,20 +207,6 @@ fn leader_moved(mgr: &ClusterStateManager, group_id: u64, slot: u16) -> RouteDec
             None => RouteDecision::ClusterDown("CLUSTERDOWN unknown node address".into()),
         },
         None => RouteDecision::ClusterDown("CLUSTERDOWN no leader for group".into()),
-    }
-}
-
-fn leader_ask(mgr: &ClusterStateManager, group_id: u64, slot: u16) -> RouteDecision {
-    match mgr.router.get_group_leader(group_id) {
-        Some(leader) => match mgr.announce_resolver.redirect_addr(leader, &mgr.router) {
-            Some(addr) => RouteDecision::Ask {
-                slot,
-                node_id: leader,
-                addr,
-            },
-            None => RouteDecision::ClusterDown("CLUSTERDOWN unknown target address".into()),
-        },
-        None => RouteDecision::ClusterDown("CLUSTERDOWN no target leader".into()),
     }
 }
 

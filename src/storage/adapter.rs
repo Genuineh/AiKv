@@ -57,6 +57,16 @@ pub trait StorageAdapter: Send + Sync {
     fn approximate_memory_bytes(&self) -> Option<u64> {
         None
     }
+
+    /// 惰性过期清理路径是否应该对 `key` 发起物理删除写.
+    ///
+    /// 单机/本地引擎总是允许 (无 Raft, 删除即时生效). 集群模式下
+    /// (`ClusterDataAdapter`) 只有本节点是该 key 所在 data group 的 Raft leader
+    /// 时才允许; 只读副本上惰性过期发现的 key 直接跳过物理删除, 留给 leader 或
+    /// 后续写连接清理, 避免只读连接因为一次 GET 就触发 (并且必然失败的) Raft 写.
+    fn allow_lazy_expire_delete(&self, _key: &[u8]) -> bool {
+        true
+    }
 }
 
 /// 将 StorageAdapter 包装为命令层 KvStorage
@@ -136,10 +146,24 @@ impl KvStorageAdapter {
             if let Some(obs) = &self.observation {
                 obs.record_expired_key();
             }
-            let _ = self.delete_encoded(db, key).await?;
+            self.try_lazy_expire_delete(db, key).await;
             return Ok(None);
         }
         Ok(Some(stored))
+    }
+
+    /// 惰性过期清理: 逻辑上 key 已过期时始终对调用方返回"不存在", 物理删除只是
+    /// 尽力而为的清理动作. 集群模式下, 只读副本连接也会走到这里 (Read + readonly
+    /// 允许在副本本地 Execute), 而副本对 Raft group 发起 propose 必然以
+    /// NotLeader 失败 —— 之前 `?` 会把这个失败一路传播成 GET 报错, 而不是期望的
+    /// nil. 先用 `allow_lazy_expire_delete` 判断是否值得尝试 (副本上直接跳过,
+    /// 避免无意义的 propose), 再吞掉任何残余错误作为兜底.
+    async fn try_lazy_expire_delete(&self, db: usize, key: &[u8]) {
+        let encoded = Self::encode(db, key);
+        if !self.storage.allow_lazy_expire_delete(&encoded) {
+            return;
+        }
+        let _ = self.storage.delete(&encoded).await;
     }
 
     async fn keys_for_db(&self, db: usize, pattern: &[u8]) -> Result<Vec<Vec<u8>>> {
@@ -156,7 +180,7 @@ impl KvStorageAdapter {
                 if let Some(obs) = &self.observation {
                     obs.record_expired_key();
                 }
-                let _ = self.delete_encoded(db, &user_key).await;
+                self.try_lazy_expire_delete(db, &user_key).await;
                 continue;
             }
             if pattern.is_empty() || glob_match(pattern, &user_key) {
