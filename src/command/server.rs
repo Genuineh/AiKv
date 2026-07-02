@@ -52,7 +52,7 @@ impl ServerCommands {
         router::require_min_args("CONFIG GET", args, 2)?;
         let param = String::from_utf8_lossy(&args[1]);
         if param == "*" {
-            let map = self.shared.config_map.read().unwrap();
+            let map = self.shared.config_map.read();
             let mut pairs = Vec::new();
             let mut keys: Vec<_> = map.keys().cloned().collect();
             keys.sort();
@@ -67,7 +67,6 @@ impl ServerCommands {
             .shared
             .config_map
             .read()
-            .unwrap()
             .contains_key(param.as_ref())
         {
             return Ok(RespValue::Array(Some(vec![])));
@@ -87,7 +86,6 @@ impl ServerCommands {
                 .shared
                 .config_map
                 .read()
-                .unwrap()
                 .get(other)
                 .cloned()
                 .unwrap_or_default(),
@@ -99,7 +97,7 @@ impl ServerCommands {
         router::require_min_args("CONFIG SET", args, 3)?;
         let param = String::from_utf8_lossy(&args[1]).to_string();
         let value = String::from_utf8_lossy(&args[2]).to_string();
-        let mut map = self.shared.config_map.write().unwrap();
+        let mut map = self.shared.config_map.write();
         if !map.contains_key(&param) {
             return Err(Error::Command(format!(
                 "ERR Unknown config parameter '{param}'"
@@ -321,7 +319,7 @@ impl ServerCommands {
     #[instrument(name = "cmd_server", skip(self, args), fields(cmd.name = "CLIENT LIST"))]
     pub async fn client_list(&self, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("CLIENT LIST", args, 1)?;
-        let clients = self.shared.clients.read().unwrap();
+        let clients = self.shared.clients.read();
         let mut lines = Vec::new();
         for info in clients.values() {
             let name = info.name.as_deref().unwrap_or("");
@@ -344,7 +342,7 @@ impl ServerCommands {
     #[instrument(name = "cmd_server", skip(self, args), fields(cmd.name = "CLIENT GETNAME"))]
     pub async fn client_getname(&self, id: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("CLIENT GETNAME", args, 1)?;
-        let clients = self.shared.clients.read().unwrap();
+        let clients = self.shared.clients.read();
         let Some(info) = clients.get(&id) else {
             return Ok(router::nil_bulk());
         };

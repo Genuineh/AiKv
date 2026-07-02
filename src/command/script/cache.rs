@@ -1,7 +1,7 @@
 //! SCRIPT LOAD 脚本缓存 (LRU 256; EVAL 不写入)
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::RwLock;
+use parking_lot::RwLock;
 
 const MAX_SCRIPTS: usize = 256;
 
@@ -32,7 +32,7 @@ impl Default for ScriptCache {
 
 impl ScriptCache {
     pub fn get(&self, sha1: &str) -> Option<String> {
-        let mut inner = self.inner.write().ok()?;
+        let mut inner = self.inner.write();
         if !inner.map.contains_key(sha1) {
             return None;
         }
@@ -42,9 +42,7 @@ impl ScriptCache {
     }
 
     pub fn insert(&self, sha1: String, script: String) {
-        let Ok(mut inner) = self.inner.write() else {
-            return;
-        };
+        let mut inner = self.inner.write();
         if inner.map.contains_key(&sha1) {
             inner.order.retain(|s| s != &sha1);
         } else if inner.map.len() >= MAX_SCRIPTS {
@@ -59,14 +57,12 @@ impl ScriptCache {
     pub fn exists(&self, sha1: &str) -> bool {
         self.inner
             .read()
-            .map(|i| i.map.contains_key(sha1))
-            .unwrap_or(false)
+            .map.contains_key(sha1)
     }
 
     pub fn flush(&self) {
-        if let Ok(mut inner) = self.inner.write() {
-            inner.map.clear();
-            inner.order.clear();
-        }
+        let mut inner = self.inner.write();
+        inner.map.clear();
+        inner.order.clear();
     }
 }

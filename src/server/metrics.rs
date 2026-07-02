@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 #[cfg(feature = "monitoring")]
 use std::sync::Arc;
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct CommandTotals {
@@ -157,7 +157,7 @@ impl ServerMetrics {
     }
 
     pub fn on_command(&self, command: &str, ok: bool) {
-        let mut map = self.commands_total.lock().unwrap();
+        let mut map = self.commands_total.lock();
         let entry = map.entry(command.to_ascii_uppercase()).or_default();
         if ok {
             entry.ok += 1;
@@ -174,7 +174,7 @@ impl ServerMetrics {
     /// INFO errorstats 真源: 按错误前缀聚合.
     pub fn on_error_stat(&self, message: &str) {
         let prefix = Self::parse_error_prefix(message).to_ascii_uppercase();
-        let mut map = self.error_stats.lock().unwrap();
+        let mut map = self.error_stats.lock();
         *map.entry(prefix).or_default() += 1;
     }
 
@@ -182,7 +182,6 @@ impl ServerMetrics {
         let mut out: Vec<_> = self
             .error_stats
             .lock()
-            .unwrap()
             .iter()
             .map(|(k, v)| (k.clone(), *v))
             .collect();
@@ -216,7 +215,7 @@ impl ServerMetrics {
 
     /// 记录命令耗时 (微秒); INFO commandstats 真源.
     pub fn on_command_duration(&self, command: &str, duration_us: u64, ok: bool) {
-        let mut map = self.commands_total.lock().unwrap();
+        let mut map = self.commands_total.lock();
         let entry = map.entry(command.to_ascii_uppercase()).or_default();
         entry.usec = entry.usec.saturating_add(duration_us);
         let _ = ok;
@@ -228,7 +227,7 @@ impl ServerMetrics {
     /// INFO commandstats slowlog_* 字段 (Redis 8.8+).
     pub fn on_slowlog_command(&self, command: &str, duration_us: u64) {
         let ms = duration_us / 1000;
-        let mut map = self.commands_total.lock().unwrap();
+        let mut map = self.commands_total.lock();
         let entry = map.entry(command.to_ascii_uppercase()).or_default();
         entry.slowlog_count += 1;
         entry.slowlog_time_ms_sum = entry.slowlog_time_ms_sum.saturating_add(ms);
@@ -428,7 +427,7 @@ impl ServerMetrics {
     /// 更新逻辑 DB key 数量 (仅 monitoring feature)。
     #[cfg(feature = "monitoring")]
     pub fn set_db_key_count(&self, db: usize, count: u64) {
-        self.db_key_counts.lock().unwrap().insert(db, count);
+        self.db_key_counts.lock().insert(db, count);
     }
 
     /// 记录网络入站字节。
@@ -575,7 +574,6 @@ impl ServerMetrics {
     pub fn total_commands_processed(&self) -> u64 {
         self.commands_total
             .lock()
-            .unwrap()
             .values()
             .map(|t| t.ok + t.err)
             .sum()
@@ -584,7 +582,6 @@ impl ServerMetrics {
     pub fn total_error_replies(&self) -> u64 {
         self.commands_total
             .lock()
-            .unwrap()
             .values()
             .map(|t| t.err)
             .sum()
@@ -594,7 +591,6 @@ impl ServerMetrics {
         let mut out: Vec<_> = self
             .commands_total
             .lock()
-            .unwrap()
             .iter()
             .filter(|(cmd, _)| is_client_command(cmd))
             .map(|(cmd, totals)| (cmd.clone(), *totals))
@@ -609,7 +605,6 @@ impl ServerMetrics {
         let mut out: Vec<_> = self
             .commands_total
             .lock()
-            .unwrap()
             .iter()
             .map(|(cmd, totals)| (cmd.clone(), *totals))
             .collect();
@@ -625,7 +620,6 @@ impl ServerMetrics {
         let mut out: Vec<_> = self
             .db_key_counts
             .lock()
-            .unwrap()
             .iter()
             .map(|(db, count)| (*db, *count))
             .collect();
@@ -636,7 +630,6 @@ impl ServerMetrics {
     pub fn command_ok_count(&self, command: &str) -> u64 {
         self.commands_total
             .lock()
-            .unwrap()
             .get(&command.to_ascii_uppercase())
             .map(|t| t.ok)
             .unwrap_or(0)

@@ -445,7 +445,7 @@ impl<'a> InfoRenderer<'a> {
     fn render_persistence(&self) -> String {
         let in_progress = u8::from(self.shared.bgsave_in_progress());
         let last = self.shared.last_save_time();
-        let status = self.shared.last_bgsave_status.read().unwrap().clone();
+        let status = self.shared.last_bgsave_status.read().clone();
         let mut out = String::from("# Persistence\r\n");
         append_kv_u64(&mut out, "loading", 0);
         append_kv_u64(&mut out, "async_loading", 0);
@@ -597,7 +597,7 @@ fn commandstat_name(cmd: &str) -> String {
 }
 
 fn config_string(shared: &ServerSharedState, key: &str) -> Option<String> {
-    shared.config_map.read().unwrap().get(key).cloned()
+    shared.config_map.read().get(key).cloned()
 }
 
 fn config_u64(shared: &ServerSharedState, key: &str) -> u64 {

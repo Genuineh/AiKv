@@ -2,7 +2,7 @@
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::RwLock;
+use parking_lot::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const DEFAULT_SLOWLOG_THRESHOLD_US: u64 = 100_000;
@@ -62,14 +62,14 @@ impl SlowQueryLog {
     pub fn set_max_entries(&self, max_entries: usize) {
         self.max_entries
             .store(max_entries as u64, Ordering::Relaxed);
-        let mut entries = self.entries.write().unwrap();
+        let mut entries = self.entries.write();
         while entries.len() > max_entries {
             entries.pop_back();
         }
     }
 
     pub fn len(&self) -> usize {
-        self.entries.read().unwrap().len()
+        self.entries.read().len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -77,7 +77,7 @@ impl SlowQueryLog {
     }
 
     pub fn reset(&self) {
-        self.entries.write().unwrap().clear();
+        self.entries.write().clear();
     }
 
     pub fn record(
@@ -106,7 +106,7 @@ impl SlowQueryLog {
         };
 
         let max_entries = self.max_entries();
-        let mut entries = self.entries.write().unwrap();
+        let mut entries = self.entries.write();
         entries.push_front(entry);
         while entries.len() > max_entries {
             entries.pop_back();
@@ -118,7 +118,7 @@ impl SlowQueryLog {
         if count == 0 {
             return Vec::new();
         }
-        let entries = self.entries.read().unwrap();
+        let entries = self.entries.read();
         entries.iter().take(count).cloned().collect()
     }
 }

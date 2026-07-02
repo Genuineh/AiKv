@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, OnceLock};
+use parking_lot::RwLock;
 
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
@@ -201,12 +202,12 @@ impl ServerSharedState {
             .unwrap_or_default()
             .as_secs();
         self.last_save_time.store(now, Ordering::Relaxed);
-        *self.last_bgsave_status.write().unwrap() = "ok".into();
+        *self.last_bgsave_status.write() = "ok".into();
         self.metrics.on_bgsave_complete(true);
     }
 
     pub fn record_save_failure(&self, msg: impl Into<String>) {
-        *self.last_bgsave_status.write().unwrap() = msg.into();
+        *self.last_bgsave_status.write() = msg.into();
         self.metrics.on_bgsave_complete(false);
     }
 
@@ -234,7 +235,7 @@ impl ServerSharedState {
     }
 
     pub fn register_client(&self, id: usize, addr: SocketAddr) {
-        self.clients.write().unwrap().insert(
+        self.clients.write().insert(
             id,
             ClientInfo {
                 id,
@@ -246,17 +247,17 @@ impl ServerSharedState {
     }
 
     pub fn unregister_client(&self, id: usize) {
-        self.clients.write().unwrap().remove(&id);
+        self.clients.write().remove(&id);
     }
 
     pub fn set_client_db(&self, id: usize, db: usize) {
-        if let Some(info) = self.clients.write().unwrap().get_mut(&id) {
+        if let Some(info) = self.clients.write().get_mut(&id) {
             info.db = db;
         }
     }
 
     pub fn set_client_name(&self, id: usize, name: Option<String>) {
-        if let Some(info) = self.clients.write().unwrap().get_mut(&id) {
+        if let Some(info) = self.clients.write().get_mut(&id) {
             info.name = name;
         }
     }
@@ -267,7 +268,7 @@ impl ServerSharedState {
 
     /// 递增 key 的版本计数器（WATCH 冲突检测用）
     pub fn increment_key_version(&self, key: &[u8]) {
-        let mut versions = self.key_versions.write().unwrap();
+        let mut versions = self.key_versions.write();
         let counter = versions.entry(key.to_vec()).or_insert(0);
         *counter += 1;
     }
@@ -276,7 +277,6 @@ impl ServerSharedState {
     pub fn get_key_version(&self, key: &[u8]) -> u64 {
         self.key_versions
             .read()
-            .unwrap()
             .get(key)
             .copied()
             .unwrap_or(0)

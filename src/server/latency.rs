@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 const MAX_LATENCY_HISTORY: usize = 128;
 
@@ -67,7 +67,7 @@ impl CommandLatency {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        let mut hist = self.history.lock().unwrap();
+        let mut hist = self.history.lock();
         if hist.len() >= MAX_LATENCY_HISTORY {
             hist.pop_front();
         }
@@ -103,7 +103,7 @@ impl CommandLatency {
     }
 
     fn history_snapshot(&self) -> Vec<(u64, u64)> {
-        self.history.lock().unwrap().iter().cloned().collect()
+        self.history.lock().iter().cloned().collect()
     }
 
     fn reset(&self) {
@@ -113,7 +113,7 @@ impl CommandLatency {
         for bucket in &self.buckets {
             bucket.store(0, Ordering::Relaxed);
         }
-        self.history.lock().unwrap().clear();
+        self.history.lock().clear();
     }
 }
 
@@ -137,14 +137,14 @@ pub struct LatencyStats {
 impl LatencyStats {
     pub fn record(&self, command: &str, duration_us: u64) {
         let key = command.to_ascii_uppercase();
-        let mut map = self.by_command.lock().unwrap();
+        let mut map = self.by_command.lock();
         map.entry(key)
             .or_insert_with(CommandLatency::new)
             .record(duration_us);
     }
 
     pub fn snapshot(&self, command: &str) -> Option<CommandLatencySnapshot> {
-        let map = self.by_command.lock().unwrap();
+        let map = self.by_command.lock();
         map.get(&command.to_ascii_uppercase()).map(|c| c.snapshot())
     }
 
@@ -152,7 +152,7 @@ impl LatencyStats {
         &self,
         filter: Option<&[&str]>,
     ) -> Vec<(String, CommandLatencySnapshot)> {
-        let map = self.by_command.lock().unwrap();
+        let map = self.by_command.lock();
         let filter_upper: Option<Vec<String>> =
             filter.map(|names| names.iter().map(|n| n.to_ascii_uppercase()).collect());
         let mut out = Vec::new();
@@ -173,7 +173,7 @@ impl LatencyStats {
     }
 
     pub fn history(&self, command: &str) -> Vec<(u64, u64)> {
-        let map = self.by_command.lock().unwrap();
+        let map = self.by_command.lock();
         match map.get(&command.to_ascii_uppercase()) {
             None => vec![],
             Some(lat) => lat.history_snapshot(),
@@ -181,7 +181,7 @@ impl LatencyStats {
     }
 
     pub fn reset(&self, filter: Option<&[&str]>) -> u64 {
-        let mut map = self.by_command.lock().unwrap();
+        let mut map = self.by_command.lock();
         match filter {
             None => {
                 let count = map.len() as u64;

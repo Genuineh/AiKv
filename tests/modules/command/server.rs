@@ -48,7 +48,7 @@ async fn test_config_get_set() {
         .unwrap();
     assert_eq!(resp, aikv::protocol::RespValue::SimpleString("OK".into()));
 
-    let map = shared.config_map.read().unwrap();
+    let map = shared.config_map.read();
     assert_eq!(map.get("port").map(String::as_str), Some("6380"));
 }
 

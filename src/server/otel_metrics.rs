@@ -4,7 +4,8 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::sync::{Arc, OnceLock};
+use parking_lot::{Mutex, RwLock};
 
 use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter};
 use opentelemetry::KeyValue;
@@ -105,18 +106,18 @@ impl OtelMetrics {
     /// 初始化 global `aikv` meter instruments (幂等).
     pub fn init_global(meter: Meter) -> Arc<Self> {
         let cell = global_otel();
-        if let Some(existing) = cell.read().unwrap().as_ref() {
+        if let Some(existing) = cell.read().as_ref() {
             return Arc::clone(existing);
         }
         let otel = Self::new(meter);
-        *cell.write().unwrap() = Some(Arc::clone(&otel));
+        *cell.write() = Some(Arc::clone(&otel));
         otel
     }
 
     /// 测试用: 用当前 global meter provider 重建 instruments.
     pub(crate) fn install_global(meter: Meter) -> Arc<Self> {
         let otel = Self::new(meter);
-        *global_otel().write().unwrap() = Some(Arc::clone(&otel));
+        *global_otel().write() = Some(Arc::clone(&otel));
         otel
     }
 
@@ -476,7 +477,7 @@ impl OtelMetrics {
 
     /// 读 `ServerMetrics` atomics, 与 snapshot 做差, `counter.add(delta)`.
     pub fn sync_counters(&self, metrics: &crate::server::metrics::ServerMetrics) {
-        let mut snap = self.sync_snapshot.lock().unwrap();
+        let mut snap = self.sync_snapshot.lock();
         self.sync_counters_locked(metrics, &mut snap);
     }
 
@@ -493,7 +494,7 @@ impl OtelMetrics {
             "total_commands_processed must match sum of client commandstats calls"
         );
 
-        let mut snap = self.sync_snapshot.lock().unwrap();
+        let mut snap = self.sync_snapshot.lock();
         for (cmd, totals) in metrics.all_command_totals() {
             let prev_ok = snap.commands_ok.get(&cmd).copied().unwrap_or(0);
             let prev_err = snap.commands_err.get(&cmd).copied().unwrap_or(0);
@@ -576,7 +577,7 @@ impl OtelMetrics {
 
     /// 测试用: 重置 sync 快照, 避免跨测试污染 global `OtelMetrics`.
     pub(crate) fn reset_sync_snapshot_for_test(&self) {
-        *self.sync_snapshot.lock().unwrap() = SyncSnapshot::default();
+        *self.sync_snapshot.lock() = SyncSnapshot::default();
     }
 
     fn sync_counters_locked(
@@ -796,7 +797,7 @@ pub mod testutil {
 
     /// 每个测试独立 meter provider + 清空 sync 快照 (thread-local provider 避免并行 flush 串台).
     pub fn init_in_memory() -> (InMemoryMetricExporter, Arc<OtelMetrics>) {
-        let _guard = TEST_INIT_LOCK.lock().unwrap();
+        let _guard = TEST_INIT_LOCK.lock();
         let exporter = InMemoryMetricExporter::default();
         let provider = SdkMeterProvider::builder()
             .with_periodic_exporter(exporter.clone())
