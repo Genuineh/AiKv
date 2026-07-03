@@ -167,7 +167,7 @@ fn build_storage(args: &Args, observation: Arc<StorageObservation>) -> StorageBu
             let adapter: Arc<dyn aikv::storage::StorageAdapter> = engine;
             #[cfg(feature = "cluster")]
             let adapter: Arc<dyn aikv::storage::StorageAdapter> =
-                aikv::storage::cluster_adapter::ClusterDataAdapter::new(adapter);
+                aikv::storage::cluster_adapter::ClusterDataAdapter::new(adapter, 12);
             Ok((
                 KvStorageAdapter::with_observation(adapter, Some(observation)),
                 StorageEngineKind::AiDb,

@@ -40,14 +40,12 @@ const ERR_DATA_GROUP_NOT_READY: &str = "CLUSTERDOWN data group not ready";
 const SET_BATCH_MAX_OPS: usize = 128;
 /// 凑批等待上限. 1ms 平衡吞吐与延迟: 集群 50c 负载下 items 到达快, 等 1ms 足矣.
 const SET_BATCH_MAX_DELAY: Duration = Duration::from_millis(1);
-/// 已凑够该数量则不再等待, 立即 propose. 原值 4 → 在 50c 集群下 29% 批次仅 4 条,
-/// 每 batch 2ms Raft 开销稀释严重. 提升至 12 降低小批比例.
-const SET_BATCH_EAGER_FLUSH: usize = 12;
 
 /// 数据面感知的存储适配器.
 pub struct ClusterDataAdapter {
     local: Arc<dyn StorageAdapter>,
     set_batchers: Mutex<HashMap<u64, Arc<GroupSetBatcher>>>,
+    eager_flush: usize,
 }
 
 struct GroupSetBatcher {
@@ -61,10 +59,11 @@ struct SetBatchItem {
 }
 
 impl ClusterDataAdapter {
-    pub fn new(local: Arc<dyn StorageAdapter>) -> Arc<Self> {
+    pub fn new(local: Arc<dyn StorageAdapter>, eager_flush: usize) -> Arc<Self> {
         Arc::new(Self {
             local,
             set_batchers: Mutex::new(HashMap::new()),
+            eager_flush,
         })
     }
 
@@ -228,7 +227,7 @@ impl ClusterDataAdapter {
 
         let (tx, rx) = mpsc::channel(4096);
         let batcher = Arc::new(GroupSetBatcher { tx });
-        tokio::spawn(run_set_batcher(mgr, gid, rx));
+        tokio::spawn(run_set_batcher(mgr, gid, rx, self.eager_flush));
         batchers.insert(gid, batcher.clone());
         batcher
     }
@@ -273,6 +272,7 @@ async fn run_set_batcher(
     mgr: Arc<ClusterStateManager>,
     gid: u64,
     mut rx: mpsc::Receiver<SetBatchItem>,
+    eager_flush: usize,
 ) {
     while let Some(first) = rx.recv().await {
 
@@ -287,7 +287,7 @@ async fn run_set_batcher(
                     Err(mpsc::error::TryRecvError::Disconnected) => break,
                 }
             }
-            if items.len() >= SET_BATCH_MAX_OPS || items.len() >= SET_BATCH_EAGER_FLUSH {
+            if items.len() >= SET_BATCH_MAX_OPS || items.len() >= eager_flush {
                 break;
             }
             match tokio::time::timeout(SET_BATCH_MAX_DELAY, rx.recv()).await {

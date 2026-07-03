@@ -142,7 +142,7 @@ flowchart LR
 
 实现: `AiDbEngine`; cluster 模式下外层 `ClusterDataAdapter` 再包一层.
 
-**集群写路径 (SET)**: `ClusterDataAdapter` 按 data group 串行 batcher — `try_recv` 凑批后 `propose_group` (Raft). 常量见 `cluster_adapter.rs`: `SET_BATCH_MAX_DELAY`, `SET_BATCH_EAGER_FLUSH`, `SET_BATCH_MAX_OPS`. 压测与排查见 [docs/PERFORMANCE.md](../../../aifactory/docs/PERFORMANCE.md).
+**集群写路径 (SET)**: `ClusterDataAdapter` 按 data group 串行 batcher — `try_recv` 凑批后 `propose_group` (Raft). 参数见 `cluster_adapter.rs`: `SET_BATCH_MAX_DELAY`, `eager_flush` (构造时传入), `SET_BATCH_MAX_OPS`. 压测与排查见 [docs/PERFORMANCE.md](../../../aifactory/docs/PERFORMANCE.md).
 
 ### `AiDbEngine` key 工具
 

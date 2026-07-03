@@ -91,13 +91,13 @@ cargo test --test commands --features cluster -- --ignored --test-threads=1
 
 ## Batcher 调优常量 (`cluster_adapter.rs`)
 
-| 常量 | 值 | 说明 |
-|------|----|------|
+| 常量/字段 | 值 | 说明 |
+|-----------|----|------|
 | `SET_BATCH_MAX_OPS` | 128 | 批上限 |
 | `SET_BATCH_MAX_DELAY` | 1ms | 凑批等待上限 |
-| `SET_BATCH_EAGER_FLUSH` | 12 | 已达该数则不等 timeout, 立即 propose |
+| `ClusterDataAdapter::eager_flush` | 12 (默认) | 已达该数则不等 timeout, 立即 propose; 构造时传入 |
 
-调整 `SET_BATCH_EAGER_FLUSH` 需权衡吞吐与延迟: 过小则 Raft per-batch 开销摊薄不够, 过大则增加尾部延迟. 当前值 12 在 50c 集群下平衡.
+调整 `eager_flush` 需权衡吞吐与延迟: 过小则 Raft per-batch 开销摊薄不够, 过大则增加尾部延迟. 当前默认值 12 在 50c 集群下平衡.
 
 ## 已知限制
 
