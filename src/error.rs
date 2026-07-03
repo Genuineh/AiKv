@@ -20,7 +20,29 @@ pub enum Error {
     /// 集群错误 (仅在 cluster feature 下使用)
     #[cfg(feature = "cluster")]
     #[error("集群错误: {0}")]
-    Cluster(String),
+    Cluster(ClusterError),
+}
+
+/// 集群错误子类型 — 封装 AiDb 的 ClusterError, 消除字符串 catch-all
+#[cfg(feature = "cluster")]
+#[derive(Debug, thiserror::Error)]
+pub enum ClusterError {
+    #[error("{0}")]
+    Aidb(#[from] aidb::error::ClusterError),
+}
+
+#[cfg(feature = "cluster")]
+impl From<ClusterError> for Error {
+    fn from(e: ClusterError) -> Self {
+        Error::Cluster(e)
+    }
+}
+
+#[cfg(feature = "cluster")]
+impl From<aidb::error::ClusterError> for Error {
+    fn from(e: aidb::error::ClusterError) -> Self {
+        Error::Cluster(ClusterError::Aidb(e))
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

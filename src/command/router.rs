@@ -769,7 +769,7 @@ fn error_message_for_stats(err: &Error) -> Option<&str> {
         }
         Error::Io(_) => None,
         #[cfg(feature = "cluster")]
-        Error::Cluster(msg) => Some(msg.as_str()),
+        Error::Cluster(_) => None,
     }
 }
 

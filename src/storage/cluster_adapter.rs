@@ -25,6 +25,7 @@ use aidb::cluster::router::key_to_slot;
 use aidb::cluster::{
     Request, Response, ShardedStorage, SlotMigrationState, SlotStatus, ThinWriteBatch,
 };
+use aidb::error::ClusterError as AidbClusterError;
 use aidb::Checkpoint;
 
 use crate::cluster::state::{ClusterStateManager, CLUSTER_STATE_MGR};
@@ -137,18 +138,24 @@ impl ClusterDataAdapter {
     }
 
     fn map_err<E: std::fmt::Display>(e: E) -> Error {
-        Error::Cluster(e.to_string())
+        Error::Cluster(crate::error::ClusterError::Aidb(
+            AidbClusterError::Internal(e.to_string()),
+        ))
     }
 
     fn check_response(resp: Response) -> Result<()> {
         match resp {
-            Response::Error(msg) => Err(Error::Cluster(msg)),
+            Response::Error(msg) => Err(Error::Cluster(crate::error::ClusterError::Aidb(
+                AidbClusterError::Internal(msg),
+            ))),
             _ => Ok(()),
         }
     }
 
     fn data_group_not_ready_err() -> Error {
-        Error::Cluster(ERR_DATA_GROUP_NOT_READY.into())
+        Error::Cluster(crate::error::ClusterError::Aidb(
+            AidbClusterError::InvalidState(ERR_DATA_GROUP_NOT_READY.into()),
+        ))
     }
 
     fn key_slot_status(key: &[u8]) -> Option<SlotStatus> {
@@ -171,10 +178,15 @@ impl ClusterDataAdapter {
 
     fn is_transient_cluster_err(err: &Error) -> bool {
         match err {
-            Error::Cluster(msg) => {
-                msg.contains("not found locally")
-                    || msg.contains("data group not ready")
-                    || msg.contains("当前 Leader: None")
+            Error::Cluster(crate::error::ClusterError::Aidb(ref e)) => {
+                matches!(
+                    e,
+                    AidbClusterError::Raft(_)
+                        | AidbClusterError::NotLeader { .. }
+                        | AidbClusterError::Timeout(_)
+                        | AidbClusterError::InvalidState(_)
+                        | AidbClusterError::Internal(_)
+                )
             }
             _ => false,
         }
@@ -238,10 +250,22 @@ impl ClusterDataAdapter {
                 ack,
             })
             .await
-            .map_err(|_| Error::Cluster("data group write batcher stopped".into()))?;
+            .map_err(|_| {
+                Error::Cluster(crate::error::ClusterError::Aidb(
+                    AidbClusterError::Internal("data group write batcher stopped".into()),
+                ))
+            })?;
         wait.await
-            .map_err(|_| Error::Cluster("data group write batcher dropped response".into()))?
-            .map_err(Error::Cluster)
+            .map_err(|_| {
+                Error::Cluster(crate::error::ClusterError::Aidb(
+                    AidbClusterError::Internal("data group write batcher dropped response".into()),
+                ))
+            })?
+            .map_err(|e| {
+                Error::Cluster(crate::error::ClusterError::Aidb(
+                    AidbClusterError::Internal(e.to_string()),
+                ))
+            })
     }
 }
 
