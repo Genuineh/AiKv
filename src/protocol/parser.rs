@@ -71,20 +71,35 @@ impl RespParser {
             return Ok(None);
         }
         let start_len = self.buffer.len();
-        let mut cursor = Cursor::new(&self.buffer[..]);
-        match parse_value(&mut cursor, 0, self) {
+
+        // 冻结 buffer 为 Bytes 以支持零拷贝 slice() 操作.
+        // BytesMut::from(Bytes) 是 O(1) 零拷贝, 解析完成后恢复.
+        let owned = std::mem::take(&mut self.buffer);
+        let frozen: Bytes = owned.freeze();
+        let buf_len = frozen.len();
+        let mut cursor = Cursor::new(&frozen[..]);
+
+        match parse_value(&mut cursor, 0, self, &frozen) {
             Ok(Some(value)) => {
                 let consumed = cursor.position() as usize;
-                self.buffer.advance(consumed);
+                // 保留未消费部分, 零拷贝转回 BytesMut
+                let remaining = frozen.slice(consumed..buf_len);
+                self.buffer = BytesMut::from(remaining);
                 Ok(Some(value))
             }
-            Ok(None) => Ok(None),
+            Ok(None) => {
+                // 不完整帧, 恢复整个 buffer
+                self.buffer = BytesMut::from(frozen);
+                Ok(None)
+            }
             Err(e) if is_recoverable(&e) => {
+                self.buffer = BytesMut::from(frozen);
                 self.buffer.advance(1);
                 Err(e)
             }
             Err(e) => {
                 let _ = start_len;
+                self.buffer = BytesMut::from(frozen);
                 Err(e)
             }
         }
@@ -124,6 +139,7 @@ fn parse_value(
     cursor: &mut Cursor<&[u8]>,
     depth: u8,
     parser: &RespParser,
+    buffer: &Bytes,
 ) -> Result<Option<RespValue>> {
     if depth > parser.max_parse_depth {
         return Err(Error::Protocol("parse depth exceeded".into()));
@@ -149,18 +165,18 @@ fn parse_value(
                 .map(Some)
                 .map_err(|_| Error::Protocol(format!("invalid integer: {s}"))),
         }),
-        b'$' => parse_dollar(cursor, depth, parser),
-        b'*' => parse_array(cursor, depth, parser),
+        b'$' => parse_dollar(cursor, depth, parser, buffer),
+        b'*' => parse_array(cursor, depth, parser, buffer),
         b'_' => read_crlf(cursor).map(|o| o.map(|()| RespValue::Null)),
         b'#' => parse_boolean(cursor),
         b',' => parse_double(cursor, parser),
         b'(' => read_line(cursor, parser).map(|o| o.map(RespValue::BigNumber)),
-        b'!' => parse_bulk_error(cursor, parser).map(|o| o.map(RespValue::BulkError)),
-        b'=' => parse_verbatim_string(cursor, parser),
-        b'%' => parse_map(cursor, depth, parser),
-        b'~' => parse_set(cursor, depth, parser),
-        b'>' => parse_push(cursor, depth, parser),
-        b'|' => parse_attribute(cursor, depth, parser),
+        b'!' => parse_bulk_error(cursor, parser, buffer).map(|o| o.map(RespValue::BulkError)),
+        b'=' => parse_verbatim_string(cursor, parser, buffer),
+        b'%' => parse_map(cursor, depth, parser, buffer),
+        b'~' => parse_set(cursor, depth, parser, buffer),
+        b'>' => parse_push(cursor, depth, parser, buffer),
+        b'|' => parse_attribute(cursor, depth, parser, buffer),
         b';' => Err(Error::Protocol("unexpected streamed chunk marker".into())),
         _ => Err(Error::Protocol(format!("unknown type marker: {marker}"))),
     }
@@ -227,6 +243,7 @@ fn parse_bulk(
     cursor: &mut Cursor<&[u8]>,
     len: usize,
     parser: &RespParser,
+    buffer: &Bytes,
 ) -> Result<Option<Bytes>> {
     if len > parser.max_bulk_len {
         return Err(Error::Protocol("bulk string too large".into()));
@@ -240,7 +257,7 @@ fn parse_bulk(
     if slice[start + len] != b'\r' || slice[start + len + 1] != b'\n' {
         return Err(Error::Protocol("bulk string length mismatch".into()));
     }
-    let data = Bytes::copy_from_slice(&slice[start..start + len]);
+    let data = buffer.slice_ref(&slice[start..start + len]);
     cursor.set_position((start + len + 2) as u64);
     Ok(Some(data))
 }
@@ -249,6 +266,7 @@ fn parse_dollar(
     cursor: &mut Cursor<&[u8]>,
     _depth: u8,
     parser: &RespParser,
+    buffer: &Bytes,
 ) -> Result<Option<RespValue>> {
     let marker_pos = cursor.position() as usize - 1;
     let slice = cursor.get_ref();
@@ -259,7 +277,7 @@ fn parse_dollar(
             cursor.set_position(marker_pos as u64);
             return Ok(None);
         }
-        return parse_streamed_string(cursor, parser);
+        return parse_streamed_string(cursor, parser, buffer);
     }
 
     let saved = cursor.position();
@@ -278,7 +296,7 @@ fn parse_dollar(
         return Err(Error::Protocol(format!("invalid bulk length: {len}")));
     }
     let len = len as usize;
-    match parse_bulk(cursor, len, parser)? {
+    match parse_bulk(cursor, len, parser, buffer)? {
         Some(data) => Ok(Some(RespValue::BulkString(Some(data)))),
         None => {
             cursor.set_position(saved - 1);
@@ -290,6 +308,7 @@ fn parse_dollar(
 fn parse_streamed_string(
     cursor: &mut Cursor<&[u8]>,
     parser: &RespParser,
+    buffer: &Bytes,
 ) -> Result<Option<RespValue>> {
     let mut chunks = Vec::new();
     loop {
@@ -315,7 +334,7 @@ fn parse_streamed_string(
         if len == 0 {
             return Ok(Some(RespValue::StreamedString(chunks)));
         }
-        let chunk = match parse_bulk(cursor, len as usize, parser)? {
+        let chunk = match parse_bulk(cursor, len as usize, parser, buffer)? {
             Some(c) => c,
             None => {
                 cursor.set_position(pos as u64);
@@ -330,6 +349,7 @@ fn parse_array(
     cursor: &mut Cursor<&[u8]>,
     depth: u8,
     parser: &RespParser,
+    buffer: &Bytes,
 ) -> Result<Option<RespValue>> {
     let saved = cursor.position() - 1;
     let len = match parse_length(cursor, parser)? {
@@ -351,7 +371,7 @@ fn parse_array(
     }
     let mut items = Vec::with_capacity(len.min(1024));
     for _ in 0..len {
-        match parse_value(cursor, depth + 1, parser)? {
+        match parse_value(cursor, depth + 1, parser, buffer)? {
             Some(v) => items.push(v),
             None => {
                 cursor.set_position(saved);
@@ -366,6 +386,7 @@ fn parse_map(
     cursor: &mut Cursor<&[u8]>,
     depth: u8,
     parser: &RespParser,
+    buffer: &Bytes,
 ) -> Result<Option<RespValue>> {
     let saved = cursor.position() - 1;
     let len = match parse_length(cursor, parser)? {
@@ -384,14 +405,14 @@ fn parse_map(
     }
     let mut pairs = Vec::with_capacity(len.min(1024));
     for _ in 0..len {
-        let key = match parse_value(cursor, depth + 1, parser)? {
+        let key = match parse_value(cursor, depth + 1, parser, buffer)? {
             Some(v) => v,
             None => {
                 cursor.set_position(saved);
                 return Ok(None);
             }
         };
-        let val = match parse_value(cursor, depth + 1, parser)? {
+        let val = match parse_value(cursor, depth + 1, parser, buffer)? {
             Some(v) => v,
             None => {
                 cursor.set_position(saved);
@@ -407,6 +428,7 @@ fn parse_set(
     cursor: &mut Cursor<&[u8]>,
     depth: u8,
     parser: &RespParser,
+    buffer: &Bytes,
 ) -> Result<Option<RespValue>> {
     let saved = cursor.position() - 1;
     let len = match parse_length(cursor, parser)? {
@@ -425,7 +447,7 @@ fn parse_set(
     }
     let mut items = Vec::with_capacity(len.min(1024));
     for _ in 0..len {
-        match parse_value(cursor, depth + 1, parser)? {
+        match parse_value(cursor, depth + 1, parser, buffer)? {
             Some(v) => items.push(v),
             None => {
                 cursor.set_position(saved);
@@ -440,6 +462,7 @@ fn parse_push(
     cursor: &mut Cursor<&[u8]>,
     depth: u8,
     parser: &RespParser,
+    buffer: &Bytes,
 ) -> Result<Option<RespValue>> {
     let saved = cursor.position() - 1;
     let len = match parse_length(cursor, parser)? {
@@ -458,7 +481,7 @@ fn parse_push(
     }
     let mut items = Vec::with_capacity(len.min(1024));
     for _ in 0..len {
-        match parse_value(cursor, depth + 1, parser)? {
+        match parse_value(cursor, depth + 1, parser, buffer)? {
             Some(v) => items.push(v),
             None => {
                 cursor.set_position(saved);
@@ -473,6 +496,7 @@ fn parse_attribute(
     cursor: &mut Cursor<&[u8]>,
     depth: u8,
     parser: &RespParser,
+    buffer: &Bytes,
 ) -> Result<Option<RespValue>> {
     let saved = cursor.position() - 1;
     let len = match parse_length(cursor, parser)? {
@@ -491,14 +515,14 @@ fn parse_attribute(
     }
     let mut attrs = Vec::with_capacity(len.min(1024));
     for _ in 0..len {
-        let key = match parse_value(cursor, depth + 1, parser)? {
+        let key = match parse_value(cursor, depth + 1, parser, buffer)? {
             Some(v) => v,
             None => {
                 cursor.set_position(saved);
                 return Ok(None);
             }
         };
-        let val = match parse_value(cursor, depth + 1, parser)? {
+        let val = match parse_value(cursor, depth + 1, parser, buffer)? {
             Some(v) => v,
             None => {
                 cursor.set_position(saved);
@@ -507,7 +531,7 @@ fn parse_attribute(
         };
         attrs.push((key, val));
     }
-    let data = match parse_value(cursor, depth + 1, parser)? {
+    let data = match parse_value(cursor, depth + 1, parser, buffer)? {
         Some(v) => v,
         None => {
             cursor.set_position(saved);
@@ -552,7 +576,7 @@ fn parse_double(cursor: &mut Cursor<&[u8]>, parser: &RespParser) -> Result<Optio
     Ok(Some(RespValue::Double(d)))
 }
 
-fn parse_bulk_error(cursor: &mut Cursor<&[u8]>, parser: &RespParser) -> Result<Option<String>> {
+fn parse_bulk_error(cursor: &mut Cursor<&[u8]>, parser: &RespParser, buffer: &Bytes) -> Result<Option<String>> {
     let saved = cursor.position() - 1;
     let len = match parse_length(cursor, parser)? {
         Some(l) => l,
@@ -564,7 +588,7 @@ fn parse_bulk_error(cursor: &mut Cursor<&[u8]>, parser: &RespParser) -> Result<O
     if len < 0 {
         return Err(Error::Protocol(format!("invalid bulk error length: {len}")));
     }
-    let data = match parse_bulk(cursor, len as usize, parser)? {
+    let data = match parse_bulk(cursor, len as usize, parser, buffer)? {
         Some(d) => d,
         None => {
             cursor.set_position(saved);
@@ -581,6 +605,7 @@ fn parse_bulk_error(cursor: &mut Cursor<&[u8]>, parser: &RespParser) -> Result<O
 fn parse_verbatim_string(
     cursor: &mut Cursor<&[u8]>,
     parser: &RespParser,
+    buffer: &Bytes,
 ) -> Result<Option<RespValue>> {
     let saved = cursor.position() - 1;
     let len = match parse_length(cursor, parser)? {
@@ -593,7 +618,7 @@ fn parse_verbatim_string(
     if len < 0 {
         return Err(Error::Protocol(format!("invalid verbatim length: {len}")));
     }
-    let data = match parse_bulk(cursor, len as usize, parser)? {
+    let data = match parse_bulk(cursor, len as usize, parser, buffer)? {
         Some(d) => d,
         None => {
             cursor.set_position(saved);
