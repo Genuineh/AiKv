@@ -297,8 +297,10 @@ async fn run_set_batcher(
         }
 
         let mut tb = ThinWriteBatch::new();
-        for item in &items {
-            tb.put(item.key.clone(), item.value.clone());
+        let mut acks = Vec::with_capacity(items.len());
+        for item in items {
+            tb.put(item.key, item.value);
+            acks.push(item.ack);
         }
 
         let result = ClusterDataAdapter::propose_group_with_retry(&mgr, gid, Request::WriteBatch(tb))
@@ -306,8 +308,8 @@ async fn run_set_batcher(
             .and_then(ClusterDataAdapter::check_response)
             .map_err(|e| e.to_string());
 
-        for item in items {
-            let _ = item.ack.send(result.clone());
+        for ack in acks {
+            let _ = ack.send(result.clone());
         }
     }
 }
