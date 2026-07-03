@@ -12,7 +12,7 @@
 //! 当集群未初始化 (单机模式) 或 slot 未分配时, 回退到本地引擎.
 //! 已分配 slot 的数据 **禁止** 写本地引擎 fallback, 避免 SET 成功但 GET 读 Raft 为空.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -297,18 +297,23 @@ async fn run_set_batcher(
         }
 
         let mut tb = ThinWriteBatch::new();
-        let mut acks = Vec::with_capacity(items.len());
-        for item in items {
-            tb.put(item.key, item.value);
-            acks.push(item.ack);
+        let mut acks_rev: Vec<_> = Vec::with_capacity(items.len());
+        let mut seen: HashSet<Vec<u8>> = HashSet::new();
+
+        for item in items.into_iter().rev() {
+            if seen.insert(item.key.clone()) {
+                tb.put(item.key, item.value);
+            }
+            acks_rev.push(item.ack);
         }
+        acks_rev.reverse();
 
         let result = ClusterDataAdapter::propose_group_with_retry(&mgr, gid, Request::WriteBatch(tb))
             .await
             .and_then(ClusterDataAdapter::check_response)
             .map_err(|e| e.to_string());
 
-        for ack in acks {
+        for ack in acks_rev {
             let _ = ack.send(result.clone());
         }
     }
