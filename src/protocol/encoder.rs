@@ -26,13 +26,13 @@ impl RespValue {
             }
             RespValue::Integer(i) => {
                 buf.put_slice(b":");
-                buf.put_slice(format!("{i}").as_bytes());
+                buf.put_slice(itoa::Buffer::new().format(*i).as_bytes());
                 buf.put_slice(b"\r\n");
             }
             RespValue::BulkString(None) => buf.put_slice(b"$-1\r\n"),
             RespValue::BulkString(Some(b)) => {
                 buf.put_slice(b"$");
-                buf.put_slice(format!("{}", b.len()).as_bytes());
+                buf.put_slice(itoa::Buffer::new().format(b.len()).as_bytes());
                 buf.put_slice(b"\r\n");
                 buf.put_slice(b);
                 buf.put_slice(b"\r\n");
@@ -40,7 +40,7 @@ impl RespValue {
             RespValue::Array(None) => buf.put_slice(b"*-1\r\n"),
             RespValue::Array(Some(items)) => {
                 buf.put_slice(b"*");
-                buf.put_slice(format!("{}", items.len()).as_bytes());
+                buf.put_slice(itoa::Buffer::new().format(items.len()).as_bytes());
                 buf.put_slice(b"\r\n");
                 for item in items {
                     item.encode_into(buf);
@@ -65,7 +65,7 @@ impl RespValue {
                 } else if *d == 0.0 && d.is_sign_negative() {
                     buf.put_slice(b"-0");
                 } else {
-                    buf.put_slice(d.to_string().as_bytes());
+                    buf.put_slice(ryu::Buffer::new().format(*d).as_bytes());
                 }
                 buf.put_slice(b"\r\n");
             }
@@ -76,7 +76,7 @@ impl RespValue {
             }
             RespValue::BulkError(e) => {
                 buf.put_slice(b"!");
-                buf.put_slice(format!("{}", e.len()).as_bytes());
+                buf.put_slice(itoa::Buffer::new().format(e.len()).as_bytes());
                 buf.put_slice(b"\r\n");
                 buf.put_slice(e.as_bytes());
                 buf.put_slice(b"\r\n");
@@ -84,7 +84,7 @@ impl RespValue {
             RespValue::VerbatimString { format, data } => {
                 let total = format.len() + 1 + data.len();
                 buf.put_slice(b"=");
-                buf.put_slice(format!("{total}").as_bytes());
+                buf.put_slice(itoa::Buffer::new().format(total).as_bytes());
                 buf.put_slice(b"\r\n");
                 buf.put_slice(format.as_bytes());
                 buf.put_slice(b":");
@@ -93,7 +93,7 @@ impl RespValue {
             }
             RespValue::Map(pairs) => {
                 buf.put_slice(b"%");
-                buf.put_slice(format!("{}", pairs.len()).as_bytes());
+                buf.put_slice(itoa::Buffer::new().format(pairs.len()).as_bytes());
                 buf.put_slice(b"\r\n");
                 for (k, v) in pairs {
                     k.encode_into(buf);
@@ -102,7 +102,7 @@ impl RespValue {
             }
             RespValue::Set(items) => {
                 buf.put_slice(b"~");
-                buf.put_slice(format!("{}", items.len()).as_bytes());
+                buf.put_slice(itoa::Buffer::new().format(items.len()).as_bytes());
                 buf.put_slice(b"\r\n");
                 for item in items {
                     item.encode_into(buf);
@@ -110,7 +110,7 @@ impl RespValue {
             }
             RespValue::Push(items) => {
                 buf.put_slice(b">");
-                buf.put_slice(format!("{}", items.len()).as_bytes());
+                buf.put_slice(itoa::Buffer::new().format(items.len()).as_bytes());
                 buf.put_slice(b"\r\n");
                 for item in items {
                     item.encode_into(buf);
@@ -118,7 +118,7 @@ impl RespValue {
             }
             RespValue::Attribute { attributes, data } => {
                 buf.put_slice(b"|");
-                buf.put_slice(format!("{}", attributes.len()).as_bytes());
+                buf.put_slice(itoa::Buffer::new().format(attributes.len()).as_bytes());
                 buf.put_slice(b"\r\n");
                 for (k, v) in attributes {
                     k.encode_into(buf);
@@ -130,7 +130,7 @@ impl RespValue {
                 buf.put_slice(b"$?\r\n");
                 for chunk in chunks {
                     buf.put_slice(b";");
-                    buf.put_slice(format!("{}", chunk.len()).as_bytes());
+                    buf.put_slice(itoa::Buffer::new().format(chunk.len()).as_bytes());
                     buf.put_slice(b"\r\n");
                     buf.put_slice(chunk);
                     buf.put_slice(b"\r\n");
