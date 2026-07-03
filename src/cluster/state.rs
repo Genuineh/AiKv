@@ -121,6 +121,23 @@ impl ClusterStateManager {
             .unwrap_or(false)
     }
 
+    /// 获取当前迁移目标 group 的 leader 信息, 用于 ASK 重定向.
+    ///
+    /// 返回 `(target_group, leader_node_id, client_addr)` 或 None.
+    pub fn migration_target_leader(&self) -> Option<(u64, u64, String)> {
+        let mig_state = self.meta_raft.get_migration_state();
+        let target_group = match &mig_state {
+            Some(aidb::cluster::SlotMigrationState::Prepare { target_group, .. })
+            | Some(aidb::cluster::SlotMigrationState::Migrating { target_group, .. }) => {
+                *target_group
+            }
+            None => return None,
+        };
+        let leader = self.router.get_group_leader(target_group)?;
+        let addr = self.announce_resolver.redirect_addr(leader, &self.router)?;
+        Some((target_group, leader, addr))
+    }
+
     /// 应用本地 MultiRaft 观测到的 group leader, 立即刷新路由缓存.
     pub fn apply_observed_group_leader(&self, group_id: u64, leader_id: u64) {
         self.router.update_group_leader(group_id, leader_id);

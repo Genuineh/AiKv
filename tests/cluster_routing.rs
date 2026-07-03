@@ -166,15 +166,12 @@ mod tests {
         mgr_ref.local_group_leaders.write().insert(1, true);
 
         // ═══════════════════════════════════════════════════════════════
-        // 7. Execute — slot Migrating, source local, ASKING not set
+        // 7. ASK-Redirect-Migrate — slot Migrating, source local
         // ═══════════════════════════════════════════════════════════════
-        // The built-in migration executor only copies keys forward and never
-        // deletes them from source (see SlotMigrationExecutor::execute), so
-        // source stays fully authoritative for every key in the slot until
-        // CommitSlotMigration atomically flips ownership. The source leader
-        // must therefore keep serving locally instead of blanket-ASKing to a
-        // possibly-not-yet-populated target (regression for the "read comes
-        // back empty during migration" bug).
+        // v7: reads stay on source (source holds full data), writes are
+        // ASK-redirected to target so post-commit the target has the latest
+        // values. Per-key marking is unnecessary — the slot-level redirect
+        // eliminates every per-key TOCTOU race.
         // Set slot 0 → Migrating(1) (migrating from group 1 → 2)
         let mut ask_table = default_slot_table();
         for s in 0u16..5 {
@@ -184,11 +181,14 @@ mod tests {
                 SlotStatus::Assigned(1)
             };
         }
+        // Group 2 needs a leader so ask_target() can resolve the ASK addr.
+        let mut mig_group_leaders = HashMap::new();
+        mig_group_leaders.insert(2u64, 4u64);
         mgr_ref.router.refresh_from_data(
             ask_table.clone(),
             group_nodes.clone(),
             node_addrs.clone(),
-            HashMap::new(),
+            mig_group_leaders,
         );
         mgr_ref
             .meta_raft
@@ -200,17 +200,25 @@ mod tests {
                 total: 0,
             }));
 
-        // b"\x00\x00" → slot 0 → Migrating(1), source=group 1 (local, leader) → Execute
+        // Write → ASK(target), node 4 at addr ":7004"
         let r = ClusterRouter::decide(b"\x00\x00", CommandType::Write, false, false);
-        assert!(
-            matches!(r, RouteDecision::Execute),
-            "expected Execute (source keeps serving during migration), got {:?}",
-            r
-        );
+        match &r {
+            RouteDecision::Ask {
+                slot,
+                node_id,
+                addr,
+            } => {
+                assert_eq!(*slot, 0);
+                assert_eq!(*node_id, 4, "ASK should point to target group 2's leader");
+                assert_eq!(addr, ":7004");
+            }
+            _ => panic!("expected ASK (v7 write redirect to target), got {:?}", r),
+        }
+        // Read → Execute (source still serves reads)
         let r = ClusterRouter::decide(b"\x00\x00", CommandType::Read, false, false);
         assert!(
             matches!(r, RouteDecision::Execute),
-            "expected Execute (source keeps serving during migration), got {:?}",
+            "expected Execute (source keeps serving reads during migration), got {:?}",
             r
         );
 
