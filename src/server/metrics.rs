@@ -4,11 +4,10 @@
 //! `error_stats` 供 INFO errorstats (错误前缀, 非命令名). 全局 `slowlog_commands_*` 与逐命令
 //! commandstats `slowlog_*` 字段并存 (Redis 8.8 stats + commandstats 语义).
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 #[cfg(feature = "monitoring")]
 use std::sync::Arc;
-use parking_lot::Mutex;
+use dashmap::DashMap;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct CommandTotals {
@@ -34,7 +33,7 @@ pub struct ServerMetrics {
     keyspace_misses: AtomicU64,
     lua_execution_duration_us: AtomicU64,
     lua_execution_count: AtomicU64,
-    commands_total: Mutex<HashMap<String, CommandTotals>>,
+    commands_total: DashMap<String, CommandTotals>,
     net_input_bytes: AtomicU64,
     net_output_bytes: AtomicU64,
     expired_keys: AtomicU64,
@@ -59,8 +58,8 @@ pub struct ServerMetrics {
     slowlog_commands_count: AtomicU64,
     slowlog_commands_time_ms_sum: AtomicU64,
     slowlog_commands_time_ms_max: AtomicU64,
-    error_stats: Mutex<HashMap<String, u64>>,
-    db_key_counts: Mutex<HashMap<usize, u64>>,
+    error_stats: DashMap<String, u64>,
+    db_key_counts: DashMap<usize, u64>,
     #[cfg(feature = "monitoring")]
     process_last_cpu_user_seconds_bits: AtomicU64,
     #[cfg(feature = "monitoring")]
@@ -82,7 +81,7 @@ impl Default for ServerMetrics {
             keyspace_misses: AtomicU64::new(0),
             lua_execution_duration_us: AtomicU64::new(0),
             lua_execution_count: AtomicU64::new(0),
-            commands_total: Mutex::new(HashMap::new()),
+            commands_total: DashMap::new(),
             net_input_bytes: AtomicU64::new(0),
             net_output_bytes: AtomicU64::new(0),
             expired_keys: AtomicU64::new(0),
@@ -107,8 +106,8 @@ impl Default for ServerMetrics {
             slowlog_commands_count: AtomicU64::new(0),
             slowlog_commands_time_ms_sum: AtomicU64::new(0),
             slowlog_commands_time_ms_max: AtomicU64::new(0),
-            error_stats: Mutex::new(HashMap::new()),
-            db_key_counts: Mutex::new(HashMap::new()),
+            error_stats: DashMap::new(),
+            db_key_counts: DashMap::new(),
             #[cfg(feature = "monitoring")]
             process_last_cpu_user_seconds_bits: AtomicU64::new(0),
             #[cfg(feature = "monitoring")]
@@ -157,8 +156,10 @@ impl ServerMetrics {
     }
 
     pub fn on_command(&self, command: &str, ok: bool) {
-        let mut map = self.commands_total.lock();
-        let entry = map.entry(command.to_ascii_uppercase()).or_default();
+        let mut entry = self
+            .commands_total
+            .entry(command.to_ascii_uppercase())
+            .or_insert_with(CommandTotals::default);
         if ok {
             entry.ok += 1;
         } else {
@@ -174,16 +175,14 @@ impl ServerMetrics {
     /// INFO errorstats 真源: 按错误前缀聚合.
     pub fn on_error_stat(&self, message: &str) {
         let prefix = Self::parse_error_prefix(message).to_ascii_uppercase();
-        let mut map = self.error_stats.lock();
-        *map.entry(prefix).or_default() += 1;
+        *self.error_stats.entry(prefix).or_insert(0) += 1;
     }
 
     pub fn error_stat_totals(&self) -> Vec<(String, u64)> {
         let mut out: Vec<_> = self
             .error_stats
-            .lock()
             .iter()
-            .map(|(k, v)| (k.clone(), *v))
+            .map(|entry| (entry.key().clone(), *entry.value()))
             .collect();
         out.sort_by(|a, b| a.0.cmp(&b.0));
         out
@@ -215,8 +214,10 @@ impl ServerMetrics {
 
     /// 记录命令耗时 (微秒); INFO commandstats 真源.
     pub fn on_command_duration(&self, command: &str, duration_us: u64, ok: bool) {
-        let mut map = self.commands_total.lock();
-        let entry = map.entry(command.to_ascii_uppercase()).or_default();
+        let mut entry = self
+            .commands_total
+            .entry(command.to_ascii_uppercase())
+            .or_insert_with(CommandTotals::default);
         entry.usec = entry.usec.saturating_add(duration_us);
         let _ = ok;
     }
@@ -227,8 +228,10 @@ impl ServerMetrics {
     /// INFO commandstats slowlog_* 字段 (Redis 8.8+).
     pub fn on_slowlog_command(&self, command: &str, duration_us: u64) {
         let ms = duration_us / 1000;
-        let mut map = self.commands_total.lock();
-        let entry = map.entry(command.to_ascii_uppercase()).or_default();
+        let mut entry = self
+            .commands_total
+            .entry(command.to_ascii_uppercase())
+            .or_insert_with(CommandTotals::default);
         entry.slowlog_count += 1;
         entry.slowlog_time_ms_sum = entry.slowlog_time_ms_sum.saturating_add(ms);
         entry.slowlog_time_ms_max = entry.slowlog_time_ms_max.max(ms);
@@ -427,7 +430,7 @@ impl ServerMetrics {
     /// 更新逻辑 DB key 数量 (仅 monitoring feature)。
     #[cfg(feature = "monitoring")]
     pub fn set_db_key_count(&self, db: usize, count: u64) {
-        self.db_key_counts.lock().insert(db, count);
+        self.db_key_counts.insert(db, count);
     }
 
     /// 记录网络入站字节。
@@ -573,27 +576,24 @@ impl ServerMetrics {
 
     pub fn total_commands_processed(&self) -> u64 {
         self.commands_total
-            .lock()
-            .values()
-            .map(|t| t.ok + t.err)
+            .iter()
+            .map(|entry| entry.value().ok + entry.value().err)
             .sum()
     }
 
     pub fn total_error_replies(&self) -> u64 {
         self.commands_total
-            .lock()
-            .values()
-            .map(|t| t.err)
+            .iter()
+            .map(|entry| entry.value().err)
             .sum()
     }
 
     pub(crate) fn client_command_totals(&self) -> Vec<(String, CommandTotals)> {
         let mut out: Vec<_> = self
             .commands_total
-            .lock()
             .iter()
-            .filter(|(cmd, _)| is_client_command(cmd))
-            .map(|(cmd, totals)| (cmd.clone(), *totals))
+            .filter(|entry| is_client_command(entry.key()))
+            .map(|entry| (entry.key().clone(), *entry.value()))
             .collect();
         out.sort_by(|a, b| a.0.cmp(&b.0));
         out
@@ -604,9 +604,8 @@ impl ServerMetrics {
     pub(crate) fn all_command_totals(&self) -> Vec<(String, CommandTotals)> {
         let mut out: Vec<_> = self
             .commands_total
-            .lock()
             .iter()
-            .map(|(cmd, totals)| (cmd.clone(), *totals))
+            .map(|entry| (entry.key().clone(), *entry.value()))
             .collect();
         out.sort_by(|a, b| a.0.cmp(&b.0));
         out
@@ -619,9 +618,8 @@ impl ServerMetrics {
     pub fn db_key_counts(&self) -> Vec<(usize, u64)> {
         let mut out: Vec<_> = self
             .db_key_counts
-            .lock()
             .iter()
-            .map(|(db, count)| (*db, *count))
+            .map(|entry| (*entry.key(), *entry.value()))
             .collect();
         out.sort_by_key(|(db, _)| *db);
         out
@@ -629,7 +627,6 @@ impl ServerMetrics {
 
     pub fn command_ok_count(&self, command: &str) -> u64 {
         self.commands_total
-            .lock()
             .get(&command.to_ascii_uppercase())
             .map(|t| t.ok)
             .unwrap_or(0)
