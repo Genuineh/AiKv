@@ -903,48 +903,96 @@ impl Connection {
 
     #[instrument(name = "kv_encode", skip(self, value), fields(value_type))]
     fn encode(&self, value: &RespValue) -> Bytes {
-        let bytes = self.adapt_for_protocol(value).serialize();
+        // 仅 RESP3 协商后才做 null 适配, 否则直接序列化 (免克隆, F-034)
+        let bytes = if self.protocol_negotiated && self.protocol_version == ProtocolVersion::Resp3 {
+            self.adapt_null_to_resp3(value).serialize()
+        } else {
+            value.serialize()
+        };
         tracing::debug!(encoded_size = bytes.len(), "kv.encode.complete");
         bytes
     }
 
-    /// RESP3 模式下将 RESP2 风格的 null 表示转为 RESP3 原生 Null。
-    /// 仅在客户端通过 HELLO 3 显式协商后才生效，避免破坏未协商的 RESP2 客户端。
-    /// redis-py 8.0 的 RESP3 解析器对 `$-1\r\n` / `*-1\r\n` 处理有兼容性问题，
-    /// 需使用 RESP3 原生 `_\r\n` (Null)。
-    /// 递归处理嵌套结构（数组、Map、Set 等内部可能包含 null）。
-    fn adapt_for_protocol(&self, value: &RespValue) -> RespValue {
-        if !self.protocol_negotiated || self.protocol_version != ProtocolVersion::Resp3 {
-            return value.clone();
+    /// 递归检查 RespValue 树中是否包含 RESP2 风格的 null
+    /// (BulkString(None) 或 Array(None))，用于免克隆短路 (F-034)。
+    fn contains_resp_null(value: &RespValue) -> bool {
+        match value {
+            RespValue::BulkString(None) | RespValue::Array(None) => true,
+            RespValue::Array(Some(items)) => items.iter().any(Self::contains_resp_null),
+            RespValue::Map(pairs) => pairs
+                .iter()
+                .any(|(k, v)| Self::contains_resp_null(k) || Self::contains_resp_null(v)),
+            RespValue::Set(items) => items.iter().any(Self::contains_resp_null),
+            RespValue::Push(items) => items.iter().any(Self::contains_resp_null),
+            RespValue::Attribute { attributes, data } => {
+                attributes
+                    .iter()
+                    .any(|(k, v)| Self::contains_resp_null(k) || Self::contains_resp_null(v))
+                    || Self::contains_resp_null(data)
+            }
+            _ => false,
         }
-        self.adapt_null_to_resp3(value)
     }
 
+    /// RESP3 模式下将 RESP2 风格的 null 表示转为 RESP3 原生 Null.
+    /// redis-py 8.0 的 RESP3 解析器对 `$-1\r\n` / `*-1\r\n` 处理有兼容性问题,
+    /// 需使用 RESP3 原生 `_\r\n` (Null) 替代.
+    /// RESP3 模式下将 RESP2 风格的 null 表示转为 RESP3 原生 Null。
+    /// redis-py 8.0 的 RESP3 解析器对 `$-1\r\n` / `*-1\r\n` 处理有兼容性问题，
+    /// 需使用 RESP3 原生 `_\r\n` (Null) 替代。
     fn adapt_null_to_resp3(&self, value: &RespValue) -> RespValue {
         match value {
             RespValue::BulkString(None) | RespValue::Array(None) => RespValue::Null,
-            RespValue::Array(Some(items)) => RespValue::Array(Some(
-                items.iter().map(|v| self.adapt_null_to_resp3(v)).collect(),
-            )),
-            RespValue::Map(pairs) => RespValue::Map(
-                pairs
+            RespValue::Array(Some(items)) => {
+                if !items.iter().any(Self::contains_resp_null) {
+                    return value.clone();
+                }
+                RespValue::Array(Some(
+                    items.iter().map(|v| self.adapt_null_to_resp3(v)).collect(),
+                ))
+            }
+            RespValue::Map(pairs) => {
+                if !pairs
                     .iter()
-                    .map(|(k, v)| (self.adapt_null_to_resp3(k), self.adapt_null_to_resp3(v)))
-                    .collect(),
-            ),
+                    .any(|(k, v)| Self::contains_resp_null(k) || Self::contains_resp_null(v))
+                {
+                    return value.clone();
+                }
+                RespValue::Map(
+                    pairs
+                        .iter()
+                        .map(|(k, v)| (self.adapt_null_to_resp3(k), self.adapt_null_to_resp3(v)))
+                        .collect(),
+                )
+            }
             RespValue::Set(items) => {
+                if !items.iter().any(Self::contains_resp_null) {
+                    return value.clone();
+                }
                 RespValue::Set(items.iter().map(|v| self.adapt_null_to_resp3(v)).collect())
             }
             RespValue::Push(items) => {
+                if !items.iter().any(Self::contains_resp_null) {
+                    return value.clone();
+                }
                 RespValue::Push(items.iter().map(|v| self.adapt_null_to_resp3(v)).collect())
             }
-            RespValue::Attribute { attributes, data } => RespValue::Attribute {
-                attributes: attributes
+            RespValue::Attribute { attributes, data } => {
+                if !attributes
                     .iter()
-                    .map(|(k, v)| (self.adapt_null_to_resp3(k), self.adapt_null_to_resp3(v)))
-                    .collect(),
-                data: Box::new(self.adapt_null_to_resp3(data)),
-            },
+                    .any(|(k, v)| Self::contains_resp_null(k) || Self::contains_resp_null(v))
+                    && !Self::contains_resp_null(data)
+                {
+                    return value.clone();
+                }
+                RespValue::Attribute {
+                    attributes: attributes
+                        .iter()
+                        .map(|(k, v)| (self.adapt_null_to_resp3(k), self.adapt_null_to_resp3(v)))
+                        .collect(),
+                    data: Box::new(self.adapt_null_to_resp3(data)),
+                }
+            }
             other => other.clone(),
         }
     }
