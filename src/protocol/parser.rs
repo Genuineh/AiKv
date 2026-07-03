@@ -155,8 +155,8 @@ fn parse_value(
     cursor.set_position((pos + 1) as u64);
 
     match marker {
-        b'+' => read_line(cursor, parser).map(|o| o.map(RespValue::SimpleString)),
-        b'-' => read_line(cursor, parser).map(|o| o.map(RespValue::Error)),
+        b'+' => read_line(cursor, parser).map(|o| o.map(|s| RespValue::SimpleString(s.to_string()))),
+        b'-' => read_line(cursor, parser).map(|o| o.map(|s| RespValue::Error(s.to_string()))),
         b':' => read_line(cursor, parser).and_then(|o| match o {
             None => Ok(None),
             Some(s) => s
@@ -170,7 +170,7 @@ fn parse_value(
         b'_' => read_crlf(cursor).map(|o| o.map(|()| RespValue::Null)),
         b'#' => parse_boolean(cursor),
         b',' => parse_double(cursor, parser),
-        b'(' => read_line(cursor, parser).map(|o| o.map(RespValue::BigNumber)),
+        b'(' => read_line(cursor, parser).map(|o| o.map(|s| RespValue::BigNumber(s.to_string()))),
         b'!' => parse_bulk_error(cursor, parser, buffer).map(|o| o.map(RespValue::BulkError)),
         b'=' => parse_verbatim_string(cursor, parser, buffer),
         b'%' => parse_map(cursor, depth, parser, buffer),
@@ -182,7 +182,7 @@ fn parse_value(
     }
 }
 
-fn read_line(cursor: &mut Cursor<&[u8]>, parser: &RespParser) -> Result<Option<String>> {
+fn read_line<'a>(cursor: &mut Cursor<&'a [u8]>, parser: &RespParser) -> Result<Option<&'a str>> {
     let start = cursor.position() as usize;
     let slice = cursor.get_ref();
     if start >= slice.len() {
@@ -195,8 +195,7 @@ fn read_line(cursor: &mut Cursor<&[u8]>, parser: &RespParser) -> Result<Option<S
                 return Err(Error::Protocol("line too long".into()));
             }
             let line = std::str::from_utf8(&remaining[..cr_pos])
-                .map_err(|_| Error::Protocol("invalid utf-8 in line".into()))?
-                .to_string();
+                .map_err(|_| Error::Protocol("invalid utf-8 in line".into()))?;
             cursor.set_position((start + cr_pos + 2) as u64);
             Ok(Some(line))
         }
@@ -565,7 +564,7 @@ fn parse_double(cursor: &mut Cursor<&[u8]>, parser: &RespParser) -> Result<Optio
         Some(l) => l,
         None => return Ok(None),
     };
-    let d = match line.as_str() {
+    let d = match line {
         "nan" => f64::NAN,
         "inf" => f64::INFINITY,
         "-inf" => f64::NEG_INFINITY,
