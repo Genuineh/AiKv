@@ -36,31 +36,28 @@ impl MockAdapter {
 
 #[async_trait]
 impl StorageAdapter for MockAdapter {
-    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        Ok(self.data.lock().unwrap().get(key).cloned())
+    async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>> {
+        Ok(self.data.lock().unwrap().get(&key).cloned())
     }
 
-    async fn set(&self, key: &[u8], value: &[u8]) -> Result<()> {
+    async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         self.data
             .lock()
             .unwrap()
-            .insert(key.to_vec(), value.to_vec());
+            .insert(key, value);
         Ok(())
     }
 
-    async fn delete(&self, key: &[u8]) -> Result<bool> {
+    async fn delete(&self, key: Vec<u8>) -> Result<bool> {
         self.delete_calls.fetch_add(1, Ordering::SeqCst);
         if self.fail_delete.load(Ordering::SeqCst) {
-            // Stand-in for the cluster NotLeader propose failure a replica
-            // would hit; the exact variant doesn't matter here, only that
-            // `load_typed` must swallow it.
             return Err(Error::Storage("不是 Leader".into()));
         }
-        Ok(self.data.lock().unwrap().remove(key).is_some())
+        Ok(self.data.lock().unwrap().remove(&key).is_some())
     }
 
-    async fn exists(&self, key: &[u8]) -> Result<bool> {
-        Ok(self.data.lock().unwrap().contains_key(key))
+    async fn exists(&self, key: Vec<u8>) -> Result<bool> {
+        Ok(self.data.lock().unwrap().contains_key(&key))
     }
 
     async fn write_batch(&self, batch: Vec<AdapterWriteOp>) -> Result<()> {
@@ -89,11 +86,11 @@ impl StorageAdapter for MockAdapter {
             .collect())
     }
 
-    async fn delete_range(&self, start: &[u8], end: &[u8]) -> Result<()> {
+    async fn delete_range(&self, start: Vec<u8>, end: Vec<u8>) -> Result<()> {
         let mut data = self.data.lock().unwrap();
         let to_remove: Vec<Vec<u8>> = data
             .keys()
-            .filter(|k| k.as_slice() >= start && k.as_slice() < end)
+            .filter(|k| k.as_slice() >= start.as_slice() && k.as_slice() < end.as_slice())
             .cloned()
             .collect();
         for k in to_remove {
@@ -133,7 +130,7 @@ async fn expired_key_skips_delete_when_not_allowed() {
     let mock = Arc::new(MockAdapter::new());
     mock.allow_lazy_expire.store(false, Ordering::SeqCst);
     let encoded_key = aikv::storage::AiDbEngine::encode_key(0, b"k");
-    mock.set(&encoded_key, &expired_value_bytes()).await.unwrap();
+    mock.set(encoded_key.clone(), expired_value_bytes()).await.unwrap();
 
     let kv = KvStorageAdapter::new(mock.clone());
     let result = kv.get(0, b"k").await;
@@ -151,7 +148,7 @@ async fn expired_key_read_never_errors_even_if_delete_fails() {
     let mock = Arc::new(MockAdapter::new());
     mock.fail_delete.store(true, Ordering::SeqCst);
     let encoded_key = aikv::storage::AiDbEngine::encode_key(0, b"k");
-    mock.set(&encoded_key, &expired_value_bytes()).await.unwrap();
+    mock.set(encoded_key.clone(), expired_value_bytes()).await.unwrap();
 
     let kv = KvStorageAdapter::new(mock.clone());
     let result = kv.get(0, b"k").await;
@@ -168,7 +165,7 @@ async fn expired_key_read_never_errors_even_if_delete_fails() {
 async fn expired_key_deleted_when_allowed() {
     let mock = Arc::new(MockAdapter::new());
     let encoded_key = aikv::storage::AiDbEngine::encode_key(0, b"k");
-    mock.set(&encoded_key, &expired_value_bytes()).await.unwrap();
+    mock.set(encoded_key.clone(), expired_value_bytes()).await.unwrap();
 
     let kv = KvStorageAdapter::new(mock.clone());
     let result = kv.get(0, b"k").await;

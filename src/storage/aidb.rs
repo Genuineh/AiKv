@@ -83,21 +83,17 @@ impl AiDbEngine {
 
 #[async_trait]
 impl StorageAdapter for AiDbEngine {
-    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let key = key.to_vec();
+    async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>> {
         self.blocking(move |db| db.get(&key).map_err(|e| Error::Storage(e.to_string())))
             .await
     }
 
-    async fn set(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        let key = key.to_vec();
-        let value = value.to_vec();
+    async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         self.blocking(move |db| db.put(&key, &value).map_err(|e| Error::Storage(e.to_string())))
             .await
     }
 
-    async fn delete(&self, key: &[u8]) -> Result<bool> {
-        let key = key.to_vec();
+    async fn delete(&self, key: Vec<u8>) -> Result<bool> {
         self.blocking(move |db| {
             let existed = db.get(&key).ok().flatten().is_some();
             db.delete(&key).map_err(|e| Error::Storage(e.to_string()))?;
@@ -106,8 +102,9 @@ impl StorageAdapter for AiDbEngine {
         .await
     }
 
-    async fn exists(&self, key: &[u8]) -> Result<bool> {
-        Ok(self.get(key).await?.is_some())
+    async fn exists(&self, key: Vec<u8>) -> Result<bool> {
+        self.blocking(move |db| Ok(db.get(&key).map_err(|e| Error::Storage(e.to_string()))?.is_some()))
+            .await
     }
 
     async fn write_batch(&self, batch: Vec<AdapterWriteOp>) -> Result<()> {
@@ -124,26 +121,26 @@ impl StorageAdapter for AiDbEngine {
         .await
     }
 
-    async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        let prefix = prefix.to_vec();
+    async fn for_each_prefix(
+        &self,
+        prefix: Vec<u8>,
+        mut f: Box<dyn FnMut(Vec<u8>, Vec<u8>) -> Result<()> + Send>,
+    ) -> Result<()> {
         self.blocking(move |db| {
             let end = AiDbEngine::prefix_end(&prefix);
             let iter = db
                 .scan(Some(prefix.as_slice()), end.as_deref())
                 .map_err(|e| Error::Storage(e.to_string()))?;
-            let mut out = Vec::new();
             for item in iter {
                 let (k, v) = item.map_err(|e| Error::Storage(e.to_string()))?;
-                out.push((k, v));
+                f(k, v)?;
             }
-            Ok(out)
+            Ok(())
         })
         .await
     }
 
-    async fn delete_range(&self, start: &[u8], end: &[u8]) -> Result<()> {
-        let start = start.to_vec();
-        let end = end.to_vec();
+    async fn delete_range(&self, start: Vec<u8>, end: Vec<u8>) -> Result<()> {
         self.blocking(move |db| {
             db.delete_range(&start, &end)
                 .map_err(|e| Error::Storage(e.to_string()))

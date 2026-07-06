@@ -11,7 +11,9 @@ use tempfile::TempDir;
 async fn test_aidb_get_set_offload_to_blocking_pool() {
     let dir = TempDir::new().unwrap();
     let engine = AiDbEngine::open_for_testing(dir.path()).expect("open aidb");
-    engine.set(b"k", b"v").await.unwrap();
+    engine.set(b"k".to_vec(), b"v".to_vec()).await.unwrap();
+    let key = b"k".to_vec();
+    let expected_val = b"v".to_vec();
 
     let finished = Arc::new(AtomicBool::new(false));
     let flag = finished.clone();
@@ -21,7 +23,7 @@ async fn test_aidb_get_set_offload_to_blocking_pool() {
     });
 
     for _ in 0..32 {
-        assert_eq!(engine.get(b"k").await.unwrap(), Some(b"v".to_vec()));
+        assert_eq!(engine.get(key.clone()).await.unwrap(), Some(expected_val.clone()));
     }
 
     tokio::time::sleep(Duration::from_millis(20)).await;

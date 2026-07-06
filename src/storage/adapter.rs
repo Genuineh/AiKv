@@ -24,16 +24,43 @@ pub enum AdapterWriteOp {
 
 #[async_trait]
 pub trait StorageAdapter: Send + Sync {
-    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
-    async fn set(&self, key: &[u8], value: &[u8]) -> Result<()>;
-    async fn delete(&self, key: &[u8]) -> Result<bool>;
-    async fn exists(&self, key: &[u8]) -> Result<bool>;
+    async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>>;
+    async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()>;
+    async fn delete(&self, key: Vec<u8>) -> Result<bool>;
+    async fn exists(&self, key: Vec<u8>) -> Result<bool>;
     async fn write_batch(&self, batch: Vec<AdapterWriteOp>) -> Result<()>;
-    async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
-    async fn delete_range(&self, start: &[u8], end: &[u8]) -> Result<()>;
+    async fn delete_range(&self, start: Vec<u8>, end: Vec<u8>) -> Result<()>;
     async fn len(&self) -> Result<usize>;
     async fn is_empty(&self) -> Result<bool>;
     async fn clear(&self) -> Result<()>;
+
+    /// 对前缀范围内的每个 (key, value) 调用 f (同步回调).
+    /// 回调是同步的, 无法直接执行 async 操作; 若需要 async, 应在回调中收集后再统一处理.
+    ///
+    /// 默认回退到 `scan_prefix` (兼容只覆盖 `scan_prefix` 的实现者如 MockAdapter).
+    /// 要实现流式处理, 应覆盖此方法 (并删除 `scan_prefix` 覆盖, 由本 trait 的 `scan_prefix` 默认实现转发).
+    async fn for_each_prefix(
+        &self,
+        prefix: Vec<u8>,
+        mut f: Box<dyn FnMut(Vec<u8>, Vec<u8>) -> Result<()> + Send>,
+    ) -> Result<()> {
+        for (k, v) in self.scan_prefix(&prefix).await? {
+            f(k, v)?;
+        }
+        Ok(())
+    }
+
+    /// 扫描前缀范围内的所有 KV 对.
+    /// 默认实现基于 `for_each_prefix`. 要提供更高效的收集实现, 可直接覆盖此方法.
+    async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+        let out = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let out_c = out.clone();
+        self.for_each_prefix(prefix.to_vec(), Box::new(move |k, v| {
+            out_c.lock().unwrap().push((k, v));
+            Ok(())
+        })).await?;
+        Ok(Arc::try_unwrap(out).unwrap().into_inner().unwrap())
+    }
 
     async fn flush(&self) -> Result<()> {
         Ok(())
@@ -116,17 +143,17 @@ impl KvStorageAdapter {
 
     async fn get_raw(&self, db: usize, key: &[u8]) -> Result<Option<Vec<u8>>> {
         self.check_db(db)?;
-        self.storage.get(&Self::encode(db, key)).await
+        self.storage.get(Self::encode(db, key)).await
     }
 
     async fn set_raw(&self, db: usize, key: &[u8], bytes: Vec<u8>) -> Result<()> {
         self.check_db(db)?;
-        self.storage.set(&Self::encode(db, key), &bytes).await
+        self.storage.set(Self::encode(db, key), bytes).await
     }
 
     async fn delete_encoded(&self, db: usize, key: &[u8]) -> Result<bool> {
         self.check_db(db)?;
-        self.storage.delete(&Self::encode(db, key)).await
+        self.storage.delete(Self::encode(db, key)).await
     }
 
     fn deserialize(bytes: &[u8]) -> Result<StoredValue> {
@@ -163,48 +190,64 @@ impl KvStorageAdapter {
         if !self.storage.allow_lazy_expire_delete(&encoded) {
             return;
         }
-        let _ = self.storage.delete(&encoded).await;
+        let _ = self.storage.delete(encoded).await;
     }
 
     async fn keys_for_db(&self, db: usize, pattern: &[u8]) -> Result<Vec<Vec<u8>>> {
         self.check_db(db)?;
         let prefix = Self::db_prefix(db);
-        let pairs = self.storage.scan_prefix(&prefix).await?;
-        let mut keys = Vec::new();
-        for (encoded, raw) in pairs {
+        let pattern = pattern.to_vec();
+        let observation = self.observation.clone();
+        let keys = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let keys_c = keys.clone();
+        let expired = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let expired_c = expired.clone();
+
+        self.storage.for_each_prefix(prefix, Box::new(move |encoded, raw| {
             let Some(user_key) = Self::decode_user_key(&encoded) else {
-                continue;
+                return Ok(());
             };
             let stored = Self::deserialize(&raw)?;
             if stored.is_expired() {
-                if let Some(obs) = &self.observation {
+                if let Some(obs) = &observation {
                     obs.record_expired_key();
                 }
-                self.try_lazy_expire_delete(db, &user_key).await;
-                continue;
+                expired_c.lock().unwrap().push(user_key);
+                return Ok(());
             }
-            if pattern.is_empty() || glob_match(pattern, &user_key) {
-                keys.push(user_key);
+            if pattern.is_empty() || glob_match(&pattern, &user_key) {
+                keys_c.lock().unwrap().push(user_key);
             }
+            Ok(())
+        })).await?;
+
+        // 延迟清理: for_each_prefix 返回后统一处理过期 key
+        let expired = Arc::try_unwrap(expired).unwrap().into_inner().unwrap();
+        for key in expired {
+            self.try_lazy_expire_delete(db, &key).await;
         }
-        Ok(keys)
+
+        Ok(Arc::try_unwrap(keys).unwrap().into_inner().unwrap())
     }
 
     async fn collect_db_entries(&self, db: usize) -> Result<Vec<(Vec<u8>, StoredValue)>> {
         self.check_db(db)?;
         let prefix = Self::db_prefix(db);
-        let pairs = self.storage.scan_prefix(&prefix).await?;
-        let mut out = Vec::new();
-        for (encoded, raw) in pairs {
+        let out = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let out_c = out.clone();
+
+        self.storage.for_each_prefix(prefix, Box::new(move |encoded, raw| {
             let Some(user_key) = Self::decode_user_key(&encoded) else {
-                continue;
+                return Ok(());
             };
             let stored = Self::deserialize(&raw)?;
             if !stored.is_expired() {
-                out.push((user_key, stored));
+                out_c.lock().unwrap().push((user_key, stored));
             }
-        }
-        Ok(out)
+            Ok(())
+        })).await?;
+
+        Ok(Arc::try_unwrap(out).unwrap().into_inner().unwrap())
     }
 
     async fn clear_db(&self, db: usize) -> Result<()> {
@@ -215,7 +258,7 @@ impl KvStorageAdapter {
             max.push(0xff);
             max
         });
-        self.storage.delete_range(&prefix, &end).await
+        self.storage.delete_range(prefix, end).await
     }
 }
 

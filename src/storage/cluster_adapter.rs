@@ -354,34 +354,34 @@ fn flush_group_storages(storages: &HashMap<u64, ShardedStorage>) -> Result<()> {
 
 #[async_trait]
 impl StorageAdapter for ClusterDataAdapter {
-    async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        match Self::route_read(key) {
-            Some((mgr, gid)) => mgr.multi_raft.get_local(gid, key).await.map_err(|e| {
+    async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>> {
+        match Self::route_read(&key) {
+            Some((mgr, gid)) => mgr.multi_raft.get_local(gid, &key).await.map_err(|e| {
                 tracing::warn!(gid = gid, error = %e, "get_local failed");
                 Self::map_err(e)
             }),
-            None if Self::should_use_local_engine(key) => self.local.get(key).await,
+            None if Self::should_use_local_engine(&key) => self.local.get(key).await,
             None => Err(Self::data_group_not_ready_err()),
         }
     }
 
-    async fn set(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        match Self::route_write(key) {
+    async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+        match Self::route_write(&key) {
             Some((mgr, gid)) => {
-                self.submit_batched_set(mgr, gid, key.to_vec(), value.to_vec())
+                self.submit_batched_set(mgr, gid, key, value)
                     .await
             }
-            None if Self::should_use_local_engine(key) => self.local.set(key, value).await,
+            None if Self::should_use_local_engine(&key) => self.local.set(key, value).await,
             None => Err(Self::data_group_not_ready_err()),
         }
     }
 
-    async fn delete(&self, key: &[u8]) -> Result<bool> {
-        match Self::route_write(key) {
+    async fn delete(&self, key: Vec<u8>) -> Result<bool> {
+        match Self::route_write(&key) {
             Some((mgr, gid)) => {
                 let existed = mgr
                     .multi_raft
-                    .get_local(gid, key)
+                    .get_local(gid, &key)
                     .await
                     .map_err(|e| {
                         tracing::warn!(gid = gid, error = %e, "get_local failed in delete");
@@ -392,20 +392,30 @@ impl StorageAdapter for ClusterDataAdapter {
                     let resp = Self::propose_group_with_retry(
                         &mgr,
                         gid,
-                        Request::Delete { key: key.to_vec() },
+                        Request::Delete { key },
                     )
                     .await?;
                     Self::check_response(resp)?;
                 }
                 Ok(existed)
             }
-            None if Self::should_use_local_engine(key) => self.local.delete(key).await,
+            None if Self::should_use_local_engine(&key) => self.local.delete(key).await,
             None => Err(Self::data_group_not_ready_err()),
         }
     }
 
-    async fn exists(&self, key: &[u8]) -> Result<bool> {
-        Ok(self.get(key).await?.is_some())
+    async fn exists(&self, key: Vec<u8>) -> Result<bool> {
+        match Self::route_read(&key) {
+            Some((mgr, gid)) => {
+                let v = mgr.multi_raft.get_local(gid, &key).await.map_err(|e| {
+                    tracing::warn!(gid = gid, error = %e, "get_local failed in exists");
+                    Self::map_err(e)
+                })?;
+                Ok(v.is_some())
+            }
+            None if Self::should_use_local_engine(&key) => self.local.exists(key).await,
+            None => Err(Self::data_group_not_ready_err()),
+        }
     }
 
     async fn write_batch(&self, batch: Vec<AdapterWriteOp>) -> Result<()> {
@@ -441,10 +451,13 @@ impl StorageAdapter for ClusterDataAdapter {
         Ok(())
     }
 
-    async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    async fn for_each_prefix(
+        &self,
+        prefix: Vec<u8>,
+        mut f: Box<dyn FnMut(Vec<u8>, Vec<u8>) -> Result<()> + Send>,
+    ) -> Result<()> {
         match CLUSTER_STATE_MGR.get() {
             Some(mgr) => {
-                let mut out = Vec::new();
                 for gid in mgr.multi_raft.local_group_ids() {
                     let pairs = mgr
                         .multi_raft
@@ -452,18 +465,18 @@ impl StorageAdapter for ClusterDataAdapter {
                         .await
                         .map_err(Self::map_err)?;
                     for (k, v) in pairs {
-                        if k.starts_with(prefix) {
-                            out.push((k, v));
+                        if k.starts_with(&prefix) {
+                            f(k, v)?;
                         }
                     }
                 }
-                Ok(out)
+                Ok(())
             }
-            None => self.local.scan_prefix(prefix).await,
+            None => self.local.for_each_prefix(prefix, f).await,
         }
     }
 
-    async fn delete_range(&self, start: &[u8], end: &[u8]) -> Result<()> {
+    async fn delete_range(&self, start: Vec<u8>, end: Vec<u8>) -> Result<()> {
         match CLUSTER_STATE_MGR.get() {
             Some(mgr) => {
                 for gid in mgr.multi_raft.local_group_ids() {
@@ -474,7 +487,7 @@ impl StorageAdapter for ClusterDataAdapter {
                         .map_err(Self::map_err)?;
                     let mut tb = ThinWriteBatch::new();
                     for (k, _) in pairs {
-                        if k.as_slice() >= start && k.as_slice() < end {
+                        if k.as_slice() >= start.as_slice() && k.as_slice() < end.as_slice() {
                             tb.delete(k);
                         }
                     }
