@@ -18,6 +18,9 @@ use crate::protocol::{ProtocolVersion, RespValue};
 use crate::server::{ServerMetrics, ServerSharedState};
 use crate::storage::KvStorage;
 
+/// 分桶 key 写锁桶数. 碰撞率 = 并发数 / 桶数.
+const KEY_LOCK_BUCKETS: usize = 4096;
+
 /// 分桶 key 写锁 (Hash / SET NX/XX / INCR 等)
 pub struct KeyLock {
     locks: Vec<Mutex<()>>,
@@ -144,7 +147,7 @@ pub struct CommandRouter {
 
 impl CommandRouter {
     pub fn new(storage: Arc<dyn KvStorage>) -> Self {
-        let key_lock = Arc::new(KeyLock::new(1024));
+        let key_lock = Arc::new(KeyLock::new(KEY_LOCK_BUCKETS));
         Self {
             string: string::StringCommands::new(storage.clone(), key_lock.clone()),
             hash: hash::HashCommands::new(storage.clone(), key_lock.clone()),
@@ -166,7 +169,7 @@ impl CommandRouter {
 
     pub fn new_with_shared(storage: Arc<dyn KvStorage>, shared: Arc<ServerSharedState>) -> Self {
         let tcp_port = shared.tcp_port;
-        let key_lock = Arc::new(KeyLock::new(1024));
+        let key_lock = Arc::new(KeyLock::new(KEY_LOCK_BUCKETS));
         Self {
             string: string::StringCommands::new(storage.clone(), key_lock.clone()),
             hash: hash::HashCommands::new(storage.clone(), key_lock.clone()),
