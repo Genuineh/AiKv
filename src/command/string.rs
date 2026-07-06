@@ -41,21 +41,57 @@ impl StringCommands {
         if args.len() < 2 {
             return Err(router::wrong_args("SET", ""));
         }
-        let (key, value, expire_ms, condition) = parse_set_options(args)?;
+        let opts = parse_set_options(args)?;
 
-        if matches!(condition, SetCondition::Nx | SetCondition::Xx) {
-            let _lock = self.key_lock.lock(&key).await;
-            let exists = self.storage.get(db, &key).await?.is_some();
-            if condition == SetCondition::Nx && exists {
-                return Ok(router::nil_bulk());
+        // GET / KEEPTTL / NX / XX 都需要锁和旧值
+        let needs_lock = opts.return_old
+            || opts.keep_ttl
+            || matches!(opts.condition, SetCondition::Nx | SetCondition::Xx);
+
+        if needs_lock {
+            let _lock = self.key_lock.lock(&opts.key).await;
+            let old_value = self.storage.get(db, &opts.key).await?;
+
+            // NX: 仅在 key 不存在时设置
+            if opts.condition == SetCondition::Nx && old_value.is_some() {
+                return Ok(if opts.return_old {
+                    router::bulk(old_value.unwrap())
+                } else {
+                    router::nil_bulk()
+                });
             }
-            if condition == SetCondition::Xx && !exists {
-                return Ok(router::nil_bulk());
+            // XX: 仅在 key 存在时设置
+            if opts.condition == SetCondition::Xx && old_value.is_none() {
+                return Ok(if opts.return_old {
+                    router::nil_bulk()
+                } else {
+                    router::nil_bulk()
+                });
             }
-            return self.apply_set(db, &key, &value, expire_ms).await;
+
+            // KEEPTTL: 保留现有过期时间
+            let expire = if opts.keep_ttl {
+                self.storage
+                    .get_typed(db, &opts.key)
+                    .await?
+                    .and_then(|s| s.expires_at)
+            } else {
+                opts.expire_at
+            };
+
+            self.apply_set(db, &opts.key, &opts.value, expire).await?;
+
+            return Ok(if opts.return_old {
+                match old_value {
+                    Some(v) => router::bulk(v),
+                    None => router::nil_bulk(),
+                }
+            } else {
+                router::ok()
+            });
         }
 
-        self.apply_set(db, &key, &value, expire_ms).await
+        self.apply_set(db, &opts.key, &opts.value, opts.expire_at).await
     }
 
     async fn apply_set(
@@ -401,13 +437,22 @@ impl StringCommands {
     }
 }
 
-type SetOptions = (Vec<u8>, Vec<u8>, Option<u64>, SetCondition);
+struct SetOptions {
+    key: Vec<u8>,
+    value: Vec<u8>,
+    expire_at: Option<u64>,
+    condition: SetCondition,
+    return_old: bool,
+    keep_ttl: bool,
+}
 
 fn parse_set_options(args: &[Bytes]) -> Result<SetOptions> {
     let key = args[0].to_vec();
     let value = args[1].to_vec();
     let mut expire_at: Option<u64> = None;
     let mut condition = SetCondition::None;
+    let mut return_old = false;
+    let mut keep_ttl = false;
     let mut i = 2;
     while i < args.len() {
         let opt = String::from_utf8_lossy(&args[i]).to_ascii_uppercase();
@@ -489,13 +534,23 @@ fn parse_set_options(args: &[Bytes]) -> Result<SetOptions> {
                 condition = SetCondition::Xx;
             }
             "GET" => {
-                return Err(Error::Command("ERR syntax error".into()));
+                return_old = true;
+            }
+            "KEEPTTL" => {
+                keep_ttl = true;
             }
             _ => return Err(Error::Command("ERR syntax error".into())),
         }
         i += 1;
     }
-    Ok((key, value, expire_at, condition))
+    Ok(SetOptions {
+        key,
+        value,
+        expire_at,
+        condition,
+        return_old,
+        keep_ttl,
+    })
 }
 
 /// Redis bit offset: 0 is the leftmost bit of the first byte.
