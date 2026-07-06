@@ -9,6 +9,7 @@ pub mod dump;
 pub mod memory;
 pub mod observation;
 pub mod subkey;
+pub mod ttl_filter;
 pub mod types;
 
 pub use adapter::{AdapterWriteOp, KvStorageAdapter, StorageAdapter};
@@ -21,3 +22,5 @@ pub use types::{
     is_wrongtype, now_ms, CollectionKind, KeyspaceStats, KvStorage, ScanResult, StorageEngineKind,
     StoredValue, ValueType, WriteOp, TTL_NO_EXPIRY, WRONGTYPE,
 };
+
+pub use ttl_filter::TtlExpireFilter;

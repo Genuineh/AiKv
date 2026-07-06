@@ -20,6 +20,7 @@ use aikv::storage::{
     server_db_options_with_preset, AiDbEngine, DbPreset, KvStorage, KvStorageAdapter, MemoryEngine,
     StorageEngineKind, StorageObservation,
 };
+use aikv::storage::ttl_filter::TtlExpireFilter;
 use clap::{Parser as ClapParser, ValueEnum};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter, Registry};
 
@@ -163,6 +164,8 @@ fn build_storage(args: &Args, observation: Arc<StorageObservation>) -> StorageBu
                 server_db_options_with_preset(args.sync_wal, preset),
             )
                 .map_err(|e| e.to_string())?;
+            // 注入 TTL compaction 过滤器以自动清理过期 key.
+            engine.db.set_compaction_filter(Some(std::sync::Arc::new(TtlExpireFilter)));
             let db = engine.db.clone();
             let adapter: Arc<dyn aikv::storage::StorageAdapter> = engine;
             #[cfg(feature = "cluster")]
@@ -402,6 +405,7 @@ async fn init_cluster(
         data_dir: data_dir.to_path_buf(),
         raft_node_config: raft_config,
         options: server_db_options_with_preset(sync_wal, aidb_preset),
+        compaction_filter: Some(std::sync::Arc::new(TtlExpireFilter)),
     };
     let _lifecycle_shutdown = multi_raft.start_lifecycle_with_data(lifecycle_cfg);
 
