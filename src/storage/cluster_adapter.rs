@@ -91,13 +91,27 @@ impl ClusterDataAdapter {
         Self::local_migration_target_group(mgr)
     }
 
+    /// 剥离子键后缀 (`\x01H{...}` 或 `\x01S{...}`), 返回路由用的纯 user_key.
+    /// Subkey 的 slot 必须与父 key 一致, 否则集群模式下会路由到错误的 group.
+    fn strip_subkey_suffix(user_key: &[u8]) -> &[u8] {
+        if let Some(pos) = user_key.iter().position(|&b| b == 0x01) {
+            if pos + 1 < user_key.len()
+                && (user_key[pos + 1] == b'H' || user_key[pos + 1] == b'S')
+            {
+                return &user_key[..pos];
+            }
+        }
+        user_key
+    }
+
     /// 读路径: 按 router 已分配 slot 路由到本地 group.
     /// 对于 Migrating 状态的 slot，如果源 group 确实在本地 self.groups 中
     /// （而非仅 is_group_local 返回 true 的竞态窗口），则从本地读。
     fn route_read(key: &[u8]) -> Option<(Arc<ClusterStateManager>, u64)> {
         let mgr = CLUSTER_STATE_MGR.get()?.clone();
         let (_, user_key) = AiDbEngine::decode_key(key)?;
-        match mgr.router.route_key(&user_key) {
+        let routing_key = Self::strip_subkey_suffix(&user_key);
+        match mgr.router.route_key(routing_key) {
             Ok((gid, SlotStatus::Assigned(_))) => Some((mgr, gid)),
             Ok((gid, SlotStatus::Migrating(_)))
                 if mgr.multi_raft.get_groups().read().contains_key(&gid) =>
@@ -112,11 +126,12 @@ impl ClusterDataAdapter {
     fn route_write(key: &[u8]) -> Option<(Arc<ClusterStateManager>, u64)> {
         let mgr = CLUSTER_STATE_MGR.get()?.clone();
         let (_, user_key) = AiDbEngine::decode_key(key)?;
-        let slot = key_to_slot(&user_key);
+        let routing_key = Self::strip_subkey_suffix(&user_key);
+        let slot = key_to_slot(routing_key);
         if let Some(gid) = Self::importing_write_group(&mgr, slot) {
             return Some((mgr, gid));
         }
-        match mgr.router.route_key(&user_key) {
+        match mgr.router.route_key(routing_key) {
             Ok((gid, SlotStatus::Assigned(_))) => {
                 if mgr.multi_raft.get_groups().read().contains_key(&gid) {
                     Some((mgr, gid))
