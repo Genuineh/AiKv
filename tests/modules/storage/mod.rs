@@ -3,4 +3,5 @@ pub mod aidb_blocking;
 pub mod compat;
 pub mod memory;
 pub mod prod_options;
+pub mod ttl_filter;
 pub mod types;
