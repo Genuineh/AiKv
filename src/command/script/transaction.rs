@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use bytes::Bytes;
 
 use crate::error::{Error, Result};
-use crate::storage::{now_ms, KvStorage, StoredValue, ValueType, WRONGTYPE};
+use crate::storage::{now_ms, AiDbEngine, CollectionKind, KvStorage, StoredValue, ValueType, WRONGTYPE};
+use crate::storage::subkey;
 
 #[derive(Debug, Clone)]
 pub enum ExtendedBatchOp {
@@ -87,7 +88,49 @@ impl ScriptTransaction {
                 _ => Ok(Some(op_to_stored(op)?)),
             };
         }
-        storage.get_typed(self.db_index, key).await
+        let Some(stored) = storage.get_typed(self.db_index, key).await? else {
+            return Ok(None);
+        };
+        // 透明展开 CollectionHeader -> 完整集合, 使 Lua 脚本读路径无需感知 subkey 格式.
+        match stored.value {
+            ValueType::CollectionHeader { kind: CollectionKind::Hash, .. } => {
+                let encoded = AiDbEngine::encode_key(self.db_index, key);
+                let prefix = subkey::hash_subkey_prefix(&encoded);
+                let map = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+                let map_c = map.clone();
+                storage.raw_subkey_for_each(self.db_index, prefix, Box::new(move |enc, raw| {
+                    if let Some((kind, field)) = subkey::decode_subkey(&enc) {
+                        if kind == CollectionKind::Hash {
+                            map_c.lock().unwrap().insert(field, raw);
+                        }
+                    }
+                    Ok(())
+                })).await?;
+                Ok(Some(StoredValue {
+                    value: ValueType::Hash(std::sync::Arc::try_unwrap(map).unwrap().into_inner().unwrap()),
+                    expires_at: stored.expires_at,
+                }))
+            }
+            ValueType::CollectionHeader { kind: CollectionKind::Set, .. } => {
+                let encoded = AiDbEngine::encode_key(self.db_index, key);
+                let prefix = subkey::set_subkey_prefix(&encoded);
+                let set_h = std::sync::Arc::new(std::sync::Mutex::new(HashSet::new()));
+                let set_c = set_h.clone();
+                storage.raw_subkey_for_each(self.db_index, prefix, Box::new(move |enc, _raw| {
+                    if let Some((kind, member)) = subkey::decode_subkey(&enc) {
+                        if kind == CollectionKind::Set {
+                            set_c.lock().unwrap().insert(member);
+                        }
+                    }
+                    Ok(())
+                })).await?;
+                Ok(Some(StoredValue {
+                    value: ValueType::Set(std::sync::Arc::try_unwrap(set_h).unwrap().into_inner().unwrap()),
+                    expires_at: stored.expires_at,
+                }))
+            }
+            _ => Ok(Some(stored)),
+        }
     }
 
     pub async fn exists(&self, storage: &dyn KvStorage, key: &[u8]) -> Result<bool> {
