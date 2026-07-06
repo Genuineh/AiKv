@@ -207,7 +207,10 @@ impl KvStorageAdapter {
             let Some(user_key) = Self::decode_user_key(&encoded) else {
                 return Ok(());
             };
-            let stored = Self::deserialize(&raw)?;
+            // 跳过 subkey entry (非 bincode StoredValue)
+            let Ok(stored) = Self::deserialize(&raw) else {
+                return Ok(());
+            };
             if stored.is_expired() {
                 if let Some(obs) = &observation {
                     obs.record_expired_key();
@@ -240,7 +243,10 @@ impl KvStorageAdapter {
             let Some(user_key) = Self::decode_user_key(&encoded) else {
                 return Ok(());
             };
-            let stored = Self::deserialize(&raw)?;
+            // 跳过 subkey entry (非 bincode StoredValue)
+            let Ok(stored) = Self::deserialize(&raw) else {
+                return Ok(());
+            };
             if !stored.is_expired() {
                 out_c.lock().unwrap().push((user_key, stored));
             }
@@ -568,6 +574,33 @@ impl KvStorage for KvStorageAdapter {
 
     async fn memory_usage_bytes(&self) -> Result<u64> {
         Ok(self.storage.approximate_memory_bytes().unwrap_or(0))
+    }
+
+    // ---- raw subkey 访问 ----
+
+    async fn raw_subkey_get(&self, db: usize, encoded_key: Vec<u8>) -> Result<Option<Vec<u8>>> {
+        self.check_db(db)?;
+        self.storage.get(encoded_key).await
+    }
+
+    async fn raw_subkey_set(&self, db: usize, encoded_key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+        self.check_db(db)?;
+        self.storage.set(encoded_key, value).await
+    }
+
+    async fn raw_subkey_delete(&self, db: usize, encoded_key: Vec<u8>) -> Result<bool> {
+        self.check_db(db)?;
+        self.storage.delete(encoded_key).await
+    }
+
+    async fn raw_subkey_for_each(
+        &self,
+        db: usize,
+        prefix: Vec<u8>,
+        f: Box<dyn FnMut(Vec<u8>, Vec<u8>) -> Result<()> + Send>,
+    ) -> Result<()> {
+        self.check_db(db)?;
+        self.storage.for_each_prefix(prefix, f).await
     }
 }
 

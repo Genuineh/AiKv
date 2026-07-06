@@ -52,6 +52,17 @@ pub enum ValueType {
     List(VecDeque<Vec<u8>>),
     Set(HashSet<Vec<u8>>),
     ZSet(BTreeMap<Vec<u8>, f64>),
+    /// Subkey 格式的集合元数据.
+    /// key 自身存储 `StoredValue { value: CollectionHeader, expires_at }`,
+    /// 每个 field/member 以独立 subkey 存储在引擎中.
+    CollectionHeader { kind: CollectionKind, count: u32 },
+}
+
+/// Subkey 格式支持的集合类型.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CollectionKind {
+    Hash = 1,
+    Set = 2,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -83,6 +94,10 @@ impl StoredValue {
             ValueType::List(_) => "list",
             ValueType::Set(_) => "set",
             ValueType::ZSet(_) => "zset",
+            ValueType::CollectionHeader { kind, .. } => match kind {
+                CollectionKind::Hash => "hash",
+                CollectionKind::Set => "set",
+            },
         }
     }
 
@@ -94,6 +109,8 @@ impl StoredValue {
             ValueType::List(l) => l.iter().map(|v| v.len()).sum::<usize>() as u64,
             ValueType::Set(s) => s.iter().map(|v| v.len()).sum::<usize>() as u64,
             ValueType::ZSet(z) => z.keys().map(|k| k.len()).sum::<usize>() as u64,
+            // CollectionHeader 自身很小; subkey 中的 field 数据由引擎单独统计
+            ValueType::CollectionHeader { .. } => 13,
         }
     }
 
@@ -282,6 +299,35 @@ pub trait KvStorage: Send + Sync {
     /// 近似内存占用 (字节); 默认 0, 各引擎自行实现.
     async fn memory_usage_bytes(&self) -> Result<u64> {
         Ok(0)
+    }
+
+    // ---- 原始 subkey 访问 (仅持久化引擎) ----
+
+    /// 绕过 bincode 反序列化, 直接读取 subkey 的原始字节.
+    /// 默认返回 None (MemoryEngine 不支持).
+    async fn raw_subkey_get(&self, _db: usize, _encoded_key: Vec<u8>) -> Result<Option<Vec<u8>>> {
+        Err(Error::Storage("raw subkey access not supported".into()))
+    }
+
+    /// 绕过 bincode 序列化, 直接写入 subkey 的原始字节.
+    async fn raw_subkey_set(&self, _db: usize, _encoded_key: Vec<u8>, _value: Vec<u8>) -> Result<()> {
+        Err(Error::Storage("raw subkey access not supported".into()))
+    }
+
+    /// 绕过 bincode, 直接删除 subkey.
+    async fn raw_subkey_delete(&self, _db: usize, _encoded_key: Vec<u8>) -> Result<bool> {
+        Err(Error::Storage("raw subkey access not supported".into()))
+    }
+
+    /// 绕过 bincode, 扫描 subkey 前缀范围内的所有原始 KV 对.
+    /// 仅持久化引擎实现; MemoryEngine 返回 Err.
+    async fn raw_subkey_for_each(
+        &self,
+        _db: usize,
+        _prefix: Vec<u8>,
+        _f: Box<dyn FnMut(Vec<u8>, Vec<u8>) -> Result<()> + Send>,
+    ) -> Result<()> {
+        Err(Error::Storage("raw subkey access not supported".into()))
     }
 }
 

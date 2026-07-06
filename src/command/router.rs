@@ -607,6 +607,7 @@ impl CommandRouter {
                             ValueType::List(_) => "listpack",
                             ValueType::Set(_) => "listpack",
                             ValueType::ZSet(_) => "listpack",
+                            ValueType::CollectionHeader { .. } => "listpack",
                         };
                         Ok(bulk(enc.as_bytes().to_vec()))
                     }
