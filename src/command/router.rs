@@ -694,6 +694,9 @@ impl CommandRouter {
                 })?;
                 self.require_server()?.client_getname(id, args).await
             }
+            // Stub: StackExchange.Redis sends CLIENT SETINFO LIB-NAME / LIB-VER on connect.
+            // Redis 7+ supports this; aikv returns OK to avoid ERR noise and connection churn.
+            "SETINFO" => Ok(ok()),
             _ => Err(Error::Command("ERR unknown CLIENT subcommand".into())),
         }
     }

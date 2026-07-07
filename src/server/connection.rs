@@ -115,12 +115,27 @@ impl Connection {
         tracing::Span::current().record("server.port", self.state.tcp_port as i64);
         let config = Arc::clone(&self.state.connection_config);
         let mut buf = vec![0u8; 16384];
+        let conn_start = Instant::now();
 
         loop {
             if self.state.shutdown.is_cancelled() {
+                tracing::info!(
+                    target: "kv.conn.close_reason",
+                    client_id = self.client_id,
+                    reason = "shutdown",
+                    alive_ms = conn_start.elapsed().as_millis() as u64,
+                    "kv.connection.close.reason"
+                );
                 break;
             }
             if self.quit {
+                tracing::info!(
+                    target: "kv.conn.close_reason",
+                    client_id = self.client_id,
+                    reason = "quit",
+                    alive_ms = conn_start.elapsed().as_millis() as u64,
+                    "kv.connection.close.reason"
+                );
                 break;
             }
 
@@ -131,6 +146,14 @@ impl Connection {
 
             if let Some(idle) = config.idle_timeout {
                 if self.last_active.elapsed() > idle {
+                    tracing::info!(
+                        target: "kv.conn.close_reason",
+                        client_id = self.client_id,
+                        reason = "idle_timeout",
+                        idle_ms = self.last_active.elapsed().as_millis() as u64,
+                        alive_ms = conn_start.elapsed().as_millis() as u64,
+                        "kv.connection.close.reason"
+                    );
                     break;
                 }
             }
@@ -138,18 +161,54 @@ impl Connection {
             let n = if let Some(timeout) = config.read_timeout {
                 match time::timeout(timeout, self.read_buf(&mut buf)).await {
                     Ok(Ok(n)) => n,
-                    Ok(Err(e)) => return Err(e.into()),
-                    Err(_) => break,
+                    Ok(Err(e)) => {
+                        tracing::info!(
+                            target: "kv.conn.close_reason",
+                            client_id = self.client_id,
+                            reason = "read_error",
+                            error = %e,
+                            alive_ms = conn_start.elapsed().as_millis() as u64,
+                            "kv.connection.close.reason"
+                        );
+                        return Err(e.into());
+                    }
+                    Err(_) => {
+                        tracing::info!(
+                            target: "kv.conn.close_reason",
+                            client_id = self.client_id,
+                            reason = "read_timeout",
+                            timeout_ms = timeout.as_millis() as u64,
+                            alive_ms = conn_start.elapsed().as_millis() as u64,
+                            "kv.connection.close.reason"
+                        );
+                        break;
+                    }
                 }
             } else {
                 self.read_buf(&mut buf).await?
             };
 
             if n == 0 {
+                tracing::info!(
+                    target: "kv.conn.close_reason",
+                    client_id = self.client_id,
+                    reason = "client_closed",
+                    alive_ms = conn_start.elapsed().as_millis() as u64,
+                    "kv.connection.close.reason"
+                );
                 break;
             }
 
             if self.parser.buffer_len() + n > self.parser.max_buffer_size() {
+                tracing::info!(
+                    target: "kv.conn.close_reason",
+                    client_id = self.client_id,
+                    reason = "buffer_overflow",
+                    buflen = self.parser.buffer_len(),
+                    added = n,
+                    alive_ms = conn_start.elapsed().as_millis() as u64,
+                    "kv.connection.close.reason"
+                );
                 break;
             }
 
