@@ -68,6 +68,7 @@ mod tests {
             rpc_timeout_ms: 500,
             grpc_max_message_size: 65536,
             snapshot_size_threshold: None,
+            linearizable_read: false,
         };
         let db = aidb::DB::open(
             std::env::temp_dir().join("raft_test"),

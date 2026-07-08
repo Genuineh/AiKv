@@ -61,6 +61,7 @@ fn ensure_node2_cluster_state() {
                     rpc_timeout_ms: 500,
                     grpc_max_message_size: 65536,
                     snapshot_size_threshold: None,
+            linearizable_read: false,
                 },
                 db,
                 net_factory,
