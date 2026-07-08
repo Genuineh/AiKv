@@ -167,6 +167,7 @@ fn cluster_info_redis7_p0_fields_present() {
                     max_entry_size: 8192,
                     rpc_timeout_ms: 500,
                     grpc_max_message_size: 65536,
+                    snapshot_size_threshold: None,
                 },
                 db,
                 net_factory,

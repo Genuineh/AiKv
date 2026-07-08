@@ -54,6 +54,7 @@ async fn setup_cluster_mgr() -> ClusterStateManager {
             max_entry_size: 8192,
             rpc_timeout_ms: 500,
             grpc_max_message_size: 65536,
+            snapshot_size_threshold: None,
         },
         db,
         net_factory,

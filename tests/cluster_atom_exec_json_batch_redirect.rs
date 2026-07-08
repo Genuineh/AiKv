@@ -84,6 +84,7 @@ fn ensure_remote_slot0_cluster_state() {
                     max_entry_size: 8192,
                     rpc_timeout_ms: 500,
                     grpc_max_message_size: 65536,
+                    snapshot_size_threshold: None,
                 },
                 db,
                 net_factory,
