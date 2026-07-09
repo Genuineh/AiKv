@@ -216,23 +216,38 @@ mod tests {
             }
             _ => panic!("expected ASK (v7 write redirect to target), got {:?}", r),
         }
-        // Read → Execute (source still serves reads)
+        // FIX-0056-A1: Copying (Prepare/Migrating) 读不再纯 source (v7 断言作废) —
+        // 与 Frozen 一样统一 ASK 到 target leader, 由其做合并读 (target 优先, 未拷贝
+        // 时回落 source). Read → ASK(target), node 4 at addr ":7004".
         let r = ClusterRouter::decide(b"\x00\x00", CommandType::Read, false, false);
-        assert!(
-            matches!(r, RouteDecision::Execute),
-            "expected Execute (source keeps serving reads during migration), got {:?}",
-            r
-        );
+        match &r {
+            RouteDecision::Ask {
+                slot,
+                node_id,
+                addr,
+            } => {
+                assert_eq!(*slot, 0);
+                assert_eq!(*node_id, 4, "ASK should point to target group 2's leader");
+                assert_eq!(addr, ":7004");
+            }
+            _ => panic!(
+                "expected ASK (Copying read → merge-read on target leader), got {:?}",
+                r
+            ),
+        }
 
         // ═══════════════════════════════════════════════════════════════
-        // 7b. Readonly replica Execute — Migrating, source local, not leader, readonly
+        // 7b. Readonly replica still ASK — Migrating, source local, not leader, readonly
         // ═══════════════════════════════════════════════════════════════
+        // A readonly replica of the *source* group cannot serve a merge-read
+        // locally (it doesn't host target) — must ASK to target leader same
+        // as a non-readonly request.
         mgr_ref.local_group_leaders.write().insert(1, false);
         *mgr_ref.role.write() = ReplicationRole::Replica { primary_id: 2 };
         let r = ClusterRouter::decide(b"\x00\x00", CommandType::Read, false, true);
         assert!(
-            matches!(r, RouteDecision::Execute),
-            "expected Execute (readonly replica keeps serving during migration), got {:?}",
+            matches!(r, RouteDecision::Ask { .. }),
+            "expected ASK (readonly source replica can't merge-read locally), got {:?}",
             r
         );
 
@@ -392,13 +407,48 @@ mod tests {
             r
         );
         mgr_ref.importing_slots.write().clear();
-        // Frozen read → still Execute on source
+        // FIX-0056-A1: Frozen 读不再纯 source (A2 断言作废) — 与 ReadyToCommit
+        // 一样统一 ASK 到 target leader (由其做合并读), source 本地也不得就地 Execute.
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Read, false, false);
+        match &r {
+            RouteDecision::Ask {
+                slot,
+                node_id,
+                addr,
+            } => {
+                assert_eq!(*slot, 0);
+                assert_eq!(*node_id, 4);
+                assert_eq!(addr, ":7004");
+            }
+            _ => panic!(
+                "expected ASK to target (Frozen read → merge-read on target leader), got {:?}",
+                r
+            ),
+        }
+        // Readonly replica on source also must not serve Frozen reads locally.
+        mgr_ref.local_group_leaders.write().insert(1, false);
+        *mgr_ref.role.write() = ReplicationRole::Replica { primary_id: 2 };
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Read, false, true);
+        assert!(
+            matches!(r, RouteDecision::Ask { .. }),
+            "expected ASK (Frozen readonly source replica), got {:?}",
+            r
+        );
+        *mgr_ref.role.write() = ReplicationRole::Primary;
+        mgr_ref.local_group_leaders.write().insert(1, true);
+        // Target local + Frozen read → Execute (target leader does the merge locally).
+        mgr_ref.multi_raft.clear_group_local_override(1);
+        mgr_ref.multi_raft.override_group_local(2);
+        mgr_ref.local_group_leaders.write().insert(2, true);
         let r = ClusterRouter::decide(b"\x00\x00", CommandType::Read, false, false);
         assert!(
             matches!(r, RouteDecision::Execute),
-            "expected Execute (Frozen read on source), got {:?}",
+            "expected Execute (Frozen read on target leader), got {:?}",
             r
         );
+        mgr_ref.multi_raft.clear_group_local_override(2);
+        mgr_ref.multi_raft.override_group_local(1);
+        mgr_ref.local_group_leaders.write().insert(1, true);
 
         // ═══════════════════════════════════════════════════════════════
         // 15c. F-056 ReadyToCommit — write TRYAGAIN; read → target (not source)
@@ -463,8 +513,29 @@ mod tests {
             r
         );
 
+        // ═══════════════════════════════════════════════════════════════
+        // 15d. F-056-A1: 任意活跃迁移期间 SCAN 族 → TRYAGAIN
+        // ═══════════════════════════════════════════════════════════════
+        use aikv::cluster::router::scan_tryagain_if_migrating;
+        for cmd in ["SCAN", "HSCAN", "SSCAN", "ZSCAN", "scan", "hscan"] {
+            let r = scan_tryagain_if_migrating(cmd);
+            assert!(
+                matches!(r, Some(RouteDecision::TryAgain { .. })),
+                "expected TryAgain for {cmd} during active migration, got {:?}",
+                r
+            );
+        }
+        assert!(
+            scan_tryagain_if_migrating("GET").is_none(),
+            "non-SCAN commands must not be intercepted by scan_tryagain_if_migrating"
+        );
+
         // Restore for subsequent CLUSTER INFO tests
         mgr_ref.meta_raft.set_migration_state(None);
+        assert!(
+            scan_tryagain_if_migrating("SCAN").is_none(),
+            "SCAN must not TRYAGAIN when no active migration"
+        );
         mgr_ref.importing_slots.write().clear();
         mgr_ref.multi_raft.clear_group_local_override(2);
         mgr_ref.multi_raft.override_group_local(1);

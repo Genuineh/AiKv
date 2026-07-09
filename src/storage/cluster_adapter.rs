@@ -23,7 +23,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use aidb::cluster::router::key_to_slot;
 use aidb::cluster::{
-    Request, Response, ShardedStorage, SlotMigrationState, SlotStatus, ThinWriteBatch,
+    MigOp, Request, Response, ShardedStorage, SlotMigrationState, SlotStatus, ThinWriteBatch,
 };
 use aidb::error::ClusterError as AidbClusterError;
 use aidb::Checkpoint;
@@ -43,6 +43,30 @@ const ERR_DATA_GROUP_NOT_READY: &str = "CLUSTERDOWN data group not ready";
 const SET_BATCH_MAX_OPS: usize = 128;
 /// 凑批等待上限. 1ms 平衡吞吐与延迟: 集群 50c 负载下 items 到达快, 等 1ms 足矣.
 const SET_BATCH_MAX_DELAY: Duration = Duration::from_millis(1);
+
+/// F-056-A1 读路由结果: `Single` 为老路径 (本地 group 直读, 无需合并);
+/// `Merge` 为 Frozen/Copying 期合并读, 需依次查 target tombstone → target
+/// 值 → source 值 (见 `ClusterDataAdapter::merge_read`).
+enum ReadRoute {
+    Single(u64),
+    Merge {
+        target_group: u64,
+        source_group: u64,
+        epoch: u64,
+    },
+}
+
+/// F-056-A1 写路由结果: `Plain` 为老路径 (`Request::Put`/`Delete`/`WriteBatch`);
+/// `Migration` 为 Copying (Prepare/Migrating) 期写, 必须走
+/// `Request::MigrationWrite` 记录 tombstone (关闭"不存在则跳过 propose"短路).
+enum WriteRoute {
+    Plain(u64),
+    Migration {
+        gid: u64,
+        source_group: u64,
+        epoch: u64,
+    },
+}
 
 /// 数据面感知的存储适配器.
 pub struct ClusterDataAdapter {
@@ -117,18 +141,98 @@ impl ClusterDataAdapter {
         Ok(())
     }
 
-    /// F-056 读路由 group: ReadyToCommit → target; Frozen/Copying → source (若本地).
-    fn migration_read_group(mgr: &ClusterStateManager, slot: u16) -> Option<u64> {
-        let phase = migration_phase_for_slot(mgr, slot)?;
-        let gid = match phase {
-            MigrationRoutePhase::ReadyToCommit { target_group, .. } => target_group,
-            MigrationRoutePhase::Frozen { source_group, .. }
-            | MigrationRoutePhase::Copying { source_group, .. } => source_group,
+    /// F-056-A1 读路由: ReadyToCommit → 纯 target (仅本地时走快路径, 语义不变);
+    /// Frozen/Copying → 合并读 (`ReadRoute::Merge`), 不要求 target/source 本地
+    /// —— `merge_read` 内部按需经 `get_key_from_group_remote` 远程读取.
+    fn migration_read_route(mgr: &ClusterStateManager, slot: u16) -> Result<Option<ReadRoute>> {
+        let Some(phase) = migration_phase_for_slot(mgr, slot) else {
+            return Ok(None);
         };
-        if mgr.multi_raft.get_groups().read().contains_key(&gid) {
-            Some(gid)
-        } else {
-            None
+        match phase {
+            MigrationRoutePhase::ReadyToCommit { target_group, .. } => {
+                Ok(mgr
+                    .multi_raft
+                    .get_groups()
+                    .read()
+                    .contains_key(&target_group)
+                    .then_some(ReadRoute::Single(target_group)))
+            }
+            MigrationRoutePhase::Frozen {
+                source_group,
+                target_group,
+            }
+            | MigrationRoutePhase::Copying {
+                source_group,
+                target_group,
+            } => {
+                let epoch = mgr
+                    .migration_epoch()
+                    .ok_or_else(|| Error::Command(TRYAGAIN_MIGRATION.into()))?;
+                Ok(Some(ReadRoute::Merge {
+                    target_group,
+                    source_group,
+                    epoch,
+                }))
+            }
+        }
+    }
+
+    /// FIX-0056-A1 合并读线性点 (算法/合并读): 先查 target 上该 epoch 内 key 的
+    /// tombstone —— 最后一次是 Del 则直接返回 None (禁止 source 复活); 否则读
+    /// target 值, 命中即返回 (target-wins); target miss 时才回落 source (数据
+    /// 尚未拷贝到 target 的情形). 任一步 RPC 失败/超时都必须返回 TRYAGAIN,
+    /// 禁止静默 fallback 到可能陈旧的本地视图 (读导向 点 3).
+    async fn merge_read(
+        mgr: &ClusterStateManager,
+        target_group: u64,
+        source_group: u64,
+        epoch: u64,
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>> {
+        let tombstone = mgr
+            .multi_raft
+            .get_migration_tombstone_remote(target_group, epoch, key)
+            .await
+            .map_err(Self::merge_read_err)?;
+        if matches!(tombstone, Some(MigOp::Del)) {
+            return Ok(None);
+        }
+        if let Some(v) = mgr
+            .multi_raft
+            .get_key_from_group_remote(target_group, key)
+            .await
+            .map_err(Self::merge_read_err)?
+        {
+            return Ok(Some(v));
+        }
+        mgr.multi_raft
+            .get_key_from_group_remote(source_group, key)
+            .await
+            .map_err(Self::merge_read_err)
+    }
+
+    fn merge_read_err<E: std::fmt::Display>(e: E) -> Error {
+        tracing::warn!(error = %e, "merge_read failed, mapping to TRYAGAIN");
+        Error::Command(TRYAGAIN_MIGRATION.into())
+    }
+
+    /// 若 `slot` 处于 Copying (Prepare/Migrating), 返回 `(source_group, epoch)`
+    /// 供写路径构造 `Request::MigrationWrite`. Frozen/ReadyToCommit 写已在
+    /// `reject_if_write_frozen` 拦截, 不会到达这里. epoch 缺失属于不应发生的
+    /// 内部不一致 (`BeginSlotMigration` 与 `migration_state` 同一 apply 内落地),
+    /// 保守返回 TRYAGAIN 而非静默退化为非迁移写 (会漏记 tombstone).
+    fn copying_migration_route(
+        mgr: &ClusterStateManager,
+        slot: u16,
+    ) -> Result<Option<(u64, u64)>> {
+        match migration_phase_for_slot(mgr, slot) {
+            Some(MigrationRoutePhase::Copying { source_group, .. }) => {
+                let epoch = mgr
+                    .migration_epoch()
+                    .ok_or_else(|| Error::Command(TRYAGAIN_MIGRATION.into()))?;
+                Ok(Some((source_group, epoch)))
+            }
+            _ => Ok(None),
         }
     }
 
@@ -145,30 +249,36 @@ impl ClusterDataAdapter {
         user_key
     }
 
-    /// 读路径: 按 router 已分配 slot 路由到本地 group.
-    /// F-056: ReadyToCommit 读切 target; Frozen/Copying 仍读 source (若本地).
-    fn route_read(key: &[u8]) -> Option<(Arc<ClusterStateManager>, u64)> {
-        let mgr = CLUSTER_STATE_MGR.get()?.clone();
-        let (_, user_key) = AiDbEngine::decode_key(key)?;
+    /// 读路径: 按 router 已分配 slot 路由到本地 group, 或 F-056-A1 合并读.
+    /// ReadyToCommit 读切 target (纯 target, 仅本地时走快路径); Frozen/Copying
+    /// 读为合并读 (可能涉及远程 RPC, 由调用方 `merge_read` 处理).
+    fn route_read(key: &[u8]) -> Result<Option<(Arc<ClusterStateManager>, ReadRoute)>> {
+        let Some(mgr) = CLUSTER_STATE_MGR.get().cloned() else {
+            return Ok(None);
+        };
+        let Some((_, user_key)) = AiDbEngine::decode_key(key) else {
+            return Ok(None);
+        };
         let routing_key = Self::strip_subkey_suffix(&user_key);
         let slot = key_to_slot(routing_key);
-        if let Some(gid) = Self::migration_read_group(&mgr, slot) {
-            return Some((mgr, gid));
+        if let Some(route) = Self::migration_read_route(&mgr, slot)? {
+            return Ok(Some((mgr, route)));
         }
-        match mgr.router.route_key(routing_key) {
-            Ok((gid, SlotStatus::Assigned(_))) => Some((mgr, gid)),
+        Ok(match mgr.router.route_key(routing_key) {
+            Ok((gid, SlotStatus::Assigned(_))) => Some((mgr, ReadRoute::Single(gid))),
             Ok((gid, SlotStatus::Migrating(_)))
                 if mgr.multi_raft.get_groups().read().contains_key(&gid) =>
             {
-                Some((mgr, gid))
+                Some((mgr, ReadRoute::Single(gid)))
             }
             _ => None,
-        }
+        })
     }
 
     /// 写路径: IMPORTING 时优先写入本节点目标 group.
-    /// 返回 `Err(TRYAGAIN)` 当 Frozen/Ready 写冻结; `Ok(None)` 表示无本地 group.
-    fn route_write(key: &[u8]) -> Result<Option<(Arc<ClusterStateManager>, u64)>> {
+    /// 返回 `Err(TRYAGAIN)` 当 Frozen/Ready 写冻结, 或 Copying 期 epoch 缺失;
+    /// `Ok(None)` 表示无本地 group.
+    fn route_write(key: &[u8]) -> Result<Option<(Arc<ClusterStateManager>, WriteRoute)>> {
         let Some(mgr) = CLUSTER_STATE_MGR.get().cloned() else {
             return Ok(None);
         };
@@ -178,27 +288,40 @@ impl ClusterDataAdapter {
         let routing_key = Self::strip_subkey_suffix(&user_key);
         Self::reject_if_write_frozen(&mgr, routing_key)?;
         let slot = key_to_slot(routing_key);
-        if let Some(gid) = Self::importing_write_group(&mgr, slot) {
-            return Ok(Some((mgr, gid)));
-        }
-        Ok(match mgr.router.route_key(routing_key) {
-            Ok((gid, SlotStatus::Assigned(_))) => {
-                if mgr.multi_raft.get_groups().read().contains_key(&gid) {
-                    Some((mgr, gid))
-                } else {
-                    // decide() 已在 IMPORTING 窗口放行本地写, 但 router 仍指向源 group.
-                    Self::local_migration_target_group(&mgr).map(|local_gid| (mgr, local_gid))
+        let migration = Self::copying_migration_route(&mgr, slot)?;
+        let gid = if let Some(gid) = Self::importing_write_group(&mgr, slot) {
+            Some(gid)
+        } else {
+            match mgr.router.route_key(routing_key) {
+                Ok((gid, SlotStatus::Assigned(_))) => {
+                    if mgr.multi_raft.get_groups().read().contains_key(&gid) {
+                        Some(gid)
+                    } else {
+                        // decide() 已在 IMPORTING 窗口放行本地写, 但 router 仍指向源 group.
+                        Self::local_migration_target_group(&mgr)
+                    }
                 }
-            }
-            Ok((gid, SlotStatus::Migrating(_))) => {
-                if mgr.multi_raft.get_groups().read().contains_key(&gid) {
-                    Some((mgr, gid))
-                } else {
-                    Self::local_migration_target_group(&mgr).map(|local_gid| (mgr, local_gid))
+                Ok((gid, SlotStatus::Migrating(_))) => {
+                    if mgr.multi_raft.get_groups().read().contains_key(&gid) {
+                        Some(gid)
+                    } else {
+                        Self::local_migration_target_group(&mgr)
+                    }
                 }
+                _ => None,
             }
-            _ => None,
-        })
+        };
+        Ok(gid.map(|gid| {
+            let route = match migration {
+                Some((source_group, epoch)) => WriteRoute::Migration {
+                    gid,
+                    source_group,
+                    epoch,
+                },
+                None => WriteRoute::Plain(gid),
+            };
+            (mgr, route)
+        }))
     }
 
     fn map_err<E: std::fmt::Display>(e: E) -> Error {
@@ -420,11 +543,21 @@ fn flush_group_storages(storages: &HashMap<u64, ShardedStorage>) -> Result<()> {
 #[async_trait]
 impl StorageAdapter for ClusterDataAdapter {
     async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>> {
-        match Self::route_read(&key) {
-            Some((mgr, gid)) => mgr.multi_raft.get_local(gid, &key).await.map_err(|e| {
-                tracing::warn!(gid = gid, error = %e, "get_local failed");
-                Self::map_err(e)
-            }),
+        match Self::route_read(&key)? {
+            Some((mgr, ReadRoute::Single(gid))) => {
+                mgr.multi_raft.get_local(gid, &key).await.map_err(|e| {
+                    tracing::warn!(gid = gid, error = %e, "get_local failed");
+                    Self::map_err(e)
+                })
+            }
+            Some((
+                mgr,
+                ReadRoute::Merge {
+                    target_group,
+                    source_group,
+                    epoch,
+                },
+            )) => Self::merge_read(&mgr, target_group, source_group, epoch, &key).await,
             None if Self::should_use_local_engine(&key) => self.local.get(key).await,
             None => Err(Self::data_group_not_ready_err()),
         }
@@ -432,10 +565,15 @@ impl StorageAdapter for ClusterDataAdapter {
 
     async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         match Self::route_write(&key)? {
-            Some((mgr, gid)) => {
-                self.submit_batched_set(mgr, gid, key, value)
-                    .await
+            Some((mgr, WriteRoute::Migration { gid, epoch, .. })) => {
+                let mut ops = ThinWriteBatch::new();
+                ops.put(key, value);
+                let resp =
+                    Self::propose_group_with_retry(&mgr, gid, Request::MigrationWrite { epoch, ops })
+                        .await?;
+                Self::check_response(resp)
             }
+            Some((mgr, WriteRoute::Plain(gid))) => self.submit_batched_set(mgr, gid, key, value).await,
             None if Self::should_use_local_engine(&key) => self.local.set(key, value).await,
             None => Err(Self::data_group_not_ready_err()),
         }
@@ -443,7 +581,28 @@ impl StorageAdapter for ClusterDataAdapter {
 
     async fn delete(&self, key: Vec<u8>) -> Result<bool> {
         match Self::route_write(&key)? {
-            Some((mgr, gid)) => {
+            Some((
+                mgr,
+                WriteRoute::Migration {
+                    gid,
+                    source_group,
+                    epoch,
+                },
+            )) => {
+                // FIX-0056-A1: 迁移期一律 propose (禁止"不存在则跳过"短路),
+                // existed 仅用于 DEL 返回值, 经合并读判断 (target 或 source 命中即算存在).
+                let existed = Self::merge_read(&mgr, gid, source_group, epoch, &key)
+                    .await?
+                    .is_some();
+                let mut ops = ThinWriteBatch::new();
+                ops.delete(key);
+                let resp =
+                    Self::propose_group_with_retry(&mgr, gid, Request::MigrationWrite { epoch, ops })
+                        .await?;
+                Self::check_response(resp)?;
+                Ok(existed)
+            }
+            Some((mgr, WriteRoute::Plain(gid))) => {
                 let existed = mgr
                     .multi_raft
                     .get_local(gid, &key)
@@ -470,14 +629,24 @@ impl StorageAdapter for ClusterDataAdapter {
     }
 
     async fn exists(&self, key: Vec<u8>) -> Result<bool> {
-        match Self::route_read(&key) {
-            Some((mgr, gid)) => {
+        match Self::route_read(&key)? {
+            Some((mgr, ReadRoute::Single(gid))) => {
                 let v = mgr.multi_raft.get_local(gid, &key).await.map_err(|e| {
                     tracing::warn!(gid = gid, error = %e, "get_local failed in exists");
                     Self::map_err(e)
                 })?;
                 Ok(v.is_some())
             }
+            Some((
+                mgr,
+                ReadRoute::Merge {
+                    target_group,
+                    source_group,
+                    epoch,
+                },
+            )) => Ok(Self::merge_read(&mgr, target_group, source_group, epoch, &key)
+                .await?
+                .is_some()),
             None if Self::should_use_local_engine(&key) => self.local.exists(key).await,
             None => Err(Self::data_group_not_ready_err()),
         }
@@ -485,7 +654,11 @@ impl StorageAdapter for ClusterDataAdapter {
 
     async fn write_batch(&self, batch: Vec<AdapterWriteOp>) -> Result<()> {
         // 按 group 分组后逐组提交, 避免跨 group 的单次提案.
-        let mut by_group: HashMap<u64, (Arc<ClusterStateManager>, ThinWriteBatch)> = HashMap::new();
+        // F-056-A1: Copying 期写额外按 (gid, epoch) 分组走 MigrationWrite.
+        let mut plain_by_group: HashMap<u64, (Arc<ClusterStateManager>, ThinWriteBatch)> =
+            HashMap::new();
+        let mut migration_by_group: HashMap<u64, (Arc<ClusterStateManager>, u64, ThinWriteBatch)> =
+            HashMap::new();
         let mut local_ops: Vec<AdapterWriteOp> = Vec::new();
         for op in batch {
             let key = match &op {
@@ -493,8 +666,17 @@ impl StorageAdapter for ClusterDataAdapter {
                 AdapterWriteOp::Delete { key } => key.as_slice(),
             };
             match Self::route_write(key)? {
-                Some((mgr, gid)) => {
-                    let entry = by_group
+                Some((mgr, WriteRoute::Migration { gid, epoch, .. })) => {
+                    let entry = migration_by_group
+                        .entry(gid)
+                        .or_insert_with(|| (mgr, epoch, ThinWriteBatch::new()));
+                    match op {
+                        AdapterWriteOp::Put { key, value } => entry.2.put(key, value),
+                        AdapterWriteOp::Delete { key } => entry.2.delete(key),
+                    }
+                }
+                Some((mgr, WriteRoute::Plain(gid))) => {
+                    let entry = plain_by_group
                         .entry(gid)
                         .or_insert_with(|| (mgr, ThinWriteBatch::new()));
                     match op {
@@ -506,8 +688,14 @@ impl StorageAdapter for ClusterDataAdapter {
                 None => return Err(Self::data_group_not_ready_err()),
             }
         }
-        for (gid, (mgr, tb)) in by_group {
+        for (gid, (mgr, tb)) in plain_by_group {
             let resp = Self::propose_group_with_retry(&mgr, gid, Request::WriteBatch(tb)).await?;
+            Self::check_response(resp)?;
+        }
+        for (gid, (mgr, epoch, ops)) in migration_by_group {
+            let resp =
+                Self::propose_group_with_retry(&mgr, gid, Request::MigrationWrite { epoch, ops })
+                    .await?;
             Self::check_response(resp)?;
         }
         if !local_ops.is_empty() {
@@ -667,9 +855,15 @@ impl StorageAdapter for ClusterDataAdapter {
             // 只有本节点是该 group 的 Raft leader 时, 惰性过期才值得发起 propose;
             // 副本上 propose 必然以 NotLeader 失败 (见 node.rs::propose 不做网络转发),
             // 交给 leader 自己的读路径或后续写连接去清理即可.
-            Some((mgr, gid)) => mgr.is_local_group_leader(gid),
+            Ok(Some((mgr, ReadRoute::Single(gid)))) => mgr.is_local_group_leader(gid),
+            // 合并读期 (Frozen/Copying): 迁移期写一律落 target group, 惰性过期同理.
+            Ok(Some((mgr, ReadRoute::Merge { target_group, .. }))) => {
+                mgr.is_local_group_leader(target_group)
+            }
             // 未路由到 data group (单机模式或 slot 未分配): 走本地引擎, 始终允许.
-            None => true,
+            Ok(None) => true,
+            // 路由本身失败 (如迁移 epoch 缺失): 保守放弃, 交由下次读/写连接清理.
+            Err(_) => false,
         }
     }
 }

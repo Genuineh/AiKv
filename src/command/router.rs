@@ -291,6 +291,17 @@ impl CommandRouter {
     ) -> Option<Result<RespValue>> {
         let _ = crate::cluster::state::CLUSTER_STATE_MGR.get()?;
         let lower = cmd.to_ascii_lowercase();
+        // F-056-A1: SCAN 族在任意活跃迁移期间一律 TRYAGAIN (不按 slot 精细过滤).
+        // 这些命令在 admin 白名单里, 平时不经 key 路由; 必须在白名单短路之前拦截,
+        // 否则会落到本地 for_each_prefix, 读到不一致的半迁移视图.
+        if let Some(crate::cluster::router::RouteDecision::TryAgain { reason }) =
+            crate::cluster::router::scan_tryagain_if_migrating(&lower)
+        {
+            if let Some(m) = self.metrics.as_ref() {
+                m.on_error_stat(&reason);
+            }
+            return Some(Ok(RespValue::Error(reason)));
+        }
         let admin_cmds = [
             "cluster",
             "ping",

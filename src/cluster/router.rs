@@ -38,20 +38,20 @@ pub enum CommandType {
     Admin,
 }
 
-/// F-056 迁移相位对客户端路由的影响 (`decide` 与 `ClusterDataAdapter` 共用).
+/// F-056 / F-056-A1 迁移相位对客户端路由的影响 (`decide` 与 `ClusterDataAdapter` 共用).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MigrationRoutePhase {
-    /// Prepare / Migrating: v7 (写 ASK target, 读 source)
+    /// Prepare / Migrating: 写 ASK target (v7); 读为合并读 (A1, 导向 target).
     Copying {
         source_group: u64,
         target_group: u64,
     },
-    /// 写 TRYAGAIN; 读仍走 source (可能陈旧; 非 A2 窗口)
+    /// 写 TRYAGAIN; 读为合并读 (A1 覆盖 A2 的"仍走 source").
     Frozen {
         source_group: u64,
         target_group: u64,
     },
-    /// 写 TRYAGAIN; 读必须切 target (A2 起点)
+    /// 写 TRYAGAIN; 读必须切 target, 纯 target 无 source fallback (A2 起点).
     ReadyToCommit {
         source_group: u64,
         target_group: u64,
@@ -190,23 +190,32 @@ impl ClusterRouter {
         };
         let slot = key_to_slot(key);
 
-        // F-056: 最先查 migration_state 相位, 覆盖 ASKING / importing_slots 旁路.
+        // F-056 / F-056-A1: 最先查 migration_state 相位, 覆盖 ASKING / importing_slots 旁路.
+        // A1: Frozen 覆盖 A2 —— 读不再纯 source, 与 Copying/ReadyToCommit 一样统一导向
+        // target group (由 adapter 决定纯 target 读还是合并读, 见 相位总表).
         if let Some(phase) = migration_phase_for_slot(mgr, slot) {
             match phase {
-                MigrationRoutePhase::Frozen { source_group, .. } => {
+                MigrationRoutePhase::Frozen { target_group, .. }
+                | MigrationRoutePhase::ReadyToCommit { target_group, .. } => {
                     if cmd_type == CommandType::Write {
                         return try_again();
                     }
-                    return decide_source_read(mgr, slot, source_group, &cmd_type, readonly);
+                    return decide_target_read(mgr, slot, target_group, &cmd_type, readonly);
                 }
-                MigrationRoutePhase::ReadyToCommit { target_group, .. } => {
-                    if cmd_type == CommandType::Write {
-                        return try_again();
+                MigrationRoutePhase::Copying { target_group, .. } => {
+                    if cmd_type == CommandType::Read {
+                        // IMPORTING 窗口: 本机是 target 且客户端已 ASKING (或该 slot
+                        // 在本地 importing_slots 追踪中) 时直接信任 ASK 协议就地执行,
+                        // 与写路径的 IMPORTING 放行语义对齐 (见下方 SlotStatus::Migrating
+                        // 分支). 否则走合并读路由 (导向 target leader).
+                        if mgr.multi_raft.is_group_local(target_group)
+                            && (asking || mgr.importing_slots.read().contains_key(&slot))
+                        {
+                            return RouteDecision::Execute;
+                        }
+                        return decide_target_read(mgr, slot, target_group, &cmd_type, readonly);
                     }
-                    return decide_ready_read(mgr, slot, target_group, &cmd_type, readonly);
-                }
-                MigrationRoutePhase::Copying { .. } => {
-                    // Prepare / Migrating: 继续 v7 逻辑
+                    // Write (ASK 到 target) / Admin: 继续下方 v7 逻辑.
                 }
             }
         }
@@ -327,23 +336,27 @@ fn try_again() -> RouteDecision {
     }
 }
 
-/// Frozen 读: 仍走 source (与 v7 Migrating 读一致).
-fn decide_source_read(
-    mgr: &ClusterStateManager,
-    slot: u16,
-    source_group: u64,
-    cmd_type: &CommandType,
-    readonly: bool,
-) -> RouteDecision {
-    if should_execute_locally(mgr, source_group, cmd_type, readonly) {
-        RouteDecision::Execute
+/// F-056-A1: 任意活跃迁移期间 SCAN 族必须 TRYAGAIN.
+///
+/// 供 `command/router::cluster_route` 在 admin 白名单短路之前调用; 也供单测直接断言.
+pub fn scan_tryagain_if_migrating(cmd: &str) -> Option<RouteDecision> {
+    let lower = cmd.to_ascii_lowercase();
+    if !matches!(lower.as_str(), "scan" | "hscan" | "sscan" | "zscan") {
+        return None;
+    }
+    let mgr = CLUSTER_STATE_MGR.get()?;
+    if mgr.meta_raft.get_migration_state().is_some() {
+        Some(try_again())
     } else {
-        leader_moved(mgr, source_group, slot)
+        None
     }
 }
 
-/// ReadyToCommit 读: 必须导向 target, 含 source 上 READONLY 副本, 不得本地读 source.
-fn decide_ready_read(
+/// F-056-A1: Frozen / Copying (读) / ReadyToCommit 读统一导向 target group ——
+/// 合并读 (Frozen/Copying) 或纯 target 读 (ReadyToCommit) 都必须在 target group
+/// leader (或其 linearizable 等价路径) 上执行, 含 source 上 READONLY 副本也不
+/// 得就地本地读 source (会看不到迁移期新写).
+fn decide_target_read(
     mgr: &ClusterStateManager,
     slot: u16,
     target_group: u64,
