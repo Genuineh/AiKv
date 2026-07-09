@@ -83,12 +83,13 @@ flowchart TB
 - **Assigned slot 写**: 必须经数据面 Raft (`ClusterDataAdapter`); **禁止** 写 local fallback (见 storage.md).
 - **`ClusterRouter::decide` 同步**: 只读缓存 + MetaRaft 快照; 不 `.await` OpenRaft.
 - **IMPORTING 写窗口**: 目标节点 `importing_slots` 或连接 `ASKING` + Migrating/IMPORTING 状态 → `Execute`; 与 MIGRATE RESTORE 配合. **不含** Frozen / ReadyToCommit (见下).
-- **Prepare / Migrating (v7)**: 写 ASK → target; 读仍走 source (`Execute` 当 source 本地 leader / readonly). 非 leader 且非 readonly 的写仍 `MOVED` 到 source leader.
-- **Frozen (F-056)**: 一切客户端写 (含 ASKING / importing / MIGRATE·RESTORE) → `TRYAGAIN`; 读仍走 source (可能陈旧; **非** A2 窗口).
-- **ReadyToCommit (F-056, A2 起点)**: 写仍 `TRYAGAIN`; 读**必须**导向 target (`Execute` / `ASK` / `MOVED`), 含 source 上 READONLY 副本, 不得本地读 source.
+- **Prepare / Migrating (F-056-A1)**: 写 ASK target + `Request::MigrationWrite` (同批 mig tombstone); 读为**合并读** (导向 target leader: tombstone Del → miss; target hit → 值; 否则 source fallback, 含 remote RPC). 非 leader 且非 readonly 的写仍 `MOVED` 到 source leader (再 ASK).
+- **Frozen (F-056-A1)**: 一切客户端写 (含 ASKING / importing / MIGRATE·RESTORE) → `TRYAGAIN`; 读为**合并读** (覆盖 A2 的"仍走 source").
+- **ReadyToCommit (F-056, A2 起点)**: 写仍 `TRYAGAIN`; 读**必须**导向 target (`Execute` / `ASK` / `MOVED`), 纯 target 无 source fallback.
+- **SCAN 族 (F-056-A1)**: 任意活跃迁移期间 SCAN/HSCAN/SSCAN/ZSCAN → `TRYAGAIN` (在 admin 白名单短路之前拦截).
 - **ASKING 一次性**: `Connection` 每命令执行后 `reset_asking`.
-- **readonly replica 读**: `READONLY` + `CommandType::Read` + 本地 group → 本地读; 写仍 MOVED 到 leader. ReadyToCommit 时例外: 读切 target.
-- **admin 白名单**: `cluster_route` 内命令 (PING/CLUSTER/SCAN/INFO/…) **不** 按 key 路由, 可绕过 TRYAGAIN; MIGRATE/RESTORE 仅 Frozen/Ready 时仍返回 TRYAGAIN.
+- **readonly replica 读**: `READONLY` + `CommandType::Read` + 本地 group → 本地读; 写仍 MOVED 到 leader. 迁移活跃期读统一导向 target (合并读或纯 target).
+- **admin 白名单**: `cluster_route` 内命令 (PING/CLUSTER/INFO/…) **不** 按 key 路由; SCAN 族见上例外. MIGRATE/RESTORE 仅 Frozen/Ready 时仍返回 TRYAGAIN.
 - **CROSSSLOT**: 多 key 命令 (MGET/MSET/DEL/BLPOP/…) 须同 slot; MSET key 在偶数下标.
 - **Announce unknown 模式**: 客户端见 `:port`; smart client 用 `redis-cli -c` 或 cluster-aware SDK 跟随 MOVED/ASK.
 - **无服务端透明转发**: MOVED/ASK/TRYAGAIN 仅返回错误字符串; MOVED/ASK **不计入** commandstats; TRYAGAIN 计入 errorstats.
@@ -138,9 +139,10 @@ sequenceDiagram
 4. `CLUSTER SETSLOT <slot> STABLE` / `CLUSTER REBALANCE` → `finish_migration()`
    (`freeze → quiesce → final_verify → mark_ready → commit`); 失败返回 ERR
 
-Prepare/Migrating: 写 ASK target, 读 source Execute. Frozen: 写 TRYAGAIN, 读 source.
-ReadyToCommit: 写 TRYAGAIN, 读切 target. 目标 IMPORTING 写仅在 Prepare/Migrating 窗口
-`Execute` (含 `ASKING` / `importing_slots`); Frozen/Ready 一律 TRYAGAIN.
+Prepare/Migrating: 写 ASK target + MigrationWrite, 读合并读 (target leader).
+Frozen: 写 TRYAGAIN, 读合并读. ReadyToCommit: 写 TRYAGAIN, 读纯 target.
+目标 IMPORTING 写仅在 Prepare/Migrating 窗口 `Execute` (含 `ASKING` /
+`importing_slots`); Frozen/Ready 一律 TRYAGAIN. 活跃迁移期 SCAN 族 TRYAGAIN.
 
 ## 关键类型
 

@@ -141,6 +141,14 @@ impl ClusterStateManager {
         Some((target_group, leader, addr))
     }
 
+    /// FIX-0056-A1: 当前活跃迁移的 epoch (= `BeginSlotMigration` 时的
+    /// `cluster_meta.version`), 用于 `Request::MigrationWrite` /
+    /// `get_migration_tombstone_remote` 定位 target group 上的 oplog 前缀.
+    /// 无活跃迁移时为 `None`.
+    pub fn migration_epoch(&self) -> Option<u64> {
+        self.meta_raft.get_migration_epoch()
+    }
+
     /// 应用本地 MultiRaft 观测到的 group leader, 立即刷新路由缓存.
     pub fn apply_observed_group_leader(&self, group_id: u64, leader_id: u64) {
         self.router.update_group_leader(group_id, leader_id);
