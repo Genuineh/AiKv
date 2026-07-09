@@ -125,7 +125,7 @@ mod tests {
         let mgr = build_mgr("aikv_lazy_expire_test").await;
         let local = AiDbEngine::open_for_testing(std::env::temp_dir().join("aikv_lazy_expire_local"))
             .unwrap();
-        let adapter = ClusterDataAdapter::new(local, 12);
+        let adapter = ClusterDataAdapter::new(local, ClusterDataAdapter::DEFAULT_EAGER_FLUSH);
 
         let key = AiDbEngine::encode_key(0, b"expiring-key");
 

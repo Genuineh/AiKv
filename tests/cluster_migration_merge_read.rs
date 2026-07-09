@@ -202,7 +202,7 @@ async fn migration_merge_read_and_del_tombstone_lifecycle() {
         std::env::temp_dir().join(format!("aikv_merge_read_local_{}", std::process::id())),
     )
     .unwrap();
-    let adapter = ClusterDataAdapter::new(local, 12);
+    let adapter = ClusterDataAdapter::new(local, ClusterDataAdapter::DEFAULT_EAGER_FLUSH);
 
     let prepare_key_enc = AiDbEngine::encode_key(0, PREPARE_KEY);
     let del_key_enc = AiDbEngine::encode_key(0, DEL_KEY);

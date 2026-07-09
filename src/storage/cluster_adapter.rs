@@ -40,7 +40,7 @@ use crate::storage::types::StorageEngineKind;
 const GROUP_READY_MAX_ATTEMPTS: u32 = 20;
 const GROUP_READY_RETRY_DELAY: Duration = Duration::from_millis(250);
 const ERR_DATA_GROUP_NOT_READY: &str = "CLUSTERDOWN data group not ready";
-const SET_BATCH_MAX_OPS: usize = 128;
+const SET_BATCH_MAX_OPS: usize = 512;
 /// 凑批等待上限. 1ms 平衡吞吐与延迟: 集群 50c 负载下 items 到达快, 等 1ms 足矣.
 const SET_BATCH_MAX_DELAY: Duration = Duration::from_millis(1);
 
@@ -86,6 +86,10 @@ struct SetBatchItem {
 }
 
 impl ClusterDataAdapter {
+    /// `eager_flush` 的默认值.
+    /// 值 = `SET_BATCH_MAX_OPS / 10.67`, 保持与原始 128/12 相同的比例.
+    pub const DEFAULT_EAGER_FLUSH: usize = 48;
+
     pub fn new(local: Arc<dyn StorageAdapter>, eager_flush: usize) -> Arc<Self> {
         Arc::new(Self {
             local,
