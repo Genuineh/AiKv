@@ -124,11 +124,14 @@ impl ClusterStateManager {
     /// 获取当前迁移目标 group 的 leader 信息, 用于 ASK 重定向.
     ///
     /// 返回 `(target_group, leader_node_id, client_addr)` 或 None.
+    /// 覆盖 Prepare / Migrating / Frozen / ReadyToCommit 全部活跃相位.
     pub fn migration_target_leader(&self) -> Option<(u64, u64, String)> {
         let mig_state = self.meta_raft.get_migration_state();
         let target_group = match &mig_state {
             Some(aidb::cluster::SlotMigrationState::Prepare { target_group, .. })
-            | Some(aidb::cluster::SlotMigrationState::Migrating { target_group, .. }) => {
+            | Some(aidb::cluster::SlotMigrationState::Migrating { target_group, .. })
+            | Some(aidb::cluster::SlotMigrationState::Frozen { target_group, .. })
+            | Some(aidb::cluster::SlotMigrationState::ReadyToCommit { target_group, .. }) => {
                 *target_group
             }
             None => return None,

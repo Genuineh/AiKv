@@ -1,9 +1,13 @@
 use std::collections::HashMap;
 
+use aidb::cluster::meta_types::SlotMigrationState;
 use aidb::cluster::router::key_to_slot;
 use aidb::cluster::SlotStatus;
 
 use crate::cluster::state::{ClusterStateManager, CLUSTER_STATE_MGR};
+
+/// Frozen / ReadyToCommit 写冻结时返回给客户端的 RESP 错误正文.
+pub const TRYAGAIN_MIGRATION: &str = "TRYAGAIN Migration in progress, retry later";
 
 /// 集群路由决策结果
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +23,10 @@ pub enum RouteDecision {
         node_id: u64,
         addr: String,
     },
+    /// F-056: Frozen / ReadyToCommit 期间客户端写冻结.
+    TryAgain {
+        reason: String,
+    },
     ClusterDown(String),
 }
 
@@ -28,6 +36,116 @@ pub enum CommandType {
     Read,
     Write,
     Admin,
+}
+
+/// F-056 迁移相位对客户端路由的影响 (`decide` 与 `ClusterDataAdapter` 共用).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MigrationRoutePhase {
+    /// Prepare / Migrating: v7 (写 ASK target, 读 source)
+    Copying {
+        source_group: u64,
+        target_group: u64,
+    },
+    /// 写 TRYAGAIN; 读仍走 source (可能陈旧; 非 A2 窗口)
+    Frozen {
+        source_group: u64,
+        target_group: u64,
+    },
+    /// 写 TRYAGAIN; 读必须切 target (A2 起点)
+    ReadyToCommit {
+        source_group: u64,
+        target_group: u64,
+    },
+}
+
+impl MigrationRoutePhase {
+    pub fn source_group(self) -> u64 {
+        match self {
+            Self::Copying { source_group, .. }
+            | Self::Frozen { source_group, .. }
+            | Self::ReadyToCommit { source_group, .. } => source_group,
+        }
+    }
+
+    pub fn target_group(self) -> u64 {
+        match self {
+            Self::Copying { target_group, .. }
+            | Self::Frozen { target_group, .. }
+            | Self::ReadyToCommit { target_group, .. } => target_group,
+        }
+    }
+
+    pub fn writes_frozen(self) -> bool {
+        matches!(self, Self::Frozen { .. } | Self::ReadyToCommit { .. })
+    }
+}
+
+/// 若 `slot` 属于当前活跃迁移, 返回相位决策; 否则 None.
+pub fn migration_phase_for_slot(
+    mgr: &ClusterStateManager,
+    slot: u16,
+) -> Option<MigrationRoutePhase> {
+    migration_phase_from_state(mgr.meta_raft.get_migration_state().as_ref(), slot)
+}
+
+/// 纯函数版: 从 `migration_state` 解析 slot 相位 (供 decide / adapter / 单测共用).
+pub fn migration_phase_from_state(
+    state: Option<&SlotMigrationState>,
+    slot: u16,
+) -> Option<MigrationRoutePhase> {
+    let ms = state?;
+    let (phase, slots) = match ms {
+        SlotMigrationState::Prepare {
+            source_group,
+            target_group,
+            slots,
+        } => (
+            MigrationRoutePhase::Copying {
+                source_group: *source_group,
+                target_group: *target_group,
+            },
+            slots,
+        ),
+        SlotMigrationState::Migrating {
+            source_group,
+            target_group,
+            slots,
+            ..
+        } => (
+            MigrationRoutePhase::Copying {
+                source_group: *source_group,
+                target_group: *target_group,
+            },
+            slots,
+        ),
+        SlotMigrationState::Frozen {
+            source_group,
+            target_group,
+            slots,
+        } => (
+            MigrationRoutePhase::Frozen {
+                source_group: *source_group,
+                target_group: *target_group,
+            },
+            slots,
+        ),
+        SlotMigrationState::ReadyToCommit {
+            source_group,
+            target_group,
+            slots,
+        } => (
+            MigrationRoutePhase::ReadyToCommit {
+                source_group: *source_group,
+                target_group: *target_group,
+            },
+            slots,
+        ),
+    };
+    if slots.contains(&slot) {
+        Some(phase)
+    } else {
+        None
+    }
 }
 
 /// 从 Raft 状态机刷新路由缓存.
@@ -71,6 +189,28 @@ impl ClusterRouter {
             return RouteDecision::ClusterDown("CLUSTERDOWN Cluster not initialized".into());
         };
         let slot = key_to_slot(key);
+
+        // F-056: 最先查 migration_state 相位, 覆盖 ASKING / importing_slots 旁路.
+        if let Some(phase) = migration_phase_for_slot(mgr, slot) {
+            match phase {
+                MigrationRoutePhase::Frozen { source_group, .. } => {
+                    if cmd_type == CommandType::Write {
+                        return try_again();
+                    }
+                    return decide_source_read(mgr, slot, source_group, &cmd_type, readonly);
+                }
+                MigrationRoutePhase::ReadyToCommit { target_group, .. } => {
+                    if cmd_type == CommandType::Write {
+                        return try_again();
+                    }
+                    return decide_ready_read(mgr, slot, target_group, &cmd_type, readonly);
+                }
+                MigrationRoutePhase::Copying { .. } => {
+                    // Prepare / Migrating: 继续 v7 逻辑
+                }
+            }
+        }
+
         let (group_id, status) = match mgr.router.route_key(key) {
             Ok(r) => r,
             Err(_) => {
@@ -86,6 +226,7 @@ impl ClusterRouter {
 
         // IMPORTING window: router cache may still show Assigned while the target
         // node tracks the slot locally via CLUSTER SETSLOT IMPORTING.
+        // Frozen/Ready 已在上方拦截; 此处仅 Prepare/Migrating (或无 Meta 迁移态).
         if cmd_type == CommandType::Write && mgr.importing_slots.read().contains_key(&slot) {
             return RouteDecision::Execute;
         }
@@ -128,15 +269,23 @@ impl ClusterRouter {
                     }
                 }
                 let mig_state = mgr.meta_raft.get_migration_state();
-                let target_group = match &mig_state {
-                    Some(aidb::cluster::SlotMigrationState::Prepare { target_group, .. })
-                    | Some(aidb::cluster::SlotMigrationState::Migrating { target_group, .. }) => {
-                        *target_group
-                    }
+                let target_group = match migration_phase_from_state(mig_state.as_ref(), slot) {
+                    Some(phase) => phase.target_group(),
                     None => {
-                        return RouteDecision::ClusterDown(
-                            "CLUSTERDOWN migration state not found".into(),
-                        )
+                        // Slot 标为 Migrating 但 Meta 无匹配相位: 仍尝试从任意活跃态取 target.
+                        match &mig_state {
+                            Some(SlotMigrationState::Prepare { target_group, .. })
+                            | Some(SlotMigrationState::Migrating { target_group, .. })
+                            | Some(SlotMigrationState::Frozen { target_group, .. })
+                            | Some(SlotMigrationState::ReadyToCommit { target_group, .. }) => {
+                                *target_group
+                            }
+                            None => {
+                                return RouteDecision::ClusterDown(
+                                    "CLUSTERDOWN migration state not found".into(),
+                                )
+                            }
+                        }
                     }
                 };
                 if mgr.multi_raft.is_group_local(target_group) {
@@ -169,6 +318,46 @@ impl ClusterRouter {
                 }
             }
         }
+    }
+}
+
+fn try_again() -> RouteDecision {
+    RouteDecision::TryAgain {
+        reason: TRYAGAIN_MIGRATION.into(),
+    }
+}
+
+/// Frozen 读: 仍走 source (与 v7 Migrating 读一致).
+fn decide_source_read(
+    mgr: &ClusterStateManager,
+    slot: u16,
+    source_group: u64,
+    cmd_type: &CommandType,
+    readonly: bool,
+) -> RouteDecision {
+    if should_execute_locally(mgr, source_group, cmd_type, readonly) {
+        RouteDecision::Execute
+    } else {
+        leader_moved(mgr, source_group, slot)
+    }
+}
+
+/// ReadyToCommit 读: 必须导向 target, 含 source 上 READONLY 副本, 不得本地读 source.
+fn decide_ready_read(
+    mgr: &ClusterStateManager,
+    slot: u16,
+    target_group: u64,
+    cmd_type: &CommandType,
+    readonly: bool,
+) -> RouteDecision {
+    if should_execute_locally(mgr, target_group, cmd_type, readonly) {
+        RouteDecision::Execute
+    } else if mgr.multi_raft.is_group_local(target_group) {
+        // 本地 target 副本但非可执行 (非 leader 且非 readonly): MOVED 到 target leader
+        leader_moved(mgr, target_group, slot)
+    } else {
+        // 非 target 节点 (含 source / 第三方): ASK 到 target leader
+        ask_target(mgr, slot)
     }
 }
 
@@ -219,4 +408,58 @@ pub fn check_cross_slot(keys: &[&[u8]]) -> Result<(), String> {
         return Err("CROSSSLOT Keys in request don't hash to the same slot".into());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod phase_tests {
+    use super::*;
+    use aidb::cluster::meta_types::SlotMigrationState;
+
+    #[test]
+    fn migration_phase_covers_all_variants() {
+        let prep = SlotMigrationState::Prepare {
+            source_group: 1,
+            target_group: 2,
+            slots: vec![0, 1],
+        };
+        assert_eq!(
+            migration_phase_from_state(Some(&prep), 0),
+            Some(MigrationRoutePhase::Copying {
+                source_group: 1,
+                target_group: 2
+            })
+        );
+        assert!(migration_phase_from_state(Some(&prep), 99).is_none());
+
+        let mig = SlotMigrationState::Migrating {
+            source_group: 1,
+            target_group: 2,
+            slots: vec![0],
+            progress: 1,
+            total: 10,
+        };
+        assert!(matches!(
+            migration_phase_from_state(Some(&mig), 0),
+            Some(MigrationRoutePhase::Copying { .. })
+        ));
+
+        let frozen = SlotMigrationState::Frozen {
+            source_group: 1,
+            target_group: 2,
+            slots: vec![0],
+        };
+        let p = migration_phase_from_state(Some(&frozen), 0).unwrap();
+        assert!(p.writes_frozen());
+        assert_eq!(p.source_group(), 1);
+
+        let ready = SlotMigrationState::ReadyToCommit {
+            source_group: 1,
+            target_group: 2,
+            slots: vec![0],
+        };
+        let p = migration_phase_from_state(Some(&ready), 0).unwrap();
+        assert!(p.writes_frozen());
+        assert_eq!(p.target_group(), 2);
+        assert!(migration_phase_from_state(None, 0).is_none());
+    }
 }

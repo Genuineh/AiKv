@@ -28,6 +28,9 @@ use aidb::cluster::{
 use aidb::error::ClusterError as AidbClusterError;
 use aidb::Checkpoint;
 
+use crate::cluster::router::{
+    migration_phase_for_slot, MigrationRoutePhase, TRYAGAIN_MIGRATION,
+};
 use crate::cluster::state::{ClusterStateManager, CLUSTER_STATE_MGR};
 use crate::error::{Error, Result};
 use crate::storage::adapter::{AdapterWriteOp, StorageAdapter};
@@ -72,7 +75,9 @@ impl ClusterDataAdapter {
         if let Some(state) = mgr.meta_raft.get_migration_state() {
             let target = match &state {
                 SlotMigrationState::Prepare { target_group, .. }
-                | SlotMigrationState::Migrating { target_group, .. } => *target_group,
+                | SlotMigrationState::Migrating { target_group, .. }
+                | SlotMigrationState::Frozen { target_group, .. }
+                | SlotMigrationState::ReadyToCommit { target_group, .. } => *target_group,
             };
             // 仅当 target group 确实在本节点 self.groups 中时才使用.
             if mgr.multi_raft.get_groups().read().contains_key(&target) {
@@ -84,11 +89,47 @@ impl ClusterDataAdapter {
     }
 
     /// IMPORTING 窗口内写操作应落到本节点承载的目标 data group, 而非 router 仍显示的源 group.
+    /// Frozen / ReadyToCommit 写冻结由 `write_frozen_err` 拦截, 此处不放行.
     fn importing_write_group(mgr: &ClusterStateManager, slot: u16) -> Option<u64> {
         if !mgr.importing_slots.read().contains_key(&slot) {
             return None;
         }
+        if let Some(phase) = migration_phase_for_slot(mgr, slot) {
+            if phase.writes_frozen() {
+                return None;
+            }
+        }
         Self::local_migration_target_group(mgr)
+    }
+
+    fn write_frozen_err() -> Error {
+        Error::Command(TRYAGAIN_MIGRATION.into())
+    }
+
+    /// F-056: Frozen/Ready 写冻结 — 与 `ClusterRouter::decide` 共用相位.
+    fn reject_if_write_frozen(mgr: &ClusterStateManager, routing_key: &[u8]) -> Result<()> {
+        let slot = key_to_slot(routing_key);
+        if let Some(phase) = migration_phase_for_slot(mgr, slot) {
+            if phase.writes_frozen() {
+                return Err(Self::write_frozen_err());
+            }
+        }
+        Ok(())
+    }
+
+    /// F-056 读路由 group: ReadyToCommit → target; Frozen/Copying → source (若本地).
+    fn migration_read_group(mgr: &ClusterStateManager, slot: u16) -> Option<u64> {
+        let phase = migration_phase_for_slot(mgr, slot)?;
+        let gid = match phase {
+            MigrationRoutePhase::ReadyToCommit { target_group, .. } => target_group,
+            MigrationRoutePhase::Frozen { source_group, .. }
+            | MigrationRoutePhase::Copying { source_group, .. } => source_group,
+        };
+        if mgr.multi_raft.get_groups().read().contains_key(&gid) {
+            Some(gid)
+        } else {
+            None
+        }
     }
 
     /// 剥离子键后缀 (`\x01H{...}` 或 `\x01S{...}`), 返回路由用的纯 user_key.
@@ -105,12 +146,15 @@ impl ClusterDataAdapter {
     }
 
     /// 读路径: 按 router 已分配 slot 路由到本地 group.
-    /// 对于 Migrating 状态的 slot，如果源 group 确实在本地 self.groups 中
-    /// （而非仅 is_group_local 返回 true 的竞态窗口），则从本地读。
+    /// F-056: ReadyToCommit 读切 target; Frozen/Copying 仍读 source (若本地).
     fn route_read(key: &[u8]) -> Option<(Arc<ClusterStateManager>, u64)> {
         let mgr = CLUSTER_STATE_MGR.get()?.clone();
         let (_, user_key) = AiDbEngine::decode_key(key)?;
         let routing_key = Self::strip_subkey_suffix(&user_key);
+        let slot = key_to_slot(routing_key);
+        if let Some(gid) = Self::migration_read_group(&mgr, slot) {
+            return Some((mgr, gid));
+        }
         match mgr.router.route_key(routing_key) {
             Ok((gid, SlotStatus::Assigned(_))) => Some((mgr, gid)),
             Ok((gid, SlotStatus::Migrating(_)))
@@ -123,15 +167,21 @@ impl ClusterDataAdapter {
     }
 
     /// 写路径: IMPORTING 时优先写入本节点目标 group.
-    fn route_write(key: &[u8]) -> Option<(Arc<ClusterStateManager>, u64)> {
-        let mgr = CLUSTER_STATE_MGR.get()?.clone();
-        let (_, user_key) = AiDbEngine::decode_key(key)?;
+    /// 返回 `Err(TRYAGAIN)` 当 Frozen/Ready 写冻结; `Ok(None)` 表示无本地 group.
+    fn route_write(key: &[u8]) -> Result<Option<(Arc<ClusterStateManager>, u64)>> {
+        let Some(mgr) = CLUSTER_STATE_MGR.get().cloned() else {
+            return Ok(None);
+        };
+        let Some((_, user_key)) = AiDbEngine::decode_key(key) else {
+            return Ok(None);
+        };
         let routing_key = Self::strip_subkey_suffix(&user_key);
+        Self::reject_if_write_frozen(&mgr, routing_key)?;
         let slot = key_to_slot(routing_key);
         if let Some(gid) = Self::importing_write_group(&mgr, slot) {
-            return Some((mgr, gid));
+            return Ok(Some((mgr, gid)));
         }
-        match mgr.router.route_key(routing_key) {
+        Ok(match mgr.router.route_key(routing_key) {
             Ok((gid, SlotStatus::Assigned(_))) => {
                 if mgr.multi_raft.get_groups().read().contains_key(&gid) {
                     Some((mgr, gid))
@@ -148,7 +198,7 @@ impl ClusterDataAdapter {
                 }
             }
             _ => None,
-        }
+        })
     }
 
     fn map_err<E: std::fmt::Display>(e: E) -> Error {
@@ -381,7 +431,7 @@ impl StorageAdapter for ClusterDataAdapter {
     }
 
     async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        match Self::route_write(&key) {
+        match Self::route_write(&key)? {
             Some((mgr, gid)) => {
                 self.submit_batched_set(mgr, gid, key, value)
                     .await
@@ -392,7 +442,7 @@ impl StorageAdapter for ClusterDataAdapter {
     }
 
     async fn delete(&self, key: Vec<u8>) -> Result<bool> {
-        match Self::route_write(&key) {
+        match Self::route_write(&key)? {
             Some((mgr, gid)) => {
                 let existed = mgr
                     .multi_raft
@@ -442,7 +492,7 @@ impl StorageAdapter for ClusterDataAdapter {
                 AdapterWriteOp::Put { key, .. } => key.as_slice(),
                 AdapterWriteOp::Delete { key } => key.as_slice(),
             };
-            match Self::route_write(key) {
+            match Self::route_write(key)? {
                 Some((mgr, gid)) => {
                     let entry = by_group
                         .entry(gid)

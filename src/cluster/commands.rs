@@ -251,6 +251,16 @@ pub fn cluster_nodes() -> Result<String, String> {
                         source_group,
                         target_group,
                         ..
+                    }
+                    | aidb::cluster::meta_types::SlotMigrationState::Frozen {
+                        source_group,
+                        target_group,
+                        ..
+                    }
+                    | aidb::cluster::meta_types::SlotMigrationState::ReadyToCommit {
+                        source_group,
+                        target_group,
+                        ..
                     } => (*source_group, *target_group),
                 };
                 let in_source = meta
@@ -453,7 +463,9 @@ pub fn cluster_slots() -> Result<Vec<SlotRangeInfo>, String> {
                 // Get target group from migration state
                 let target_gid = migration_state.as_ref().map(|ms| match ms {
                     SlotMigrationState::Prepare { target_group, .. }
-                    | SlotMigrationState::Migrating { target_group, .. } => *target_group,
+                    | SlotMigrationState::Migrating { target_group, .. }
+                    | SlotMigrationState::Frozen { target_group, .. }
+                    | SlotMigrationState::ReadyToCommit { target_group, .. } => *target_group,
                 });
                 let target_group = target_gid.and_then(|tg| meta.groups.get(&tg));
 
@@ -1018,9 +1030,16 @@ pub async fn cluster_set_slot(
         "STABLE" => {
             // Clear local importing slot tracking
             mgr.importing_slots.write().remove(&slot);
-            // Commit migration if active (ignore error if no active migration)
-            if let Some(sm) = &mgr.slot_migration_manager {
-                let _ = sm.commit_migration().await;
+            // F-056: 走完整收尾链 (freeze → quiesce → final_verify → mark_ready → commit).
+            // 无活跃迁移时 finish_migration 会失败; 仅清 importing 仍返回 OK.
+            if mgr.meta_raft.get_migration_state().is_some() {
+                let sm = mgr
+                    .slot_migration_manager
+                    .as_ref()
+                    .ok_or_else(|| "ERR SlotMigrationManager not initialized".to_string())?;
+                sm.finish_migration()
+                    .await
+                    .map_err(|e| format!("ERR finish_migration: {e}"))?;
             }
             Ok("OK".to_string())
         }
@@ -1601,9 +1620,10 @@ pub async fn cluster_rebalance() -> Result<String, String> {
                 ));
             }
 
-            sm.commit_migration()
+            // F-056: 完整收尾链, 失败返回 ERR (不得静默跳过).
+            sm.finish_migration()
                 .await
-                .map_err(|e| format!("ERR commit_migration: {e}"))?;
+                .map_err(|e| format!("ERR finish_migration: {e}"))?;
 
             total_migrated += migrate_slots.len() as u64;
 

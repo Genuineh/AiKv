@@ -350,8 +350,131 @@ mod tests {
         mgr_ref.importing_slots.write().clear();
 
         // ═══════════════════════════════════════════════════════════════
-        // 9. CLUSTER INFO format validation
+        // 15b. F-056 Frozen — writes TRYAGAIN (含 ASKING / importing)
         // ═══════════════════════════════════════════════════════════════
+        mgr_ref.multi_raft.clear_group_local_override(2);
+        mgr_ref.multi_raft.override_group_local(1);
+        mgr_ref.local_group_leaders.write().insert(1, true);
+        *mgr_ref.role.write() = ReplicationRole::Primary;
+        let mut frozen_leaders = HashMap::new();
+        frozen_leaders.insert(2u64, 4u64);
+        mgr_ref.router.refresh_from_data(
+            ask_table.clone(),
+            group_nodes.clone(),
+            node_addrs.clone(),
+            frozen_leaders.clone(),
+        );
+        mgr_ref
+            .meta_raft
+            .set_migration_state(Some(SlotMigrationState::Frozen {
+                source_group: 1,
+                target_group: 2,
+                slots: vec![0],
+            }));
+
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Write, false, false);
+        assert!(
+            matches!(r, RouteDecision::TryAgain { .. }),
+            "expected TryAgain (Frozen write), got {:?}",
+            r
+        );
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Write, true, false);
+        assert!(
+            matches!(r, RouteDecision::TryAgain { .. }),
+            "expected TryAgain (Frozen + ASKING), got {:?}",
+            r
+        );
+        mgr_ref.importing_slots.write().insert(0, 1);
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Write, false, false);
+        assert!(
+            matches!(r, RouteDecision::TryAgain { .. }),
+            "expected TryAgain (Frozen + importing), got {:?}",
+            r
+        );
+        mgr_ref.importing_slots.write().clear();
+        // Frozen read → still Execute on source
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Read, false, false);
+        assert!(
+            matches!(r, RouteDecision::Execute),
+            "expected Execute (Frozen read on source), got {:?}",
+            r
+        );
+
+        // ═══════════════════════════════════════════════════════════════
+        // 15c. F-056 ReadyToCommit — write TRYAGAIN; read → target (not source)
+        // ═══════════════════════════════════════════════════════════════
+        mgr_ref
+            .meta_raft
+            .set_migration_state(Some(SlotMigrationState::ReadyToCommit {
+                source_group: 1,
+                target_group: 2,
+                slots: vec![0],
+            }));
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Write, false, false);
+        assert!(
+            matches!(r, RouteDecision::TryAgain { .. }),
+            "expected TryAgain (ReadyToCommit write), got {:?}",
+            r
+        );
+        // Source local but Ready: read must ASK/MOVED to target, never Execute on source
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Read, false, false);
+        match &r {
+            RouteDecision::Ask {
+                slot,
+                node_id,
+                addr,
+            } => {
+                assert_eq!(*slot, 0);
+                assert_eq!(*node_id, 4);
+                assert_eq!(addr, ":7004");
+            }
+            _ => panic!(
+                "expected ASK to target (ReadyToCommit read on source), got {:?}",
+                r
+            ),
+        }
+        // Readonly replica on source also must not serve Ready reads locally
+        mgr_ref.local_group_leaders.write().insert(1, false);
+        *mgr_ref.role.write() = ReplicationRole::Replica { primary_id: 2 };
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Read, false, true);
+        assert!(
+            matches!(r, RouteDecision::Ask { .. }),
+            "expected ASK (ReadyToCommit readonly source replica), got {:?}",
+            r
+        );
+        *mgr_ref.role.write() = ReplicationRole::Primary;
+        mgr_ref.local_group_leaders.write().insert(1, true);
+
+        // Target local + Ready read → Execute
+        mgr_ref.multi_raft.clear_group_local_override(1);
+        mgr_ref.multi_raft.override_group_local(2);
+        mgr_ref.local_group_leaders.write().insert(2, true);
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Read, false, false);
+        assert!(
+            matches!(r, RouteDecision::Execute),
+            "expected Execute (ReadyToCommit read on target), got {:?}",
+            r
+        );
+        // Target local + Ready write still TRYAGAIN (even with ASKING)
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Write, true, false);
+        assert!(
+            matches!(r, RouteDecision::TryAgain { .. }),
+            "expected TryAgain (ReadyToCommit write on target+ASKING), got {:?}",
+            r
+        );
+
+        // Restore for subsequent CLUSTER INFO tests
+        mgr_ref.meta_raft.set_migration_state(None);
+        mgr_ref.importing_slots.write().clear();
+        mgr_ref.multi_raft.clear_group_local_override(2);
+        mgr_ref.multi_raft.override_group_local(1);
+        mgr_ref.router.refresh_from_data(
+            table.clone(),
+            group_nodes.clone(),
+            node_addrs.clone(),
+            HashMap::new(),
+        );
+        mgr_ref.local_group_leaders.write().insert(1, true);
         let info = aikv::cluster::cluster_info();
         assert!(info.is_ok(), "cluster_info should work after init");
         let info_str = info.unwrap();

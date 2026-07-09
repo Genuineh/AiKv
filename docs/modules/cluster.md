@@ -82,14 +82,16 @@ flowchart TB
 - **`CLUSTER_STATE_MGR`**: `init_cluster` 成功后才 `set`; 未 set 时 `cluster_route` 跳过 (非 cluster 单机行为).
 - **Assigned slot 写**: 必须经数据面 Raft (`ClusterDataAdapter`); **禁止** 写 local fallback (见 storage.md).
 - **`ClusterRouter::decide` 同步**: 只读缓存 + MetaRaft 快照; 不 `.await` OpenRaft.
-- **IMPORTING 写窗口**: 目标节点 `importing_slots` 或连接 `ASKING` + Migrating/IMPORTING 状态 → `Execute`; 与 MIGRATE RESTORE 配合.
-- **Migrating 源侧继续本地服务, 不盲目 ASK**: 内置迁移 executor 只把 key 正向拷贝 (source → target), 从不从 source 删除, 所以整个 Prepare/Migrating 窗口期间 source 对这批 slot 仍完全权威, 只有 `CommitSlotMigration` 才原子切换归属. `source_group` 本地时 (leader, 或只读副本 + readonly) 一律 `Execute`, **不**返回 `ASK` (2026-07-02 前会盲目 ASK 到可能尚未拷贝到该 key 的 target, 读到空); 非 leader 且非 readonly 的写仍 `MOVED` 到 source leader.
+- **IMPORTING 写窗口**: 目标节点 `importing_slots` 或连接 `ASKING` + Migrating/IMPORTING 状态 → `Execute`; 与 MIGRATE RESTORE 配合. **不含** Frozen / ReadyToCommit (见下).
+- **Prepare / Migrating (v7)**: 写 ASK → target; 读仍走 source (`Execute` 当 source 本地 leader / readonly). 非 leader 且非 readonly 的写仍 `MOVED` 到 source leader.
+- **Frozen (F-056)**: 一切客户端写 (含 ASKING / importing / MIGRATE·RESTORE) → `TRYAGAIN`; 读仍走 source (可能陈旧; **非** A2 窗口).
+- **ReadyToCommit (F-056, A2 起点)**: 写仍 `TRYAGAIN`; 读**必须**导向 target (`Execute` / `ASK` / `MOVED`), 含 source 上 READONLY 副本, 不得本地读 source.
 - **ASKING 一次性**: `Connection` 每命令执行后 `reset_asking`.
-- **readonly replica 读**: `READONLY` + `CommandType::Read` + 本地 group → 本地读; 写仍 MOVED 到 leader.
-- **admin 白名单**: `cluster_route` 内命令 (PING/MIGRATE/SCAN/INFO/…) **不** 按 key 路由.
+- **readonly replica 读**: `READONLY` + `CommandType::Read` + 本地 group → 本地读; 写仍 MOVED 到 leader. ReadyToCommit 时例外: 读切 target.
+- **admin 白名单**: `cluster_route` 内命令 (PING/CLUSTER/SCAN/INFO/…) **不** 按 key 路由, 可绕过 TRYAGAIN; MIGRATE/RESTORE 仅 Frozen/Ready 时仍返回 TRYAGAIN.
 - **CROSSSLOT**: 多 key 命令 (MGET/MSET/DEL/BLPOP/…) 须同 slot; MSET key 在偶数下标.
 - **Announce unknown 模式**: 客户端见 `:port`; smart client 用 `redis-cli -c` 或 cluster-aware SDK 跟随 MOVED/ASK.
-- **无服务端透明转发**: MOVED/ASK 仅返回 `-MOVED`/`-ASK` 字符串; **不计入** commandstats (对齐 Redis 8.8).
+- **无服务端透明转发**: MOVED/ASK/TRYAGAIN 仅返回错误字符串; MOVED/ASK **不计入** commandstats; TRYAGAIN 计入 errorstats.
 
 ## 数据流
 
@@ -122,8 +124,8 @@ sequenceDiagram
     R-->>C: -CROSSSLOT
   else decide Execute
     R->>K: execute_inner
-  else Moved/Ask
-    R-->>C: -MOVED / -ASK (无服务端转发)
+  else Moved/Ask/TryAgain
+    R-->>C: -MOVED / -ASK / -TRYAGAIN (无服务端转发)
   end
   C->>C: reset_asking; 跳过 MOVED/ASK commandstats
 ```
@@ -132,16 +134,19 @@ sequenceDiagram
 
 1. 源: `CLUSTER SETSLOT <slot> MIGRATING <target-id>` → `SlotMigrationManager::start_migration`
 2. 目标: `CLUSTER SETSLOT <slot> IMPORTING <source-id>` → 本地 `importing_slots`
-3. `MIGRATE` + `ASKING` + RESTORE (commands-extended)
-4. `CLUSTER SETSLOT <slot> STABLE` → 清 `importing_slots` + `commit_migration`
+3. `MIGRATE` + `ASKING` + RESTORE (commands-extended); 或内置 `run_pending_migration`
+4. `CLUSTER SETSLOT <slot> STABLE` / `CLUSTER REBALANCE` → `finish_migration()`
+   (`freeze → quiesce → final_verify → mark_ready → commit`); 失败返回 ERR
 
-源节点 Migrating 期间读写 → 本地 **Execute** (source 仍完全权威, 见上方 invariant); 目标 IMPORTING 写 → **Execute** (含 router `importing_slots` 短路, 需 `ASKING` 或 `importing_slots` 命中之一).
+Prepare/Migrating: 写 ASK target, 读 source Execute. Frozen: 写 TRYAGAIN, 读 source.
+ReadyToCommit: 写 TRYAGAIN, 读切 target. 目标 IMPORTING 写仅在 Prepare/Migrating 窗口
+`Execute` (含 `ASKING` / `importing_slots`); Frozen/Ready 一律 TRYAGAIN.
 
 ## 关键类型
 
 | 类型 | 说明 |
 |------|------|
-| `RouteDecision` | `Execute` / `Moved` / `Ask` / `ClusterDown` |
+| `RouteDecision` | `Execute` / `Moved` / `Ask` / `TryAgain` / `ClusterDown` |
 | `CommandType` | `Read` / `Write` / `Admin` |
 | `ClusterConnectionState` | `asking`, `readonly` |
 | `AnnounceMode` | `Fixed` (完整 host:port) / `UnknownEndpoint` (默认 `:port`) |

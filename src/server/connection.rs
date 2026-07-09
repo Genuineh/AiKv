@@ -741,8 +741,8 @@ impl Connection {
             {
                 // 集群拓扑变化 (slot 迁移/重新分片) 时, 快照阶段内部路由的
                 // DUMP 可能命中不在本节点的 key, 底层 routed_command 会把
-                // MOVED/ASK 包装成 Error::Command 冒泡到这里. 必须原样透传
-                // 顶层 MOVED/ASK, 让集群感知客户端 (如 StackExchange.Redis)
+                // MOVED/ASK/TRYAGAIN 包装成 Error::Command 冒泡到这里. 必须原样透传
+                // 顶层错误, 让集群感知客户端 (如 StackExchange.Redis)
                 // 按标准协议重定向整个 batch 到正确节点重试, 而不是把它
                 // 裹成一个客户端无法识别的通用 "internal error".
                 let msg = format_batch_exec_error(&e);
@@ -1215,10 +1215,10 @@ fn batch_command_failure_message(result: &Result<RespValue>) -> Option<String> {
     }
 }
 
-/// 判断 batch 内部命令的错误消息是否为集群重定向 (MOVED/ASK),
+/// 判断 batch 内部命令的错误消息是否为集群重定向 (MOVED/ASK) 或写冻结 (TRYAGAIN),
 /// 与 [`is_cluster_redirect_response`] 对 `RespValue` 的判断逻辑保持一致.
 fn is_redirect_error_msg(msg: &str) -> bool {
-    msg.starts_with("MOVED ") || msg.starts_with("ASK ")
+    msg.starts_with("MOVED ") || msg.starts_with("ASK ") || msg.starts_with("TRYAGAIN ")
 }
 
 fn format_batch_exec_error(err: &Error) -> String {

@@ -314,8 +314,6 @@ impl CommandRouter {
             "command",
             "latency",
             "slowlog",
-            // MIGRATE reads locally then RESTOREs remotely; must not be MOVED/ASK redirected.
-            "migrate",
             // Cursor-based iteration — these scan the local keyspace and MUST
             // NOT be routed by key (args.first() is the cursor, not a key).
             "scan",
@@ -324,6 +322,25 @@ impl CommandRouter {
             "zscan",
         ];
         if admin_cmds.contains(&lower.as_str()) {
+            return None;
+        }
+        // MIGRATE/RESTORE: 平时不走 MOVED/ASK (本地读 + 远端 RESTORE), 但 F-056
+        // Frozen/Ready 写冻结仍须 TRYAGAIN (白名单外不放行用户数据写).
+        if lower == "migrate" || lower == "restore" {
+            if let Some(key) = crate::cluster::routing_key::cluster_routing_key(cmd, args) {
+                let decision = crate::cluster::router::ClusterRouter::decide(
+                    key,
+                    crate::cluster::router::CommandType::Write,
+                    conn_state.is_asking(),
+                    conn_state.is_readonly(),
+                );
+                if let crate::cluster::router::RouteDecision::TryAgain { reason } = decision {
+                    if let Some(m) = self.metrics.as_ref() {
+                        m.on_error_stat(&reason);
+                    }
+                    return Some(Ok(RespValue::Error(reason)));
+                }
+            }
             return None;
         }
         // Multi-key CROSSSLOT check
@@ -361,6 +378,15 @@ impl CommandRouter {
                         m.on_cluster_redirect("ask");
                     }
                     Some(Ok(RespValue::Error(format!("ASK {slot} {addr}"))))
+                }
+                crate::cluster::router::RouteDecision::TryAgain { reason } => {
+                    // TRYAGAIN 计入 errorstats, 不计入成功 commandstats
+                    // (cluster_route 提前返回, record_command_outcome 不会跑到;
+                    // 由 connection 层对非 redirect 错误路径统计, 或此处显式记).
+                    if let Some(m) = self.metrics.as_ref() {
+                        m.on_error_stat(&reason);
+                    }
+                    Some(Ok(RespValue::Error(reason)))
                 }
                 crate::cluster::router::RouteDecision::ClusterDown(msg) => {
                     Some(Ok(RespValue::Error(msg)))
