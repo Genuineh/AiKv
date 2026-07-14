@@ -407,6 +407,52 @@ impl ClusterDataAdapter {
         Err(last_err)
     }
 
+    /// 批量 propose (client_write_many 流水线).
+    #[cfg(feature = "cluster")]
+    async fn propose_group_many_with_retry(
+        mgr: &ClusterStateManager,
+        gid: u64,
+        requests: Vec<aidb::cluster::Request>,
+    ) -> Vec<std::result::Result<aidb::cluster::Response, String>> {
+        // 如果只有一条请求, 退化为单条 propose
+        if requests.len() == 1 {
+            let result = Self::propose_group_with_retry(mgr, gid, requests.into_iter().next().unwrap())
+                .await
+                .map_err(|e| e.to_string());
+            return vec![result];
+        }
+
+        let mut last_err: Option<String> = None;
+        for attempt in 0..GROUP_READY_MAX_ATTEMPTS {
+            let need_retry = attempt + 1 < GROUP_READY_MAX_ATTEMPTS;
+            let mut all_ok = true;
+            let results = mgr.multi_raft.propose_group_many(gid, requests.clone()).await;
+            let results: Vec<_> = results.into_iter().map(|r| {
+                match r {
+                    Ok(resp) => Ok(resp),
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        last_err = Some(err_str.clone());
+                        if need_retry && err_str.contains("NotLeader") {
+                            all_ok = false;
+                        }
+                        Err(err_str)
+                    }
+                }
+            }).collect();
+
+            if all_ok {
+                return results;
+            }
+            if need_retry {
+                tokio::time::sleep(GROUP_READY_RETRY_DELAY).await;
+                continue;
+            }
+            return results;
+        }
+        unreachable!()
+    }
+
     fn get_or_spawn_set_batcher(
         &self,
         mgr: Arc<ClusterStateManager>,
@@ -460,13 +506,24 @@ impl ClusterDataAdapter {
     }
 }
 
+/// 收集多个 WriteBatch 后通过 propose_group_many 批量提交.
+///
+/// BATCH_BURST: 每次至多合并此数量的 WriteBatch, 利用 Raft 流水线降低
+/// 单条 entry 的 WAL sync / RPC 复制均摊开销.
+const BATCH_BURST: usize = 3;
+
 async fn run_set_batcher(
     mgr: Arc<ClusterStateManager>,
     gid: u64,
     mut rx: mpsc::Receiver<SetBatchItem>,
     eager_flush: usize,
 ) {
-    while let Some(first) = rx.recv().await {
+    loop {
+        // ── 收集第一批 items (同现有逻辑) ──
+        let first = match rx.recv().await {
+            Some(item) => item,
+            None => return,
+        };
 
         let mut items = Vec::with_capacity(SET_BATCH_MAX_OPS);
         items.push(first);
@@ -488,8 +545,10 @@ async fn run_set_batcher(
             }
         }
 
+        // ── 去重 + 构建 WriteBatch ──
         let mut tb = ThinWriteBatch::new();
-        let mut acks_rev: Vec<_> = Vec::with_capacity(items.len());
+        let mut acks_rev: Vec<oneshot::Sender<std::result::Result<(), String>>> =
+            Vec::with_capacity(items.len());
         let mut seen: HashSet<Vec<u8>> = HashSet::new();
 
         for item in items.into_iter().rev() {
@@ -500,13 +559,51 @@ async fn run_set_batcher(
         }
         acks_rev.reverse();
 
-        let result = ClusterDataAdapter::propose_group_with_retry(&mgr, gid, Request::WriteBatch(tb))
-            .await
-            .and_then(ClusterDataAdapter::check_response)
-            .map_err(|e| e.to_string());
+        // ── 尝试凑多个 WriteBatch ──
+        let mut tb_set = vec![tb];
+        let mut ack_sets = vec![acks_rev];
 
-        for ack in acks_rev {
-            let _ = ack.send(result.clone());
+        for _ in 1..BATCH_BURST {
+            let mut extra: Vec<SetBatchItem> = Vec::with_capacity(SET_BATCH_MAX_OPS);
+            loop {
+                match rx.try_recv() {
+                    Ok(item) => extra.push(item),
+                    Err(mpsc::error::TryRecvError::Empty) => break,
+                    Err(mpsc::error::TryRecvError::Disconnected) => break,
+                }
+                if extra.len() >= SET_BATCH_MAX_OPS {
+                    break;
+                }
+            }
+            if extra.is_empty() {
+                break;
+            }
+
+            let mut tb2 = ThinWriteBatch::new();
+            let mut seen2: HashSet<Vec<u8>> = HashSet::new();
+            let mut acks2: Vec<oneshot::Sender<std::result::Result<(), String>>> =
+                Vec::with_capacity(extra.len());
+
+            for item in extra.into_iter().rev() {
+                if seen2.insert(item.key.clone()) {
+                    tb2.put(item.key, item.value);
+                }
+                acks2.push(item.ack);
+            }
+            acks2.reverse();
+            tb_set.push(tb2);
+            ack_sets.push(acks2);
+        }
+
+        // ── 批量提交 ──
+        let requests: Vec<Request> = tb_set.into_iter().map(Request::WriteBatch).collect();
+        let results =
+            ClusterDataAdapter::propose_group_many_with_retry(&mgr, gid, requests).await;
+
+        // ── 分发结果到各 ack ──
+        for (acks, result) in ack_sets.into_iter().zip(results.into_iter()) {
+            let ack_result: std::result::Result<(), String> = result.map(|_| ());
+            let _ = acks.into_iter().try_for_each(|ack| ack.send(ack_result.clone()));
         }
     }
 }
