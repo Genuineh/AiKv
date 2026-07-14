@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
+#[cfg(feature = "cluster")]
+use openraft::async_runtime::watch::WatchReceiver;
+
 use crate::cluster::state::ClusterStateManager;
 use crate::cluster::state::CLUSTER_STATE_MGR;
 use crate::cluster::state::DEFAULT_DATA_PORT_OFFSET;
@@ -97,7 +100,7 @@ fn resolve_group_leader_for_info(
         }
     }
     if let Some(node) = mgr.multi_raft.get_groups().read().get(&group_id) {
-        return node.raft().metrics().borrow().current_leader;
+        return node.raft().metrics().borrow_watched().current_leader;
     }
     None
 }
