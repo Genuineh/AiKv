@@ -274,6 +274,13 @@ async fn init_cluster(
 
     // 2. 创建 RaftNetworkClientFactory
     let net_factory = RaftNetworkClientFactory::new(node_id, 0, 30, 64 * 1024 * 1024);
+    // Joiner seed: 地址已知但 node_id 要等首条 inbound Raft 消息的 `from` 才能绑定.
+    // 切勿 add_node(0, addr) — raft 消息发往真实 id (通常为 1), get_client 会失败.
+    for peer_addr in peers {
+        if peer_addr != rpc_addr {
+            net_factory.add_pending_peer(peer_addr.clone());
+        }
+    }
     let net_factory = Arc::new(parking_lot::RwLock::new(net_factory));
 
     // 3. 创建 MetaRaftNode (控制平面, group_id=0)
@@ -289,18 +296,13 @@ async fn init_cluster(
         rpc_timeout_ms: raft_rpc_timeout_ms,
         grpc_max_message_size: 64 * 1024 * 1024,
         snapshot_size_threshold: None,
-            linearizable_read: false,
+        linearizable_read: false,
+        // 有 peers 的节点是加入方, 禁止自成独立 Raft 组
+        bootstrap: peers.is_empty(),
     };
-    let factory = net_factory.read().clone(); // drop read lock before .await
+    // 必须在 clone 前写完 pending, 使 MetaRaft Ready loop 持有 seed 地址.
+    let factory = net_factory.read().clone();
     let meta_raft = Arc::new(MetaRaftNode::new(raft_config.clone(), db.clone(), factory).await?);
-
-    // 4. 注册 peer 地址到 net_factory
-    for peer_addr in peers {
-        if peer_addr == rpc_addr {
-            continue;
-        }
-        net_factory.write().add_node(0, peer_addr.clone());
-    }
 
     // 5. 确定本节点的 client_addr (外部可达地址).
     // bootstrap 节点通过 initialize_with_client 设置; 加入节点通过后台 task
@@ -400,6 +402,12 @@ async fn init_cluster(
         .with_tick_interval(std::time::Duration::from_millis(lifecycle_tick_ms));
     let multi_raft =
         MultiRaftNode::new_with_lifecycle(node_id, router.clone(), dispatcher.clone(), lifecycle);
+    // 把 seed peers 注入 MultiRaft factory, 供数据 group 副本回复 leader.
+    for peer_addr in peers {
+        if peer_addr != rpc_addr {
+            multi_raft.add_pending_peer(peer_addr.clone());
+        }
+    }
     let multi_raft = Arc::new(multi_raft);
 
     // 11. 启动 Lifecycle (数据 Group 自动创建/销毁)

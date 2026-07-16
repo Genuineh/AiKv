@@ -726,7 +726,10 @@ pub async fn cluster_meet(
             .as_ref()
             .ok_or_else(|| "ERR Membership coordinator not available".to_string())?;
         let meta = mgr.meta_raft.get_cluster_meta();
-        let next_id = meta.nodes.keys().max().unwrap_or(&0) + 1;
+        // 确保 next_id 不与本地 bootstrap 节点碰撞 (meta.nodes 可能在
+        // initialize_with_client 的 RegisterNode proposal 完成 apply 之前为空).
+        let max_existing = meta.nodes.keys().max().copied().unwrap_or(mgr.node_id);
+        let next_id = max_existing.max(mgr.node_id) + 1;
         // client_addr 使用独立的外部可达 host, 与内部 RPC 地址分离
         let client_host = client_host.unwrap_or(addr);
         let client_addr = client_port.map(|cp| format!("{client_host}:{cp}"));

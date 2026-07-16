@@ -43,6 +43,9 @@ const ERR_DATA_GROUP_NOT_READY: &str = "CLUSTERDOWN data group not ready";
 const SET_BATCH_MAX_OPS: usize = 512;
 /// 凑批等待上限. 1ms 平衡吞吐与延迟: 集群 50c 负载下 items 到达快, 等 1ms 足矣.
 const SET_BATCH_MAX_DELAY: Duration = Duration::from_millis(1);
+/// 每 group 同时 in-flight 的 Raft WriteBatch propose 数.
+/// >1 才能让 aidb Ready 循环 drain 多条 propose 合并一次 persist.
+const SET_BATCH_MAX_IN_FLIGHT: usize = 32;
 
 /// F-056-A1 读路由结果: `Single` 为老路径 (本地 group 直读, 无需合并);
 /// `Merge` 为 Frozen/Copying 期合并读, 需依次查 target tombstone → target
@@ -466,7 +469,49 @@ async fn run_set_batcher(
     mut rx: mpsc::Receiver<SetBatchItem>,
     eager_flush: usize,
 ) {
-    while let Some(first) = rx.recv().await {
+    let mut in_flight: tokio::task::JoinSet<(
+        Vec<oneshot::Sender<std::result::Result<(), String>>>,
+        std::result::Result<(), String>,
+    )> = tokio::task::JoinSet::new();
+
+    loop {
+        // 腾出名额: 回收已完成的 propose.
+        while in_flight.len() >= SET_BATCH_MAX_IN_FLIGHT {
+            if let Some(joined) = in_flight.join_next().await {
+                match joined {
+                    Ok((acks, result)) => {
+                        for ack in acks {
+                            let _ = ack.send(result.clone());
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(gid, error = %e, "set batcher propose task panicked");
+                    }
+                }
+            }
+        }
+
+        let first = tokio::select! {
+            biased;
+            Some(joined) = in_flight.join_next(), if !in_flight.is_empty() => {
+                match joined {
+                    Ok((acks, result)) => {
+                        for ack in acks {
+                            let _ = ack.send(result.clone());
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(gid, error = %e, "set batcher propose task panicked");
+                    }
+                }
+                continue;
+            }
+            item = rx.recv() => item,
+        };
+
+        let Some(first) = first else {
+            break;
+        };
 
         let mut items = Vec::with_capacity(SET_BATCH_MAX_OPS);
         items.push(first);
@@ -500,13 +545,27 @@ async fn run_set_batcher(
         }
         acks_rev.reverse();
 
-        let result = ClusterDataAdapter::propose_group_with_retry(&mgr, gid, Request::WriteBatch(tb))
-            .await
-            .and_then(ClusterDataAdapter::check_response)
-            .map_err(|e| e.to_string());
+        let mgr_c = Arc::clone(&mgr);
+        in_flight.spawn(async move {
+            let result =
+                ClusterDataAdapter::propose_group_with_retry(&mgr_c, gid, Request::WriteBatch(tb))
+                    .await
+                    .and_then(ClusterDataAdapter::check_response)
+                    .map_err(|e| e.to_string());
+            (acks_rev, result)
+        });
+    }
 
-        for ack in acks_rev {
-            let _ = ack.send(result.clone());
+    while let Some(joined) = in_flight.join_next().await {
+        match joined {
+            Ok((acks, result)) => {
+                for ack in acks {
+                    let _ = ack.send(result.clone());
+                }
+            }
+            Err(e) => {
+                tracing::error!(gid, error = %e, "set batcher propose task panicked");
+            }
         }
     }
 }
