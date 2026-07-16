@@ -178,7 +178,7 @@ WiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障�
 - smart client (`redis-cli -c` 等) 更新 slot 表并重试.
 - **命令统计** 仅在实际执行节点计入 `commandstats`; MOVED 响应节点 **不** 给该命令加 calls.
 
-**放弃:** 服务端透明代理 (`forward_command`). 历史实现偏离 DESIGN, 见 [docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md](docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md) P0 移除.
+**放弃:** 服务端透明代理 (`forward_command`). 历史实现偏离 DESIGN, 已移除; 现行行为见 [docs/modules/cluster.md](docs/modules/cluster.md).
 
 ### 为什么 `ClusterRouter::decide` 同步?
 
@@ -206,7 +206,7 @@ WiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障�
 
 ## 可观测性
 
-**Redis 参考:** Open Source **8.8** (`redis_compatible_version:8.8`; INFO sections + commandstats 行格式). 对齐 spec: [2026-06-25-redis-alignment-cluster-info-otel-design.md](docs/superpowers/specs/2026-06-25-redis-alignment-cluster-info-otel-design.md).
+**Redis 参考:** Open Source **8.8** (`redis_compatible_version:8.8`; INFO sections + commandstats 行格式). 字段与 OTLP 对照见 [docs/modules/observability.md](docs/modules/observability.md) · [observability-reference.md](docs/modules/observability-reference.md).
 
 ### 为什么 tracing 始终编译, OTel 在 `monitoring` feature?
 
