@@ -43,6 +43,8 @@ const ERR_DATA_GROUP_NOT_READY: &str = "CLUSTERDOWN data group not ready";
 const SET_BATCH_MAX_OPS: usize = 512;
 /// 凑批等待上限. 1ms 平衡吞吐与延迟: 集群 50c 负载下 items 到达快, 等 1ms 足矣.
 const SET_BATCH_MAX_DELAY: Duration = Duration::from_millis(1);
+/// 每 group 同时 in-flight 的 Raft propose_many 批次数.
+const SET_BATCH_MAX_IN_FLIGHT: usize = 32;
 
 /// F-056-A1 读路由结果: `Single` 为老路径 (本地 group 直读, 无需合并);
 /// `Merge` 为 Frozen/Copying 期合并读, 需依次查 target tombstone → target
@@ -334,6 +336,16 @@ impl ClusterDataAdapter {
         ))
     }
 
+    /// 保留 aidb `ClusterError` 变体 (尤其是 NotLeader), 供类型化重试.
+    fn map_aidb_err(e: aidb::Error) -> Error {
+        match e {
+            aidb::Error::Cluster(ce) => Error::Cluster(crate::error::ClusterError::Aidb(ce)),
+            other => Error::Cluster(crate::error::ClusterError::Aidb(
+                AidbClusterError::Internal(other.to_string()),
+            )),
+        }
+    }
+
     fn check_response(resp: Response) -> Result<()> {
         match resp {
             Response::Error(msg) => Err(Error::Cluster(crate::error::ClusterError::Aidb(
@@ -393,7 +405,7 @@ impl ClusterDataAdapter {
             match mgr.multi_raft.propose_group(gid, request.clone()).await {
                 Ok(resp) => return Ok(resp),
                 Err(e) => {
-                    last_err = Self::map_err(e);
+                    last_err = Self::map_aidb_err(e);
                     if Self::is_transient_cluster_err(&last_err)
                         && attempt + 1 < GROUP_READY_MAX_ATTEMPTS
                     {
@@ -408,13 +420,13 @@ impl ClusterDataAdapter {
     }
 
     /// 批量 propose (client_write_many 流水线).
+    /// 仅重试失败且 transient 的项; 已成功的不再二次 propose.
     #[cfg(feature = "cluster")]
     async fn propose_group_many_with_retry(
         mgr: &ClusterStateManager,
         gid: u64,
         requests: Vec<aidb::cluster::Request>,
     ) -> Vec<std::result::Result<aidb::cluster::Response, String>> {
-        // 如果只有一条请求, 退化为单条 propose
         if requests.len() == 1 {
             let result = Self::propose_group_with_retry(mgr, gid, requests.into_iter().next().unwrap())
                 .await
@@ -422,35 +434,58 @@ impl ClusterDataAdapter {
             return vec![result];
         }
 
-        let mut last_err: Option<String> = None;
+        let n = requests.len();
+        let mut results: Vec<Option<std::result::Result<aidb::cluster::Response, Error>>> =
+            (0..n).map(|_| None).collect();
+        let mut pending: Vec<usize> = (0..n).collect();
+
         for attempt in 0..GROUP_READY_MAX_ATTEMPTS {
-            let need_retry = attempt + 1 < GROUP_READY_MAX_ATTEMPTS;
-            let mut all_ok = true;
-            let results = mgr.multi_raft.propose_group_many(gid, requests.clone()).await;
-            let results: Vec<_> = results.into_iter().map(|r| {
+            let batch: Vec<_> = pending.iter().map(|&i| requests[i].clone()).collect();
+            let batch_results = mgr.multi_raft.propose_group_many(gid, batch).await;
+
+            let mut any_transient = false;
+            for (bi, r) in batch_results.into_iter().enumerate() {
+                let orig = pending[bi];
                 match r {
-                    Ok(resp) => Ok(resp),
+                    Ok(resp) => results[orig] = Some(Ok(resp)),
                     Err(e) => {
-                        let err_str = e.to_string();
-                        last_err = Some(err_str.clone());
-                        if need_retry && err_str.contains("NotLeader") {
-                            all_ok = false;
+                        let mapped = Self::map_aidb_err(e);
+                        if Self::is_transient_cluster_err(&mapped) {
+                            any_transient = true;
                         }
-                        Err(err_str)
+                        results[orig] = Some(Err(mapped));
                     }
                 }
-            }).collect();
-
-            if all_ok {
-                return results;
             }
-            if need_retry {
+
+            pending = pending
+                .into_iter()
+                .filter(|&i| {
+                    matches!(
+                        &results[i],
+                        Some(Err(e)) if Self::is_transient_cluster_err(e)
+                    )
+                })
+                .collect();
+
+            if pending.is_empty() {
+                break;
+            }
+            if any_transient && attempt + 1 < GROUP_READY_MAX_ATTEMPTS {
                 tokio::time::sleep(GROUP_READY_RETRY_DELAY).await;
                 continue;
             }
-            return results;
+            break;
         }
-        unreachable!()
+
+        results
+            .into_iter()
+            .map(|r| match r {
+                Some(Ok(resp)) => Ok(resp),
+                Some(Err(e)) => Err(e.to_string()),
+                None => Err("missing propose_group_many result".into()),
+            })
+            .collect()
     }
 
     fn get_or_spawn_set_batcher(
@@ -508,8 +543,8 @@ impl ClusterDataAdapter {
 
 /// 收集多个 WriteBatch 后通过 propose_group_many 批量提交.
 ///
-/// BATCH_BURST: 每次至多合并此数量的 WriteBatch, 利用 Raft 流水线降低
-/// 单条 entry 的 WAL sync / RPC 复制均摊开销.
+/// BATCH_BURST: 单次 client_write_many 打包的 WriteBatch 数.
+/// SET_BATCH_MAX_IN_FLIGHT: 跨批并行深度 — spawn propose 后立即继续收集下一批.
 const BATCH_BURST: usize = 3;
 
 async fn run_set_batcher(
@@ -518,13 +553,54 @@ async fn run_set_batcher(
     mut rx: mpsc::Receiver<SetBatchItem>,
     eager_flush: usize,
 ) {
+    let mut in_flight: tokio::task::JoinSet<(
+        Vec<Vec<oneshot::Sender<std::result::Result<(), String>>>>,
+        Vec<std::result::Result<(), String>>,
+    )> = tokio::task::JoinSet::new();
+
     loop {
-        // ── 收集第一批 items (同现有逻辑) ──
-        let first = match rx.recv().await {
-            Some(item) => item,
-            None => return,
+        while in_flight.len() >= SET_BATCH_MAX_IN_FLIGHT {
+            if let Some(joined) = in_flight.join_next().await {
+                match joined {
+                    Ok((ack_sets, results)) => {
+                        for (acks, result) in ack_sets.into_iter().zip(results.into_iter()) {
+                            let _ = acks
+                                .into_iter()
+                                .try_for_each(|ack| ack.send(result.clone()));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(gid, error = %e, "set batcher propose task panicked");
+                    }
+                }
+            }
+        }
+
+        let first = tokio::select! {
+            biased;
+            Some(joined) = in_flight.join_next(), if !in_flight.is_empty() => {
+                match joined {
+                    Ok((ack_sets, results)) => {
+                        for (acks, result) in ack_sets.into_iter().zip(results.into_iter()) {
+                            let _ = acks
+                                .into_iter()
+                                .try_for_each(|ack| ack.send(result.clone()));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(gid, error = %e, "set batcher propose task panicked");
+                    }
+                }
+                continue;
+            }
+            item = rx.recv() => item,
         };
 
+        let Some(first) = first else {
+            break;
+        };
+
+        // ── 收集第一批 items ──
         let mut items = Vec::with_capacity(SET_BATCH_MAX_OPS);
         items.push(first);
 
@@ -595,15 +671,35 @@ async fn run_set_batcher(
             ack_sets.push(acks2);
         }
 
-        // ── 批量提交 ──
         let requests: Vec<Request> = tb_set.into_iter().map(Request::WriteBatch).collect();
-        let results =
-            ClusterDataAdapter::propose_group_many_with_retry(&mgr, gid, requests).await;
+        let mgr_c = Arc::clone(&mgr);
+        in_flight.spawn(async move {
+            let results =
+                ClusterDataAdapter::propose_group_many_with_retry(&mgr_c, gid, requests).await;
+            let mapped: Vec<std::result::Result<(), String>> = results
+                .into_iter()
+                .map(|r| {
+                    r.and_then(|resp| {
+                        ClusterDataAdapter::check_response(resp).map_err(|e| e.to_string())
+                    })
+                })
+                .collect();
+            (ack_sets, mapped)
+        });
+    }
 
-        // ── 分发结果到各 ack ──
-        for (acks, result) in ack_sets.into_iter().zip(results.into_iter()) {
-            let ack_result: std::result::Result<(), String> = result.map(|_| ());
-            let _ = acks.into_iter().try_for_each(|ack| ack.send(ack_result.clone()));
+    while let Some(joined) = in_flight.join_next().await {
+        match joined {
+            Ok((ack_sets, results)) => {
+                for (acks, result) in ack_sets.into_iter().zip(results.into_iter()) {
+                    let _ = acks
+                        .into_iter()
+                        .try_for_each(|ack| ack.send(result.clone()));
+                }
+            }
+            Err(e) => {
+                tracing::error!(gid, error = %e, "set batcher propose task panicked");
+            }
         }
     }
 }
