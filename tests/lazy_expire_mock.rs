@@ -1,12 +1,5 @@
-// Regression test for lazy-expiration error handling, using a minimal mock
-// `StorageAdapter` (no real cluster/Raft machinery needed).
-//
-// `KvStorageAdapter::load_typed` must:
-//   1. Ask `allow_lazy_expire_delete` before attempting a cleanup delete, and
-//      skip the delete entirely when it returns false (e.g. cluster replica).
-//   2. Never let a cleanup-delete failure turn a "key expired" read into an
-//      `Err` — the logical read result is always `Ok(None)` regardless of
-//      whether the physical delete succeeded.
+//! @component aikv-storage
+//! 懒过期 mock 回归: 清理 delete 失败或禁止时, 过期读仍须 Ok(None).
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 

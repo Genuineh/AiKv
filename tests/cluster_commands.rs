@@ -1,4 +1,5 @@
-// CLUSTER command unit tests.
+//! @component aikv-cluster
+//! CLUSTER 命令单元测试.
 #[path = "modules/cluster/mod.rs"]
 #[cfg(feature = "cluster")]
 mod cluster;

@@ -1,3 +1,4 @@
+//! @component aikv-proptest
 //! aikv property-based 测试
 //!
 //! ```bash

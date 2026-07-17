@@ -1,11 +1,5 @@
-// Regression tests for lazy-expiration on cluster replicas.
-//
-// Bug: a READONLY connection GETing an already-expired key on a non-leader
-// replica used to trigger `ClusterDataAdapter::delete()` -> `propose_group()`,
-// which always fails with NotLeader on a follower (see aidb::cluster::node::propose,
-// no network forwarding). That error used to propagate all the way up through
-// `KvStorageAdapter::load_typed`, turning a plain "key expired -> nil" GET into
-// a hard cluster error for the client.
+//! @component aikv-cluster
+//! 集群副本懒过期回归: 过期 key 读应返回 nil, 不得因清理 delete 失败变成集群错误.
 #[cfg(feature = "cluster")]
 mod tests {
     use std::collections::HashMap;

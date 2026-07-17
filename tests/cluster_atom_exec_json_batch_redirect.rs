@@ -1,3 +1,4 @@
+//! @component aikv-cluster
 //! 回归测试: ATOM.EXEC/EXEC JSON batch (TL.KvDoc 事务提交协议) 在集群拓扑
 //! 下必须把内部快照阶段命中的 MOVED/ASK 原样透传给客户端, 而不能包裹成
 //! 一个通用的 "ERR internal error during batch snapshot: ..." 错误.

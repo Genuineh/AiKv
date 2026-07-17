@@ -1,4 +1,5 @@
-// CLUSTER CREATEGROUP integration tests.
+//! @component aikv-cluster
+//! CLUSTER CREATEGROUP 集成测试.
 #![cfg(feature = "cluster")]
 
 use std::collections::HashMap;

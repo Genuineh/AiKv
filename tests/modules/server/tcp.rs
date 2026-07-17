@@ -384,3 +384,25 @@ async fn test_tcp_eval_basic() {
     let resp = read_response(&mut stream).await;
     assert_eq!(resp, b":2\r\n");
 }
+
+/// 非数组内联 PING\r\n 必须被拒绝 (非 +PONG), 且连接仍可发数组 PING.
+#[tokio::test]
+async fn test_tcp_rejects_inline_ping() {
+    let (addr, _handle) = start_server().await;
+    let mut stream = connect(addr).await;
+    stream.write_all(b"PING\r\n").await.unwrap();
+    let resp = read_response(&mut stream).await;
+    assert!(resp.starts_with(b"-"), "expected error, got {resp:?}");
+    assert!(
+        !resp.windows(5).any(|w| w == b"+PONG"),
+        "telnet inline PING must not succeed"
+    );
+    let body = String::from_utf8_lossy(&resp);
+    assert!(
+        body.to_ascii_lowercase().contains("unknown type marker"),
+        "expected unknown type marker, got: {body}"
+    );
+    write_cmd(&mut stream, &[b"PING"]).await;
+    let pong = read_response(&mut stream).await;
+    assert_eq!(pong, b"+PONG\r\n");
+}

@@ -1,3 +1,4 @@
+//! @component aikv-cluster
 //! FIX-0056-A1 aikv 侧合并读 / 迁移期写 集成测试.
 //!
 //! 使用真实的单节点 `MetaRaftNode` + 双 group (source=1, target=2) 的

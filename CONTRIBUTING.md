@@ -121,7 +121,6 @@ cargo test --test cluster_commands --features cluster -- --test-threads=1
 cargo test --test cluster_creategroup --features cluster -- --test-threads=1
 cargo test --test cluster_integration --features cluster -- --test-threads=1
 cargo test --test cluster_routing --features cluster -- --test-threads=1
-cargo test --test cluster_skeleton --features cluster -- --test-threads=1
 ```
 
 ### `#[ignore]` 慢测与压测
