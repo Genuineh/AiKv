@@ -140,12 +140,14 @@ cargo test --test cluster_skeleton --features cluster -- --test-threads=1
 | `test_tcp_malicious_slow_send` | stress | `server` | `test-server-stress` |
 | `test_tcp_pipeline_large_buffer` | stress | `server` | `test-server-stress` |
 | `test_px_expiry_real_wait` | slow | `commands` | `test-commands-slow` |
+| `test_concurrent_write_with_ttl_filter` | stress | `stress_ttl` | 本地 `--ignored` |
 
 `test-cluster` 默认跳过上述用例. 本地:
 
 ```bash
 cargo test --test server --features cluster -- --ignored --test-threads=1
 cargo test --test commands --features cluster -- --ignored --test-threads=1
+cargo test --test stress_ttl --features cluster -- --ignored --test-threads=1
 ```
 
 ### Feature 与 CI

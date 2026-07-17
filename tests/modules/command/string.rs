@@ -401,3 +401,105 @@ async fn test_setrange_wrong_type() {
         .to_string()
         .contains("WRONGTYPE"));
 }
+
+/// SET … GET 在 key 已存在时返回旧值并写入新值.
+#[tokio::test]
+async fn test_set_get_returns_old_value() {
+    let r = router();
+    let mut db = 0;
+    assert_ok(
+        r.execute("SET", &[b("k"), b("old")], &mut db)
+            .await
+            .unwrap(),
+    );
+    let resp = r
+        .execute("SET", &[b("k"), b("new"), b("GET")], &mut db)
+        .await
+        .unwrap();
+    assert_eq!(resp, RespValue::BulkString(Some(b("old"))));
+    let got = r.execute("GET", &[b("k")], &mut db).await.unwrap();
+    assert_eq!(got, RespValue::BulkString(Some(b("new"))));
+}
+
+/// SET … GET 在 key 不存在时返回 nil 并创建.
+#[tokio::test]
+async fn test_set_get_missing_returns_nil() {
+    let r = router();
+    let mut db = 0;
+    let resp = r
+        .execute("SET", &[b("k"), b("v"), b("GET")], &mut db)
+        .await
+        .unwrap();
+    assert_nil(resp);
+    let got = r.execute("GET", &[b("k")], &mut db).await.unwrap();
+    assert_eq!(got, RespValue::BulkString(Some(b("v"))));
+}
+
+/// SET … KEEPTTL 保留原有过期时间 (短睡后 PTTL 仍为正且不回升).
+#[tokio::test]
+async fn test_set_keepttl_preserves_ttl() {
+    let r = router();
+    let mut db = 0;
+    assert_ok(
+        r.execute("SET", &[b("k"), b("v"), b("EX"), b("60")], &mut db)
+            .await
+            .unwrap(),
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let pttl_before = r.execute("PTTL", &[b("k")], &mut db).await.unwrap();
+    assert_ok(
+        r.execute("SET", &[b("k"), b("v2"), b("KEEPTTL")], &mut db)
+            .await
+            .unwrap(),
+    );
+    let pttl_after = r.execute("PTTL", &[b("k")], &mut db).await.unwrap();
+    let RespValue::Integer(before) = pttl_before else {
+        panic!("expected Integer PTTL before")
+    };
+    let RespValue::Integer(after) = pttl_after else {
+        panic!("expected Integer PTTL after")
+    };
+    assert!(
+        before > 0 && after > 0,
+        "ttl should remain, before={before} after={after}"
+    );
+    // 短睡后 before 已明显 < 60000; 误刷新 EX 60 会使 after ≈ 60000 > before
+    assert!(
+        after <= before + 5,
+        "KEEPTTL must not refresh TTL, before={before} after={after}"
+    );
+    let got = r.execute("GET", &[b("k")], &mut db).await.unwrap();
+    assert_eq!(got, RespValue::BulkString(Some(b("v2"))));
+}
+
+/// SET … GET NX 在 key 存在时返回旧值且不覆盖.
+#[tokio::test]
+async fn test_set_get_nx_existing_returns_old_without_overwrite() {
+    let r = router();
+    let mut db = 0;
+    assert_ok(
+        r.execute("SET", &[b("k"), b("old")], &mut db)
+            .await
+            .unwrap(),
+    );
+    let resp = r
+        .execute("SET", &[b("k"), b("new"), b("NX"), b("GET")], &mut db)
+        .await
+        .unwrap();
+    assert_eq!(resp, RespValue::BulkString(Some(b("old"))));
+    let got = r.execute("GET", &[b("k")], &mut db).await.unwrap();
+    assert_eq!(got, RespValue::BulkString(Some(b("old"))));
+}
+
+/// SET … GET XX 在 key 不存在时返回 nil 且不创建.
+#[tokio::test]
+async fn test_set_get_xx_missing_returns_nil() {
+    let r = router();
+    let mut db = 0;
+    let resp = r
+        .execute("SET", &[b("k"), b("v"), b("XX"), b("GET")], &mut db)
+        .await
+        .unwrap();
+    assert_nil(resp);
+    assert_nil(r.execute("GET", &[b("k")], &mut db).await.unwrap());
+}
