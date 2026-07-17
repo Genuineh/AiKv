@@ -214,6 +214,8 @@ Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/
 - [ ] `cargo clippy --all-targets --features cluster` 无警告 (`RUSTFLAGS='-D warnings'`)
 - [ ] `cargo test --workspace --features cluster -- --test-threads=1` 通过
 - [ ] 若修 bug: 回归测已添加且本地通过 (见下节)
+- [ ] 若新增/改动测试: 落点符合 [tests/README.md §测试写法与范围 (硬性)](tests/README.md#测试写法与范围-硬性)
+- [ ] 若改动 `tests/`: 文件有 `//! @component` + 中文摘要; 每个新增/改动的 `#[test]` 有中文 `///`
 - [ ] 若改 TCP 压测/TTL 慢测相关: 对应 `--ignored` job 命令通过
 - [ ] 用户面向 API/行为变更已写 CHANGELOG
 - [ ] 模块文档或根文档已更新 (若适用)
@@ -225,9 +227,8 @@ Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/
 | 规则 | 说明 |
 |------|------|
 | 同一 PR | 测试与修复同 PR; 建议先红后绿 |
-| 注释 | 测试顶部写明 bug 现象、期望行为; 若有 ISSUE 则引用 |
+| 命名 / 注释 | 描述性 `test_*`; **`///`** 写明 bug 现象、期望与 ISSUE (若有) |
 | `@component` | entry 文件加 `//! @component aikv-{domain}` (与 testviz B2-v1 一致) |
-| 命名 | 描述性 `test_*`; 见 [`tests/README.md`](tests/README.md) |
 
 ### 放置决策
 

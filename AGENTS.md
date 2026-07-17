@@ -67,6 +67,7 @@ Redis Client → TCP/RESP → CommandRouter/ClusterRouter
 - **Batcher** (`cluster_adapter.rs`): `SET_BATCH_MAX_OPS=512`, `SET_BATCH_MAX_DELAY=1ms`, `DEFAULT_EAGER_FLUSH=48`; 调 `eager_flush` 须权衡吞吐与尾延迟, 经 `ClusterDataAdapter::DEFAULT_EAGER_FLUSH` 引用
 - **指标**: 生产经 OTLP `aikv_*`; INFO 目标对齐 Redis 8.8 (部分字段 stub)
 - 修 bug **必带** 回归测: [CONTRIBUTING.md §回归测试](CONTRIBUTING.md#回归测试-必带)
+- 新测写法与落点 (硬性): [tests/README.md §测试写法与范围 (硬性)](tests/README.md#测试写法与范围-硬性)
 - 不支持 telnet 式非数组内联命令 (`PING\r\n`)
 - 验证: 需 sibling `../aidb`; 默认带 `--features cluster`; `RUSTFLAGS='-D warnings'`; 测试加 `--test-threads=1`; 完整命令见 [CONTRIBUTING.md](CONTRIBUTING.md)
 
