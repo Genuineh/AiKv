@@ -1,80 +1,83 @@
-# AiKv E2E Tests
+# AiKv E2E Tests (Python / pytest)
 
-End-to-end smoke tests against a running `aikv` **release** binary via `redis-cli`.
-
-**新用例优先 pytest**; 存量 **shell** 脚本保留维护, CI 集群场景仍跑 `test_cluster_*.sh`.
+终态目标: **全部使用 pytest**. 旧 shell / 旧 pytest 已迁入 [`old/`](old/) (**仅参考, 不维护**).
 
 ## Prerequisites
 
-- `redis-cli` on PATH (Redis tools package)
-- Rust toolchain for `cargo build --release`
-- Python 3.10+ and pytest (pytest 用例):
+- `redis-cli` on PATH
+- Rust toolchain (`cargo build --release --features cluster`)
+- [uv](https://github.com/astral-sh/uv) for the Python env
 
-  ```bash
-  python3 -m venv .venv-e2e && .venv-e2e/bin/pip install -r e2e/requirements.txt
-  # Debian/Ubuntu PEP 668 环境需 venv; CI 直接 pip install
-  ```
+## Setup (uv)
+
+```bash
+cd aikv
+uv venv .venv-e2e
+uv pip install -r e2e/requirements.txt --python .venv-e2e
+```
 
 ## Run
 
-### pytest (推荐, 新 E2E)
-
-从仓库根目录:
+从仓库根:
 
 ```bash
-cd aikv
-python3 -m venv .venv-e2e && .venv-e2e/bin/pip install -r e2e/requirements.txt
 .venv-e2e/bin/pytest e2e/ -v
+# 或
+uv run --python .venv-e2e pytest e2e/ -v
 ```
 
-单进程即可 (fixture 使用随机端口). 慢测/压测 marker 与 Rust 集成测语义一致, 默认全跑 (当前示例无 slow/stress).
+日志: `WIKV_E2E_LOG=DEBUG` 可见起停细节.
 
-### shell (存量)
+### Fixtures
+
+| Fixture | 含义 |
+|---------|------|
+| `dut` | **黑盒 DUT** (须 `WIKV_HOST`/`WIKV_PORT`; testviz 环境条自动注入) |
+| `memory_node` | 本机 `--engine memory`; EXTERNAL 时改连外部 (兼容旧冒烟) |
+| `aidb_node` | 本机 `--engine aidb` + 临时 data-dir; EXTERNAL 时 skip |
+| `aikv_binary` | `target/release/aikv` (缺失则构建; EXTERNAL 时不强制) |
+
+黑盒 (推荐, SET 等命令族):
 
 ```bash
-cd aikv
-chmod +x e2e/*.sh
-./e2e/test_basic.sh
-./e2e/test_datatypes.sh
-./e2e/test_ext.sh
-./e2e/test_json.sh
+# 先用 testviz / aifactory/scripts 部署单机或集群, 再:
+WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
+  .venv-e2e/bin/pytest e2e/test_set.py -v
 ```
 
-Environment overrides:
+在 **testviz** 中执行时, 会自动把顶部环境条的地址/端口注入为 `WIKV_HOST`/`WIKV_PORT`, 无需手设.
 
-- `WIKV_HOST` (default `127.0.0.1`)
-- `WIKV_PORT` — shell `utils.sh` 单节点; pytest 本机 fixture 使用随机端口
-- `WIKV_EXTERNAL_DUT=1` — pytest **不**起本机 aikv, 直接连 `WIKV_HOST`:`WIKV_PORT` (远程 Docker DUT 等; 须已手起服务). 例:
+同一套 `test_set.py` 可对单机与集群各跑一遍 (拓扑由部署决定; 客户端自动跟 MOVED).
 
-  ```bash
-  WIKV_EXTERNAL_DUT=1 WIKV_HOST=192.168.1.116 WIKV_PORT=6379 \
-    .venv-e2e/bin/pytest e2e/test_ping.py -v
-  ```
+冒烟仍可用本机 spawn:
+
+```bash
+.venv-e2e/bin/pytest e2e/test_smoke_ping.py -v
+```
+
+或连外部:
+
+```bash
+WIKV_EXTERNAL_DUT=1 WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
+  .venv-e2e/bin/pytest e2e/test_smoke_ping.py::test_ping_memory -v
+```
 
 ## Layout
 
-```shell
+```text
 e2e/
-├── conftest.py          # pytest fixtures (build, memory_server)
-├── lib/                 # redis-cli / server helpers (非 testviz 索引)
-├── test_*.py            # 新 E2E (testviz 扫描 # @component)
-├── requirements.txt     # pytest
-├── utils.sh             # shell 共享 helper
-└── test_*.sh            # 存量 shell E2E (21 个)
+├── harness/           # 日志 / 二进制 / 进程 / 客户端 / 单机节点
+├── conftest.py        # dut / memory_node / aidb_node
+├── test_smoke_ping.py # 本机或 EXTERNAL 冒烟
+├── test_set.py        # 黑盒 SET/GET (仅 dut)
+├── pytest.ini         # 忽略 old/; pythonpath=.
+├── requirements.txt
+└── old/               # 旧资产 (不收集)
 ```
 
 ## Notes
 
-- pytest 默认构建 `target/release/aikv` 并启动 ephemeral **memory** 引擎; `WIKV_EXTERNAL_DUT=1` 时改为连接外部 DUT.
-- shell 脚本通常自起本机进程 (见 `utils.sh`).
-- **AiDb 重启持久化** 由 L1 覆盖: `cargo test --test storage test_aidb` (roundtrip + restart + adapter list/flushdb). 可选手动:
-
-  ```bash
-  DATA=/tmp/aikv-e2e
-  cargo run --release -- --bind 127.0.0.1:6380 --engine aidb --data-dir "$DATA"
-  redis-cli -p 6380 SET k v
-  # 重启同命令后 GET k
-  ```
-
-- 集群复杂场景暂用 shell (`test_cluster_*.sh`); CI `e2e` job 跑 cluster shell + pytest smoke.
-- CI images without `redis-cli` should install `redis-tools` or skip these tests.
+- pytest **不收集** `old/`
+- 产物默认 `target/release/aikv`; 若设置了 `CARGO_TARGET_DIR`, 请确保二进制仍出现在该路径或先本地安装到 `target/release/aikv`
+- **推荐路径**: 先用 testviz / `aifactory/scripts` 部署 DUT, 再 `WIKV_EXTERNAL_DUT=1` 跑黑盒用例; `memory_node` 仅适合轻量冒烟
+- 集群编排与命令族用例将分批用 pytest 重写; 参考 `old/`

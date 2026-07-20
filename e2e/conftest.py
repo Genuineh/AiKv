@@ -1,4 +1,4 @@
-"""Pytest fixtures for AiKv E2E (release binary + redis-cli)."""
+"""aikv 端到端 pytest fixtures (基于 harness)."""
 
 from __future__ import annotations
 
@@ -9,17 +9,16 @@ from pathlib import Path
 
 import pytest
 
-E2E_ROOT = Path(__file__).resolve().parent
-if str(E2E_ROOT) not in sys.path:
-    sys.path.insert(0, str(E2E_ROOT))
+_E2E = Path(__file__).resolve().parent
+if str(_E2E) not in sys.path:
+    sys.path.insert(0, str(_E2E))
 
-from lib.redis_cli import require_redis_cli, wait_ready  # noqa: E402
-from lib.server import (  # noqa: E402
-    DEFAULT_BIN,
-    ServerHandle,
-    build_release,
-    start_memory_server,
-)
+# 不收集 e2e/old/ 下的旧资产
+collect_ignore_glob = ["old/*"]
+
+from harness.binary import DEFAULT_BIN, ensure_release_binary  # noqa: E402
+from harness.client import require_redis_cli  # noqa: E402
+from harness.node import Node, connect_external, start_node  # noqa: E402
 
 
 def _external_dut_enabled() -> bool:
@@ -30,47 +29,66 @@ def _external_dut_enabled() -> bool:
     )
 
 
-def pytest_configure(config: pytest.Config) -> None:
-    config.addinivalue_line("markers", "slow: real-time waits (seconds to minutes)")
-    config.addinivalue_line("markers", "stress: large payloads or high throughput")
-
-
 @pytest.fixture(scope="session", autouse=True)
 def _require_redis_cli() -> None:
     try:
         require_redis_cli()
     except RuntimeError as exc:
-        pytest.skip(str(exc))
+        pytest.exit(str(exc), returncode=1)
 
 
 @pytest.fixture(scope="session")
 def aikv_binary() -> Path:
+    """本机 release 二进制; 外部 DUT 模式下不强制构建."""
     if _external_dut_enabled():
-        # Remote/external DUT: no local release binary required.
         return DEFAULT_BIN
-    if DEFAULT_BIN.is_file():
-        return DEFAULT_BIN
-    return build_release()
+    return ensure_release_binary()
 
 
 @pytest.fixture
-def memory_server(aikv_binary: Path) -> Iterator[ServerHandle]:
-    """Ephemeral local aikv, or connect to external DUT when WIKV_EXTERNAL_DUT=1."""
+def memory_node(aikv_binary: Path) -> Iterator[Node]:
+    """本机 memory 节点; `WIKV_EXTERNAL_DUT=1` 时改为连接外部 DUT."""
     if _external_dut_enabled():
         host = os.environ.get("WIKV_HOST", "").strip()
         port_s = os.environ.get("WIKV_PORT", "").strip()
         if not host or not port_s:
             pytest.fail(
-                "WIKV_EXTERNAL_DUT=1 requires WIKV_HOST and WIKV_PORT "
-                "(remote Docker DUT already running)"
+                "WIKV_EXTERNAL_DUT=1 需要同时设置 WIKV_HOST 与 WIKV_PORT "
+                "(远程 DUT 须已手起)"
             )
-        port = int(port_s)
-        wait_ready(host, port)
-        yield ServerHandle(host=host, port=port)
+        node = connect_external(host, int(port_s))
+        yield node
         return
 
-    server = start_memory_server(aikv_binary)
+    node = start_node(binary=aikv_binary, engine="memory")
     try:
-        yield ServerHandle(host=server.host, port=server.port)
+        yield node
     finally:
-        server.stop()
+        node.stop()
+
+
+@pytest.fixture
+def aidb_node(aikv_binary: Path) -> Iterator[Node]:
+    """本机 aidb 引擎节点; 外部 DUT 模式下 skip."""
+    if _external_dut_enabled():
+        pytest.skip("aidb_node 需要本机 spawn, 外部 DUT 模式下跳过")
+
+    node = start_node(binary=aikv_binary, engine="aidb")
+    try:
+        yield node
+    finally:
+        node.stop()
+
+
+@pytest.fixture
+def dut() -> Iterator[Node]:
+    """预部署 DUT (黑盒). 地址来自 `WIKV_HOST` / `WIKV_PORT` (testviz 环境条自动注入)."""
+    host = os.environ.get("WIKV_HOST", "").strip()
+    port_s = os.environ.get("WIKV_PORT", "").strip()
+    if not host or not port_s:
+        pytest.fail(
+            "黑盒 e2e 需要 DUT 地址: 设置 WIKV_HOST 与 WIKV_PORT "
+            "(在 testviz 中使用顶部环境条即可)"
+        )
+    node = connect_external(host, int(port_s))
+    yield node
