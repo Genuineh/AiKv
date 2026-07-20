@@ -32,26 +32,44 @@ uv run --python .venv-e2e pytest e2e/ -v
 
 | Fixture | 含义 |
 |---------|------|
-| `memory_node` | 本机 `--engine memory` (默认) |
-| `aidb_node` | 本机 `--engine aidb` + 临时 data-dir |
-| `aikv_binary` | `target/release/aikv` (缺失则构建) |
+| `dut` | **黑盒 DUT** (须 `WIKV_HOST`/`WIKV_PORT`; testviz 环境条自动注入) |
+| `memory_node` | 本机 `--engine memory`; EXTERNAL 时改连外部 (兼容旧冒烟) |
+| `aidb_node` | 本机 `--engine aidb` + 临时 data-dir; EXTERNAL 时 skip |
+| `aikv_binary` | `target/release/aikv` (缺失则构建; EXTERNAL 时不强制) |
 
-外部 DUT (已手起服务):
+黑盒 (推荐, SET 等命令族):
+
+```bash
+# 先用 testviz / aifactory/scripts 部署单机或集群, 再:
+WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
+  .venv-e2e/bin/pytest e2e/test_set.py -v
+```
+
+在 **testviz** 中执行时, 会自动把顶部环境条的地址/端口注入为 `WIKV_HOST`/`WIKV_PORT`, 无需手设.
+
+同一套 `test_set.py` 可对单机与集群各跑一遍 (拓扑由部署决定; 客户端自动跟 MOVED).
+
+冒烟仍可用本机 spawn:
+
+```bash
+.venv-e2e/bin/pytest e2e/test_smoke_ping.py -v
+```
+
+或连外部:
 
 ```bash
 WIKV_EXTERNAL_DUT=1 WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
   .venv-e2e/bin/pytest e2e/test_smoke_ping.py::test_ping_memory -v
 ```
 
-`aidb_node` 在 EXTERNAL 模式下 skip.
-
 ## Layout
 
 ```text
 e2e/
 ├── harness/           # 日志 / 二进制 / 进程 / 客户端 / 单机节点
-├── conftest.py
-├── test_smoke_ping.py
+├── conftest.py        # dut / memory_node / aidb_node
+├── test_smoke_ping.py # 本机或 EXTERNAL 冒烟
+├── test_set.py        # 黑盒 SET/GET (仅 dut)
 ├── pytest.ini         # 忽略 old/; pythonpath=.
 ├── requirements.txt
 └── old/               # 旧资产 (不收集)
