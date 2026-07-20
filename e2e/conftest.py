@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import os
 import sys
-from collections.abc import Iterator
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -13,13 +13,21 @@ E2E_ROOT = Path(__file__).resolve().parent
 if str(E2E_ROOT) not in sys.path:
     sys.path.insert(0, str(E2E_ROOT))
 
-from lib.redis_cli import require_redis_cli  # noqa: E402
+from lib.redis_cli import require_redis_cli, wait_ready  # noqa: E402
 from lib.server import (  # noqa: E402
     DEFAULT_BIN,
     ServerHandle,
     build_release,
     start_memory_server,
 )
+
+
+def _external_dut_enabled() -> bool:
+    return os.environ.get("WIKV_EXTERNAL_DUT", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -37,6 +45,9 @@ def _require_redis_cli() -> None:
 
 @pytest.fixture(scope="session")
 def aikv_binary() -> Path:
+    if _external_dut_enabled():
+        # Remote/external DUT: no local release binary required.
+        return DEFAULT_BIN
     if DEFAULT_BIN.is_file():
         return DEFAULT_BIN
     return build_release()
@@ -44,6 +55,20 @@ def aikv_binary() -> Path:
 
 @pytest.fixture
 def memory_server(aikv_binary: Path) -> Iterator[ServerHandle]:
+    """Ephemeral local aikv, or connect to external DUT when WIKV_EXTERNAL_DUT=1."""
+    if _external_dut_enabled():
+        host = os.environ.get("WIKV_HOST", "").strip()
+        port_s = os.environ.get("WIKV_PORT", "").strip()
+        if not host or not port_s:
+            pytest.fail(
+                "WIKV_EXTERNAL_DUT=1 requires WIKV_HOST and WIKV_PORT "
+                "(remote Docker DUT already running)"
+            )
+        port = int(port_s)
+        wait_ready(host, port)
+        yield ServerHandle(host=host, port=port)
+        return
+
     server = start_memory_server(aikv_binary)
     try:
         yield ServerHandle(host=server.host, port=server.port)
