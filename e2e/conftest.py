@@ -82,13 +82,13 @@ def aidb_node(aikv_binary: Path) -> Iterator[Node]:
 
 @pytest.fixture
 def dut() -> Iterator[Node]:
-    """预部署 DUT (黑盒). 地址来自 `WIKV_HOST` / `WIKV_PORT` (testviz 环境条自动注入)."""
+    """预部署 DUT (黑盒). 地址来自 `WIKV_HOST` / `WIKV_PORT` (test-ui 环境条自动注入)."""
     host = os.environ.get("WIKV_HOST", "").strip()
     port_s = os.environ.get("WIKV_PORT", "").strip()
     if not host or not port_s:
         pytest.fail(
             "黑盒 e2e 需要 DUT 地址: 设置 WIKV_HOST 与 WIKV_PORT "
-            "(在 testviz 中使用顶部环境条即可)"
+            "(在 test-ui 中使用顶部环境条即可)"
         )
     node = connect_external(host, int(port_s))
     yield node

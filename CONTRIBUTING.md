@@ -172,7 +172,7 @@ pip install -r e2e/requirements.txt
 pytest e2e/ -v
 ```
 
-文件放 `e2e/test_*.py`; 文件头 `# @component aikv-{domain}` (与 testviz B2-v1 一致). 慢/压测用 `@pytest.mark.slow` / `@pytest.mark.stress`. 详见 [e2e/README.md](e2e/README.md).
+文件放 `e2e/test_*.py`; 文件头 `# @component aikv-{domain}` (与 test-ui B2-v1 一致). 慢/压测用 `@pytest.mark.slow` / `@pytest.mark.stress`. 详见 [e2e/README.md](e2e/README.md).
 
 **shell (存量)** — 本地需 `redis-cli`; 多数脚本用 memory 引擎:
 
@@ -229,7 +229,7 @@ Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/
 |------|------|
 | 同一 PR | 测试与修复同 PR; 建议先红后绿 |
 | 命名 / 注释 | 描述性 `test_*`; **`///`** 写明 bug 现象、期望与 ISSUE (若有) |
-| `@component` | entry 文件加 `//! @component aikv-{domain}` (与 testviz B2-v1 一致) |
+| `@component` | entry 文件加 `//! @component aikv-{domain}` (与 test-ui B2-v1 一致) |
 
 ### 放置决策
 

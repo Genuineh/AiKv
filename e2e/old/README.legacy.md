@@ -56,8 +56,8 @@ Environment overrides:
 ```shell
 e2e/
 ├── conftest.py          # pytest fixtures (build, memory_server)
-├── lib/                 # redis-cli / server helpers (非 testviz 索引)
-├── test_*.py            # 新 E2E (testviz 扫描 # @component)
+├── lib/                 # redis-cli / server helpers (非 test-ui 索引)
+├── test_*.py            # 新 E2E (test-ui 扫描 # @component)
 ├── requirements.txt     # pytest
 ├── utils.sh             # shell 共享 helper
 └── test_*.sh            # 存量 shell E2E (21 个)

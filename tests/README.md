@@ -13,7 +13,7 @@
 ## 测试写法与范围 (硬性)
 
 对新测 / 改测强制执行. 旧测不要求本次回填.
-testviz 中文一级目录由路径虚拟映射生成 (见 aifactory `testviz/README`); 分类不靠 `@suite`.
+test-ui 中文一级目录由路径虚拟映射生成 (见 aifactory `test-ui/README`); 分类不靠 `@suite`.
 
 ### 写法
 

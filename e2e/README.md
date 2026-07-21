@@ -32,7 +32,7 @@ uv run --python .venv-e2e pytest e2e/ -v
 
 | Fixture | 含义 |
 |---------|------|
-| `dut` | **黑盒 DUT** (须 `WIKV_HOST`/`WIKV_PORT`; testviz 环境条自动注入) |
+| `dut` | **黑盒 DUT** (须 `WIKV_HOST`/`WIKV_PORT`; test-ui 环境条自动注入) |
 | `memory_node` | 本机 `--engine memory`; EXTERNAL 时改连外部 (兼容旧冒烟) |
 | `aidb_node` | 本机 `--engine aidb` + 临时 data-dir; EXTERNAL 时 skip |
 | `aikv_binary` | `target/release/aikv` (缺失则构建; EXTERNAL 时不强制) |
@@ -40,12 +40,12 @@ uv run --python .venv-e2e pytest e2e/ -v
 黑盒 (推荐, SET 等命令族):
 
 ```bash
-# 先用 testviz / aifactory/scripts 部署单机或集群, 再:
+# 先用 test-ui / aifactory/scripts 部署单机或集群, 再:
 WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
   .venv-e2e/bin/pytest e2e/test_set.py -v
 ```
 
-在 **testviz** 中执行时, 会自动把顶部环境条的地址/端口注入为 `WIKV_HOST`/`WIKV_PORT`, 无需手设.
+在 **test-ui** 中执行时, 会自动把顶部环境条的地址/端口注入为 `WIKV_HOST`/`WIKV_PORT`, 无需手设.
 
 同一套 `test_set.py` 可对单机与集群各跑一遍 (拓扑由部署决定; 客户端自动跟 MOVED).
 
@@ -79,5 +79,5 @@ e2e/
 
 - pytest **不收集** `old/`
 - 产物默认 `target/release/aikv`; 若设置了 `CARGO_TARGET_DIR`, 请确保二进制仍出现在该路径或先本地安装到 `target/release/aikv`
-- **推荐路径**: 先用 testviz / `aifactory/scripts` 部署 DUT, 再 `WIKV_EXTERNAL_DUT=1` 跑黑盒用例; `memory_node` 仅适合轻量冒烟
+- **推荐路径**: 先用 test-ui / `aifactory/scripts` 部署 DUT, 再 `WIKV_EXTERNAL_DUT=1` 跑黑盒用例; `memory_node` 仅适合轻量冒烟
 - 集群编排与命令族用例将分批用 pytest 重写; 参考 `old/`
