@@ -1,12 +1,15 @@
 # AiKv E2E Tests (Python / pytest)
 
-终态目标: **全部使用 pytest**. 旧 shell / 旧 pytest 已迁入 [`old/`](old/) (**仅参考, 不维护**).
+黑盒客户端验收: **用例只连已部署 DUT**, 不 spawn 进程、不选引擎.  
+部署由 test-ui 环境条 / `aifactory/scripts` / 手工完成 (实验室约定 aidb).
+
+旧 shell / 旧 pytest 在 [`old/`](old/) (**仅参考, 不维护**).
 
 ## Prerequisites
 
-- `redis-cli` on PATH
-- Rust toolchain (`cargo build --release --features cluster`)
-- [uv](https://github.com/astral-sh/uv) for the Python env
+- 已部署的单机 (或集群) aikv, 地址可知
+- `redis-cli` on PATH (逃生口 / 会话检查)
+- [uv](https://github.com/astral-sh/uv) 管理 Python 环境
 
 ## Setup (uv)
 
@@ -18,79 +21,74 @@ uv pip install -r e2e/requirements.txt --python .venv-e2e
 
 ## Run
 
-从仓库根:
+先部署 DUT, 再:
 
 ```bash
-.venv-e2e/bin/pytest e2e/ -v
-# 或
-uv run --python .venv-e2e pytest e2e/ -v
+WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
+  .venv-e2e/bin/pytest e2e/ -v
 ```
 
-日志: `WIKV_E2E_LOG=DEBUG` 可见起停细节.
+在 **test-ui** 中执行时, 顶部环境条会注入 `WIKV_HOST`/`WIKV_PORT`, 无需手设.
 
-### Fixtures
+### 功能测试 (`e2e/function/`)
+
+树: `aikv → 端到端 → 功能测试 → 文件 → 用例`.
+
+| 文件 | 内容 |
+|------|------|
+| `test_smoke.py` | PING |
+| `test_commands.py` | STRING / HASH |
+| `test_correctness.py` | 覆盖写 / 缺键 / 双连接 |
+| `test_wrongtype.py` | WRONGTYPE 后仍可用 |
+| `test_concurrency.py` | 双客户端并发 |
+| `test_persist.py` | 写探针 + 重启后再读 |
+
+```bash
+WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
+  .venv-e2e/bin/pytest e2e/function/ -v
+```
+
+持久 / 重启编排 (客户端不负责起停):
+
+1. 跑 seed: `test_persist_seed_graceful`
+2. **部署侧**优雅停再起同一 data-dir
+3. `WIKV_E2E_AFTER_RESTART=1` 再跑 `test_persist_after_graceful_restart`
+4. 跑 `test_persist_seed_kill` → **部署侧** `kill -9` 再起
+5. `WIKV_E2E_AFTER_KILL=1` 再跑 `test_persist_after_kill`
+
+未设上述 env 时, 对应「再读」用例会 `skip` (不算失败).
+
+### Fixture
 
 | Fixture | 含义 |
 |---------|------|
-| `dut` | **黑盒 DUT** (须 `WIKV_HOST`/`WIKV_PORT`; test-ui 环境条自动注入) |
-| `memory_node` | 本机 `--engine memory`; EXTERNAL 时改连外部 (兼容旧冒烟) |
-| `aidb_node` | 本机 `--engine aidb` + 临时 data-dir; EXTERNAL 时 skip |
-| `aikv_binary` | `target/release/aikv` (缺失则构建; EXTERNAL 时不强制) |
+| `dut` | 唯一入口: 连 `WIKV_HOST`/`WIKV_PORT` |
 
-黑盒 (推荐, SET 等命令族):
+### 显示样板
 
-```bash
-# 先用 test-ui / aifactory/scripts 部署单机或集群, 再:
-WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
-  .venv-e2e/bin/pytest e2e/test_set.py -v
-```
+[`test_set.py`](test_set.py) 仅作 test-ui 元数据写法样例 (`# @title` / docstring), 挂在「端到端」根下.
 
-在 **test-ui** 中执行时, 会自动把顶部环境条的地址/端口注入为 `WIKV_HOST`/`WIKV_PORT`, 无需手设.
-
-同一套 `test_set.py` 可对单机与集群各跑一遍 (拓扑由部署决定; 客户端自动跟 MOVED).
-
-冒烟仍可用本机 spawn:
-
-```bash
-.venv-e2e/bin/pytest e2e/test_smoke_ping.py -v
-```
-
-或连外部:
-
-```bash
-WIKV_EXTERNAL_DUT=1 WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
-  .venv-e2e/bin/pytest e2e/test_smoke_ping.py::test_ping_memory -v
-```
+| 用途 | 写法 |
+|------|------|
+| 树-文件中文名 | `# @title …` |
+| 详情-文件说明 | 模块 docstring |
+| 树/详情-用例 | 函数 docstring (首行) |
+| Map | `# @component aikv-…` |
 
 ## Layout
 
 ```text
 e2e/
-├── harness/           # 日志 / 二进制 / 进程 / 客户端 / 单机节点
-├── conftest.py        # dut / memory_node / aidb_node
-├── test_smoke_ping.py # 本机或 EXTERNAL 冒烟
-├── test_set.py        # 黑盒 SET/GET (仅 dut)
-├── pytest.ini         # 忽略 old/; pythonpath=.
+├── harness/              # 客户端 / 外部连接 / (本机 start_node 仅调试用)
+├── conftest.py           # 仅 dut
+├── function/             # 功能测试 (UI: 功能测试)
+├── test_set.py           # 显示样板
+├── pytest.ini
 ├── requirements.txt
-└── old/               # 旧资产 (不收集)
+└── old/                  # 旧资产 (不收集)
 ```
-
-## test-ui 显示约定 (pytest)
-
-样板: [`test_set.py`](test_set.py).
-
-| 用途 | 写法 |
-|------|------|
-| 树-文件中文名 | 文件头 `# @title SET 命令` |
-| 详情-文件说明 | 模块 docstring |
-| 树/详情-用例 | 函数 docstring (首行作树标题) |
-| Map | `# @component aikv-…` (不变) |
-
-详情「路径」形如 `aikv/e2e/test_set.py`. 目录级说明暂不扫描 (留空).
 
 ## Notes
 
 - pytest **不收集** `old/`
-- 产物默认 `target/release/aikv`; 若设置了 `CARGO_TARGET_DIR`, 请确保二进制仍出现在该路径或先本地安装到 `target/release/aikv`
-- **推荐路径**: 先用 test-ui / `aifactory/scripts` 部署 DUT, 再 `WIKV_EXTERNAL_DUT=1` 跑黑盒用例; `memory_node` 仅适合轻量冒烟
-- 集群编排与命令族用例将分批用 pytest 重写; 参考 `old/`
+- 完整覆盖矩阵 / Redis Tcl 对齐 **后置**

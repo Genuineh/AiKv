@@ -45,8 +45,8 @@ L0 `src/**` → UI「单元测试」; 其余落点见该映射表与下文「落
 | TCP / listener | L2 `server` |
 | 集群协议/路由 | `tests/cluster_*.rs` |
 | 回归 | 无独立 L4; 放对应模块或 cluster 测 |
-| 单节点协议 smoke | `e2e/test_*.py` |
-| 多节点 / failover | `e2e/test_cluster_*.sh` |
+| 单节点协议 smoke | `e2e/function/test_*.py` (黑盒 DUT) |
+| 多节点 / failover | `e2e/old/test_cluster_*.sh` (旧资产) |
 
 默认 `--features cluster`; 集成测推荐 `--test-threads=1`.
 

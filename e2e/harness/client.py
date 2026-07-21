@@ -76,6 +76,18 @@ class RedisClient:
     def get(self, key: str) -> str | None:
         return self._r.get(key)
 
+    def delete(self, *keys: str) -> int:
+        return int(self._r.delete(*keys))
+
+    def hset(self, key: str, field: str, value: str) -> int:
+        return int(self._r.hset(key, field, value))
+
+    def hget(self, key: str, field: str) -> str | None:
+        return self._r.hget(key, field)
+
+    def hdel(self, key: str, *fields: str) -> int:
+        return int(self._r.hdel(key, *fields))
+
     def select(self, db: int) -> None:
         if self.cluster:
             raise RuntimeError("集群模式下不支持 SELECT")

@@ -1,4 +1,8 @@
-"""单机 aikv 生命周期 (`memory` / `aidb`)."""
+"""节点句柄与外部 DUT 连接.
+
+e2e 用例只应使用 `connect_external` (黑盒). `start_node` 留作本机调试工具,
+不由 pytest fixture 暴露, 也不参与门禁验收.
+"""
 
 from __future__ import annotations
 
