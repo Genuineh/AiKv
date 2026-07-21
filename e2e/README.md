@@ -75,6 +75,19 @@ e2e/
 └── old/               # 旧资产 (不收集)
 ```
 
+## test-ui 显示约定 (pytest)
+
+样板: [`test_set.py`](test_set.py).
+
+| 用途 | 写法 |
+|------|------|
+| 树-文件中文名 | 文件头 `# @title SET 命令` |
+| 详情-文件说明 | 模块 docstring |
+| 树/详情-用例 | 函数 docstring (首行作树标题) |
+| Map | `# @component aikv-…` (不变) |
+
+详情「路径」形如 `aikv/e2e/test_set.py`. 目录级说明暂不扫描 (留空).
+
 ## Notes
 
 - pytest **不收集** `old/`

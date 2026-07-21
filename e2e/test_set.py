@@ -1,4 +1,5 @@
 # @component aikv-server
+# @title SET 命令
 """黑盒 SET/GET: 仅连预部署外部 DUT (单机或集群拓扑均可)."""
 
 from __future__ import annotations
