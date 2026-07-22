@@ -5,8 +5,13 @@
 from __future__ import annotations
 
 
+# @title SET/GET
 def test_set_get(dut):
-    """SET 后 GET 应读回相同值."""
+    """SET/GET 样板.
+
+    1. 将 key k1 SET 为 "v1" | 成功
+    2. GET key k1 | 返回 "v1"
+    """
     c = dut.client()
     assert c.set("e2e:set:k1", "v1") is True
     assert c.get("e2e:set:k1") == "v1"

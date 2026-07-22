@@ -7,8 +7,14 @@ from __future__ import annotations
 _PREFIX = "e2e:func:correct:"
 
 
+# @title 覆盖写
 def test_string_overwrite(dut):
-    """同一 key 覆盖写后 GET 为新值."""
+    """同一 key 覆盖写.
+
+    1. 将 key SET 为 "v1" | 成功
+    2. 将同一 key SET 为 "v2" | 成功
+    3. GET 该 key | 返回 "v2"
+    """
     c = dut.client()
     key = _PREFIX + "ow"
     c.delete(key)
@@ -18,8 +24,14 @@ def test_string_overwrite(dut):
     c.delete(key)
 
 
+# @title 缺键与缺 field
 def test_missing_key_and_field(dut):
-    """缺键 GET 为 None; 缺 field HGET 为 None."""
+    """缺键 / 缺 field 读空.
+
+    1. GET 不存在的 key | 返回 None
+    2. 将 hash key 的 field exists HSET 为 "1" | 成功
+    3. HGET 该 key 上不存在的 field | 返回 None
+    """
     c = dut.client()
     assert c.get(_PREFIX + "missing") is None
     key = _PREFIX + "hash-miss"
@@ -29,8 +41,15 @@ def test_missing_key_and_field(dut):
     c.delete(key)
 
 
+# @title 双连接隔离
 def test_two_clients_isolated_keys(dut):
-    """两个连接写不同 key, 互不串读."""
+    """双连接写不同 key, 互不串读.
+
+    1. 连接 A 将 ka SET 为 "from-a" | 成功
+    2. 连接 B 将 kb SET 为 "from-b" | 成功
+    3. 连接 A/B 分别 GET ka | 均返回 "from-a"
+    4. 连接 A/B 分别 GET kb | 均返回 "from-b"
+    """
     a = dut.client()
     b = dut.client()
     ka = _PREFIX + "a"

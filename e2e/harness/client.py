@@ -88,6 +88,38 @@ class RedisClient:
     def hdel(self, key: str, *fields: str) -> int:
         return int(self._r.hdel(key, *fields))
 
+    def lpush(self, key: str, *values: str) -> int:
+        return int(self._r.lpush(key, *values))
+
+    def lrange(self, key: str, start: int, end: int) -> list[str]:
+        return list(self._r.lrange(key, start, end))
+
+    def llen(self, key: str) -> int:
+        return int(self._r.llen(key))
+
+    def sadd(self, key: str, *members: str) -> int:
+        return int(self._r.sadd(key, *members))
+
+    def smembers(self, key: str) -> set[str]:
+        return set(self._r.smembers(key))
+
+    def srem(self, key: str, *members: str) -> int:
+        return int(self._r.srem(key, *members))
+
+    def zadd(self, key: str, mapping: dict[str, float]) -> int:
+        return int(self._r.zadd(key, mapping))
+
+    def zrange(self, key: str, start: int, end: int) -> list[str]:
+        return list(self._r.zrange(key, start, end))
+
+    def zrem(self, key: str, *members: str) -> int:
+        return int(self._r.zrem(key, *members))
+
+    def info(self, section: str | None = None) -> dict[str, Any]:
+        if section is None:
+            return dict(self._r.info())
+        return dict(self._r.info(section))
+
     def select(self, db: int) -> None:
         if self.cluster:
             raise RuntimeError("集群模式下不支持 SELECT")

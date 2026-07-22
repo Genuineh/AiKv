@@ -36,8 +36,8 @@ WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
 
 | 文件 | 内容 |
 |------|------|
-| `test_smoke.py` | PING |
-| `test_commands.py` | STRING / HASH |
+| `test_commands.py` | Smoke (PING); String CRUD; INFO; 集群浅探测 (非集群 skip) |
+| `test_types.py` | Hash / List / Set / ZSet 浅 CRUD |
 | `test_correctness.py` | 覆盖写 / 缺键 / 双连接 |
 | `test_wrongtype.py` | WRONGTYPE 后仍可用 |
 | `test_concurrency.py` | 双客户端并发 |
@@ -70,10 +70,28 @@ WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
 
 | 用途 | 写法 |
 |------|------|
-| 树-文件中文名 | `# @title …` |
-| 详情-文件说明 | 模块 docstring |
-| 树/详情-用例 | 函数 docstring (首行) |
+| 树-文件中文名 | 文件头 `# @title …` |
+| 详情-文件说明 | 模块 docstring (无编号步骤时 Markdown 渲染) |
+| 树/详情-用例标题 | 函数上方 `# @title …` |
+| 详情-用例说明 | 编号步骤剧本: `N. 主谓宾动作 \| 期望` (含主语如 key/连接/DUT; 也兼容 `→ 期望`); test-ui 渲染为步骤条 |
 | Map | `# @component aikv-…` |
+
+用例 docstring 示例:
+
+```python
+# @title String
+def test_string_crud(dut):
+    """String 的增删改查.
+
+    1. 将 key SET 为 "hello" | 成功
+    2. GET 该 key | 返回 "hello"
+    3. 将同一 key SET 为 "world" | 成功
+    4. GET 该 key | 返回 "world"
+    5. DEL 该 key | 删除数 1
+    6. GET 该 key | 缺键 (None)
+    """
+```
+
 
 ## Layout
 

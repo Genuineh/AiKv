@@ -10,8 +10,15 @@ _PREFIX = "e2e:func:conc:"
 _N = 50
 
 
+# @title 双客户端并行
 def test_two_clients_parallel_set_get(dut):
-    """两个客户端各写一批 key 后读回, 值正确且服务仍可 PING."""
+    """双客户端并行 SET/GET 不挂死、不错乱.
+
+    1. 两线程各自将本批 50 个 key SET 成功 | 均成功
+    2. 各线程 GET 本批 key | 值与各自写入一致
+    3. 两线程在超时内结束 | 无异常
+    4. 客户端再发 PING | 成功 (True)
+    """
     errors: list[BaseException] = []
 
     def worker(tag: str) -> None:

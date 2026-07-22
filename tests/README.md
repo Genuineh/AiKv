@@ -24,7 +24,8 @@ L0 `src/**` → UI「单元测试」; 其余落点见该映射表与下文「落
 | L0 `src/**` 新建 `#[test]` | 中文 `///`; 不要求 `@component` |
 | 每个新增/改动的 `#[test]` | 中文 `///`; 禁止用 `//` 顶替 |
 | bug 回归 | `///` 含现象、期望、ISSUE (若有) |
-| e2e shell/pytest | `# @component aikv-{domain}`; 首条说明性 `#` 作摘要 |
+| e2e pytest | `# @component` + 文件/用例 `# @title`; docstring 为 `N. 主谓宾 \| 期望` 剧本; 详见 [e2e/README.md](../e2e/README.md) |
+| e2e shell | `# @component aikv-{domain}`; 首条说明性 `#` 作摘要 (仅索引, 不在 test-ui 执行) |
 
 - `#[ignore]`: `slow:` / `stress:`; 禁止裸 ignore
 - 除 `@component` 外不加分类标签
