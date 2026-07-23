@@ -131,7 +131,7 @@ chmod +x e2e/*.sh
 | `AIKV_CLIENT_ADDR` | 从 rpc host + `--bind` port 推导 | 外部可达 `host:port` → MetaRaft `client_addr` |
 | `AIKV_CLUSTER_ANNOUNCE_MODE` | 默认 `unknown` | `fixed` \| `unknown` — MOVED / CLUSTER SLOTS 通告; 见 [cluster.md](docs/modules/cluster.md) |
 
-E2E 可选: `WIKV_HOST`, `WIKV_PORT`, `WIKV_CLUSTER_BASE_PORT` ([e2e/utils.sh](e2e/utils.sh)).
+E2E 可选: `AIKV_HOST`, `AIKV_PORT`, `AIKV_CLUSTER_BASE_PORT` ([e2e/old/utils.sh](e2e/old/utils.sh); 活跃黑盒见 [e2e/README.md](e2e/README.md)).
 
 > `AIKV_AIDB_PRESET` 不是 aikv 自身读取的环境变量 (aikv 只认 `--aidb-preset` CLI flag); 是 aifactory `entrypoint.sh`/compose 层的约定, 部署时透传为 `--aidb-preset` 传给本进程. 见 `aifactory/.env.example`.
 

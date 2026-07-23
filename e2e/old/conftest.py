@@ -22,8 +22,8 @@ from lib.server import (  # noqa: E402
 )
 
 
-def _external_dut_enabled() -> bool:
-    return os.environ.get("WIKV_EXTERNAL_DUT", "").strip().lower() in (
+def _external_svc_enabled() -> bool:
+    return os.environ.get("AIKV_EXTERNAL_SVC", "").strip().lower() in (
         "1",
         "true",
         "yes",
@@ -45,8 +45,8 @@ def _require_redis_cli() -> None:
 
 @pytest.fixture(scope="session")
 def aikv_binary() -> Path:
-    if _external_dut_enabled():
-        # Remote/external DUT: no local release binary required.
+    if _external_svc_enabled():
+        # Remote/external svc: no local release binary required.
         return DEFAULT_BIN
     if DEFAULT_BIN.is_file():
         return DEFAULT_BIN
@@ -55,14 +55,14 @@ def aikv_binary() -> Path:
 
 @pytest.fixture
 def memory_server(aikv_binary: Path) -> Iterator[ServerHandle]:
-    """Ephemeral local aikv, or connect to external DUT when WIKV_EXTERNAL_DUT=1."""
-    if _external_dut_enabled():
-        host = os.environ.get("WIKV_HOST", "").strip()
-        port_s = os.environ.get("WIKV_PORT", "").strip()
+    """Ephemeral local aikv, or connect to external svc when AIKV_EXTERNAL_SVC=1."""
+    if _external_svc_enabled():
+        host = os.environ.get("AIKV_HOST", "").strip()
+        port_s = os.environ.get("AIKV_PORT", "").strip()
         if not host or not port_s:
             pytest.fail(
-                "WIKV_EXTERNAL_DUT=1 requires WIKV_HOST and WIKV_PORT "
-                "(remote Docker DUT already running)"
+                "AIKV_EXTERNAL_SVC=1 requires AIKV_HOST and AIKV_PORT "
+                "(remote Docker svc already running)"
             )
         port = int(port_s)
         wait_ready(host, port)

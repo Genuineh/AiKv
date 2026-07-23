@@ -8,14 +8,14 @@ _PREFIX = "e2e:func:correct:"
 
 
 # @title 覆盖写
-def test_string_overwrite(dut):
+def test_string_overwrite(svc):
     """同一 key 覆盖写.
 
     1. 将 key SET 为 "v1" | 成功
     2. 将同一 key SET 为 "v2" | 成功
     3. GET 该 key | 返回 "v2"
     """
-    c = dut.client()
+    c = svc.client()
     key = _PREFIX + "ow"
     c.delete(key)
     assert c.set(key, "v1") is True
@@ -25,14 +25,14 @@ def test_string_overwrite(dut):
 
 
 # @title 缺键与缺 field
-def test_missing_key_and_field(dut):
+def test_missing_key_and_field(svc):
     """缺键 / 缺 field 读空.
 
     1. GET 不存在的 key | 返回 None
     2. 将 hash key 的 field exists HSET 为 "1" | 成功
     3. HGET 该 key 上不存在的 field | 返回 None
     """
-    c = dut.client()
+    c = svc.client()
     assert c.get(_PREFIX + "missing") is None
     key = _PREFIX + "hash-miss"
     c.delete(key)
@@ -42,7 +42,7 @@ def test_missing_key_and_field(dut):
 
 
 # @title 双连接隔离
-def test_two_clients_isolated_keys(dut):
+def test_two_clients_isolated_keys(svc):
     """双连接写不同 key, 互不串读.
 
     1. 连接 A 将 ka SET 为 "from-a" | 成功
@@ -50,8 +50,8 @@ def test_two_clients_isolated_keys(dut):
     3. 连接 A/B 分别 GET ka | 均返回 "from-a"
     4. 连接 A/B 分别 GET kb | 均返回 "from-b"
     """
-    a = dut.client()
-    b = dut.client()
+    a = svc.client()
+    b = svc.client()
     ka = _PREFIX + "a"
     kb = _PREFIX + "b"
     a.delete(ka, kb)

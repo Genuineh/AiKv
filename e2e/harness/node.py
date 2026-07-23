@@ -1,4 +1,4 @@
-"""节点句柄与外部 DUT 连接.
+"""节点句柄与外部被测服务 连接.
 
 e2e 用例只应使用 `connect_external` (黑盒). `start_node` 留作本机调试工具,
 不由 pytest fixture 暴露, 也不参与门禁验收.
@@ -52,9 +52,9 @@ class Node:
 
 
 def connect_external(host: str, port: int) -> Node:
-    """连接已启动的外部 DUT, 不起本机进程."""
+    """连接已启动的外部被测服务, 不起本机进程."""
     log = get_logger()
-    log.info("连接外部 DUT %s:%s", host, port)
+    log.info("连接外部被测服务 %s:%s", host, port)
     wait_redis_ping(host, port)
     return Node(host=host, port=port, engine="external", data_dir=None, proc=None)
 

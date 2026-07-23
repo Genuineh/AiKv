@@ -12,7 +12,7 @@ from lib.redis_cli import wait_ready
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BIN = REPO_ROOT / "target" / "release" / "aikv"
-DEFAULT_HOST = os.environ.get("WIKV_HOST", "127.0.0.1")
+DEFAULT_HOST = os.environ.get("AIKV_HOST", "127.0.0.1")
 
 
 def random_port() -> int:

@@ -5,8 +5,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="${ROOT}/target/release/aikv"
-HOST="${WIKV_HOST:-127.0.0.1}"
-PORT="${WIKV_PORT:-$((20000 + RANDOM % 40000))}"
+HOST="${AIKV_HOST:-127.0.0.1}"
+PORT="${AIKV_PORT:-$((20000 + RANDOM % 40000))}"
 ADDR="${HOST}:${PORT}"
 DATA_DIR="${ROOT}/target/e2e-data-$$"
 
@@ -47,7 +47,7 @@ rc() {
 # Base port for cluster nodes; each node uses 3 ports (client, rpc, data-plane=rpc+10000).
 # Use --cluster-data-port-offset to change the data-plane offset (default 10000). Must be consistent across all nodes.
 # Nodes are spaced 200 apart to avoid data-plane port collisions.
-CLUSTER_BASE_PORT="${WIKV_CLUSTER_BASE_PORT:-$((20000 + RANDOM % 40000))}"
+CLUSTER_BASE_PORT="${AIKV_CLUSTER_BASE_PORT:-$((20000 + RANDOM % 40000))}"
 
 # Port offsets per node index (0-based)
 _cluster_client_port() { echo $((CLUSTER_BASE_PORT + $1 * 200)); }

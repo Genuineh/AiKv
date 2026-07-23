@@ -42,12 +42,12 @@ chmod +x e2e/*.sh
 
 Environment overrides:
 
-- `WIKV_HOST` (default `127.0.0.1`)
-- `WIKV_PORT` — shell `utils.sh` 单节点; pytest 本机 fixture 使用随机端口
-- `WIKV_EXTERNAL_DUT=1` — pytest **不**起本机 aikv, 直接连 `WIKV_HOST`:`WIKV_PORT` (远程 Docker DUT 等; 须已手起服务). 例:
+- `AIKV_HOST` (default `127.0.0.1`)
+- `AIKV_PORT` — shell `utils.sh` 单节点; pytest 本机 fixture 使用随机端口
+- `AIKV_EXTERNAL_SVC=1` — pytest **不**起本机 aikv, 直接连 `AIKV_HOST`:`AIKV_PORT` (远程 Docker 被测服务 等; 须已手起服务). 例:
 
   ```bash
-  WIKV_EXTERNAL_DUT=1 WIKV_HOST=192.168.1.116 WIKV_PORT=6379 \
+  AIKV_EXTERNAL_SVC=1 AIKV_HOST=192.168.1.116 AIKV_PORT=6379 \
     .venv-e2e/bin/pytest e2e/test_ping.py -v
   ```
 
@@ -65,7 +65,7 @@ e2e/
 
 ## Notes
 
-- pytest 默认构建 `target/release/aikv` 并启动 ephemeral **memory** 引擎; `WIKV_EXTERNAL_DUT=1` 时改为连接外部 DUT.
+- pytest 默认构建 `target/release/aikv` 并启动 ephemeral **memory** 引擎; `AIKV_EXTERNAL_SVC=1` 时改为连接外部被测服务.
 - shell 脚本通常自起本机进程 (见 `utils.sh`).
 - **AiDb 重启持久化** 由 L1 覆盖: `cargo test --test storage test_aidb` (roundtrip + restart + adapter list/flushdb). 可选手动:
 

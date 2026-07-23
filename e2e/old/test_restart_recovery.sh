@@ -5,8 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BIN="${ROOT}/target/release/aikv"
-HOST="${WIKV_HOST:-127.0.0.1}"
-PORT="${WIKV_PORT:-$((20000 + RANDOM % 40000))}"
+HOST="${AIKV_HOST:-127.0.0.1}"
+PORT="${AIKV_PORT:-$((20000 + RANDOM % 40000))}"
 ADDR="${HOST}:${PORT}"
 DATA_DIR="$(mktemp -d)"
 

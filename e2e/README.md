@@ -1,6 +1,6 @@
 # AiKv E2E Tests (Python / pytest)
 
-黑盒客户端验收: **用例只连已部署 DUT**, 不 spawn 进程、不选引擎.  
+黑盒客户端验收: **用例只连已部署 被测服务**, 不 spawn 进程、不选引擎.  
 部署由 test-ui 环境条 / `aifactory/scripts` / 手工完成 (实验室约定 aidb).
 
 旧 shell / 旧 pytest 在 [`old/`](old/) (**仅参考, 不维护**).
@@ -21,14 +21,14 @@ uv pip install -r e2e/requirements.txt --python .venv-e2e
 
 ## Run
 
-先部署 DUT, 再:
+先部署 被测服务, 再:
 
 ```bash
-WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
+AIKV_HOST=127.0.0.1 AIKV_PORT=6379 \
   .venv-e2e/bin/pytest e2e/ -v
 ```
 
-在 **test-ui** 中执行时, 顶部环境条会注入 `WIKV_HOST`/`WIKV_PORT`, 无需手设.
+在 **test-ui** 中执行时, 顶部环境条会注入 `AIKV_HOST`/`AIKV_PORT`, 无需手设.
 
 ### 功能测试 (`e2e/function/`)
 
@@ -44,7 +44,7 @@ WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
 | `test_persist.py` | 写探针 + 重启后再读 |
 
 ```bash
-WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
+AIKV_HOST=127.0.0.1 AIKV_PORT=6379 \
   .venv-e2e/bin/pytest e2e/function/ -v
 ```
 
@@ -52,9 +52,9 @@ WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
 
 1. 跑 seed: `test_persist_seed_graceful`
 2. **部署侧**优雅停再起同一 data-dir
-3. `WIKV_E2E_AFTER_RESTART=1` 再跑 `test_persist_after_graceful_restart`
+3. `AIKV_E2E_AFTER_RESTART=1` 再跑 `test_persist_after_graceful_restart`
 4. 跑 `test_persist_seed_kill` → **部署侧** `kill -9` 再起
-5. `WIKV_E2E_AFTER_KILL=1` 再跑 `test_persist_after_kill`
+5. `AIKV_E2E_AFTER_KILL=1` 再跑 `test_persist_after_kill`
 
 未设上述 env 时, 对应「再读」用例会 `skip` (不算失败).
 
@@ -62,7 +62,7 @@ WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
 
 | Fixture | 含义 |
 |---------|------|
-| `dut` | 唯一入口: 连 `WIKV_HOST`/`WIKV_PORT` |
+| `svc` | 唯一入口: 连 `AIKV_HOST`/`AIKV_PORT` |
 
 ### 显示样板
 
@@ -73,14 +73,14 @@ WIKV_HOST=127.0.0.1 WIKV_PORT=6379 \
 | 树-文件中文名 | 文件头 `# @title …` |
 | 详情-文件说明 | 模块 docstring (无编号步骤时 Markdown 渲染) |
 | 树/详情-用例标题 | 函数上方 `# @title …` |
-| 详情-用例说明 | 编号步骤剧本: `N. 主谓宾动作 \| 期望` (含主语如 key/连接/DUT; 也兼容 `→ 期望`); test-ui 渲染为步骤条 |
+| 详情-用例说明 | 编号步骤剧本: `N. 主谓宾动作 \| 期望` (含主语如 key/连接/被测服务; 也兼容 `→ 期望`); test-ui 渲染为步骤条 |
 | Map | `# @component aikv-…` |
 
 用例 docstring 示例:
 
 ```python
 # @title String
-def test_string_crud(dut):
+def test_string_crud(svc):
     """String 的增删改查.
 
     1. 将 key SET 为 "hello" | 成功
@@ -98,7 +98,7 @@ def test_string_crud(dut):
 ```text
 e2e/
 ├── harness/              # 客户端 / 外部连接 / (本机 start_node 仅调试用)
-├── conftest.py           # 仅 dut
+├── conftest.py           # 仅 svc
 ├── function/             # 功能测试 (UI: 功能测试)
 ├── test_set.py           # 显示样板
 ├── pytest.ini

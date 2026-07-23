@@ -11,7 +11,7 @@ _N = 50
 
 
 # @title 双客户端并行
-def test_two_clients_parallel_set_get(dut):
+def test_two_clients_parallel_set_get(svc):
     """双客户端并行 SET/GET 不挂死、不错乱.
 
     1. 两线程各自将本批 50 个 key SET 成功 | 均成功
@@ -23,7 +23,7 @@ def test_two_clients_parallel_set_get(dut):
 
     def worker(tag: str) -> None:
         try:
-            c = dut.client()
+            c = svc.client()
             for i in range(_N):
                 key = f"{_PREFIX}{tag}:{i}"
                 assert c.set(key, f"{tag}-{i}") is True
@@ -42,7 +42,7 @@ def test_two_clients_parallel_set_get(dut):
     assert not t1.is_alive() and not t2.is_alive(), "并发线程超时未结束"
     assert not errors, f"并发出错: {errors!r}"
 
-    c = dut.client()
+    c = svc.client()
     assert c.ping() is True
     for tag in ("a", "b"):
         for i in range(_N):

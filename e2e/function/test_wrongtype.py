@@ -11,14 +11,14 @@ _PREFIX = "e2e:func:wrongtype:"
 
 
 # @title WRONGTYPE 后仍可用
-def test_wrongtype_then_ping(dut):
+def test_wrongtype_then_ping(svc):
     """类型错误不拖死服务.
 
     1. 将 key SET 为 "plain" (String) | 成功
     2. 对同一 key 发 HGET | ResponseError 含 WRONGTYPE
     3. 客户端再发 PING | 成功 (True)
     """
-    c = dut.client()
+    c = svc.client()
     key = _PREFIX + "k"
     c.delete(key)
     assert c.set(key, "plain") is True

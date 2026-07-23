@@ -10,13 +10,13 @@ _PREFIX = "e2e:func:cmd:"
 
 
 # @title Smoke
-def test_ping(dut):
-    """1. 客户端对 DUT 发 PING | 成功 (True)"""
-    assert dut.client().ping() is True
+def test_ping(svc):
+    """1. 客户端对被测服务 发 PING | 成功 (True)"""
+    assert svc.client().ping() is True
 
 
 # @title String
-def test_string_crud(dut):
+def test_string_crud(svc):
     """String 的增删改查.
 
     1. 将 key SET 为 "hello" | 成功
@@ -26,7 +26,7 @@ def test_string_crud(dut):
     5. DEL 该 key | 删除数 1
     6. GET 该 key | 缺键 (None)
     """
-    c = dut.client()
+    c = svc.client()
     key = _PREFIX + "str"
     c.delete(key)
 
@@ -41,43 +41,43 @@ def test_string_crud(dut):
 
 
 # @title INFO
-def test_info(dut):
+def test_info(svc):
     """INFO 浅查.
 
-    1. 向 DUT 发 INFO | 返回非空 dict
+    1. 向 被测服务 发 INFO | 返回非空 dict
     2. INFO 结果含字段 redis_version | 存在
     """
-    c = dut.client()
+    c = svc.client()
     info = c.info()
     assert isinstance(info, dict) and info
     assert "redis_version" in info
 
 
 # @title CLUSTER INFO
-def test_cluster_info(dut):
+def test_cluster_info(svc):
     """集群浅探测 CLUSTER INFO (非集群 skip).
 
-    1. 客户端探测 DUT 拓扑 | 为集群, 否则 skip
-    2. 向 DUT 发 CLUSTER INFO | 响应含 cluster_state
+    1. 客户端探测 被测服务 拓扑 | 为集群, 否则 skip
+    2. 向 被测服务 发 CLUSTER INFO | 响应含 cluster_state
     """
-    c = dut.client()
+    c = svc.client()
     if not c.cluster:
-        pytest.skip("DUT 非集群模式")
+        pytest.skip("被测服务 非集群模式")
     raw = c.execute("CLUSTER", "INFO")
     text = raw if isinstance(raw, str) else str(raw)
     assert "cluster_state" in text.lower() or "cluster_state" in text
 
 
 # @title CLUSTER NODES
-def test_cluster_nodes(dut):
+def test_cluster_nodes(svc):
     """集群浅探测 CLUSTER NODES (非集群 skip).
 
-    1. 客户端探测 DUT 拓扑 | 为集群, 否则 skip
-    2. 向 DUT 发 CLUSTER NODES | 返回非空节点表
+    1. 客户端探测 被测服务 拓扑 | 为集群, 否则 skip
+    2. 向 被测服务 发 CLUSTER NODES | 返回非空节点表
     """
-    c = dut.client()
+    c = svc.client()
     if not c.cluster:
-        pytest.skip("DUT 非集群模式")
+        pytest.skip("被测服务 非集群模式")
     raw = c.execute("CLUSTER", "NODES")
     text = raw if isinstance(raw, str) else str(raw)
     assert text.strip()

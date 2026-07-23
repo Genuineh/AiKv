@@ -9,7 +9,7 @@ source "${SCRIPT_DIR}/utils.sh"
 require_redis_cli
 build_release_cluster
 
-BASE_PORT="${WIKV_CLUSTER_BASE_PORT:-7000}"
+BASE_PORT="${AIKV_CLUSTER_BASE_PORT:-7000}"
 NODE_COUNT=6
 
 echo "=== 6-Node Cluster Setup ==="

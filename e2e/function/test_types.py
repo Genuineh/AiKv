@@ -8,7 +8,7 @@ _PREFIX = "e2e:func:type:"
 
 
 # @title Hash CRUD
-def test_hash_crud(dut):
+def test_hash_crud(svc):
     """Hash 浅 CRUD.
 
     1. 将 hash key 的 field f1 HSET 为 "v1" | 成功
@@ -18,7 +18,7 @@ def test_hash_crud(dut):
     5. HDEL 该 key 的 f1 | 删除数 1
     6. HGET 该 key 的 f1 | 缺 field (None)
     """
-    c = dut.client()
+    c = svc.client()
     key = _PREFIX + "hash"
     c.delete(key)
 
@@ -34,7 +34,7 @@ def test_hash_crud(dut):
 
 
 # @title List CRUD
-def test_list_crud(dut):
+def test_list_crud(svc):
     """List 浅 CRUD.
 
     1. 向 list key LPUSH "a" | 长度 >= 1
@@ -45,7 +45,7 @@ def test_list_crud(dut):
     6. DEL 该 key | 删除数 1
     7. LRANGE 该 key | 返回 []
     """
-    c = dut.client()
+    c = svc.client()
     key = _PREFIX + "list"
     c.delete(key)
 
@@ -61,7 +61,7 @@ def test_list_crud(dut):
 
 
 # @title Set CRUD
-def test_set_crud(dut):
+def test_set_crud(svc):
     """Set 浅 CRUD.
 
     1. 向 set key SADD 成员 "m1" | 新增 1
@@ -71,7 +71,7 @@ def test_set_crud(dut):
     5. 从该 key SREM 成员 "m1" | 删除数 1
     6. SMEMBERS 该 key | 返回 {"m2"}
     """
-    c = dut.client()
+    c = svc.client()
     key = _PREFIX + "set"
     c.delete(key)
 
@@ -87,7 +87,7 @@ def test_set_crud(dut):
 
 
 # @title ZSet CRUD
-def test_zset_crud(dut):
+def test_zset_crud(svc):
     """ZSet 浅 CRUD.
 
     1. 向 zset key ZADD 成员 a=1、b=2 | 新增 2
@@ -97,7 +97,7 @@ def test_zset_crud(dut):
     5. 从该 key ZREM 成员 "b" | 删除数 1
     6. ZRANGE 该 key | 返回 ["a"]
     """
-    c = dut.client()
+    c = svc.client()
     key = _PREFIX + "zset"
     c.delete(key)
 

@@ -1,4 +1,4 @@
-"""aikv 端到端 pytest fixtures — 仅黑盒 DUT (不部署、不选引擎)."""
+"""aikv 端到端 pytest fixtures — 仅黑盒被测服务 (不部署、不选引擎)."""
 
 from __future__ import annotations
 
@@ -29,13 +29,13 @@ def _require_redis_cli() -> None:
 
 
 @pytest.fixture
-def dut() -> Iterator[Node]:
-    """预部署 DUT (黑盒). 地址来自 `WIKV_HOST` / `WIKV_PORT` (test-ui 环境条自动注入)."""
-    host = os.environ.get("WIKV_HOST", "").strip()
-    port_s = os.environ.get("WIKV_PORT", "").strip()
+def svc() -> Iterator[Node]:
+    """预部署被测服务 (黑盒). 地址来自 `AIKV_HOST` / `AIKV_PORT` (test-ui 环境条自动注入)."""
+    host = os.environ.get("AIKV_HOST", "").strip()
+    port_s = os.environ.get("AIKV_PORT", "").strip()
     if not host or not port_s:
         pytest.fail(
-            "黑盒 e2e 需要 DUT 地址: 设置 WIKV_HOST 与 WIKV_PORT "
+            "黑盒 e2e 需要被测服务地址: 设置 AIKV_HOST 与 AIKV_PORT "
             "(在 test-ui 中使用顶部环境条即可)"
         )
     node = connect_external(host, int(port_s))
