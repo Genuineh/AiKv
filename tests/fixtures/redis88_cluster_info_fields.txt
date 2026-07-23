@@ -1,5 +1,7 @@
-# Redis 8.8 CLUSTER INFO P0 (与 redis88_cluster_info_fields.txt 同步; 保留此文件名兼容旧引用)
-# 详见 redis88_cluster_info_fields.txt
+# Redis 8.8 CLUSTER INFO 常驻字段清单 (健康集群必须出现键名)
+# 对照: redis/redis@8.8 genClusterInfoString + asmCatInfoString
+# 不含: cluster_stats_messages_<type>_{sent,received} (仅非零时出现)
+# AiKv-only: cluster_slots_migrating
 cluster_state
 cluster_slots_assigned
 cluster_slots_ok

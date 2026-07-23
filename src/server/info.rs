@@ -123,7 +123,6 @@ impl<'a> InfoRenderer<'a> {
         append_section(&mut out, &self.render_stats());
         append_section(&mut out, &self.render_replication());
         append_section(&mut out, &self.render_cpu());
-        #[cfg(feature = "cluster")]
         append_section(&mut out, &self.render_cluster_section());
         append_section(&mut out, &self.render_keyspace().await);
         out
@@ -170,6 +169,7 @@ impl<'a> InfoRenderer<'a> {
         append_kv(&mut out, "redis_mode", redis_mode());
         append_kv(&mut out, "os", std::env::consts::OS);
         append_kv_u64(&mut out, "arch_bits", arch_bits as u64);
+        append_kv(&mut out, "monotonic_clock", "POSIX clock_gettime");
         append_kv(&mut out, "multiplexing_api", multiplexing);
         append_kv(&mut out, "atomicvar_api", "c11-builtin");
         append_kv(&mut out, "gcc_version", "-");
@@ -208,6 +208,7 @@ impl<'a> InfoRenderer<'a> {
         append_kv_u64(&mut out, "pubsub_clients", 0);
         append_kv_u64(&mut out, "watching_clients", 0);
         append_kv_u64(&mut out, "clients_in_timeout_table", 0);
+        append_kv_u64(&mut out, "active_clients", m.connected_clients() as u64);
         append_kv_u64(&mut out, "total_watched_keys", 0);
         append_kv_u64(&mut out, "total_blocking_keys", 0);
         append_kv_u64(&mut out, "total_blocking_keys_on_nokey", 0);
@@ -261,7 +262,9 @@ impl<'a> InfoRenderer<'a> {
             "total_system_memory_human",
             &human_bytes(total_system),
         );
+        append_kv_u64(&mut out, "used_memory_lua", 0);
         append_kv_u64(&mut out, "used_memory_vm_eval", 0);
+        append_kv(&mut out, "used_memory_lua_human", "0B");
         append_kv_u64(&mut out, "used_memory_scripts_eval", 0);
         append_kv_u64(&mut out, "number_of_cached_scripts", 0);
         append_kv_u64(&mut out, "number_of_functions", 0);
@@ -275,24 +278,27 @@ impl<'a> InfoRenderer<'a> {
         append_kv_u64(&mut out, "maxmemory", maxmemory);
         append_kv(&mut out, "maxmemory_human", &human_bytes(maxmemory));
         append_kv(&mut out, "maxmemory_policy", &maxmemory_policy);
-        append_kv_f64(&mut out, "mem_fragmentation_ratio", frag_ratio);
-        append_kv_i64(&mut out, "mem_fragmentation_bytes", frag_bytes);
         append_kv_f64(&mut out, "allocator_frag_ratio", 1.0);
         append_kv_u64(&mut out, "allocator_frag_bytes", 0);
         append_kv_f64(&mut out, "allocator_rss_ratio", 1.0);
         append_kv_u64(&mut out, "allocator_rss_bytes", 0);
         append_kv_f64(&mut out, "rss_overhead_ratio", 1.0);
         append_kv_u64(&mut out, "rss_overhead_bytes", 0);
+        append_kv_f64(&mut out, "mem_fragmentation_ratio", frag_ratio);
+        append_kv_i64(&mut out, "mem_fragmentation_bytes", frag_bytes);
         append_kv_u64(&mut out, "mem_not_counted_for_evict", 0);
-        append_kv_u64(&mut out, "mem_clients_slaves", 0);
-        append_kv_u64(&mut out, "mem_clients_normal", 0);
-        append_kv_u64(&mut out, "mem_cluster_links", 0);
-        append_kv_u64(&mut out, "mem_cluster_slot_migration_link", 0);
-        append_kv_u64(&mut out, "mem_cluster_slot_migration_job", 0);
-        append_kv_u64(&mut out, "mem_cluster_slot_migration_job_completed", 0);
-        append_kv_u64(&mut out, "mem_aof_buffer", 0);
         append_kv_u64(&mut out, "mem_replication_backlog", 0);
         append_kv_u64(&mut out, "mem_total_replication_buffers", 0);
+        append_kv_u64(&mut out, "mem_replica_full_sync_buffer", 0);
+        append_kv_u64(&mut out, "mem_clients_slaves", 0);
+        append_kv_u64(&mut out, "mem_clients_normal", 0);
+        append_kv_u64(&mut out, "mem_clients_normal_shared", 0);
+        append_kv_u64(&mut out, "mem_clients_normal_unshared", 0);
+        append_kv_u64(&mut out, "mem_cluster_slot_migration_output_buffer", 0);
+        append_kv_u64(&mut out, "mem_cluster_slot_migration_input_buffer", 0);
+        append_kv_u64(&mut out, "mem_cluster_slot_migration_input_buffer_peak", 0);
+        append_kv_u64(&mut out, "mem_cluster_links", 0);
+        append_kv_u64(&mut out, "mem_aof_buffer", 0);
         append_kv(&mut out, "mem_allocator", "libc");
         append_kv_u64(&mut out, "mem_overhead_db_hashtable_rehashing", 0);
         append_kv_u64(&mut out, "active_defrag_running", 0);
@@ -336,7 +342,9 @@ impl<'a> InfoRenderer<'a> {
         append_kv_u64(&mut out, "sync_partial_ok", 0);
         append_kv_u64(&mut out, "sync_partial_err", 0);
         append_kv_u64(&mut out, "expired_subkeys", 0);
+        append_kv_u64(&mut out, "expired_subkeys_active", 0);
         append_kv_u64(&mut out, "expired_keys", m.expired_keys());
+        append_kv_u64(&mut out, "expired_keys_active", 0);
         append_kv_u64(&mut out, "expired_stale_perc", 0);
         append_kv_u64(&mut out, "expired_time_cap_reached_count", 0);
         append_kv_u64(&mut out, "expire_cycle_cpu_milliseconds", 0);
@@ -374,6 +382,8 @@ impl<'a> InfoRenderer<'a> {
         );
         append_kv_u64(&mut out, "io_threaded_reads_processed", 0);
         append_kv_u64(&mut out, "io_threaded_writes_processed", 0);
+        append_kv_u64(&mut out, "io_threaded_total_prefetch_batches", 0);
+        append_kv_u64(&mut out, "io_threaded_total_prefetch_entries", 0);
         append_kv_u64(&mut out, "client_query_buffer_limit_disconnections", 0);
         append_kv_u64(&mut out, "client_output_buffer_limit_disconnections", 0);
         append_kv_u64(&mut out, "reply_buffer_shrinks", 0);
@@ -383,12 +393,11 @@ impl<'a> InfoRenderer<'a> {
         append_kv_u64(&mut out, "eventloop_duration_cmd_sum", 0);
         append_kv_u64(&mut out, "instantaneous_eventloop_cycles_per_sec", 0);
         append_kv_u64(&mut out, "instantaneous_eventloop_duration_usec", 0);
-        append_kv_u64(&mut out, "acl_access_denied_auth", 0);
-        append_kv_u64(&mut out, "acl_access_denied_cmd", 0);
-        append_kv_u64(&mut out, "acl_access_denied_key", 0);
-        append_kv_u64(&mut out, "acl_access_denied_channel", 0);
-        append_kv_u64(&mut out, "acl_access_denied_script", 0);
-        append_kv_u64(&mut out, "cluster_incompatible_ops", 0);
+        append_kv_u64(&mut out, "eventloop_cycles_with_clients_processing", 0);
+        append_kv_u64(&mut out, "total_client_processing_events", 0);
+        append_kv_u64(&mut out, "avg_pipeline_length_sum", 0);
+        append_kv_u64(&mut out, "avg_pipeline_length_cnt", 0);
+        append_kv_f64(&mut out, "avg_pipeline_length", 0.0);
         append_kv_u64(
             &mut out,
             "slowlog_commands_count",
@@ -396,19 +405,19 @@ impl<'a> InfoRenderer<'a> {
         );
         append_kv_u64(
             &mut out,
-            "slowlog_commands_time_ms_sum",
-            m.slowlog_commands_time_ms_sum(),
-        );
-        append_kv_u64(
-            &mut out,
             "slowlog_commands_time_ms_max",
             m.slowlog_commands_time_ms_max(),
         );
-        append_kv_u64(&mut out, "total_client_processing_events", 0);
-        append_kv_u64(&mut out, "eventloop_cycles_with_clients_processing", 0);
-        append_kv_u64(&mut out, "commands_per_parse_batch_sum", 0);
-        append_kv_u64(&mut out, "commands_per_parse_batch_cnt", 0);
-        append_kv_u64(&mut out, "commands_per_parse_batch_avg", 0);
+        append_kv_u64(
+            &mut out,
+            "slowlog_commands_time_ms_sum",
+            m.slowlog_commands_time_ms_sum(),
+        );
+        append_kv_u64(&mut out, "acl_access_denied_auth", 0);
+        append_kv_u64(&mut out, "acl_access_denied_cmd", 0);
+        append_kv_u64(&mut out, "acl_access_denied_key", 0);
+        append_kv_u64(&mut out, "acl_access_denied_channel", 0);
+        append_kv_u64(&mut out, "acl_access_denied_tls_cert", 0);
         out
     }
 
@@ -451,7 +460,7 @@ impl<'a> InfoRenderer<'a> {
         append_kv_u64(&mut out, "async_loading", 0);
         append_kv_u64(&mut out, "current_cow_peak", 0);
         append_kv_u64(&mut out, "current_cow_size", 0);
-        append_kv_u64(&mut out, "current_cow_age", 0);
+        append_kv_u64(&mut out, "current_cow_size_age", 0);
         append_kv_u64(&mut out, "current_fork_perc", 0);
         append_kv_u64(&mut out, "current_save_keys_processed", 0);
         append_kv_u64(&mut out, "current_save_keys_total", 0);
@@ -461,6 +470,8 @@ impl<'a> InfoRenderer<'a> {
         append_kv(&mut out, "rdb_last_bgsave_status", &status);
         append_kv_i64(&mut out, "rdb_last_bgsave_time_sec", last as i64);
         append_kv_i64(&mut out, "rdb_current_bgsave_time_sec", -1);
+        append_kv_u64(&mut out, "rdb_saves", 0);
+        append_kv_u64(&mut out, "rdb_saves_consecutive_failures", 0);
         append_kv_u64(&mut out, "rdb_last_cow_size", 0);
         append_kv_u64(&mut out, "rdb_last_load_keys_expired", 0);
         append_kv_u64(&mut out, "rdb_last_load_keys_loaded", 0);
@@ -470,12 +481,12 @@ impl<'a> InfoRenderer<'a> {
         append_kv_i64(&mut out, "aof_last_rewrite_time_sec", -1);
         append_kv_i64(&mut out, "aof_current_rewrite_time_sec", -1);
         append_kv(&mut out, "aof_last_bgrewrite_status", "ok");
+        append_kv_u64(&mut out, "aof_rewrites", 0);
+        append_kv_u64(&mut out, "aof_rewrites_consecutive_failures", 0);
         append_kv(&mut out, "aof_last_write_status", "ok");
         append_kv_u64(&mut out, "aof_last_cow_size", 0);
         append_kv_u64(&mut out, "module_fork_in_progress", 0);
         append_kv_u64(&mut out, "module_fork_last_cow_size", 0);
-        append_kv_u64(&mut out, "aof_rewrites", 0);
-        append_kv_u64(&mut out, "rdb_saves", 0);
         out
     }
 
@@ -497,19 +508,8 @@ impl<'a> InfoRenderer<'a> {
     }
 
     fn render_cluster_section(&self) -> String {
-        let m = self.shared.metrics();
         let mut out = String::from("# Cluster\r\n");
         append_kv_u64(&mut out, "cluster_enabled", cluster_enabled() as u64);
-        append_kv_u64(
-            &mut out,
-            "cluster_stats_messages_sent",
-            m.cluster_messages_sent(),
-        );
-        append_kv_u64(
-            &mut out,
-            "cluster_stats_messages_received",
-            m.cluster_messages_received(),
-        );
         out
     }
 

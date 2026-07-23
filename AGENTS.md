@@ -55,7 +55,7 @@ Redis Client → TCP/RESP → CommandRouter/ClusterRouter
 - 开分支: 共识之后、改代码之前从原分支拉新分支; 纯文档微调或用户要求就地改时可跳过 (先问); 计划完成后经允许再 squash 回原分支
 - **code-review** 通过后做 **documentation-sync**, 再请用户确认; 只在用户明确要求时 commit; 不推远程
 - 会话切换用 **handoff** → 写工作区根 `CHAT.md`
-- 压测 / 部署脚本在 **aifactory** (`../aifactory`), 本仓专注协议与服务逻辑
+- 压测 / 部署在 **aifactory** (`../aifactory`): 灵活部署 `scripts/up-*.sh`, 对照压测 `benchmark/` (AiKv compose 在 `benchmark/aikv/`); 本仓专注协议与服务逻辑
 
 不确定大改还是小改时, 先问用户.
 

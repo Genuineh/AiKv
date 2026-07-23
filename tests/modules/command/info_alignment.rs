@@ -99,7 +99,7 @@ async fn info_default_section_order_and_fields() {
         .filter(|l| l.starts_with("# "))
         .map(|l| l.trim_start_matches("# ").trim())
         .collect();
-    let mut expected = vec![
+    let expected = vec![
         "Server",
         "Clients",
         "Memory",
@@ -107,10 +107,9 @@ async fn info_default_section_order_and_fields() {
         "Stats",
         "Replication",
         "CPU",
+        "Cluster",
+        "Keyspace",
     ];
-    #[cfg(feature = "cluster")]
-    expected.push("Cluster");
-    expected.push("Keyspace");
     assert_eq!(headers, expected);
     assert!(text.contains("redis_compatible_version:8.8"));
     assert!(text.contains("redis_mode:standalone"));

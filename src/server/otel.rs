@@ -96,7 +96,8 @@ pub fn otel_config_from_env(
         .and_then(|v| v.parse::<u64>().ok())
         .or(cluster_node_id);
     let deployment_environment = env_nonempty("OTEL_DEPLOYMENT_ENVIRONMENT")
-        .or_else(|| env_nonempty("AIKV_DEPLOYMENT_ENV"));
+        .or_else(|| env_nonempty("AIKV_DEPLOYMENT_ENV"))
+        .or_else(|| Some("dev".to_string()));
     let extra_resource_attrs = env_nonempty("OTEL_RESOURCE_ATTRIBUTES")
         .map(|raw| parse_resource_attributes(&raw))
         .unwrap_or_default();

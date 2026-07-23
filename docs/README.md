@@ -15,7 +15,7 @@
 |------|------|
 | [ARCHITECTURE.md](../ARCHITECTURE.md) | 分层、数据流、与 AiDb 边界 |
 | [DESIGN.md](../DESIGN.md) | 跨模块设计决策与已知限制 |
-| [DEPLOYMENT.md](../DEPLOYMENT.md) | 构建、feature、CLI、集群部署、监控 |
+| [DEPLOYMENT.md](../DEPLOYMENT.md) | 构建、feature、CLI、集群部署、监控; AiFactory Docker 见 §AiFactory 部署 |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | hooks、CI、测试矩阵、提交/PR 规范 |
 | [CHANGELOG.md](../CHANGELOG.md) | 版本变更记录 |
 | [AGENTS.md](../AGENTS.md) | AI 助手与 CI 入口 |

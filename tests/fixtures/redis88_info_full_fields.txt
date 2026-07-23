@@ -1,5 +1,7 @@
 # Redis 8.8 INFO 全字段清单 (INFO everything 必须出现键名)
 # section 注释行以 # section: 开头
+# 范围: standalone master, AOF off, not loading, not shutting down
+# 不含: 条件字段, cmdstat_/errorstat_/dbN/io_thread_N/listener_/hotkeys/keysizes 等动态行
 # section:server
 redis_version
 redis_git_sha1
@@ -9,6 +11,7 @@ redis_compatible_version
 redis_mode
 os
 arch_bits
+monotonic_clock
 multiplexing_api
 atomicvar_api
 gcc_version
@@ -38,6 +41,7 @@ tracking_clients
 pubsub_clients
 watching_clients
 clients_in_timeout_table
+active_clients
 total_watched_keys
 total_blocking_keys
 total_blocking_keys_on_nokey
@@ -60,7 +64,9 @@ allocator_resident
 allocator_muzzy
 total_system_memory
 total_system_memory_human
+used_memory_lua
 used_memory_vm_eval
+used_memory_lua_human
 used_memory_scripts_eval
 number_of_cached_scripts
 number_of_functions
@@ -74,24 +80,27 @@ used_memory_scripts_human
 maxmemory
 maxmemory_human
 maxmemory_policy
-mem_fragmentation_ratio
-mem_fragmentation_bytes
 allocator_frag_ratio
 allocator_frag_bytes
 allocator_rss_ratio
 allocator_rss_bytes
 rss_overhead_ratio
 rss_overhead_bytes
+mem_fragmentation_ratio
+mem_fragmentation_bytes
 mem_not_counted_for_evict
-mem_clients_slaves
-mem_clients_normal
-mem_cluster_links
-mem_cluster_slot_migration_link
-mem_cluster_slot_migration_job
-mem_cluster_slot_migration_job_completed
-mem_aof_buffer
 mem_replication_backlog
 mem_total_replication_buffers
+mem_replica_full_sync_buffer
+mem_clients_slaves
+mem_clients_normal
+mem_clients_normal_shared
+mem_clients_normal_unshared
+mem_cluster_slot_migration_output_buffer
+mem_cluster_slot_migration_input_buffer
+mem_cluster_slot_migration_input_buffer_peak
+mem_cluster_links
+mem_aof_buffer
 mem_allocator
 mem_overhead_db_hashtable_rehashing
 active_defrag_running
@@ -102,7 +111,7 @@ loading
 async_loading
 current_cow_peak
 current_cow_size
-current_cow_age
+current_cow_size_age
 current_fork_perc
 current_save_keys_processed
 current_save_keys_total
@@ -112,6 +121,8 @@ rdb_last_save_time
 rdb_last_bgsave_status
 rdb_last_bgsave_time_sec
 rdb_current_bgsave_time_sec
+rdb_saves
+rdb_saves_consecutive_failures
 rdb_last_cow_size
 rdb_last_load_keys_expired
 rdb_last_load_keys_loaded
@@ -121,12 +132,12 @@ aof_rewrite_scheduled
 aof_last_rewrite_time_sec
 aof_current_rewrite_time_sec
 aof_last_bgrewrite_status
+aof_rewrites
+aof_rewrites_consecutive_failures
 aof_last_write_status
 aof_last_cow_size
 module_fork_in_progress
 module_fork_last_cow_size
-aof_rewrites
-rdb_saves
 # section:stats
 total_connections_received
 total_commands_processed
@@ -144,7 +155,9 @@ sync_full
 sync_partial_ok
 sync_partial_err
 expired_subkeys
+expired_subkeys_active
 expired_keys
+expired_keys_active
 expired_stale_perc
 expired_time_cap_reached_count
 expire_cycle_cpu_milliseconds
@@ -178,6 +191,8 @@ total_reads_processed
 total_writes_processed
 io_threaded_reads_processed
 io_threaded_writes_processed
+io_threaded_total_prefetch_batches
+io_threaded_total_prefetch_entries
 client_query_buffer_limit_disconnections
 client_output_buffer_limit_disconnections
 reply_buffer_shrinks
@@ -187,22 +202,22 @@ eventloop_duration_sum
 eventloop_duration_cmd_sum
 instantaneous_eventloop_cycles_per_sec
 instantaneous_eventloop_duration_usec
+eventloop_cycles_with_clients_processing
+total_client_processing_events
+avg_pipeline_length_sum
+avg_pipeline_length_cnt
+avg_pipeline_length
+slowlog_commands_count
+slowlog_commands_time_ms_max
+slowlog_commands_time_ms_sum
 acl_access_denied_auth
 acl_access_denied_cmd
 acl_access_denied_key
 acl_access_denied_channel
-acl_access_denied_script
-cluster_incompatible_ops
-slowlog_commands_count
-slowlog_commands_time_ms_sum
-slowlog_commands_time_ms_max
-total_client_processing_events
-eventloop_cycles_with_clients_processing
-commands_per_parse_batch_sum
-commands_per_parse_batch_cnt
-commands_per_parse_batch_avg
+acl_access_denied_tls_cert
 # section:replication
 role
+connected_slaves
 master_failover_state
 master_replid
 master_replid2
@@ -212,8 +227,6 @@ repl_backlog_active
 repl_backlog_size
 repl_backlog_first_byte_offset
 repl_backlog_histlen
-connected_slaves
-min_slaves_good_slaves
 # section:cpu
 used_cpu_sys
 used_cpu_user
@@ -223,5 +236,3 @@ used_cpu_sys_main_thread
 used_cpu_user_main_thread
 # section:cluster
 cluster_enabled
-cluster_stats_messages_sent
-cluster_stats_messages_received

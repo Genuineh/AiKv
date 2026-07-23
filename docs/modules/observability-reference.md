@@ -120,7 +120,7 @@ PromQL label 来自 OTLP 属性: 点号 `.` 通常映射为下划线 `_` (如 `a
 |------|-----|------|
 | `storage_engine` | Server | `memory` / `aidb` |
 | `persistent` | Server | 0/1 |
-| `cluster_stats_messages_sent/received` | Cluster | gossip 计数; OTel `aikv_gossip_messages_total` 近似 |
+| `cluster_stats_messages_sent/received` | — (仅 `CLUSTER INFO`) | gossip 计数; OTel `aikv_gossip_messages_total` 近似 | **不在** `INFO cluster` (Redis 8.8 INFO 仅 `cluster_enabled`) |
 
 ### Stub 字段策略
 
@@ -164,7 +164,10 @@ Redis 8.8 **键名齐全**; 无子系统真源的字段在 INFO 中以 `0` / `-1
 | INFO / 行为 | `aikv_*` | redis_exporter | 备注 |
 |-------------|----------|----------------|------|
 | MOVED/ASK 响应 | `aikv_cluster_redirects_total{aikv_cluster_redirect_type=moved\|ask}` | 无直接 commandstats | **不** 增加 `cmdstat_*:calls`; 内部键 `CLUSTER.redirect.*` 经 `sync_commandstats` 同步 (大小写不敏感) |
-| `cluster_stats_messages_sent/received` | `aikv_gossip_messages_total` (近似) | cluster INFO | gossip tick; 需 `ClusterStateManager.metrics` |
+| `cluster_stats_messages_sent/received` (`CLUSTER INFO`) | `aikv_gossip_messages_total` (近似) | cluster INFO | gossip tick; **不在** `INFO` (INFO `# Cluster` 仅 `cluster_enabled`) |
+| `total_cluster_links_buffer_limit_exceeded` | — | cluster INFO | Redis 8.8 键名; AiKv 暂 stub `0` |
+| `cluster_slot_migration_*` (ASM) | — | cluster INFO | Redis 8.8 常驻; AiKv 暂 stub `0` |
+| `cluster_slots_migrating` | — | — | **AiKv-only**: `SlotStatus::Migrating` 计数 |
 | Failover | `aikv_failover_total` | — | 无 failover 事件时 Prom 无 series (Grafana 该线可 No data) |
 
 ### Server 元数据

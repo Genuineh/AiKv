@@ -183,7 +183,14 @@ pub fn cluster_info() -> Result<String, String> {
          cluster_my_epoch:{epoch}\n\
          cluster_stats_messages_sent:{msgs_sent}\n\
          cluster_stats_messages_received:{msgs_received}\n\
-         total_cluster_connections_buffer_size:0\n",
+         total_cluster_links_buffer_limit_exceeded:0\n\
+         cluster_slot_migration_active_tasks:0\n\
+         cluster_slot_migration_active_trim_running:0\n\
+         cluster_slot_migration_active_trim_current_job_keys:0\n\
+         cluster_slot_migration_active_trim_current_job_trimmed:0\n\
+         cluster_slot_migration_stats_active_trim_started:0\n\
+         cluster_slot_migration_stats_active_trim_completed:0\n\
+         cluster_slot_migration_stats_active_trim_cancelled:0\n",
     ))
 }
 

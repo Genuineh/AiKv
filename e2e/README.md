@@ -1,7 +1,7 @@
 # AiKv E2E Tests (Python / pytest)
 
 黑盒客户端验收: **用例只连已部署 被测服务**, 不 spawn 进程、不选引擎.  
-部署由 test-ui 环境条 / `aifactory/scripts` / 手工完成 (实验室约定 aidb).
+部署由 test-ui 环境条 / [`aifactory/scripts`](../aifactory/scripts/) (`up-single.sh`, `up-cluster.sh`) / [`aifactory/benchmark/aikv`](../aifactory/benchmark/aikv/) 对照压测 compose / 手工 `cargo run` 完成 (实验室约定 aidb).
 
 旧 shell / 旧 pytest 在 [`old/`](old/) (**仅参考, 不维护**).
 
@@ -36,7 +36,7 @@ AIKV_HOST=127.0.0.1 AIKV_PORT=6379 \
 
 | 文件 | 内容 |
 |------|------|
-| `test_commands.py` | Smoke (PING); String CRUD; INFO; 集群浅探测 (非集群 skip) |
+| `test_commands.py` | Smoke (PING); String CRUD; INFO / CLUSTER INFO (Redis 8.8 字段); CLUSTER NODES L1 拓扑不变量 (非集群 skip) |
 | `test_types.py` | Hash / List / Set / ZSet 浅 CRUD |
 | `test_correctness.py` | 覆盖写 / 缺键 / 双连接 |
 | `test_wrongtype.py` | WRONGTYPE 后仍可用 |

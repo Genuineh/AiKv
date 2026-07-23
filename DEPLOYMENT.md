@@ -133,7 +133,7 @@ chmod +x e2e/*.sh
 
 E2E 可选: `AIKV_HOST`, `AIKV_PORT`, `AIKV_CLUSTER_BASE_PORT` ([e2e/old/utils.sh](e2e/old/utils.sh); 活跃黑盒见 [e2e/README.md](e2e/README.md)).
 
-> `AIKV_AIDB_PRESET` 不是 aikv 自身读取的环境变量 (aikv 只认 `--aidb-preset` CLI flag); 是 aifactory `entrypoint.sh`/compose 层的约定, 部署时透传为 `--aidb-preset` 传给本进程. 见 `aifactory/.env.example`.
+> `AIKV_AIDB_PRESET` 不是 aikv 进程直接读取的环境变量 (aikv 只认 `--aidb-preset` CLI). Docker 部署时在 compose `environment` 或 `aifactory/scripts/utils/entrypoint.sh` 层透传为 CLI. aifactory [`.env.example`](../aifactory/.env.example) 仅配置镜像与远程主机 (OTel 等由脚本默认).
 
 ## 单机部署
 
@@ -312,6 +312,20 @@ AiDb `BackupManager` 全量备份 API 见 [aidb DEPLOYMENT §备份](../aidb/DEP
 
 命令细节: [commands-extended.md](docs/modules/commands-extended.md).
 
+## AiFactory 部署 (Docker)
+
+生产镜像与 sibling 源码构建见 [`aifactory/Dockerfile`](../aifactory/Dockerfile) (`cluster,monitoring,compression`).
+
+| 场景 | 入口 | compose / 产物 |
+|------|------|----------------|
+| 单机 (灵活, 可 OTel) | `aifactory/scripts/up-single.sh` | [`benchmark/aikv/docker-compose.single.yaml`](../aifactory/benchmark/aikv/docker-compose.single.yaml) |
+| 参数化集群 | `aifactory/scripts/up-cluster.sh [--shards N] [--replicas M]` | 生成 `data/docker-compose.cluster.yaml` + `svc.json` |
+| 对照压测 (固定 2×2) | `aifactory/benchmark/benchmark.sh aikv --mode …` | [`benchmark/aikv/`](../aifactory/benchmark/aikv/) compose + 脚本 (无 OTLP) |
+
+停止与清数据: `aifactory/scripts/down.sh [single\|cluster] [--no-clean]`; 压测目录内 `./scripts/down.sh` 行为相同. 规格与三系统对比见 [`aifactory/benchmark/README.md`](../aifactory/benchmark/README.md).
+
+集群压测须 `redis-benchmark --cluster` (或 `redis-cli -c`); 详见 [`aifactory/docs/PERFORMANCE.md`](../aifactory/docs/PERFORMANCE.md).
+
 ## Docker 简例
 
 ```dockerfile
@@ -329,7 +343,7 @@ CMD ["aikv", "--bind", "0.0.0.0:6379", "--engine", "aidb", \
      "--data-dir", "/data", "--metrics-addr", "0.0.0.0", "--metrics-port", "9191"]
 ```
 
-真实生产镜像见 `aifactory/Dockerfile` (rsync sibling 源码 + 同样的 `cluster,monitoring,compression`); 部署 compose 见 `aifactory/docker-compose.cluster.yaml` 与其 `.env.example` 里的 `AIKV_AIDB_PRESET` 说明.
+真实生产镜像见上节 **AiFactory 部署**; 以下为最小自建 Dockerfile 参考 (不含 compose 与集群引导脚本).
 
 集群 compose 需为每节点映射 RESP、RPC、data 端口及独立 `--data-dir`; 可参考 [e2e/utils.sh](e2e/utils.sh) 端口间距.
 

@@ -70,6 +70,56 @@ class RedisClient:
     def execute(self, *args: str) -> Any:
         return self._r.execute_command(*args)
 
+    def info_raw(self, *sections: str) -> str:
+        """原始 INFO 文本 (绕过 redis-py 的 INFO→dict 回调).
+
+        用 redis-cli 取 RESP 原文, 兼容 standalone / RedisCluster.
+        """
+        require_redis_cli()
+        cmd = ["redis-cli", "-h", self.host, "-p", str(self.port), "INFO"]
+        cmd.extend(sections)
+        proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        if proc.returncode != 0:
+            err = (proc.stderr or proc.stdout or "").strip()
+            raise RuntimeError(f"redis-cli INFO 失败 (exit {proc.returncode}): {err}")
+        return proc.stdout
+
+    def cluster_info_raw(self) -> str:
+        """原始 CLUSTER INFO 文本 (redis-cli)."""
+        require_redis_cli()
+        cmd = [
+            "redis-cli",
+            "-h",
+            self.host,
+            "-p",
+            str(self.port),
+            "CLUSTER",
+            "INFO",
+        ]
+        proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        if proc.returncode != 0:
+            err = (proc.stderr or proc.stdout or "").strip()
+            raise RuntimeError(f"redis-cli CLUSTER INFO 失败 (exit {proc.returncode}): {err}")
+        return proc.stdout
+
+    def cluster_nodes_raw(self) -> str:
+        """原始 CLUSTER NODES 文本 (redis-cli)."""
+        require_redis_cli()
+        cmd = [
+            "redis-cli",
+            "-h",
+            self.host,
+            "-p",
+            str(self.port),
+            "CLUSTER",
+            "NODES",
+        ]
+        proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
+        if proc.returncode != 0:
+            err = (proc.stderr or proc.stdout or "").strip()
+            raise RuntimeError(f"redis-cli CLUSTER NODES 失败 (exit {proc.returncode}): {err}")
+        return proc.stdout
+
     def set(self, key: str, value: str) -> bool:
         return bool(self._r.set(key, value))
 

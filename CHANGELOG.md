@@ -13,6 +13,10 @@
 
 ### Changed
 
+- **INFO Redis 8.8 键名校正**: fixture `redis88_info_full_fields.txt` 对照 8.8 `genRedisInfoString` 常驻键; rename (`current_cow_size_age`, `avg_pipeline_length_*`, `acl_access_denied_tls_cert`, slot-migration buffer 名等); 补 `monotonic_clock`/`active_clients`/…; `INFO` `# Cluster` 仅 `cluster_enabled` (`cluster_stats_messages_*` 仍在 `CLUSTER INFO`); default 始终输出 Cluster 段; e2e `test_info` 全量键名 + 关键格式.
+- **文档 (aifactory 部署)**: DEPLOYMENT §AiFactory 部署 同步 `benchmark/aikv` compose、`down.sh` 与压测入口; AGENTS / e2e README 链接更新.
+- **CLUSTER INFO Redis 8.8 键名校正**: fixture `redis88_cluster_info_fields.txt`; `total_cluster_links_buffer_limit_exceeded` (原 `total_cluster_connections_buffer_size`); 补 ASM `cluster_slot_migration_*` stub; 保留 AiKv-only `cluster_slots_migrating`; e2e `test_cluster_info` 全量键名 + 关键格式.
+- **CLUSTER NODES e2e L1**: `harness/cluster_nodes.py` 解析 + 不变量 (myself / master-slave 引用 / slot 全覆盖无重叠 / 与 CLUSTER INFO 交叉); 不硬编码实验室拓扑.
 - **集群 SET batcher**: `SET_BATCH_MAX_DELAY` 10ms → 1ms; 新增 `SET_BATCH_EAGER_FLUSH=4` (凑够 4 条立即 propose). 本地集群 SET 基线约 664 → ~2000 ops/s (`-n 500 -c 10 --cluster`).
 - **集群 snapshot 策略**: `snapshot_logs_since_last` 1000 → 256 (更频繁 snapshot/purge).
 

@@ -117,7 +117,7 @@ async fn info_full_fields_present_in_everything() {
 
 #[cfg(feature = "cluster")]
 #[test]
-fn cluster_info_redis7_p0_fields_present() {
+fn cluster_info_redis88_fields_present() {
     use std::collections::HashMap;
     use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
@@ -132,7 +132,7 @@ fn cluster_info_redis7_p0_fields_present() {
         ClusterStateManager, ReplicationRole, CLUSTER_STATE_MGR, DEFAULT_DATA_PORT_OFFSET,
     };
 
-    const CLUSTER_P0: &str = include_str!("../../fixtures/redis7_cluster_info_p0_fields.txt");
+    const CLUSTER_FIELDS: &str = include_str!("../../fixtures/redis88_cluster_info_fields.txt");
 
     static INIT: std::sync::Once = std::sync::Once::new();
     INIT.call_once(|| {
@@ -200,7 +200,7 @@ fn cluster_info_redis7_p0_fields_present() {
     });
 
     let info = cluster_info().expect("cluster initialized");
-    let fields = parse_field_list(CLUSTER_P0);
+    let fields = parse_field_list(CLUSTER_FIELDS);
     let missing: Vec<_> = fields
         .iter()
         .filter(|field| !info_has_field(&info, field))
@@ -208,7 +208,7 @@ fn cluster_info_redis7_p0_fields_present() {
         .collect();
     assert!(
         missing.is_empty(),
-        "CLUSTER INFO missing P0 fields: {}",
+        "CLUSTER INFO missing Redis 8.8 fields: {}",
         missing.join(", ")
     );
 }
