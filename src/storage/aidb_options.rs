@@ -24,10 +24,14 @@ impl DbPreset {
 
 /// CLI / 生产路径: 对齐 aidb DEPLOYMENT preset.
 pub fn server_db_options(sync_wal: bool) -> Options {
-    server_db_options_with_preset(sync_wal, DbPreset::Default)
+    server_db_options_with_preset(sync_wal, false, DbPreset::Default)
 }
 
-pub fn server_db_options_with_preset(sync_wal: bool, preset: DbPreset) -> Options {
+pub fn server_db_options_with_preset(
+    sync_wal: bool,
+    strict_wal_recovery: bool,
+    preset: DbPreset,
+) -> Options {
     let base = match preset {
         DbPreset::Default => Options::default(),
         DbPreset::HighWrite => Options::for_high_write_throughput(),
@@ -36,6 +40,7 @@ pub fn server_db_options_with_preset(sync_wal: bool, preset: DbPreset) -> Option
     Options {
         create_if_missing: true,
         sync_wal,
+        strict_wal_recovery,
         ..base
     }
 }
@@ -63,7 +68,7 @@ mod tests {
 
     #[test]
     fn high_write_preset_enlarges_memtable() {
-        let opts = server_db_options_with_preset(false, DbPreset::HighWrite);
+        let opts = server_db_options_with_preset(false, false, DbPreset::HighWrite);
         assert_eq!(opts.memtable_size, 256 * 1024 * 1024);
     }
 }

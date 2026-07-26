@@ -16,11 +16,11 @@ use std::path::Path;
 use aikv::cluster::state::DEFAULT_DATA_PORT_OFFSET;
 use aikv::command::blocking;
 use aikv::server::{ConnectionConfig, Server, ServerSharedState};
+use aikv::storage::ttl_filter::TtlExpireFilter;
 use aikv::storage::{
     server_db_options_with_preset, AiDbEngine, DbPreset, KvStorage, KvStorageAdapter, MemoryEngine,
     StorageEngineKind, StorageObservation,
 };
-use aikv::storage::ttl_filter::TtlExpireFilter;
 use clap::{Parser as ClapParser, ValueEnum};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter, Registry};
 
@@ -46,9 +46,13 @@ struct Args {
     #[arg(long)]
     data_dir: Option<PathBuf>,
 
-    /// 每条写后 fsync WAL (强持久, 低吞吐; 默认 false)
-    #[arg(long, default_value_t = false)]
+    /// 每条写后 fsync WAL.
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
     sync_wal: bool,
+
+    /// WAL 损坏时拒绝恢复.
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    strict_wal_recovery: bool,
 
     /// AiDb LSM preset: default | high-write | high-read
     #[arg(long, default_value = "default")]
@@ -92,6 +96,14 @@ struct Args {
     #[cfg(feature = "cluster")]
     #[arg(long, default_value = "300")]
     raft_heartbeat_interval: u64,
+
+    #[cfg(feature = "cluster")]
+    #[arg(long, default_value_t = 3)]
+    raft_min_write_voters: usize,
+
+    #[cfg(feature = "cluster")]
+    #[arg(long, default_value_t = 5000)]
+    raft_client_write_timeout_ms: u64,
 
     /// Metrics HTTP 服务端口 (默认 9191)
     #[arg(long, default_value = "9191")]
@@ -161,16 +173,21 @@ fn build_storage(args: &Args, observation: Arc<StorageObservation>) -> StorageBu
             let preset = resolve_db_preset(&args.aidb_preset);
             let engine = AiDbEngine::open_with_options(
                 path,
-                server_db_options_with_preset(args.sync_wal, preset),
+                server_db_options_with_preset(args.sync_wal, args.strict_wal_recovery, preset),
             )
-                .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string())?;
             // 注入 TTL compaction 过滤器以自动清理过期 key.
-            engine.db.set_compaction_filter(Some(std::sync::Arc::new(TtlExpireFilter)));
+            engine
+                .db
+                .set_compaction_filter(Some(std::sync::Arc::new(TtlExpireFilter)));
             let db = engine.db.clone();
             let adapter: Arc<dyn aikv::storage::StorageAdapter> = engine;
             #[cfg(feature = "cluster")]
             let adapter: Arc<dyn aikv::storage::StorageAdapter> =
-                aikv::storage::cluster_adapter::ClusterDataAdapter::new(adapter, aikv::storage::cluster_adapter::ClusterDataAdapter::DEFAULT_EAGER_FLUSH);
+                aikv::storage::cluster_adapter::ClusterDataAdapter::new(
+                    adapter,
+                    aikv::storage::cluster_adapter::ClusterDataAdapter::DEFAULT_EAGER_FLUSH,
+                );
             Ok((
                 KvStorageAdapter::with_observation(adapter, Some(observation)),
                 StorageEngineKind::AiDb,
@@ -179,6 +196,18 @@ fn build_storage(args: &Args, observation: Arc<StorageObservation>) -> StorageBu
             ))
         }
     }
+}
+
+#[cfg(feature = "cluster")]
+fn validate_cluster_strict_before_storage<T, F>(args: &Args, open_storage: F) -> Result<T, String>
+where
+    F: FnOnce() -> Result<T, String>,
+{
+    let cluster_mode = args.cluster_node_id.is_some() && args.cluster_rpc_addr.is_some();
+    if cluster_mode && (!args.sync_wal || !args.strict_wal_recovery) {
+        return Err("cluster mode requires --sync-wal=true and --strict-wal-recovery=true".into());
+    }
+    open_storage()
 }
 
 #[cfg(feature = "cluster")]
@@ -249,6 +278,9 @@ async fn init_cluster(
     config_auto_save_ms: u64,
     cluster_data_port_offset: u16,
     sync_wal: bool,
+    strict_wal_recovery: bool,
+    raft_min_write_voters: usize,
+    raft_client_write_timeout_ms: u64,
     aidb_preset: DbPreset,
     metrics: Arc<aikv::server::metrics::ServerMetrics>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -267,7 +299,7 @@ async fn init_cluster(
     let db = match cluster_db {
         Some(db) => db,
         None => {
-            let opts = server_db_options_with_preset(sync_wal, aidb_preset);
+            let opts = server_db_options_with_preset(sync_wal, strict_wal_recovery, aidb_preset);
             aidb::DB::open(data_dir, opts)?
         }
     };
@@ -277,7 +309,7 @@ async fn init_cluster(
     let net_factory = Arc::new(parking_lot::RwLock::new(net_factory));
 
     // 3. 创建 MetaRaftNode (控制平面, group_id=0)
-    let raft_config = RaftNodeConfig {
+    let meta_raft_config = RaftNodeConfig {
         node_id,
         group_id: 0,
         election_timeout_min: raft_election_timeout_min,
@@ -289,10 +321,14 @@ async fn init_cluster(
         rpc_timeout_ms: raft_rpc_timeout_ms,
         grpc_max_message_size: 64 * 1024 * 1024,
         snapshot_size_threshold: None,
-            linearizable_read: false,
+        linearizable_read: false,
+        min_write_voters: 1,
+        require_strict_durability: true,
+        client_write_timeout_ms: raft_client_write_timeout_ms,
     };
     let factory = net_factory.read().clone(); // drop read lock before .await
-    let meta_raft = Arc::new(MetaRaftNode::new(raft_config.clone(), db.clone(), factory).await?);
+    let meta_raft =
+        Arc::new(MetaRaftNode::new(meta_raft_config.clone(), db.clone(), factory).await?);
 
     // 4. 注册 peer 地址到 net_factory
     for peer_addr in peers {
@@ -405,8 +441,11 @@ async fn init_cluster(
     // 11. 启动 Lifecycle (数据 Group 自动创建/销毁)
     let lifecycle_cfg = aidb::cluster::multi_raft_node::LifecycleConfig {
         data_dir: data_dir.to_path_buf(),
-        raft_node_config: raft_config,
-        options: server_db_options_with_preset(sync_wal, aidb_preset),
+        raft_node_config: RaftNodeConfig {
+            min_write_voters: raft_min_write_voters,
+            ..meta_raft_config
+        },
+        options: server_db_options_with_preset(sync_wal, strict_wal_recovery, aidb_preset),
         compaction_filter: Some(std::sync::Arc::new(TtlExpireFilter)),
     };
     let _lifecycle_shutdown = multi_raft.start_lifecycle_with_data(lifecycle_cfg);
@@ -612,14 +651,18 @@ async fn main() {
     tracing::info!(bind = %args.bind, engine = ?args.engine, "aikv starting");
 
     let observation = StorageObservation::new();
-    let (storage, engine_kind, data_dir, _cluster_db) =
-        match build_storage(&args, observation.clone()) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::error!(error = %e, "failed to initialize storage");
-                std::process::exit(1);
-            }
-        };
+    #[cfg(feature = "cluster")]
+    let storage_result =
+        validate_cluster_strict_before_storage(&args, || build_storage(&args, observation.clone()));
+    #[cfg(not(feature = "cluster"))]
+    let storage_result = build_storage(&args, observation.clone());
+    let (storage, engine_kind, data_dir, _cluster_db) = match storage_result {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to initialize storage");
+            std::process::exit(1);
+        }
+    };
     let tcp_port = args.bind.port();
     let connection_config = ConnectionConfig {
         max_clients: args.max_clients,
@@ -661,6 +704,9 @@ async fn main() {
             args.config_auto_save_ms,
             args.cluster_data_port_offset,
             args.sync_wal,
+            args.strict_wal_recovery,
+            args.raft_min_write_voters,
+            args.raft_client_write_timeout_ms,
             resolve_db_preset(&args.aidb_preset),
             Arc::clone(&state.metrics),
         )
@@ -677,8 +723,7 @@ async fn main() {
         let metrics_addr_str = format!("{}:{}", args.metrics_addr, args.metrics_port);
         match metrics_addr_str.parse::<std::net::SocketAddr>() {
             Ok(metrics_addr) => {
-                let metrics_server =
-                    aikv::server::metrics_server::MetricsServer::new(metrics_addr);
+                let metrics_server = aikv::server::metrics_server::MetricsServer::new(metrics_addr);
                 tokio::spawn(async move {
                     metrics_server.run().await;
                 });
@@ -711,4 +756,42 @@ async fn main() {
 
     #[cfg(feature = "monitoring")]
     aikv::server::otel::shutdown_otel();
+}
+
+#[cfg(all(test, feature = "cluster"))]
+mod tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    #[test]
+    fn non_strict_cluster_is_rejected_before_storage_open() {
+        for disabled_flag in ["--sync-wal", "--strict-wal-recovery"] {
+            let args = Args::try_parse_from([
+                "aikv",
+                "--engine",
+                "aidb",
+                "--data-dir",
+                "/path/that/must/not/be/opened",
+                "--cluster-node-id",
+                "1",
+                "--cluster-rpc-addr",
+                "127.0.0.1:16379",
+                disabled_flag,
+                "false",
+            ])
+            .unwrap();
+            let opened = Cell::new(false);
+
+            let result = validate_cluster_strict_before_storage(&args, || {
+                opened.set(true);
+                Ok(())
+            });
+
+            assert!(result
+                .unwrap_err()
+                .contains("cluster mode requires --sync-wal=true"));
+            assert!(!opened.get(), "DB open path must not be entered");
+        }
+    }
 }

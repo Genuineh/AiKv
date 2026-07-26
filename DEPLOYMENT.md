@@ -98,7 +98,8 @@ chmod +x e2e/*.sh
 | `--bind` | `127.0.0.1:6379` | 始终 | RESP 客户端 TCP |
 | `--engine` | `memory` | 始终 | `memory` \| `aidb` |
 | `--data-dir` | — | 始终 | **`aidb` 必填**; **cluster 必填** |
-| `--sync-wal` | `false` | `aidb` / cluster | 每条写后 fsync WAL (强持久, 低吞吐) |
+| `--sync-wal` | `true` | `aidb` / cluster | 显式 bool; 每条写后 fsync WAL |
+| `--strict-wal-recovery` | `true` | `aidb` / cluster | WAL 损坏时拒绝恢复 |
 | `--aidb-preset` | `default` | `aidb` | `default`\|`high-write`\|`high-read`; 见 [`aidb_options.rs`](src/storage/aidb_options.rs). `default`/`high-write` 用 `CompressionType::Snap`, 需 `compression` feature 才真正压缩; `high-read` 不压缩 |
 | `--backup-dir` | `{data_dir}/backup` | 可选 | SAVE/BGSAVE checkpoint 目标 |
 | `--cluster-node-id` | — | `cluster` | u64 节点 ID |
@@ -108,6 +109,8 @@ chmod +x e2e/*.sh
 | `--raft-election-timeout-max` | `2000` | `cluster` | ms |
 | `--raft-rpc-timeout-ms` | `500` | `cluster` | 须 < `election_timeout_min` |
 | `--raft-heartbeat-interval` | `300` | `cluster` | 须 < `election_timeout_min` |
+| `--raft-min-write-voters` | `3` | `cluster` | data group membership 达到该 voter 数前拒绝写入 |
+| `--raft-client-write-timeout-ms` | `5000` | `cluster` | client write 及转发重试的总 deadline |
 | `--lifecycle-tick-ms` | `1000` | `cluster` | LifecycleManager tick |
 | `--gossip-interval` | `1` | `cluster` | 秒; 拓扑 tick (leader 缓存 + gossip metrics) |
 | `--config-auto-save-ms` | `2000` | `cluster` | 集群配置自动保存 |
@@ -117,6 +120,8 @@ chmod +x e2e/*.sh
 | `--max-clients` | `10000` | 始终 | `0` = 不限制 |
 
 > **集群门控**: 仅当 **`--cluster-node-id` 与 `--cluster-rpc-addr` 同时提供** 时执行 `init_cluster`. 只设其一则 **静默以单机启动** (无集群).
+>
+> Cluster 模式要求 `--sync-wal=true` 和 `--strict-wal-recovery=true`. `CLUSTER GROUPREADY <group-id> <voter-id,...>` 仅在本地 strict leader 获得新鲜 quorum acknowledgement 且全部 voter 追平时返回 `OK`.
 
 ## 环境变量
 

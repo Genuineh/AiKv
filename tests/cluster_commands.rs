@@ -7,6 +7,7 @@ mod cluster;
 #[cfg(feature = "cluster")]
 mod tests {
     use aikv::cluster::*;
+    use bytes::Bytes;
 
     #[test]
     fn cluster_keyslot_returns_integer() {
@@ -78,5 +79,54 @@ mod tests {
     #[test]
     fn parse_forget_force_rejects_unknown_option() {
         assert!(parse_forget_force(Some(b"NOW")).is_err());
+    }
+
+    #[tokio::test]
+    async fn groupready_rejects_malformed_group_id() {
+        let args = [
+            Bytes::from_static(b"GROUPREADY"),
+            Bytes::from_static(b"bad"),
+            Bytes::from_static(b"1,2,3"),
+        ];
+        let err = dispatch_cluster(Some("GROUPREADY"), &args)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("invalid group id"));
+    }
+
+    #[tokio::test]
+    async fn groupready_rejects_malformed_voter_list() {
+        let args = [
+            Bytes::from_static(b"GROUPREADY"),
+            Bytes::from_static(b"1"),
+            Bytes::from_static(b"1,,3"),
+        ];
+        let result = dispatch_cluster(Some("GROUPREADY"), &args).await;
+        assert!(matches!(result, Err(ref e) if e.to_string().contains("invalid voter list")));
+    }
+
+    #[tokio::test]
+    async fn groupready_rejects_extra_arguments() {
+        let args = [
+            Bytes::from_static(b"GROUPREADY"),
+            Bytes::from_static(b"1"),
+            Bytes::from_static(b"1,2,3"),
+            Bytes::from_static(b"extra"),
+        ];
+        let result = dispatch_cluster(Some("GROUPREADY"), &args).await;
+        assert!(
+            matches!(result, Err(ref e) if e.to_string().contains("wrong number of arguments"))
+        );
+    }
+
+    #[tokio::test]
+    async fn groupready_rejects_duplicate_voter_id() {
+        let args = [
+            Bytes::from_static(b"GROUPREADY"),
+            Bytes::from_static(b"1"),
+            Bytes::from_static(b"1,2,2"),
+        ];
+        let result = dispatch_cluster(Some("GROUPREADY"), &args).await;
+        assert!(matches!(result, Err(ref e) if e.to_string().contains("duplicate voter id")));
     }
 }

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 
 use crate::cluster::state::ClusterStateManager;
@@ -103,7 +103,11 @@ fn resolve_group_leader_for_info(
 }
 
 /// 动态 `cluster_state:ok` / `fail` (对齐 oldmain: slot 满 + leader + 映射一致).
-fn compute_cluster_state<F>(slot_table: &SlotTable, meta: &ClusterMeta, resolve_leader: F) -> &'static str
+fn compute_cluster_state<F>(
+    slot_table: &SlotTable,
+    meta: &ClusterMeta,
+    resolve_leader: F,
+) -> &'static str
 where
     F: Fn(u64) -> Option<u64>,
 {
@@ -709,6 +713,50 @@ pub fn parse_cluster_node_id(raw: &str) -> Result<u64, String> {
             .map_err(|_| "ERR invalid node id".to_string())
     } else {
         parse_hex_node_id(raw)
+    }
+}
+
+fn parse_groupready_args(args: &[Bytes]) -> Result<(u64, BTreeSet<u64>), String> {
+    if args.len() != 3 {
+        return Err("ERR wrong number of arguments for CLUSTER GROUPREADY".to_string());
+    }
+    let group_id = args
+        .get(1)
+        .and_then(|value| parse_int(value))
+        .ok_or_else(|| "ERR invalid group id".to_string())?;
+    let raw = args
+        .get(2)
+        .and_then(|value| std::str::from_utf8(value).ok())
+        .ok_or_else(|| "ERR invalid voter list".to_string())?;
+    if raw.is_empty() {
+        return Err("ERR invalid voter list".to_string());
+    }
+    let mut voters = BTreeSet::new();
+    for value in raw.split(',') {
+        let voter = value
+            .parse::<u64>()
+            .map_err(|_| "ERR invalid voter list".to_string())?;
+        if !voters.insert(voter) {
+            return Err(format!("ERR duplicate voter id {voter}"));
+        }
+    }
+    if voters.is_empty() {
+        return Err("ERR invalid voter list".to_string());
+    }
+    Ok((group_id, voters))
+}
+
+async fn cluster_groupready(group_id: u64, expected_voters: BTreeSet<u64>) -> String {
+    let Some(mgr) = CLUSTER_STATE_MGR.get() else {
+        return "NOT_READY cluster not initialized".to_string();
+    };
+    match mgr
+        .multi_raft
+        .group_readiness(group_id, &expected_voters)
+        .await
+    {
+        Ok(()) => "OK".to_string(),
+        Err(error) => format!("NOT_READY {error}"),
     }
 }
 
@@ -1658,6 +1706,13 @@ pub async fn dispatch_cluster(
 ) -> crate::error::Result<RespValue> {
     // Read-only subcommands
     match sub {
+        Some("groupready") | Some("GROUPREADY") => {
+            let (group_id, expected_voters) =
+                parse_groupready_args(args).map_err(Error::Command)?;
+            Ok(RespValue::SimpleString(
+                cluster_groupready(group_id, expected_voters).await,
+            ))
+        }
         Some("keyslot") | Some("KEYSLOT") => {
             let key = args
                 .get(1)
@@ -1943,7 +1998,8 @@ pub async fn dispatch_cluster(
         Some("reset") | Some("RESET") => {
             if let Some(mode) = args.get(1) {
                 let mode_str = bytes_to_str(mode)?;
-                if !mode_str.eq_ignore_ascii_case("soft") && !mode_str.eq_ignore_ascii_case("hard") {
+                if !mode_str.eq_ignore_ascii_case("soft") && !mode_str.eq_ignore_ascii_case("hard")
+                {
                     return Err(Error::Command(format!(
                         "ERR unknown RESET option '{mode_str}'"
                     )));

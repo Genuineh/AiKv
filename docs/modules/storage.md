@@ -153,7 +153,7 @@ AiDbEngine::decode_key(encoded)        // Option<(db, user_key)>
 AiDbEngine::prefix_end(prefix)         // range scan 上界
 ```
 
-`open(path)`: 生产 preset (`server_db_options`, 对齐 `Options::default()` — **默认 `CompressionType::Snap` 块压缩**, 需 aidb `compression` feature; aifactory Dockerfile 已默认启用); `open_for_testing()` 供单测; `open_with_options` 可显式传入. CLI `--aidb-preset` / 环境变量 `AIKV_AIDB_PRESET` (`default`\|`high-write`\|`high-read`, 默认 `default`) 选择 preset, 仅 `high-read` 关闭压缩 (`CompressionType::None`); 详见 [`aidb_options.rs`](../../src/storage/aidb_options.rs). CLI 经 `--sync-wal` 控制 fsync. 所有 DB 操作为 `spawn_blocking`.
+`open(path)`: 生产 preset (`server_db_options`, 对齐 `Options::default()` — **默认 `CompressionType::Snap` 块压缩**, 需 aidb `compression` feature; aifactory Dockerfile 已默认启用); `open_for_testing()` 供单测; `open_with_options` 可显式传入. CLI `--aidb-preset` / 环境变量 `AIKV_AIDB_PRESET` (`default`\|`high-write`\|`high-read`, 默认 `default`) 选择 preset, 仅 `high-read` 关闭压缩 (`CompressionType::None`); 详见 [`aidb_options.rs`](../../src/storage/aidb_options.rs). CLI 经 `--sync-wal` 控制 fsync, 经 `--strict-wal-recovery` 控制损坏 WAL 是否拒绝恢复. 两项默认均为 `true`, 并同时用于顶层 DB 与 data group DB. 所有 DB 操作为 `spawn_blocking`.
 
 > 2026-07-02 前 aidb 存在 SSTable 压缩 block CRC 损坏的 P0 bug (启用 Snap/Lz4 且 SST ≥ 2 个 data block 时读取报 `Corruption`), 已在 aidb 侧修复 (见 [aidb CHANGELOG](../../../aidb/CHANGELOG.md)); 使用 `default`/`high-write` preset 前必须用修复后的 aidb 重新构建 aikv 镜像.
 
@@ -207,7 +207,10 @@ RESTORE 校验 version; 失败 → `ERR DUMP payload version or checksum error`.
 |----|------|------|
 | `--engine memory\|aidb` | `main.rs` | 选择装配链 |
 | `--data-dir` | `main.rs` | aidb 必填 |
-| `--sync-wal` | `main.rs` | aidb 每条写后 fsync (默认 false) |
+| `--sync-wal` | `main.rs` | aidb 每条写后 fsync (默认 true) |
+| `--strict-wal-recovery` | `main.rs` | WAL 损坏时拒绝恢复 (默认 true) |
+| `--raft-min-write-voters` | `main.rs` | data group 写入 membership 门禁 (默认 3) |
+| `--raft-client-write-timeout-ms` | `main.rs` | Raft client write 总 deadline (默认 5000 ms) |
 | `--aidb-preset` / `AIKV_AIDB_PRESET` | `main.rs`, `aidb_options.rs` | `default`(Snap压缩)\|`high-write`(Snap压缩)\|`high-read`(不压缩); 默认 `default` |
 | `feature = "compression"` | `Cargo.toml` → `aidb/compression` | 启用 Snap/LZ4 块压缩; aifactory Dockerfile 默认开启 |
 | `feature = "cluster"` | `cluster_adapter.rs`, `main.rs` | 插入 `ClusterDataAdapter` |
