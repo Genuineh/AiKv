@@ -24,6 +24,7 @@ use tokio::sync::{mpsc, oneshot};
 use aidb::cluster::router::key_to_slot;
 use aidb::cluster::{
     MigOp, Request, Response, ShardedStorage, SlotMigrationState, SlotStatus, ThinWriteBatch,
+    ThinWriteOp, WriteBatchResponse, WriteOpResult,
 };
 use aidb::error::ClusterError as AidbClusterError;
 use aidb::Checkpoint;
@@ -76,13 +77,13 @@ pub struct ClusterDataAdapter {
 }
 
 struct GroupSetBatcher {
-    tx: mpsc::Sender<SetBatchItem>,
+    tx: mpsc::Sender<WriteBatchItem>,
 }
 
-struct SetBatchItem {
-    key: Vec<u8>,
-    value: Vec<u8>,
-    ack: oneshot::Sender<std::result::Result<(), String>>,
+struct WriteBatchItem {
+    op: ThinWriteOp,
+    /// ack 时返回此 op 对应的 WriteOpResult
+    ack: oneshot::Sender<std::result::Result<WriteOpResult, String>>,
 }
 
 impl ClusterDataAdapter {
@@ -424,22 +425,17 @@ impl ClusterDataAdapter {
         batcher
     }
 
-    async fn submit_batched_set(
+    async fn submit_write_op(
         &self,
         mgr: Arc<ClusterStateManager>,
         gid: u64,
-        key: Vec<u8>,
-        value: Vec<u8>,
-    ) -> Result<()> {
+        op: ThinWriteOp,
+    ) -> Result<WriteOpResult> {
         let batcher = self.get_or_spawn_set_batcher(mgr, gid);
         let (ack, wait) = oneshot::channel();
         batcher
             .tx
-            .send(SetBatchItem {
-                key,
-                value,
-                ack,
-            })
+            .send(WriteBatchItem { op, ack })
             .await
             .map_err(|_| {
                 Error::Cluster(crate::error::ClusterError::Aidb(
@@ -463,7 +459,7 @@ impl ClusterDataAdapter {
 async fn run_set_batcher(
     mgr: Arc<ClusterStateManager>,
     gid: u64,
-    mut rx: mpsc::Receiver<SetBatchItem>,
+    mut rx: mpsc::Receiver<WriteBatchItem>,
     eager_flush: usize,
 ) {
     while let Some(first) = rx.recv().await {
@@ -489,24 +485,70 @@ async fn run_set_batcher(
         }
 
         let mut tb = ThinWriteBatch::new();
-        let mut acks_rev: Vec<_> = Vec::with_capacity(items.len());
+        let mut ack_indices: Vec<(usize, oneshot::Sender<std::result::Result<WriteOpResult, String>>)> = Vec::with_capacity(items.len());
         let mut seen: HashSet<Vec<u8>> = HashSet::new();
 
+        let mut op_idx = 0usize;
         for item in items.into_iter().rev() {
-            if seen.insert(item.key.clone()) {
-                tb.put(item.key, item.value);
+            match &item.op {
+                ThinWriteOp::Put { key, value } => {
+                    if !seen.insert(key.clone()) {
+                        // 重复 key: 已由后面的操作覆盖, 直接回复
+                        let _ = item.ack.send(Ok(WriteOpResult::Ok));
+                        continue;
+                    }
+                    tb.put(key.clone(), value.clone());
+                    ack_indices.push((op_idx, item.ack));
+                    op_idx += 1;
+                }
+                ThinWriteOp::Delete { key } => {
+                    if !seen.insert(key.clone()) {
+                        // 重复 key: 已由后面的操作覆盖
+                        let _ = item.ack.send(Ok(WriteOpResult::Deleted));
+                        continue;
+                    }
+                    tb.delete(key.clone());
+                    ack_indices.push((op_idx, item.ack));
+                    op_idx += 1;
+                }
             }
-            acks_rev.push(item.ack);
         }
-        acks_rev.reverse();
+        ack_indices.reverse();
 
+        // #region debug-agent log
+        static BATCH_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let batch_sz = op_idx;
+        let t_propose = std::time::Instant::now();
+        // #endregion
         let result = ClusterDataAdapter::propose_group_with_retry(&mgr, gid, Request::WriteBatch(tb))
-            .await
-            .and_then(ClusterDataAdapter::check_response)
-            .map_err(|e| e.to_string());
+            .await;
+        // #region debug-agent log
+        let propose_us = t_propose.elapsed().as_micros();
+        let seq = BATCH_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if seq % 200 == 0 || (seq < 100 && batch_sz > 0) {
+            let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+            eprintln!(r#"{{"sessionId":"aa9275","hypothesisId":"C","location":"cluster_adapter.rs:batcher","message":"batch_propose","data":{{"seq":{},"gid":{},"batch_sz":{},"propose_us":{}}},"timestamp":{}}}"#, seq, gid, batch_sz, propose_us, ts);
+        }
+        // #endregion
 
-        for ack in acks_rev {
-            let _ = ack.send(result.clone());
+        let per_op_results: Vec<std::result::Result<WriteOpResult, String>> = match result {
+            Ok(Response::Value(Some(data))) => {
+                match rmp_serde::from_slice::<WriteBatchResponse>(&data) {
+                    Ok(resp) => resp.results.into_iter()
+                        .map(Ok)
+                        .collect(),
+                    Err(e) => vec![Err(format!("decode WriteBatchResponse: {e}")); op_idx],
+                }
+            }
+            Ok(other) => vec![Err(format!("unexpected response: {other:?}")); op_idx],
+            Err(e) => vec![Err(e.to_string()); op_idx],
+        };
+
+        for (idx, ack) in ack_indices {
+            let r = per_op_results.get(idx)
+                .cloned()
+                .unwrap_or(Err("missing result".into()));
+            let _ = ack.send(r);
         }
     }
 }
@@ -577,7 +619,10 @@ impl StorageAdapter for ClusterDataAdapter {
                         .await?;
                 Self::check_response(resp)
             }
-            Some((mgr, WriteRoute::Plain(gid))) => self.submit_batched_set(mgr, gid, key, value).await,
+            Some((mgr, WriteRoute::Plain(gid))) => {
+                self.submit_write_op(mgr, gid, ThinWriteOp::Put { key, value }).await?;
+                Ok(())
+            }
             None if Self::should_use_local_engine(&key) => self.local.set(key, value).await,
             None => Err(Self::data_group_not_ready_err()),
         }
@@ -607,25 +652,8 @@ impl StorageAdapter for ClusterDataAdapter {
                 Ok(existed)
             }
             Some((mgr, WriteRoute::Plain(gid))) => {
-                let existed = mgr
-                    .multi_raft
-                    .get_local(gid, &key)
-                    .await
-                    .map_err(|e| {
-                        tracing::warn!(gid = gid, error = %e, "get_local failed in delete");
-                        Self::map_err(e)
-                    })?
-                    .is_some();
-                if existed {
-                    let resp = Self::propose_group_with_retry(
-                        &mgr,
-                        gid,
-                        Request::Delete { key },
-                    )
-                    .await?;
-                    Self::check_response(resp)?;
-                }
-                Ok(existed)
+                let result = self.submit_write_op(mgr, gid, ThinWriteOp::Delete { key }).await?;
+                Ok(result == WriteOpResult::Deleted)
             }
             None if Self::should_use_local_engine(&key) => self.local.delete(key).await,
             None => Err(Self::data_group_not_ready_err()),

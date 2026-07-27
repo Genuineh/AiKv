@@ -760,6 +760,79 @@ async fn cluster_groupready(group_id: u64, expected_voters: BTreeSet<u64>) -> St
     }
 }
 
+async fn cluster_groupstatus(group_id: u64) -> Result<String, String> {
+    let Some(mgr) = CLUSTER_STATE_MGR.get() else {
+        return Err("CLUSTERDOWN Cluster not initialized".to_string());
+    };
+    let status = mgr.multi_raft.group_io_status(group_id)
+        .map_err(|e| e.to_string())?;
+    Ok(format!(
+        "durable_index:{}\n\
+         pending_entries:{}\n\
+         fatal:{}\n\
+         flush_count:{}\n\
+         total_entries_flushed:{}\n\
+         total_commands_flushed:{}\n\
+         total_flush_us:{}",
+        status.durable_index.map(|idx| idx.to_string()).unwrap_or_else(|| "none".to_string()),
+        status.pending_entries,
+        status.fatal,
+        status.flush_count,
+        status.total_entries_flushed,
+        status.total_commands_flushed,
+        status.total_flush_us,
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// CLUSTER FAILPOINT (test-only, only with cluster-test-util feature)
+// ---------------------------------------------------------------------------
+#[cfg(feature = "cluster-test-util")]
+async fn cluster_failpoint_arm(name: &str) -> Result<String, String> {
+    use aidb::cluster::failpoint::{self, Failpoint};
+    let fp = match name.to_lowercase().as_str() {
+        "apply_before_persist" => Failpoint::ApplyBeforePersist,
+        "apply_after_persist" => Failpoint::ApplyAfterPersist,
+        "truncate_before_persist" => Failpoint::TruncateBeforePersist,
+        "truncate_after_persist" => Failpoint::TruncateAfterPersist,
+        "purge_before_persist" => Failpoint::PurgeBeforePersist,
+        "purge_after_persist" => Failpoint::PurgeAfterPersist,
+        "append_before_overlay" => Failpoint::AppendBeforeOverlay,
+        "append_before_db_write" => Failpoint::AppendBeforeDbWrite,
+        _ => return Err(format!("ERR unknown failpoint: {name}")),
+    };
+    failpoint::arm(fp);
+    Ok(format!("OK armed {name}"))
+}
+
+#[cfg(feature = "cluster-test-util")]
+async fn cluster_failpoint_release(name: &str) -> Result<String, String> {
+    use aidb::cluster::failpoint::{self, Failpoint};
+    let fp = match name.to_lowercase().as_str() {
+        "apply_before_persist" => Failpoint::ApplyBeforePersist,
+        "apply_after_persist" => Failpoint::ApplyAfterPersist,
+        "truncate_before_persist" => Failpoint::TruncateBeforePersist,
+        "truncate_after_persist" => Failpoint::TruncateAfterPersist,
+        "purge_before_persist" => Failpoint::PurgeBeforePersist,
+        "purge_after_persist" => Failpoint::PurgeAfterPersist,
+        "append_before_overlay" => Failpoint::AppendBeforeOverlay,
+        "append_before_db_write" => Failpoint::AppendBeforeDbWrite,
+        _ => return Err(format!("ERR unknown failpoint: {name}")),
+    };
+    failpoint::release(fp);
+    Ok(format!("OK released {name}"))
+}
+
+#[cfg(feature = "cluster-test-util")]
+async fn cluster_failpoint_status() -> Result<String, String> {
+    let s = aidb::cluster::failpoint::status();
+    let lines: Vec<String> = s
+        .into_iter()
+        .map(|(k, v)| format!("{k}:{}", if v { "armed" } else { "clear" }))
+        .collect();
+    Ok(lines.join("\n"))
+}
+
 // ---------------------------------------------------------------------------
 // CLUSTER MEET
 // ---------------------------------------------------------------------------
@@ -1712,6 +1785,43 @@ pub async fn dispatch_cluster(
             Ok(RespValue::SimpleString(
                 cluster_groupready(group_id, expected_voters).await,
             ))
+        }
+        Some("groupstatus") | Some("GROUPSTATUS") => {
+            let group_id = args
+                .get(1)
+                .and_then(|b| {
+                    std::str::from_utf8(b)
+                        .ok()
+                        .and_then(|s| s.parse::<u64>().ok())
+                })
+                .ok_or_else(|| {
+                    Error::Command("ERR wrong number of arguments for CLUSTER GROUPSTATUS".into())
+                })?;
+            let status = cluster_groupstatus(group_id).await.map_err(Error::Command)?;
+            Ok(RespValue::BulkString(Some(Bytes::from(status))))
+        }
+        #[cfg(feature = "cluster-test-util")]
+        Some("failpoint") | Some("FAILPOINT") => {
+            let sub_cmd = args.get(1).and_then(|b| std::str::from_utf8(b).ok());
+            match sub_cmd {
+                Some("ARM") | Some("arm") => {
+                    let name = args.get(2).and_then(|b| std::str::from_utf8(b).ok())
+                        .ok_or_else(|| Error::Command("ERR wrong number of arguments for CLUSTER FAILPOINT ARM".into()))?;
+                    let result = cluster_failpoint_arm(name).await.map_err(Error::Command)?;
+                    Ok(RespValue::SimpleString(result))
+                }
+                Some("RELEASE") | Some("release") => {
+                    let name = args.get(2).and_then(|b| std::str::from_utf8(b).ok())
+                        .ok_or_else(|| Error::Command("ERR wrong number of arguments for CLUSTER FAILPOINT RELEASE".into()))?;
+                    let result = cluster_failpoint_release(name).await.map_err(Error::Command)?;
+                    Ok(RespValue::SimpleString(result))
+                }
+                Some("STATUS") | Some("status") => {
+                    let status = cluster_failpoint_status().await.map_err(Error::Command)?;
+                    Ok(RespValue::BulkString(Some(Bytes::from(status))))
+                }
+                _ => Err(Error::Command("ERR unknown FAILPOINT subcommand".into())),
+            }
         }
         Some("keyslot") | Some("KEYSLOT") => {
             let key = args

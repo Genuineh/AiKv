@@ -14,6 +14,7 @@ default = []
 monitoring = ["dep:tracing-opentelemetry", "dep:opentelemetry-otlp", "dep:opentelemetry", "dep:opentelemetry_sdk", "dep:hyper", "dep:hyper-util", "dep:http-body-util", "aidb/monitoring"]
 cluster = ["aidb/cluster"]
 compression = ["aidb/compression"]
+cluster-test-util = ["cluster", "aidb/cluster-test-util"]
 
 [dependencies]
 # Async runtime
@@ -29,6 +30,7 @@ thiserror = "2"
 serde     = { version = "1", features = ["derive"] }
 serde_json = "1"
 bincode   = "1"
+rmp-serde = "1"
 sha1      = "0.10"
 itoa = "1"
 ryu = "1"

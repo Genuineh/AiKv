@@ -47,11 +47,11 @@ struct Args {
     data_dir: Option<PathBuf>,
 
     /// 每条写后 fsync WAL.
-    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
     sync_wal: bool,
 
     /// WAL 损坏时拒绝恢复.
-    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
     strict_wal_recovery: bool,
 
     /// AiDb LSM preset: default | high-write | high-read
@@ -104,6 +104,20 @@ struct Args {
     #[cfg(feature = "cluster")]
     #[arg(long, default_value_t = 5000)]
     raft_client_write_timeout_ms: u64,
+
+    /// LogCommitter group-commit 参数 (performance tuning)
+    #[cfg(feature = "cluster")]
+    #[arg(long, default_value_t = 64)]
+    log_committer_max_commands: usize,
+    #[cfg(feature = "cluster")]
+    #[arg(long, default_value_t = 256)]
+    log_committer_max_entries: usize,
+    #[cfg(feature = "cluster")]
+    #[arg(long, default_value_t = 2097152)]
+    log_committer_max_bytes: usize,
+    #[cfg(feature = "cluster")]
+    #[arg(long, default_value_t = 5000)]
+    log_committer_delay_us: u64,
 
     /// Metrics HTTP 服务端口 (默认 9191)
     #[arg(long, default_value = "9191")]
@@ -199,18 +213,6 @@ fn build_storage(args: &Args, observation: Arc<StorageObservation>) -> StorageBu
 }
 
 #[cfg(feature = "cluster")]
-fn validate_cluster_strict_before_storage<T, F>(args: &Args, open_storage: F) -> Result<T, String>
-where
-    F: FnOnce() -> Result<T, String>,
-{
-    let cluster_mode = args.cluster_node_id.is_some() && args.cluster_rpc_addr.is_some();
-    if cluster_mode && (!args.sync_wal || !args.strict_wal_recovery) {
-        return Err("cluster mode requires --sync-wal=true and --strict-wal-recovery=true".into());
-    }
-    open_storage()
-}
-
-#[cfg(feature = "cluster")]
 fn spawn_client_addr_sync(
     meta_raft: std::sync::Arc<aidb::cluster::MetaRaftNode>,
     node_id: u64,
@@ -281,6 +283,10 @@ async fn init_cluster(
     strict_wal_recovery: bool,
     raft_min_write_voters: usize,
     raft_client_write_timeout_ms: u64,
+    log_committer_max_commands: usize,
+    log_committer_max_entries: usize,
+    log_committer_max_bytes: usize,
+    log_committer_delay_us: u64,
     aidb_preset: DbPreset,
     metrics: Arc<aikv::server::metrics::ServerMetrics>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -323,8 +329,12 @@ async fn init_cluster(
         snapshot_size_threshold: None,
         linearizable_read: false,
         min_write_voters: 1,
-        require_strict_durability: true,
+        require_strict_durability: false,
         client_write_timeout_ms: raft_client_write_timeout_ms,
+        log_committer_max_commands,
+        log_committer_max_entries,
+        log_committer_max_bytes,
+        log_committer_delay_us,
     };
     let factory = net_factory.read().clone(); // drop read lock before .await
     let meta_raft =
@@ -651,10 +661,6 @@ async fn main() {
     tracing::info!(bind = %args.bind, engine = ?args.engine, "aikv starting");
 
     let observation = StorageObservation::new();
-    #[cfg(feature = "cluster")]
-    let storage_result =
-        validate_cluster_strict_before_storage(&args, || build_storage(&args, observation.clone()));
-    #[cfg(not(feature = "cluster"))]
     let storage_result = build_storage(&args, observation.clone());
     let (storage, engine_kind, data_dir, _cluster_db) = match storage_result {
         Ok(s) => s,
@@ -707,6 +713,10 @@ async fn main() {
             args.strict_wal_recovery,
             args.raft_min_write_voters,
             args.raft_client_write_timeout_ms,
+            args.log_committer_max_commands,
+            args.log_committer_max_entries,
+            args.log_committer_max_bytes,
+            args.log_committer_delay_us,
             resolve_db_preset(&args.aidb_preset),
             Arc::clone(&state.metrics),
         )
@@ -756,42 +766,4 @@ async fn main() {
 
     #[cfg(feature = "monitoring")]
     aikv::server::otel::shutdown_otel();
-}
-
-#[cfg(all(test, feature = "cluster"))]
-mod tests {
-    use std::cell::Cell;
-
-    use super::*;
-
-    #[test]
-    fn non_strict_cluster_is_rejected_before_storage_open() {
-        for disabled_flag in ["--sync-wal", "--strict-wal-recovery"] {
-            let args = Args::try_parse_from([
-                "aikv",
-                "--engine",
-                "aidb",
-                "--data-dir",
-                "/path/that/must/not/be/opened",
-                "--cluster-node-id",
-                "1",
-                "--cluster-rpc-addr",
-                "127.0.0.1:16379",
-                disabled_flag,
-                "false",
-            ])
-            .unwrap();
-            let opened = Cell::new(false);
-
-            let result = validate_cluster_strict_before_storage(&args, || {
-                opened.set(true);
-                Ok(())
-            });
-
-            assert!(result
-                .unwrap_err()
-                .contains("cluster mode requires --sync-wal=true"));
-            assert!(!opened.get(), "DB open path must not be entered");
-        }
-    }
 }

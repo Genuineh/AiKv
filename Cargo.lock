@@ -82,6 +82,7 @@ dependencies = [
  "proptest",
  "rand 0.8.6",
  "redis",
+ "rmp-serde",
  "ryu",
  "serde",
  "serde_json",
