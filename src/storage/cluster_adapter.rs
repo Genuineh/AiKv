@@ -76,13 +76,19 @@ pub struct ClusterDataAdapter {
 }
 
 struct GroupSetBatcher {
-    tx: mpsc::Sender<SetBatchItem>,
+    tx: mpsc::Sender<WriteBatchItem>,
 }
 
-struct SetBatchItem {
-    key: Vec<u8>,
-    value: Vec<u8>,
-    ack: oneshot::Sender<std::result::Result<(), String>>,
+enum WriteBatchItem {
+    Put {
+        key: Vec<u8>,
+        value: Vec<u8>,
+        ack: oneshot::Sender<std::result::Result<(), String>>,
+    },
+    Delete {
+        key: Vec<u8>,
+        ack: oneshot::Sender<std::result::Result<(), String>>,
+    },
 }
 
 impl ClusterDataAdapter {
@@ -424,22 +430,42 @@ impl ClusterDataAdapter {
         batcher
     }
 
-    async fn submit_batched_set(
+    /// 统一写批入口: 将 PUT 或 DELETE 请求发送到对应 group 的 batcher.
+    ///
+    /// DELETE 会先检查 key 是否存在 (短路优化), 不存在则直接返回 `Ok(false)` 跳过 propose.
+    /// 存在时发送到 batcher, 与其他 DELETE/PUT 聚合后单次 propose.
+    async fn submit_write_op(
         &self,
         mgr: Arc<ClusterStateManager>,
         gid: u64,
         key: Vec<u8>,
-        value: Vec<u8>,
-    ) -> Result<()> {
+        value: Option<Vec<u8>>,
+    ) -> Result<bool> {
+        // DELETE 短路: key 不存在则跳过 propose
+        if value.is_none() {
+            let existed = mgr
+                .multi_raft
+                .get_local(gid, &key)
+                .await
+                .map_err(|e| {
+                    tracing::warn!(gid = gid, error = %e, "get_local failed in delete");
+                    ClusterDataAdapter::map_err(e)
+                })?
+                .is_some();
+            if !existed {
+                return Ok(false);
+            }
+        }
+
         let batcher = self.get_or_spawn_set_batcher(mgr, gid);
         let (ack, wait) = oneshot::channel();
+        let item = match value {
+            Some(v) => WriteBatchItem::Put { key, value: v, ack },
+            None => WriteBatchItem::Delete { key, ack },
+        };
         batcher
             .tx
-            .send(SetBatchItem {
-                key,
-                value,
-                ack,
-            })
+            .send(item)
             .await
             .map_err(|_| {
                 Error::Cluster(crate::error::ClusterError::Aidb(
@@ -456,14 +482,15 @@ impl ClusterDataAdapter {
                 Error::Cluster(crate::error::ClusterError::Aidb(
                     AidbClusterError::Internal(e.to_string()),
                 ))
-            })
+            })?;
+        Ok(true)
     }
 }
 
 async fn run_set_batcher(
     mgr: Arc<ClusterStateManager>,
     gid: u64,
-    mut rx: mpsc::Receiver<SetBatchItem>,
+    mut rx: mpsc::Receiver<WriteBatchItem>,
     eager_flush: usize,
 ) {
     while let Some(first) = rx.recv().await {
@@ -488,24 +515,35 @@ async fn run_set_batcher(
             }
         }
 
+        // Build ThinWriteBatch with dedup:
+        // PUT 去重 (重复 key 只保留最后一个), DELETE 不去重.
         let mut tb = ThinWriteBatch::new();
-        let mut acks_rev: Vec<_> = Vec::with_capacity(items.len());
+        let mut acks: Vec<_> = Vec::with_capacity(items.len());
         let mut seen: HashSet<Vec<u8>> = HashSet::new();
 
         for item in items.into_iter().rev() {
-            if seen.insert(item.key.clone()) {
-                tb.put(item.key, item.value);
+            match item {
+                WriteBatchItem::Put { key, value, ack } => {
+                    if seen.insert(key.clone()) {
+                        tb.put(key, value);
+                    }
+                    acks.push(ack);
+                }
+                WriteBatchItem::Delete { key, ack } => {
+                    // DELETE 不去重: 每条都写入, 确保删除语义正确.
+                    tb.delete(key);
+                    acks.push(ack);
+                }
             }
-            acks_rev.push(item.ack);
         }
-        acks_rev.reverse();
+        acks.reverse();
 
         let result = ClusterDataAdapter::propose_group_with_retry(&mgr, gid, Request::WriteBatch(tb))
             .await
             .and_then(ClusterDataAdapter::check_response)
             .map_err(|e| e.to_string());
 
-        for ack in acks_rev {
+        for ack in acks {
             let _ = ack.send(result.clone());
         }
     }
@@ -577,7 +615,10 @@ impl StorageAdapter for ClusterDataAdapter {
                         .await?;
                 Self::check_response(resp)
             }
-            Some((mgr, WriteRoute::Plain(gid))) => self.submit_batched_set(mgr, gid, key, value).await,
+            Some((mgr, WriteRoute::Plain(gid))) => {
+                self.submit_write_op(mgr, gid, key, Some(value)).await?;
+                Ok(())
+            }
             None if Self::should_use_local_engine(&key) => self.local.set(key, value).await,
             None => Err(Self::data_group_not_ready_err()),
         }
@@ -607,25 +648,7 @@ impl StorageAdapter for ClusterDataAdapter {
                 Ok(existed)
             }
             Some((mgr, WriteRoute::Plain(gid))) => {
-                let existed = mgr
-                    .multi_raft
-                    .get_local(gid, &key)
-                    .await
-                    .map_err(|e| {
-                        tracing::warn!(gid = gid, error = %e, "get_local failed in delete");
-                        Self::map_err(e)
-                    })?
-                    .is_some();
-                if existed {
-                    let resp = Self::propose_group_with_retry(
-                        &mgr,
-                        gid,
-                        Request::Delete { key },
-                    )
-                    .await?;
-                    Self::check_response(resp)?;
-                }
-                Ok(existed)
+                self.submit_write_op(mgr, gid, key, None).await
             }
             None if Self::should_use_local_engine(&key) => self.local.delete(key).await,
             None => Err(Self::data_group_not_ready_err()),

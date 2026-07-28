@@ -70,6 +70,7 @@ mod tests {
             grpc_max_message_size: 65536,
             snapshot_size_threshold: None,
             linearizable_read: false,
+            log_committer_config: None,
         };
         let db = aidb::DB::open(
             std::env::temp_dir().join("raft_test"),
