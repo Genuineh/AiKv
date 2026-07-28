@@ -2,7 +2,11 @@
 # @title 崩溃恢复 (failpoint)
 """故障注入 → 强制 kill → 重启 → 数据一致性验证.
 
-需要本地 docker 环境, 且无 AIKV_HOST 设定时自动运行 (部署态跳过).
+需要:
+- 本地 docker 环境
+- `aikv:dev-test-util` 镜像 (由 aifactory/Dockerfile.test-util 构建)
+- 设置 `AIKV_E2E_CRASH_RECOVERY=1`
+
 编排 (本用例内完成):
 - docker compose up 3 节点集群
 - CLUSTER MEET + ADDSLOTS
@@ -30,6 +34,10 @@ _DEFAULT_IMAGE = "aikv:dev-test-util"
 _PREFIX = "e2e:func:crash:"
 
 # ── helpers ──────────────────────────────────────────────────────────
+
+
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
 
 
 def _r(host="127.0.0.1", port=6379, timeout=5) -> Redis:
@@ -64,17 +72,6 @@ def _dc(*args: str) -> str:
     cmd.extend(args)
     out = subprocess.check_output(cmd, timeout=120, text=True)
     return out.strip()
-
-
-def _dc_bg(*args: str) -> None:
-    """docker compose 后台命令 (不等待)."""
-    cmd = ["docker", "compose", "-f", str(_COMPOSE_FILE)]
-    cmd.extend(args)
-    subprocess.Popen(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
 
 
 _IMAGE = os.environ.get("AIKV_IMAGE", _DEFAULT_IMAGE)
@@ -117,8 +114,8 @@ def cluster() -> None:
 
 
 @pytest.mark.skipif(
-    bool(os.environ.get("AIKV_HOST", "").strip()),
-    reason="crash-recovery 需本地 docker 控制, 部署态跳过",
+    not _env_truthy("AIKV_E2E_CRASH_RECOVERY"),
+    reason="需手动设置 AIKV_E2E_CRASH_RECOVERY=1 (需要 docker + test-util 镜像)",
 )
 # @title 崩溃恢复: ApplyBeforePersist
 def test_crash_recovery_apply_before_persist(cluster: None) -> None:
