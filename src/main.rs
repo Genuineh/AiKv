@@ -289,7 +289,8 @@ async fn init_cluster(
         rpc_timeout_ms: raft_rpc_timeout_ms,
         grpc_max_message_size: 64 * 1024 * 1024,
         snapshot_size_threshold: None,
-            linearizable_read: false,
+        linearizable_read: false,
+        log_committer_config: None, // MetaRaft 使用同步路径
     };
     let factory = net_factory.read().clone(); // drop read lock before .await
     let meta_raft = Arc::new(MetaRaftNode::new(raft_config.clone(), db.clone(), factory).await?);
