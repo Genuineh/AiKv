@@ -196,6 +196,90 @@ pub fn cluster_info() -> Result<String, String> {
 }
 
 // ---------------------------------------------------------------------------
+// CLUSTER GROUPSTATUS
+// ---------------------------------------------------------------------------
+
+/// 返回本地 data group 的 Raft 运行时指标.
+///
+/// 可选参数 `group-id`: 仅显示该 group; 省略则列出所有本地 group.
+pub fn cluster_groupstatus(group_id: Option<u64>) -> Result<String, String> {
+    let mgr = CLUSTER_STATE_MGR
+        .get()
+        .ok_or_else(|| "CLUSTERDOWN Cluster not initialized".to_string())?;
+
+    let groups = mgr.multi_raft.get_groups();
+    let groups_guard = groups.read();
+
+    use openraft::rt::watch::WatchReceiver;
+
+    let iter: Vec<(u64, &aidb::cluster::OpenRaftNode)> = match group_id {
+        Some(gid) => {
+            let node = groups_guard
+                .get(&gid)
+                .ok_or_else(|| format!("ERR group {gid} not found on this node"))?;
+            vec![(gid, node.as_ref())]
+        }
+        None => groups_guard
+            .iter()
+            .map(|(gid, node)| (*gid, node.as_ref()))
+            .collect(),
+    };
+
+    let mut lines: Vec<String> = Vec::new();
+    for (gid, node) in iter {
+        let raft = node.raft();
+        let current_leader = raft.metrics().borrow_watched().current_leader;
+        let leader = current_leader
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "none".to_string());
+
+        let members: Vec<String> = raft
+            .metrics()
+            .borrow_watched()
+            .membership_config
+            .nodes()
+            .map(|(nid, _)| nid.to_string())
+            .collect();
+
+        let last_log_index_val = raft.metrics().borrow_watched().last_log_index;
+        let last_log_index = last_log_index_val
+            .map(|i| i.to_string())
+            .unwrap_or_else(|| "0".to_string());
+
+        let last_applied_val = raft.metrics().borrow_watched().last_applied;
+        let last_applied = last_applied_val
+            .map(|i| i.to_string())
+            .unwrap_or_else(|| "0".to_string());
+
+        let running_state = raft.metrics().borrow_watched().running_state.clone();
+        let state = match &running_state {
+            Ok(()) => "ok".to_string(),
+            Err(e) => format!("fatal: {e}"),
+        };
+
+        let replication_count = raft
+            .metrics()
+            .borrow_watched()
+            .replication
+            .as_ref()
+            .map(|r| r.len())
+            .unwrap_or(0);
+
+        lines.push(format!(
+            "group_{gid}: \
+             current_leader={leader} \
+             members={} \
+             last_log_index={last_log_index} \
+             last_applied={last_applied} \
+             running_state={state} \
+             replication_count={replication_count}",
+            members.join(","),
+        ));
+    }
+    Ok(lines.join("\n"))
+}
+
+// ---------------------------------------------------------------------------
 // CLUSTER NODES
 // ---------------------------------------------------------------------------
 
@@ -1672,6 +1756,11 @@ pub async fn dispatch_cluster(
         Some("myid") | Some("MYID") => {
             let id = cluster_myid().map_err(Error::Command)?;
             Ok(RespValue::BulkString(Some(Bytes::from(id))))
+        }
+        Some("groupstatus") | Some("GROUPSTATUS") => {
+            let gid: Option<u64> = args.get(1).and_then(|a| parse_int(a));
+            let info = cluster_groupstatus(gid).map_err(Error::Command)?;
+            Ok(RespValue::BulkString(Some(Bytes::from(info))))
         }
         Some("info") | Some("INFO") => {
             let info = cluster_info().map_err(Error::Command)?;
