@@ -177,6 +177,15 @@ Frozen: 写 TRYAGAIN, 读合并读. ReadyToCommit: 写 TRYAGAIN, 读纯 target.
 | CREATEGROUP | 空 data group, 不分配 slot |
 | ADD_REPLICA / DEL_REPLICA | group 成员变更 (跨 group 可仅 MetaRaft 元数据) |
 | REBALANCE | `SlotMigrationManager` 再均衡 |
+| GROUPSTATUS | 暴露 Raft metrics (current_leader, members, last_log_index, last_applied, running_state, replication_count) |
+
+### AiKv 扩展 (cluster-test-util feature only)
+
+| 子命令 | 说明 |
+|--------|------|
+| FAILPOINT ARM \<name\> [once] | 武装故障注入点 (panic on trigger) |
+| FAILPOINT RELEASE \<name\> | 解除指定 failpoint |
+| FAILPOINT STATUS | 查询所有 failpoint 状态 |
 
 ### 未实现 / stub
 

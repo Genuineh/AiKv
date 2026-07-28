@@ -17,6 +17,8 @@ use aidb::cluster::router::key_to_slot;
 use aidb::cluster::types::ClusterError;
 use aidb::cluster::ReplicaAllocator;
 use aidb::Error as AidbError;
+#[cfg(feature = "cluster-test-util")]
+use aidb::cluster::{FailPoint, failpoint_registry};
 use bytes::Bytes;
 use tokio::time::sleep;
 
@@ -277,6 +279,53 @@ pub fn cluster_groupstatus(group_id: Option<u64>) -> Result<String, String> {
         ));
     }
     Ok(lines.join("\n"))
+}
+
+// ---------------------------------------------------------------------------
+// CLUSTER FAILPOINT (cluster-test-util feature only)
+// ---------------------------------------------------------------------------
+
+/// 故障注入管理.
+///
+/// CLUSTER FAILPOINT ARM <name> [once]
+/// CLUSTER FAILPOINT RELEASE <name>
+/// CLUSTER FAILPOINT STATUS
+#[cfg(feature = "cluster-test-util")]
+fn cluster_failpoint(args: &[Bytes]) -> Result<String, String> {
+    let sub = args
+        .get(1)
+        .ok_or_else(|| "ERR wrong number of arguments".to_string())?;
+    let sub_str = bytes_to_str(sub).map_err(|e| e.to_string())?;
+
+    match sub_str.to_uppercase().as_str() {
+        "ARM" => {
+            let name = args
+                .get(2)
+                .ok_or_else(|| "ERR wrong number of arguments for ARM".to_string())?;
+            let name_str = bytes_to_str(name).map_err(|e| e.to_string())?;
+            let fp = FailPoint::from_str(name_str)
+                .ok_or_else(|| format!("ERR unknown failpoint: {name_str}"))?;
+            if args.get(3).map_or(false, |a| a.eq_ignore_ascii_case(b"once")) {
+                failpoint_registry().arm_once(fp);
+                Ok(format!("armed {} (once)", fp.display_name()))
+            } else {
+                failpoint_registry().arm(fp);
+                Ok(format!("armed {}", fp.display_name()))
+            }
+        }
+        "RELEASE" => {
+            let name = args
+                .get(2)
+                .ok_or_else(|| "ERR wrong number of arguments for RELEASE".to_string())?;
+            let name_str = bytes_to_str(name).map_err(|e| e.to_string())?;
+            let fp = FailPoint::from_str(name_str)
+                .ok_or_else(|| format!("ERR unknown failpoint: {name_str}"))?;
+            failpoint_registry().release(fp);
+            Ok(format!("released {}", fp.display_name()))
+        }
+        "STATUS" => Ok(failpoint_registry().status()),
+        _ => Err(format!("ERR unknown FAILPOINT subcommand: {sub_str}")),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2042,6 +2091,11 @@ pub async fn dispatch_cluster(
             Err(Error::Command(
                 "ERR CLUSTER RESET is not supported; stop the node and clear data_dir (see docs/modules/cluster.md)".into(),
             ))
+        }
+        #[cfg(feature = "cluster-test-util")]
+        Some("failpoint") | Some("FAILPOINT") => {
+            let result = cluster_failpoint(args).map_err(Error::Command)?;
+            Ok(RespValue::BulkString(Some(Bytes::from(result))))
         }
         _ => Err(Error::Command("ERR unknown CLUSTER subcommand".into())),
     }
