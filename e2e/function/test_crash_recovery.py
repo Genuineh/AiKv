@@ -69,11 +69,10 @@ def _cli(port: int, *args: str, timeout: int = 15) -> str:
 def _cli_retry(port: int, *args: str, retries: int = 10, delay: float = 2.0) -> str:
     """带重试的 redis-cli, 用于节点启动后未就绪的场景."""
     last_exc = None
-    deadline = time.monotonic() + retries * delay
     for attempt in range(retries):
         try:
-            return _cli(port, *args, timeout=min(10, int(deadline - time.monotonic())))
-        except subprocess.TimeoutExpired as e:
+            return _cli(port, *args, timeout=max(5, 15 - attempt))
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
             last_exc = e
             time.sleep(delay)
     raise RuntimeError(
