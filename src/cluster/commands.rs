@@ -97,7 +97,8 @@ fn resolve_group_leader_for_info(
         }
     }
     if let Some(node) = mgr.multi_raft.get_groups().read().get(&group_id) {
-        return node.raft().metrics().borrow().current_leader;
+        use openraft::rt::watch::WatchReceiver;
+        return node.raft().metrics().borrow_watched().current_leader;
     }
     None
 }

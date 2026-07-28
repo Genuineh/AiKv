@@ -12,7 +12,7 @@ path = "src/main.rs"
 [features]
 default = []
 monitoring = ["dep:tracing-opentelemetry", "dep:opentelemetry-otlp", "dep:opentelemetry", "dep:opentelemetry_sdk", "dep:hyper", "dep:hyper-util", "dep:http-body-util", "aidb/monitoring"]
-cluster = ["aidb/cluster"]
+cluster = ["aidb/cluster", "dep:openraft", "dep:openraft-rt-tokio"]
 compression = ["aidb/compression"]
 
 [dependencies]
@@ -44,6 +44,10 @@ clap = { version = "4", features = ["derive"] }
 
 # Lua scripting
 mlua = { version = "0.10", features = ["lua54", "async", "send", "vendored"] }
+
+# Openraft
+openraft = { version = "0.10.0-alpha.31", optional = true }
+openraft-rt-tokio = { version = "0.10.0-alpha.31", optional = true }
 
 # AiDb storage engine
 aidb = { path = "../aidb" }
