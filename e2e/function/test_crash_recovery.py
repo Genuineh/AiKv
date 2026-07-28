@@ -58,20 +58,40 @@ def _wait_ping(port: int, timeout: int = 60) -> bool:
     return False
 
 
-def _cli(port: int, *args: str) -> str:
+def _cli(port: int, *args: str, timeout: int = 15) -> str:
     """通过 redis-cli 跑命令并返回输出 (strip)."""
     cmd = ["redis-cli", "-p", str(port)]
     cmd.extend(args)
-    out = subprocess.check_output(cmd, timeout=15, text=True)
+    out = subprocess.check_output(cmd, timeout=timeout, text=True)
     return out.strip()
+
+
+def _cli_retry(port: int, *args: str, retries: int = 10, delay: float = 2.0) -> str:
+    """带重试的 redis-cli, 用于节点启动后未就绪的场景."""
+    last_exc = None
+    deadline = time.monotonic() + retries * delay
+    for attempt in range(retries):
+        try:
+            return _cli(port, *args, timeout=min(10, int(deadline - time.monotonic())))
+        except subprocess.TimeoutExpired as e:
+            last_exc = e
+            time.sleep(delay)
+    raise RuntimeError(
+        f"redis-cli still failing after {retries} retries: {last_exc}"
+    ) from last_exc
 
 
 def _dc(*args: str) -> str:
     """docker compose 快捷."""
     cmd = ["docker", "compose", "-f", str(_COMPOSE_FILE)]
     cmd.extend(args)
-    out = subprocess.check_output(cmd, timeout=120, text=True)
-    return out.strip()
+    try:
+        out = subprocess.check_output(cmd, timeout=120, text=True, stderr=subprocess.STDOUT)
+        return out.strip()
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(
+            f"docker compose {' '.join(args)!r} failed (exit {e.returncode}):\n{e.output}"
+        ) from e
 
 
 _IMAGE = os.environ.get("AIKV_IMAGE", _DEFAULT_IMAGE)
@@ -95,13 +115,29 @@ def _ensure_image() -> None:
 @pytest.fixture
 def cluster() -> None:
     """启动 3 节点集群, 组建, 清理."""
-    # setup
-    _dc("down", "--volumes")
+    # setup: 先彻底清理, 包括可能残留的旧容器
+    try:
+        _dc("down", "--volumes")
+    except Exception:
+        pass
+    for old in ("aikv-crash-1", "aikv-crash-2", "aikv-crash-3"):
+        subprocess.run(["docker", "rm", "-f", old], capture_output=True, timeout=10)
+    time.sleep(1)
+
     _dc("up", "-d")
     for port in (6379, 6380, 6381):
-        assert _wait_ping(port), f"node :{port} did not become ready"
-    _cli(6379, "CLUSTER", "MEET", "127.0.0.1", "6380")
-    _cli(6379, "CLUSTER", "MEET", "127.0.0.1", "6381")
+        assert _wait_ping(port, timeout=120), f"node :{port} did not become ready"
+
+    # 节点刚启动, Raft 需几秒就绪
+    time.sleep(3)
+
+    # 先验证节点支持 CLUSTER 子命令
+    _cli_retry(6379, "CLUSTER", "INFO")
+    _cli_retry(6380, "CLUSTER", "INFO")
+    _cli_retry(6381, "CLUSTER", "INFO")
+
+    _cli_retry(6379, "CLUSTER", "MEET", "127.0.0.1", "6380")
+    _cli_retry(6379, "CLUSTER", "MEET", "127.0.0.1", "6381")
     time.sleep(3)
 
     yield
