@@ -18,6 +18,10 @@
 - **CLUSTER INFO Redis 8.8 键名校正**: fixture `redis88_cluster_info_fields.txt`; `total_cluster_links_buffer_limit_exceeded` (原 `total_cluster_connections_buffer_size`); 补 ASM `cluster_slot_migration_*` stub; 保留 AiKv-only `cluster_slots_migrating`; e2e `test_cluster_info` 全量键名 + 关键格式.
 - **CLUSTER NODES e2e L1**: `harness/cluster_nodes.py` 解析 + 不变量 (myself / master-slave 引用 / slot 全覆盖无重叠 / 与 CLUSTER INFO 交叉); 不硬编码实验室拓扑.
 - **集群 SET batcher**: `SET_BATCH_MAX_DELAY` 10ms → 1ms; 新增 `SET_BATCH_EAGER_FLUSH=4` (凑够 4 条立即 propose). 本地集群 SET 基线约 664 → ~2000 ops/s (`-n 500 -c 10 --cluster`).
+- **集群 DELETE batcher**: `submit_write_op` 统一入口, 将 DELETE 纳入现有 `run_set_batcher` 机制, 支持 DELETE 批量 propose. 文件: `src/storage/cluster_adapter.rs`.
+- **CLUSTER GROUPSTATUS 命令**: 暴露数据 group 的 Raft metrics (current_leader, members, last_log_index, last_applied, running_state, replication_count). 基于 OpenRaft `RaftMetrics`. 文件: `src/cluster/commands.rs`.
+- **CLUSTER FAILPOINT 命令**: `cluster-test-util` feature; `FAILPOINT ARM <name> [once]` / `FAILPOINT RELEASE <name>` / `FAILPOINT STATUS`. 文件: `src/cluster/commands.rs`.
+- **崩溃恢复 e2e 测试**: Python pytest 用例 (`e2e/function/test_crash_recovery.py`); 自动管理 docker compose 3 节点集群; failpoint → kill → restart → 数据一致性验证; 环境变量 `AIKV_E2E_CRASH_RECOVERY=1` opt-in.
 - **集群 snapshot 策略**: `snapshot_logs_since_last` 1000 → 256 (更频繁 snapshot/purge).
 
 - **C2.6**: `aikv_db_keys` OTel labeled gauge — OTLP remote write 覆盖 (C2.6 移除 HTTP scrape).
