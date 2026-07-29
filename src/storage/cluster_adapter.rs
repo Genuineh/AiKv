@@ -15,7 +15,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
@@ -494,6 +494,7 @@ async fn run_set_batcher(
     eager_flush: usize,
 ) {
     while let Some(first) = rx.recv().await {
+        let t_start = Instant::now();
 
         let mut items = Vec::with_capacity(SET_BATCH_MAX_OPS);
         items.push(first);
@@ -515,10 +516,13 @@ async fn run_set_batcher(
             }
         }
 
+        let wait_us = t_start.elapsed().as_micros();
+
         // Build ThinWriteBatch with dedup:
         // PUT 去重 (重复 key 只保留最后一个), DELETE 不去重.
         let mut tb = ThinWriteBatch::new();
-        let mut acks: Vec<_> = Vec::with_capacity(items.len());
+        let item_count = items.len();
+        let mut acks: Vec<_> = Vec::with_capacity(item_count);
         let mut seen: HashSet<Vec<u8>> = HashSet::new();
 
         for item in items.into_iter().rev() {
@@ -538,10 +542,24 @@ async fn run_set_batcher(
         }
         acks.reverse();
 
+        let t_propose = Instant::now();
         let result = ClusterDataAdapter::propose_group_with_retry(&mgr, gid, Request::WriteBatch(tb))
             .await
             .and_then(ClusterDataAdapter::check_response)
             .map_err(|e| e.to_string());
+
+        let propose_us = t_propose.elapsed().as_micros();
+        let total_us = t_start.elapsed().as_micros();
+
+        tracing::info!(
+            target: "perf",
+            gid = gid,
+            op_count = item_count,
+            wait_us,
+            propose_us,
+            total_us,
+            "batcher_batch_done"
+        );
 
         for ack in acks {
             let _ = ack.send(result.clone());
