@@ -19,7 +19,8 @@
 - **文档 (aifactory 部署)**: DEPLOYMENT §AiFactory 部署 同步 `benchmark/aikv` compose、`down.sh` 与压测入口; AGENTS / e2e README 链接更新.
 - **CLUSTER INFO Redis 8.8 键名校正**: fixture `redis88_cluster_info_fields.txt`; `total_cluster_links_buffer_limit_exceeded` (原 `total_cluster_connections_buffer_size`); 补 ASM `cluster_slot_migration_*` stub; 保留 AiKv-only `cluster_slots_migrating`; e2e `test_cluster_info` 全量键名 + 关键格式.
 - **CLUSTER NODES e2e L1**: `harness/cluster_nodes.py` 解析 + 不变量 (myself / master-slave 引用 / slot 全覆盖无重叠 / 与 CLUSTER INFO 交叉); 不硬编码实验室拓扑.
-- **集群 SET batcher**: `SET_BATCH_MAX_DELAY` 10ms → 1ms; 新增 `SET_BATCH_EAGER_FLUSH=4` (凑够 4 条立即 propose). 本地集群 SET 基线约 664 → ~2000 ops/s (`-n 500 -c 10 --cluster`).
+- **集群自适应 SET batcher**: 改造 `run_set_batcher` 为自适应非阻塞 Drain 机制, 队中有消息即时打批, 队空时无延迟立即 propose (消除固定 1ms 延迟惩罚), 配合 aidb Single-WAL 将集群 GET 吞吐提升至 46.5k ops/s (+58.4%), p50 降至 0.76ms (-39.6%). 文件: `src/storage/cluster_adapter.rs`.
+- **集群 SET batcher**: `SET_BATCH_MAX_DELAY` 10ms → 1ms; 新增 `SET_BATCH_EAGER_FLUSH=4` (凑够 4 条立即 propose). 本级集群 SET 基线约 664 → ~2000 ops/s (`-n 500 -c 10 --cluster`).
 - **集群 DELETE batcher**: `submit_write_op` 统一入口, 将 DELETE 纳入现有 `run_set_batcher` 机制, 支持 DELETE 批量 propose. 文件: `src/storage/cluster_adapter.rs`.
 - **CLUSTER GROUPSTATUS 命令**: 暴露数据 group 的 Raft metrics (current_leader, members, last_log_index, last_applied, running_state, replication_count). 基于 OpenRaft `RaftMetrics`. 文件: `src/cluster/commands.rs`.
 - **CLUSTER FAILPOINT 命令**: `cluster-test-util` feature; `FAILPOINT ARM <name> [once]` / `FAILPOINT RELEASE <name>` / `FAILPOINT STATUS`. 文件: `src/cluster/commands.rs`.
