@@ -1,6 +1,11 @@
 //! aikv 入口: 加载配置, 初始化 tracing, 启动 TCP 服务.
 #![recursion_limit = "256"]
 
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL_ALLOCATOR: MiMalloc = MiMalloc;
+
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;

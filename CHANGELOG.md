@@ -29,6 +29,7 @@
  实现 `JSON.MGET` — 顶层 + Lua `redis.call`; 多 key 单 path batch 读; 对齐 Redis 7 (missing → null, wrong-type 与 `JSON.GET` 一致).
 - **ISSUE-010**: `MIGRATE AUTH2 username password` — 解析 + TCP `AUTH user pass`; `KEYS` 遇 `AUTH2` 停止; `AUTH2` 优先于 `AUTH` (对齐 Redis 7 / oldmain).
 - **ISSUE-003**: 恢复 `GETRANGE`/`SETRANGE` String 子串命令 (对齐 Redis 7 / oldmain); registry + router + 回归测.
+- **全局分配器**: 从 glibc malloc 替换为 mimalloc, 降低多线程分配器争用. 文件: `src/main.rs`, `Cargo.toml`.
 
 ### Changed
 

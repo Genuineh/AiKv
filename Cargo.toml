@@ -36,6 +36,9 @@ ryu = "1"
 crc32fast = "1"
 rand      = "0.8"
 
+# Allocator
+mimalloc = "0.1.43"
+
 # Logging & tracing
 tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
