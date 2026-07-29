@@ -13,6 +13,7 @@
 
 ### Changed
 
+- **集群 SET batcher perf 插桩**: `run_set_batcher` 新增 `target: "perf"` 的 `batcher_batch_done` 日志 (wait_us, propose_us, total_us, op_count), 微秒级精度. 文件: `src/storage/cluster_adapter.rs`.
 - **INFO Redis 8.8 键名校正**: fixture `redis88_info_full_fields.txt` 对照 8.8 `genRedisInfoString` 常驻键; rename (`current_cow_size_age`, `avg_pipeline_length_*`, `acl_access_denied_tls_cert`, slot-migration buffer 名等); 补 `monotonic_clock`/`active_clients`/…; `INFO` `# Cluster` 仅 `cluster_enabled` (`cluster_stats_messages_*` 仍在 `CLUSTER INFO`); default 始终输出 Cluster 段; e2e `test_info` 全量键名 + 关键格式.
 - **文档 (aifactory 部署)**: DEPLOYMENT §AiFactory 部署 同步 `benchmark/aikv` compose、`down.sh` 与压测入口; AGENTS / e2e README 链接更新.
 - **CLUSTER INFO Redis 8.8 键名校正**: fixture `redis88_cluster_info_fields.txt`; `total_cluster_links_buffer_limit_exceeded` (原 `total_cluster_connections_buffer_size`); 补 ASM `cluster_slot_migration_*` stub; 保留 AiKv-only `cluster_slots_migrating`; e2e `test_cluster_info` 全量键名 + 关键格式.
