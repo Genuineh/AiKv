@@ -500,19 +500,10 @@ async fn run_set_batcher(
         items.push(first);
 
         while items.len() < SET_BATCH_MAX_OPS {
-            while items.len() < SET_BATCH_MAX_OPS {
-                match rx.try_recv() {
-                    Ok(item) => items.push(item),
-                    Err(mpsc::error::TryRecvError::Empty) => break,
-                    Err(mpsc::error::TryRecvError::Disconnected) => break,
-                }
-            }
-            if items.len() >= SET_BATCH_MAX_OPS || items.len() >= eager_flush {
-                break;
-            }
-            match tokio::time::timeout(SET_BATCH_MAX_DELAY, rx.recv()).await {
-                Ok(Some(item)) => items.push(item),
-                Ok(None) | Err(_) => break,
+            match rx.try_recv() {
+                Ok(item) => items.push(item),
+                Err(mpsc::error::TryRecvError::Empty) => break,
+                Err(mpsc::error::TryRecvError::Disconnected) => break,
             }
         }
 
