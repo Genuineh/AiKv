@@ -487,11 +487,14 @@ impl ClusterDataAdapter {
     }
 }
 
+const MIN_BATCH_TARGET: usize = 16;
+const MAX_MICRO_WAIT_US: u64 = 50;
+
 async fn run_set_batcher(
     mgr: Arc<ClusterStateManager>,
     gid: u64,
     mut rx: mpsc::Receiver<WriteBatchItem>,
-    eager_flush: usize,
+    _eager_flush: usize,
 ) {
     while let Some(first) = rx.recv().await {
         let t_start = Instant::now();
@@ -499,11 +502,24 @@ async fn run_set_batcher(
         let mut items = Vec::with_capacity(SET_BATCH_MAX_OPS);
         items.push(first);
 
+        // 第一阶段：快速非阻塞拉取
         while items.len() < SET_BATCH_MAX_OPS {
             match rx.try_recv() {
                 Ok(item) => items.push(item),
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => break,
+            }
+        }
+
+        // 第二阶段：防单打微退避 (仅在 items 数量小于 MIN_BATCH_TARGET 时触发 50us 避震)
+        if items.len() < MIN_BATCH_TARGET {
+            tokio::time::sleep(Duration::from_micros(MAX_MICRO_WAIT_US)).await;
+            while items.len() < SET_BATCH_MAX_OPS {
+                match rx.try_recv() {
+                    Ok(item) => items.push(item),
+                    Err(mpsc::error::TryRecvError::Empty) => break,
+                    Err(mpsc::error::TryRecvError::Disconnected) => break,
+                }
             }
         }
 
