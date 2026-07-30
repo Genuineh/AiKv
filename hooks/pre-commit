@@ -15,8 +15,8 @@ cargo fmt --check || {
 }
 
 export RUSTFLAGS='-D warnings'
-cargo clippy --all-targets --features cluster || {
-  echo "ERROR: Clippy found issues."
+cargo clippy --all-targets --all-features || {
+  echo "ERROR: Clippy found issues under --all-features."
   exit 1
 }
 

@@ -309,10 +309,7 @@ fn cluster_failpoint(args: &[Bytes]) -> Result<String, String> {
             let name_str = bytes_to_str(name).map_err(|e| e.to_string())?;
             let fp = FailPoint::from_str(name_str)
                 .ok_or_else(|| format!("ERR unknown failpoint: {name_str}"))?;
-            if args
-                .get(3)
-                .map_or(false, |a| a.eq_ignore_ascii_case(b"once"))
-            {
+            if args.get(3).is_some_and(|a| a.eq_ignore_ascii_case(b"once")) {
                 failpoint_registry().arm_once(fp);
                 Ok(format!("armed {} (once)", fp.display_name()))
             } else {
