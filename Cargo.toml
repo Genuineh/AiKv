@@ -37,7 +37,7 @@ crc32fast = "1"
 rand      = "0.8"
 
 # Allocator
-mimalloc = "0.1.43"
+mimalloc = "0.1"
 
 # Logging & tracing
 tracing            = "0.1"
