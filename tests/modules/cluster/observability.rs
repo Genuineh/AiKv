@@ -39,5 +39,8 @@ fn sync_redis_aligned_gauges_exports_blocked_clients() {
     let metrics = ServerMetrics::default().with_otel(otel);
     metrics.on_client_blocked();
     metrics.sync_redis_aligned_gauges();
-    assert_eq!(testutil::gauge_value(&exporter, "aikv_blocked_clients"), 1.0);
+    assert_eq!(
+        testutil::gauge_value(&exporter, "aikv_blocked_clients"),
+        1.0
+    );
 }

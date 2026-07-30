@@ -2,10 +2,10 @@
 //!
 //! TODO(exemplars): metrics↔traces 跳转需 OTel Rust SDK exemplar 采集; 当前 0.32 仍不支持.
 
+use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, OnceLock};
-use parking_lot::{Mutex, RwLock};
 
 use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter, UpDownCounter};
 use opentelemetry::KeyValue;
@@ -285,22 +285,17 @@ impl OtelMetrics {
     }
 
     pub fn on_client_blocked(&self) {
-        self.gauges
-            .blocked_clients
-            .fetch_add(1, Ordering::Relaxed);
+        self.gauges.blocked_clients.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn on_client_unblocked(&self) {
-        self.gauges
-            .blocked_clients
-            .fetch_sub(1, Ordering::Relaxed);
+        self.gauges.blocked_clients.fetch_sub(1, Ordering::Relaxed);
     }
 
     pub fn on_command(&self, command: &str, ok: bool) {
         let status = if ok { "ok" } else { "error" };
         let cmd = command.to_ascii_uppercase();
-        self.commands_total
-            .add(1, &Self::cmd_attrs(&cmd, status));
+        self.commands_total.add(1, &Self::cmd_attrs(&cmd, status));
     }
 
     pub fn on_command_duration(&self, command: &str, duration_us: u64, ok: bool) {
@@ -321,13 +316,17 @@ impl OtelMetrics {
     }
 
     pub fn on_slow_query(&self, command: &str) {
-        self.slow_queries_total
-            .add(1, &[KeyValue::new(ATTR_COMMAND, command.to_ascii_uppercase())]);
+        self.slow_queries_total.add(
+            1,
+            &[KeyValue::new(ATTR_COMMAND, command.to_ascii_uppercase())],
+        );
     }
 
     pub fn on_json_command(&self, command: &str) {
-        self.json_commands_total
-            .add(1, &[KeyValue::new(ATTR_COMMAND, command.to_ascii_uppercase())]);
+        self.json_commands_total.add(
+            1,
+            &[KeyValue::new(ATTR_COMMAND, command.to_ascii_uppercase())],
+        );
     }
 
     pub fn on_rejected_connection(&self) {
@@ -397,16 +396,12 @@ impl OtelMetrics {
 
     pub fn add_process_cpu_delta(&self, user_secs: f64, sys_secs: f64) {
         if user_secs > 0.0 {
-            self.process_cpu_time.add(
-                user_secs,
-                &[KeyValue::new(ATTR_CPU_MODE, "user")],
-            );
+            self.process_cpu_time
+                .add(user_secs, &[KeyValue::new(ATTR_CPU_MODE, "user")]);
         }
         if sys_secs > 0.0 {
-            self.process_cpu_time.add(
-                sys_secs,
-                &[KeyValue::new(ATTR_CPU_MODE, "system")],
-            );
+            self.process_cpu_time
+                .add(sys_secs, &[KeyValue::new(ATTR_CPU_MODE, "system")]);
         }
         let total_secs = user_secs + sys_secs;
         if total_secs > 0.0 {
@@ -420,17 +415,13 @@ impl OtelMetrics {
     pub fn add_process_io(&self, read_delta: u64, write_delta: u64) {
         if read_delta > 0 {
             self.process_read_bytes_total.add(read_delta, &[]);
-            self.process_disk_io.add(
-                read_delta,
-                &[KeyValue::new("disk.io.direction", "read")],
-            );
+            self.process_disk_io
+                .add(read_delta, &[KeyValue::new("disk.io.direction", "read")]);
         }
         if write_delta > 0 {
             self.process_write_bytes_total.add(write_delta, &[]);
-            self.process_disk_io.add(
-                write_delta,
-                &[KeyValue::new("disk.io.direction", "write")],
-            );
+            self.process_disk_io
+                .add(write_delta, &[KeyValue::new("disk.io.direction", "write")]);
         }
     }
 
@@ -442,8 +433,10 @@ impl OtelMetrics {
 
     #[cfg(feature = "cluster")]
     pub fn on_cluster_redirect(&self, redirect_type: &str) {
-        self.cluster_redirects_total
-            .add(1, &[KeyValue::new(ATTR_REDIRECT_TYPE, redirect_type.to_string())]);
+        self.cluster_redirects_total.add(
+            1,
+            &[KeyValue::new(ATTR_REDIRECT_TYPE, redirect_type.to_string())],
+        );
     }
 
     #[cfg(feature = "cluster")]
@@ -530,10 +523,8 @@ impl OtelMetrics {
             }
 
             if delta_slow > 0 {
-                self.slow_queries_total.add(
-                    delta_slow,
-                    &[KeyValue::new(ATTR_COMMAND, cmd.clone())],
-                );
+                self.slow_queries_total
+                    .add(delta_slow, &[KeyValue::new(ATTR_COMMAND, cmd.clone())]);
             }
 
             snap.commands_ok.insert(cmd.clone(), totals.ok);
@@ -608,7 +599,10 @@ impl OtelMetrics {
             self.keyspace_misses_total.add(delta, &[]);
         }
 
-        let delta = counter_delta(metrics.rejected_connections(), &mut snap.rejected_connections);
+        let delta = counter_delta(
+            metrics.rejected_connections(),
+            &mut snap.rejected_connections,
+        );
         if delta > 0 {
             self.rejected_connections_total.add(delta, &[]);
         }
@@ -758,10 +752,7 @@ fn register_aikv_observable_gauges(meter: &Meter, gauges: &Arc<GaugeSnapshot>) {
         .i64_observable_gauge("aikv_process_resident_memory_bytes")
         .with_unit("By")
         .with_callback(move |inst| {
-            inst.observe(
-                g.process_resident_memory_bytes.load(Ordering::Relaxed),
-                &[],
-            );
+            inst.observe(g.process_resident_memory_bytes.load(Ordering::Relaxed), &[]);
         })
         .build();
 }

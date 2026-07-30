@@ -1,11 +1,11 @@
 //! 服务与连接配置
 
+use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
-use parking_lot::RwLock;
 
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
@@ -275,11 +275,7 @@ impl ServerSharedState {
 
     /// 获取 key 的当前版本号
     pub fn get_key_version(&self, key: &[u8]) -> u64 {
-        self.key_versions
-            .read()
-            .get(key)
-            .copied()
-            .unwrap_or(0)
+        self.key_versions.read().get(key).copied().unwrap_or(0)
     }
 
     pub fn try_register_connection(self: &Arc<Self>) -> bool {

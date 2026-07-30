@@ -1,8 +1,8 @@
 //! 命令延迟统计 (Phase 10-ext Step 0, 内存版)
 
+use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
-use parking_lot::Mutex;
 
 const MAX_LATENCY_HISTORY: usize = 128;
 

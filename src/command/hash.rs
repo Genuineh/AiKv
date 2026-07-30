@@ -12,9 +12,7 @@ use crate::error::{Error, Result};
 use crate::protocol::RespValue;
 use crate::storage::memory::glob_match;
 use crate::storage::subkey;
-use crate::storage::{
-    AiDbEngine, CollectionKind, KvStorage, StoredValue, ValueType, WRONGTYPE,
-};
+use crate::storage::{AiDbEngine, CollectionKind, KvStorage, StoredValue, ValueType, WRONGTYPE};
 
 /// 小集合使用 bincode; 超过此阈值自动切到 subkey 格式.
 const HASH_MAX_BINCODE_FIELDS: usize = 64;
@@ -55,7 +53,8 @@ impl HashCommands {
                 }
                 // 超过阈值则转换为 subkey 格式
                 if map.len() > HASH_MAX_BINCODE_FIELDS {
-                    self.migrate_hash_to_subkey(db, key, &stored.expires_at, map).await?;
+                    self.migrate_hash_to_subkey(db, key, &stored.expires_at, map)
+                        .await?;
                 } else {
                     self.storage.set_typed(db, key, stored).await?;
                 }
@@ -71,8 +70,7 @@ impl HashCommands {
                 for chunk in args[1..].chunks(2) {
                     let field = chunk[0].as_ref();
                     let value = chunk[1].to_vec();
-                    let subkey_key =
-                        subkey::encode_hash_field_key(&encoded_user_key, field);
+                    let subkey_key = subkey::encode_hash_field_key(&encoded_user_key, field);
                     // 检查是否已存在
                     let existed = self
                         .storage
@@ -186,8 +184,7 @@ impl HashCommands {
                 let new_count = count.saturating_sub(removed as u32);
                 if new_count == 0 {
                     // 清理所有 subkey (防御性: 理论上上面已删除)
-                    self.delete_all_hash_subkeys(db, &encoded_user_key)
-                        .await;
+                    self.delete_all_hash_subkeys(db, &encoded_user_key).await;
                     self.storage.delete(db, key).await?;
                 } else {
                     stored.value = ValueType::CollectionHeader {
@@ -214,8 +211,7 @@ impl HashCommands {
                 ..
             } => {
                 let encoded_user_key = AiDbEngine::encode_key(db, &args[0]);
-                let subkey_key =
-                    subkey::encode_hash_field_key(&encoded_user_key, args[1].as_ref());
+                let subkey_key = subkey::encode_hash_field_key(&encoded_user_key, args[1].as_ref());
                 self.storage
                     .raw_subkey_get(db, subkey_key)
                     .await
@@ -246,17 +242,13 @@ impl HashCommands {
     pub async fn hkeys(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("HKEYS", args, 1)?;
         let keys = self.load_hash_all_fields(db, &args[0]).await?;
-        Ok(array_of_bulk(
-            keys.into_keys().collect(),
-        ))
+        Ok(array_of_bulk(keys.into_keys().collect()))
     }
 
     pub async fn hvals(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("HVALS", args, 1)?;
         let keys = self.load_hash_all_fields(db, &args[0]).await?;
-        Ok(array_of_bulk(
-            keys.into_values().collect(),
-        ))
+        Ok(array_of_bulk(keys.into_values().collect()))
     }
 
     pub async fn hgetall(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
@@ -341,7 +333,8 @@ impl HashCommands {
                 }
                 map.insert(args[1].to_vec(), args[2].to_vec());
                 if map.len() > HASH_MAX_BINCODE_FIELDS {
-                    self.migrate_hash_to_subkey(db, key, &stored.expires_at, map).await?;
+                    self.migrate_hash_to_subkey(db, key, &stored.expires_at, map)
+                        .await?;
                 } else {
                     self.storage.set_typed(db, key, stored).await?;
                 }
@@ -351,8 +344,7 @@ impl HashCommands {
                 count,
             } => {
                 let encoded_user_key = AiDbEngine::encode_key(db, key);
-                let subkey_key =
-                    subkey::encode_hash_field_key(&encoded_user_key, args[1].as_ref());
+                let subkey_key = subkey::encode_hash_field_key(&encoded_user_key, args[1].as_ref());
                 let existed = self
                     .storage
                     .raw_subkey_get(db, subkey_key.clone())
@@ -445,7 +437,8 @@ impl HashCommands {
                 let s = format_hash_float(new_val);
                 map.insert(field, s.as_bytes().to_vec());
                 if map.len() > HASH_MAX_BINCODE_FIELDS {
-                    self.migrate_hash_to_subkey(db, key, &stored.expires_at, map).await?;
+                    self.migrate_hash_to_subkey(db, key, &stored.expires_at, map)
+                        .await?;
                     return Ok(router::bulk(s.into_bytes()));
                 }
                 self.storage.set_typed(db, key, stored).await?;
@@ -522,7 +515,8 @@ impl HashCommands {
                 };
                 map.insert(field, new_val.to_string().into_bytes());
                 if map.len() > HASH_MAX_BINCODE_FIELDS {
-                    self.migrate_hash_to_subkey(db, key, &stored.expires_at, map).await?;
+                    self.migrate_hash_to_subkey(db, key, &stored.expires_at, map)
+                        .await?;
                     return Ok(router::integer(new_val));
                 }
                 self.storage.set_typed(db, key, stored).await?;
@@ -613,11 +607,7 @@ impl HashCommands {
 
     /// 加载 hash 的所有 fields (兼容所有格式). 用于只读路径.
     #[allow(dead_code)]
-    async fn load_hash(
-        &self,
-        db: usize,
-        key: &[u8],
-    ) -> Result<Option<HashMap<Vec<u8>, Vec<u8>>>> {
+    async fn load_hash(&self, db: usize, key: &[u8]) -> Result<Option<HashMap<Vec<u8>, Vec<u8>>>> {
         let Some(stored) = self.storage.get_typed(db, key).await? else {
             return Ok(None);
         };

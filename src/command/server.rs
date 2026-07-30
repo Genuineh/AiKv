@@ -63,12 +63,7 @@ impl ServerCommands {
             }
             return Ok(RespValue::Array(Some(pairs)));
         }
-        if !self
-            .shared
-            .config_map
-            .read()
-            .contains_key(param.as_ref())
-        {
+        if !self.shared.config_map.read().contains_key(param.as_ref()) {
             return Ok(RespValue::Array(Some(vec![])));
         }
         let value = self.config_value(param.as_ref());

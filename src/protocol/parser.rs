@@ -155,7 +155,9 @@ fn parse_value(
     cursor.set_position((pos + 1) as u64);
 
     match marker {
-        b'+' => read_line(cursor, parser).map(|o| o.map(|s| RespValue::SimpleString(s.to_string()))),
+        b'+' => {
+            read_line(cursor, parser).map(|o| o.map(|s| RespValue::SimpleString(s.to_string())))
+        }
         b'-' => read_line(cursor, parser).map(|o| o.map(|s| RespValue::Error(s.to_string()))),
         b':' => read_line(cursor, parser).and_then(|o| match o {
             None => Ok(None),
@@ -575,7 +577,11 @@ fn parse_double(cursor: &mut Cursor<&[u8]>, parser: &RespParser) -> Result<Optio
     Ok(Some(RespValue::Double(d)))
 }
 
-fn parse_bulk_error(cursor: &mut Cursor<&[u8]>, parser: &RespParser, buffer: &Bytes) -> Result<Option<String>> {
+fn parse_bulk_error(
+    cursor: &mut Cursor<&[u8]>,
+    parser: &RespParser,
+    buffer: &Bytes,
+) -> Result<Option<String>> {
     let saved = cursor.position() - 1;
     let len = match parse_length(cursor, parser)? {
         Some(l) => l,

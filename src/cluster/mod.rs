@@ -3,10 +3,10 @@
 pub mod announce;
 pub mod config_auto_save;
 pub mod connection;
-pub mod routing_key;
 pub mod gossip;
 pub mod replication;
 pub mod router;
+pub mod routing_key;
 pub mod state;
 
 pub use announce::{AnnounceMode, AnnounceResolver};

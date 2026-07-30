@@ -59,8 +59,7 @@ impl AiDbEngine {
 
     pub fn open_with_options(path: impl AsRef<Path>, mut opts: Options) -> Result<Arc<Self>> {
         opts.create_if_missing = true;
-        opts.validate()
-            .map_err(|e| Error::Storage(e.to_string()))?;
+        opts.validate().map_err(|e| Error::Storage(e.to_string()))?;
         let db = DB::open(path, opts).map_err(|e| Error::Storage(e.to_string()))?;
         Ok(Arc::new(Self { db }))
     }
@@ -89,8 +88,11 @@ impl StorageAdapter for AiDbEngine {
     }
 
     async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        self.blocking(move |db| db.put(&key, &value).map_err(|e| Error::Storage(e.to_string())))
-            .await
+        self.blocking(move |db| {
+            db.put(&key, &value)
+                .map_err(|e| Error::Storage(e.to_string()))
+        })
+        .await
     }
 
     async fn delete(&self, key: Vec<u8>) -> Result<bool> {
@@ -103,8 +105,13 @@ impl StorageAdapter for AiDbEngine {
     }
 
     async fn exists(&self, key: Vec<u8>) -> Result<bool> {
-        self.blocking(move |db| Ok(db.get(&key).map_err(|e| Error::Storage(e.to_string()))?.is_some()))
-            .await
+        self.blocking(move |db| {
+            Ok(db
+                .get(&key)
+                .map_err(|e| Error::Storage(e.to_string()))?
+                .is_some())
+        })
+        .await
     }
 
     async fn write_batch(&self, batch: Vec<AdapterWriteOp>) -> Result<()> {

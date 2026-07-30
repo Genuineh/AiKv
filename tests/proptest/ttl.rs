@@ -69,10 +69,7 @@ fn prop_ttl_filter_integration() {
 
             // Case 3: 非 StoredValue 格式 (随机字节), 保守保留
             let random_bytes: Vec<u8> = (0..32).map(|_| rand::random()).collect();
-            prop_assert_eq!(
-                filter.filter(0, b"k", &random_bytes),
-                FilterDecision::Keep
-            );
+            prop_assert_eq!(filter.filter(0, b"k", &random_bytes), FilterDecision::Keep);
 
             Ok(())
         })

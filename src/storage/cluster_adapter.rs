@@ -28,9 +28,7 @@ use aidb::cluster::{
 use aidb::error::ClusterError as AidbClusterError;
 use aidb::Checkpoint;
 
-use crate::cluster::router::{
-    migration_phase_for_slot, MigrationRoutePhase, TRYAGAIN_MIGRATION,
-};
+use crate::cluster::router::{migration_phase_for_slot, MigrationRoutePhase, TRYAGAIN_MIGRATION};
 use crate::cluster::state::{ClusterStateManager, CLUSTER_STATE_MGR};
 use crate::error::{Error, Result};
 use crate::storage::adapter::{AdapterWriteOp, StorageAdapter};
@@ -42,6 +40,7 @@ const GROUP_READY_RETRY_DELAY: Duration = Duration::from_millis(250);
 const ERR_DATA_GROUP_NOT_READY: &str = "CLUSTERDOWN data group not ready";
 const SET_BATCH_MAX_OPS: usize = 512;
 /// 凑批等待上限. 1ms 平衡吞吐与延迟: 集群 50c 负载下 items 到达快, 等 1ms 足矣.
+#[allow(dead_code)]
 const SET_BATCH_MAX_DELAY: Duration = Duration::from_millis(1);
 
 /// F-056-A1 读路由结果: `Single` 为老路径 (本地 group 直读, 无需合并);
@@ -159,14 +158,12 @@ impl ClusterDataAdapter {
             return Ok(None);
         };
         match phase {
-            MigrationRoutePhase::ReadyToCommit { target_group, .. } => {
-                Ok(mgr
-                    .multi_raft
-                    .get_groups()
-                    .read()
-                    .contains_key(&target_group)
-                    .then_some(ReadRoute::Single(target_group)))
-            }
+            MigrationRoutePhase::ReadyToCommit { target_group, .. } => Ok(mgr
+                .multi_raft
+                .get_groups()
+                .read()
+                .contains_key(&target_group)
+                .then_some(ReadRoute::Single(target_group))),
             MigrationRoutePhase::Frozen {
                 source_group,
                 target_group,
@@ -231,10 +228,7 @@ impl ClusterDataAdapter {
     /// `reject_if_write_frozen` 拦截, 不会到达这里. epoch 缺失属于不应发生的
     /// 内部不一致 (`BeginSlotMigration` 与 `migration_state` 同一 apply 内落地),
     /// 保守返回 TRYAGAIN 而非静默退化为非迁移写 (会漏记 tombstone).
-    fn copying_migration_route(
-        mgr: &ClusterStateManager,
-        slot: u16,
-    ) -> Result<Option<(u64, u64)>> {
+    fn copying_migration_route(mgr: &ClusterStateManager, slot: u16) -> Result<Option<(u64, u64)>> {
         match migration_phase_for_slot(mgr, slot) {
             Some(MigrationRoutePhase::Copying { source_group, .. }) => {
                 let epoch = mgr
@@ -250,8 +244,7 @@ impl ClusterDataAdapter {
     /// Subkey 的 slot 必须与父 key 一致, 否则集群模式下会路由到错误的 group.
     fn strip_subkey_suffix(user_key: &[u8]) -> &[u8] {
         if let Some(pos) = user_key.iter().position(|&b| b == 0x01) {
-            if pos + 1 < user_key.len()
-                && (user_key[pos + 1] == b'H' || user_key[pos + 1] == b'S')
+            if pos + 1 < user_key.len() && (user_key[pos + 1] == b'H' || user_key[pos + 1] == b'S')
             {
                 return &user_key[..pos];
             }
@@ -463,15 +456,11 @@ impl ClusterDataAdapter {
             Some(v) => WriteBatchItem::Put { key, value: v, ack },
             None => WriteBatchItem::Delete { key, ack },
         };
-        batcher
-            .tx
-            .send(item)
-            .await
-            .map_err(|_| {
-                Error::Cluster(crate::error::ClusterError::Aidb(
-                    AidbClusterError::Internal("data group write batcher stopped".into()),
-                ))
-            })?;
+        batcher.tx.send(item).await.map_err(|_| {
+            Error::Cluster(crate::error::ClusterError::Aidb(
+                AidbClusterError::Internal("data group write batcher stopped".into()),
+            ))
+        })?;
         wait.await
             .map_err(|_| {
                 Error::Cluster(crate::error::ClusterError::Aidb(
@@ -550,10 +539,11 @@ async fn run_set_batcher(
         acks.reverse();
 
         let t_propose = Instant::now();
-        let result = ClusterDataAdapter::propose_group_with_retry(&mgr, gid, Request::WriteBatch(tb))
-            .await
-            .and_then(ClusterDataAdapter::check_response)
-            .map_err(|e| e.to_string());
+        let result =
+            ClusterDataAdapter::propose_group_with_retry(&mgr, gid, Request::WriteBatch(tb))
+                .await
+                .and_then(ClusterDataAdapter::check_response)
+                .map_err(|e| e.to_string());
 
         let propose_us = t_propose.elapsed().as_micros();
         let total_us = t_start.elapsed().as_micros();
@@ -635,9 +625,12 @@ impl StorageAdapter for ClusterDataAdapter {
             Some((mgr, WriteRoute::Migration { gid, epoch, .. })) => {
                 let mut ops = ThinWriteBatch::new();
                 ops.put(key, value);
-                let resp =
-                    Self::propose_group_with_retry(&mgr, gid, Request::MigrationWrite { epoch, ops })
-                        .await?;
+                let resp = Self::propose_group_with_retry(
+                    &mgr,
+                    gid,
+                    Request::MigrationWrite { epoch, ops },
+                )
+                .await?;
                 Self::check_response(resp)
             }
             Some((mgr, WriteRoute::Plain(gid))) => {
@@ -666,15 +659,16 @@ impl StorageAdapter for ClusterDataAdapter {
                     .is_some();
                 let mut ops = ThinWriteBatch::new();
                 ops.delete(key);
-                let resp =
-                    Self::propose_group_with_retry(&mgr, gid, Request::MigrationWrite { epoch, ops })
-                        .await?;
+                let resp = Self::propose_group_with_retry(
+                    &mgr,
+                    gid,
+                    Request::MigrationWrite { epoch, ops },
+                )
+                .await?;
                 Self::check_response(resp)?;
                 Ok(existed)
             }
-            Some((mgr, WriteRoute::Plain(gid))) => {
-                self.submit_write_op(mgr, gid, key, None).await
-            }
+            Some((mgr, WriteRoute::Plain(gid))) => self.submit_write_op(mgr, gid, key, None).await,
             None if Self::should_use_local_engine(&key) => self.local.delete(key).await,
             None => Err(Self::data_group_not_ready_err()),
         }
@@ -696,9 +690,11 @@ impl StorageAdapter for ClusterDataAdapter {
                     source_group,
                     epoch,
                 },
-            )) => Ok(Self::merge_read(&mgr, target_group, source_group, epoch, &key)
-                .await?
-                .is_some()),
+            )) => Ok(
+                Self::merge_read(&mgr, target_group, source_group, epoch, &key)
+                    .await?
+                    .is_some(),
+            ),
             None if Self::should_use_local_engine(&key) => self.local.exists(key).await,
             None => Err(Self::data_group_not_ready_err()),
         }

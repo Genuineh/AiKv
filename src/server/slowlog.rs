@@ -1,8 +1,8 @@
 //! 慢查询日志 (Phase 10-ext Step 0)
 
+use parking_lot::RwLock;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
-use parking_lot::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const DEFAULT_SLOWLOG_THRESHOLD_US: u64 = 100_000;

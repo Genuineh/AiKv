@@ -3,8 +3,8 @@
 //! 在 compaction 合并 SST 时, 尝试反序列化 value 为 `StoredValue`,
 //! 检查 `is_expired()`, 对已过期的 entry 返回 `Remove` 以丢弃.
 
-use aidb::engine::compaction::{CompactionFilter, FilterDecision};
 use crate::storage::types::StoredValue;
+use aidb::engine::compaction::{CompactionFilter, FilterDecision};
 
 /// TTL 过期的 key-value entry 在 compaction 时自动丢弃.
 ///

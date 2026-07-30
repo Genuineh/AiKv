@@ -13,9 +13,7 @@ use crate::error::{Error, Result};
 use crate::protocol::RespValue;
 use crate::storage::memory::glob_match;
 use crate::storage::subkey;
-use crate::storage::{
-    AiDbEngine, CollectionKind, KvStorage, StoredValue, ValueType,
-};
+use crate::storage::{AiDbEngine, CollectionKind, KvStorage, StoredValue, ValueType};
 
 /// 小集合使用 bincode; 超过此阈值自动切到 subkey 格式.
 const SET_MAX_BINCODE_MEMBERS: usize = 64;
@@ -46,7 +44,8 @@ impl SetCommands {
                     }
                 }
                 if set.len() > SET_MAX_BINCODE_MEMBERS {
-                    self.migrate_set_to_subkey(db, key, &stored.expires_at, set).await?;
+                    self.migrate_set_to_subkey(db, key, &stored.expires_at, set)
+                        .await?;
                 } else {
                     self.storage.set_typed(db, key, stored).await?;
                 }
@@ -72,9 +71,7 @@ impl SetCommands {
                         *count += 1;
                     }
                     // Set member 值用空字节 (仅 key 存在性)
-                    self.storage
-                        .raw_subkey_set(db, subkey_key, vec![])
-                        .await?;
+                    self.storage.raw_subkey_set(db, subkey_key, vec![]).await?;
                 }
                 self.storage.set_typed(db, key, stored).await?;
                 Ok(router::integer(new_members))
@@ -148,8 +145,7 @@ impl SetCommands {
                 ..
             } => {
                 let encoded_user_key = AiDbEngine::encode_key(db, &args[0]);
-                let subkey_key =
-                    subkey::encode_set_member_key(&encoded_user_key, args[1].as_ref());
+                let subkey_key = subkey::encode_set_member_key(&encoded_user_key, args[1].as_ref());
                 self.storage
                     .raw_subkey_get(db, subkey_key)
                     .await
@@ -207,8 +203,7 @@ impl SetCommands {
                 ..
             } => {
                 let encoded_user_key = AiDbEngine::encode_key(db, key);
-                self.scan_set_subkeys(db, &encoded_user_key, None)
-                    .await?
+                self.scan_set_subkeys(db, &encoded_user_key, None).await?
             }
             _ => return Err(router::wrongtype()),
         };
@@ -234,10 +229,7 @@ impl SetCommands {
                 let encoded_user_key = AiDbEngine::encode_key(db, key);
                 for m in &picked {
                     let subkey_key = subkey::encode_set_member_key(&encoded_user_key, m);
-                    let _ = self
-                        .storage
-                        .raw_subkey_delete(db, subkey_key)
-                        .await;
+                    let _ = self.storage.raw_subkey_delete(db, subkey_key).await;
                     *count = count.saturating_sub(1);
                 }
                 if *count == 0 {
@@ -420,9 +412,7 @@ impl SetCommands {
             } => {
                 let encoded = AiDbEngine::encode_key(db, dest);
                 let subkey_key = subkey::encode_set_member_key(&encoded, &member);
-                self.storage
-                    .raw_subkey_set(db, subkey_key, vec![])
-                    .await?;
+                self.storage.raw_subkey_set(db, subkey_key, vec![]).await?;
                 *count += 1;
                 self.storage.set_typed(db, dest, dest_stored).await?;
             }
@@ -478,7 +468,10 @@ impl SetCommands {
     async fn store_set(&self, db: usize, dest: &Bytes, set: HashSet<Vec<u8>>) -> Result<RespValue> {
         let _lock = self.key_lock.lock(dest).await;
         if let Some(stored) = self.storage.get_typed(db, dest).await? {
-            if !matches!(stored.value, ValueType::Set(_) | ValueType::CollectionHeader { .. }) {
+            if !matches!(
+                stored.value,
+                ValueType::Set(_) | ValueType::CollectionHeader { .. }
+            ) {
                 return Err(router::wrongtype());
             }
         }
@@ -609,9 +602,7 @@ impl SetCommands {
 
         for member in set {
             let subkey_key = subkey::encode_set_member_key(&encoded_user_key, member);
-            self.storage
-                .raw_subkey_set(db, subkey_key, vec![])
-                .await?;
+            self.storage.raw_subkey_set(db, subkey_key, vec![]).await?;
         }
 
         let metadata = StoredValue {

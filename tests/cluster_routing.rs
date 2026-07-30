@@ -275,7 +275,10 @@ mod tests {
                 assert_eq!(*slot, 0);
                 assert_eq!(*node_id, 2, "should redirect to source group's leader");
             }
-            _ => panic!("expected MOVED (migrating, non-leader, non-readonly), got {:?}", r),
+            _ => panic!(
+                "expected MOVED (migrating, non-leader, non-readonly), got {:?}",
+                r
+            ),
         }
         // Restore state for subsequent tests
         mgr_ref.router.refresh_from_data(

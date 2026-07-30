@@ -1,7 +1,7 @@
 //! SCRIPT LOAD 脚本缓存 (LRU 256; EVAL 不写入)
 
-use std::collections::{HashMap, VecDeque};
 use parking_lot::RwLock;
+use std::collections::{HashMap, VecDeque};
 
 const MAX_SCRIPTS: usize = 256;
 
@@ -55,9 +55,7 @@ impl ScriptCache {
     }
 
     pub fn exists(&self, sha1: &str) -> bool {
-        self.inner
-            .read()
-            .map.contains_key(sha1)
+        self.inner.read().map.contains_key(sha1)
     }
 
     pub fn flush(&self) {

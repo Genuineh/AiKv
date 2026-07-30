@@ -14,7 +14,9 @@ pub mod types;
 
 pub use adapter::{AdapterWriteOp, KvStorageAdapter, StorageAdapter};
 pub use aidb::AiDbEngine;
-pub use aidb_options::{server_db_options, server_db_options_with_preset, testing_db_options, DbPreset};
+pub use aidb_options::{
+    server_db_options, server_db_options_with_preset, testing_db_options, DbPreset,
+};
 pub use dump::{decode as dump_decode, encode as dump_encode, DUMP_VERSION};
 pub use memory::MemoryEngine;
 pub use observation::StorageObservation;

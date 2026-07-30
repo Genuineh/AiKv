@@ -61,10 +61,7 @@ fn build_resource(config: &OtelInitConfig) -> Resource {
     let instance_id = service_instance_id(config);
     let mut builder = Resource::builder()
         .with_service_name(config.service_name.clone())
-        .with_attribute(KeyValue::new(
-            "service.version",
-            env!("CARGO_PKG_VERSION"),
-        ))
+        .with_attribute(KeyValue::new("service.version", env!("CARGO_PKG_VERSION")))
         .with_attribute(KeyValue::new("service.instance.id", instance_id.clone()));
     if let Some(host) = &config.host_label {
         builder = builder.with_attribute(KeyValue::new("host.name", host.clone()));
@@ -73,8 +70,7 @@ fn build_resource(config: &OtelInitConfig) -> Resource {
         builder = builder.with_attribute(KeyValue::new("node_id", node_id.to_string()));
     }
     if let Some(env) = &config.deployment_environment {
-        builder =
-            builder.with_attribute(KeyValue::new("deployment.environment", env.clone()));
+        builder = builder.with_attribute(KeyValue::new("deployment.environment", env.clone()));
     }
     for kv in &config.extra_resource_attrs {
         builder = builder.with_attribute(kv.clone());

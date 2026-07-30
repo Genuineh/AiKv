@@ -120,7 +120,10 @@ async fn test_metrics_health_endpoint() {
     let mut response = Vec::new();
     stream.read_to_end(&mut response).await.unwrap();
     let body = String::from_utf8_lossy(&response);
-    assert!(body.contains("404 Not Found"), "expected /metrics removed: {body}");
+    assert!(
+        body.contains("404 Not Found"),
+        "expected /metrics removed: {body}"
+    );
 }
 /// 验证关键 tracing span 名称与文档规范一致。
 #[test]

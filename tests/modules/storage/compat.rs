@@ -90,14 +90,7 @@ async fn test_compat_mget_wrongtype() {
             .unwrap();
 
         let vals = storage
-            .mget(
-                0,
-                &[
-                    b"s".to_vec(),
-                    b"h".to_vec(),
-                    b"missing".to_vec(),
-                ],
-            )
+            .mget(0, &[b"s".to_vec(), b"h".to_vec(), b"missing".to_vec()])
             .await
             .unwrap();
         assert_eq!(vals[0], Some(b"hello".to_vec()), "{label}: MGET string");

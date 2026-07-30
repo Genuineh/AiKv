@@ -16,9 +16,9 @@ use aidb::cluster::meta_types::SLOT_COUNT;
 use aidb::cluster::router::key_to_slot;
 use aidb::cluster::types::ClusterError;
 use aidb::cluster::ReplicaAllocator;
-use aidb::Error as AidbError;
 #[cfg(feature = "cluster-test-util")]
-use aidb::cluster::{FailPoint, failpoint_registry};
+use aidb::cluster::{failpoint_registry, FailPoint};
+use aidb::Error as AidbError;
 use bytes::Bytes;
 use tokio::time::sleep;
 
@@ -106,7 +106,11 @@ fn resolve_group_leader_for_info(
 }
 
 /// 动态 `cluster_state:ok` / `fail` (对齐 oldmain: slot 满 + leader + 映射一致).
-fn compute_cluster_state<F>(slot_table: &SlotTable, meta: &ClusterMeta, resolve_leader: F) -> &'static str
+fn compute_cluster_state<F>(
+    slot_table: &SlotTable,
+    meta: &ClusterMeta,
+    resolve_leader: F,
+) -> &'static str
 where
     F: Fn(u64) -> Option<u64>,
 {
@@ -305,7 +309,10 @@ fn cluster_failpoint(args: &[Bytes]) -> Result<String, String> {
             let name_str = bytes_to_str(name).map_err(|e| e.to_string())?;
             let fp = FailPoint::from_str(name_str)
                 .ok_or_else(|| format!("ERR unknown failpoint: {name_str}"))?;
-            if args.get(3).map_or(false, |a| a.eq_ignore_ascii_case(b"once")) {
+            if args
+                .get(3)
+                .map_or(false, |a| a.eq_ignore_ascii_case(b"once"))
+            {
                 failpoint_registry().arm_once(fp);
                 Ok(format!("armed {} (once)", fp.display_name()))
             } else {
@@ -2082,7 +2089,8 @@ pub async fn dispatch_cluster(
         Some("reset") | Some("RESET") => {
             if let Some(mode) = args.get(1) {
                 let mode_str = bytes_to_str(mode)?;
-                if !mode_str.eq_ignore_ascii_case("soft") && !mode_str.eq_ignore_ascii_case("hard") {
+                if !mode_str.eq_ignore_ascii_case("soft") && !mode_str.eq_ignore_ascii_case("hard")
+                {
                     return Err(Error::Command(format!(
                         "ERR unknown RESET option '{mode_str}'"
                     )));
@@ -2203,8 +2211,8 @@ mod cluster_info_state_tests {
     #[test]
     fn cluster_state_fail_partial_slots() {
         let mut table = default_slot_table();
-        for slot in 0..5 {
-            table[slot] = SlotStatus::Assigned(1);
+        for slot in &mut table[0..5] {
+            *slot = SlotStatus::Assigned(1);
         }
         let meta = meta_with_group(1, true);
         assert_eq!(compute_cluster_state(&table, &meta, |_| Some(1)), "fail");

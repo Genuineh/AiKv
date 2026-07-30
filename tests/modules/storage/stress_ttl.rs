@@ -2,12 +2,12 @@
 //!
 //! 验证 TTL filter 在并发写入和 compaction 下不会崩溃或丢数据.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use aikv::storage::{AiDbEngine, StoredValue, TtlExpireFilter, ValueType, now_ms};
+use aikv::storage::{now_ms, AiDbEngine, StoredValue, TtlExpireFilter, ValueType};
 use tempfile::TempDir;
 
 #[ignore = "stress: concurrent write with TTL filter ~5s"]

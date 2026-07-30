@@ -191,9 +191,7 @@ fn prop_parser_malformed_input() {
         .run(&strategy, |bytes| {
             let mut parser = RespParser::new();
             parser.feed(&bytes);
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                parser.parse()
-            }));
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parser.parse()));
             match result {
                 Ok(Ok(None)) | Ok(Err(_)) => {}
                 Ok(Ok(Some(_))) => {} // 极低概率偶然解析出合法帧

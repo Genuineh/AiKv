@@ -55,7 +55,10 @@ pub enum ValueType {
     /// Subkey 格式的集合元数据.
     /// key 自身存储 `StoredValue { value: CollectionHeader, expires_at }`,
     /// 每个 field/member 以独立 subkey 存储在引擎中.
-    CollectionHeader { kind: CollectionKind, count: u32 },
+    CollectionHeader {
+        kind: CollectionKind,
+        count: u32,
+    },
 }
 
 /// Subkey 格式支持的集合类型.
@@ -310,7 +313,12 @@ pub trait KvStorage: Send + Sync {
     }
 
     /// 绕过 bincode 序列化, 直接写入 subkey 的原始字节.
-    async fn raw_subkey_set(&self, _db: usize, _encoded_key: Vec<u8>, _value: Vec<u8>) -> Result<()> {
+    async fn raw_subkey_set(
+        &self,
+        _db: usize,
+        _encoded_key: Vec<u8>,
+        _value: Vec<u8>,
+    ) -> Result<()> {
         Err(Error::Storage("raw subkey access not supported".into()))
     }
 

@@ -4,10 +4,10 @@
 //! `error_stats` 供 INFO errorstats (错误前缀, 非命令名). 全局 `slowlog_commands_*` 与逐命令
 //! commandstats `slowlog_*` 字段并存 (Redis 8.8 stats + commandstats 语义).
 
+use dashmap::DashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 #[cfg(feature = "monitoring")]
 use std::sync::Arc;
-use dashmap::DashMap;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct CommandTotals {
@@ -372,7 +372,8 @@ impl ServerMetrics {
             let secs = now - prev_time;
             let in_kbps = (input.saturating_sub(prev_input) * 8) / (secs * 1024);
             let out_kbps = (output.saturating_sub(prev_output) * 8) / (secs * 1024);
-            self.instantaneous_input_kbps.store(in_kbps, Ordering::Relaxed);
+            self.instantaneous_input_kbps
+                .store(in_kbps, Ordering::Relaxed);
             self.instantaneous_output_kbps
                 .store(out_kbps, Ordering::Relaxed);
         }
@@ -394,8 +395,7 @@ impl ServerMetrics {
         if cached > 0 {
             return cached;
         }
-        crate::server::process_metrics::read_resident_memory_bytes()
-            .unwrap_or(0)
+        crate::server::process_metrics::read_resident_memory_bytes().unwrap_or(0)
     }
 
     pub fn cached_total_system_memory_bytes(&self) -> u64 {
@@ -403,8 +403,7 @@ impl ServerMetrics {
         if cached > 0 {
             return cached;
         }
-        crate::server::process_metrics::read_total_system_memory_bytes()
-            .unwrap_or(0)
+        crate::server::process_metrics::read_total_system_memory_bytes().unwrap_or(0)
     }
 
     pub fn instantaneous_input_kbps(&self) -> u64 {

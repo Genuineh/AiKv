@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use aikv::storage::{
-    AiDbEngine, KvStorage, KvStorageAdapter, StoredValue, TtlExpireFilter, ValueType, now_ms,
+    now_ms, AiDbEngine, KvStorage, KvStorageAdapter, StoredValue, TtlExpireFilter, ValueType,
 };
 use tempfile::TempDir;
 
@@ -103,7 +103,11 @@ async fn test_ttl_filter_persistent_cleanup() {
         assert_eq!(val, None, "expired key should be gone after reopen");
 
         let val = storage.get(0, b"perm").await.unwrap();
-        assert_eq!(val, Some(b"keep".to_vec()), "non-expired key should persist");
+        assert_eq!(
+            val,
+            Some(b"keep".to_vec()),
+            "non-expired key should persist"
+        );
     }
 }
 
@@ -122,7 +126,11 @@ async fn test_ttl_filter_batch_mixed_expiry() {
 
     // 交替写入过期和未过期 key
     for i in 0..10u8 {
-        let expires_at = if i % 2 == 0 { Some(past_ms) } else { Some(future_ms) };
+        let expires_at = if i % 2 == 0 {
+            Some(past_ms)
+        } else {
+            Some(future_ms)
+        };
         storage
             .set_typed(
                 0,
@@ -187,7 +195,10 @@ async fn test_ttl_filter_ignores_no_expiry() {
     }
     db.drain_compactions().unwrap();
 
-    assert_eq!(storage.get(0, b"plain").await.unwrap(), Some(b"data".to_vec()));
+    assert_eq!(
+        storage.get(0, b"plain").await.unwrap(),
+        Some(b"data".to_vec())
+    );
     assert_eq!(
         storage.get(0, b"myhash").await.unwrap(),
         Some(b"hash_val".to_vec())

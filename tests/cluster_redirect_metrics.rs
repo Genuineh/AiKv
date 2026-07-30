@@ -127,10 +127,7 @@ fn moved_does_not_increment_commandstats() {
 
     match result {
         Ok(RespValue::Error(msg)) => {
-            assert!(
-                msg.starts_with("MOVED "),
-                "expected MOVED error, got {msg}"
-            );
+            assert!(msg.starts_with("MOVED "), "expected MOVED error, got {msg}");
         }
         other => panic!("expected MOVED error response, got {other:?}"),
     }

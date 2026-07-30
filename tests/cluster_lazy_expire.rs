@@ -106,20 +106,17 @@ mod tests {
         node_addrs.insert(2u64, "127.0.0.1:7002".to_string());
         let mut group_leaders = HashMap::new();
         group_leaders.insert(1u64, 2u64);
-        mgr.router.refresh_from_data(
-            all_assigned_to_1,
-            group_nodes,
-            node_addrs,
-            group_leaders,
-        );
+        mgr.router
+            .refresh_from_data(all_assigned_to_1, group_nodes, node_addrs, group_leaders);
         mgr.local_group_leaders.write().insert(1, false);
     }
 
     #[tokio::test]
     async fn lazy_expire_delete_allowed_on_leader_denied_on_replica() {
         let mgr = build_mgr("aikv_lazy_expire_test").await;
-        let local = AiDbEngine::open_for_testing(std::env::temp_dir().join("aikv_lazy_expire_local"))
-            .unwrap();
+        let local =
+            AiDbEngine::open_for_testing(std::env::temp_dir().join("aikv_lazy_expire_local"))
+                .unwrap();
         let adapter = ClusterDataAdapter::new(local, ClusterDataAdapter::DEFAULT_EAGER_FLUSH);
 
         let key = AiDbEngine::encode_key(0, b"expiring-key");

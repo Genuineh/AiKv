@@ -21,11 +21,11 @@ use std::path::Path;
 use aikv::cluster::state::DEFAULT_DATA_PORT_OFFSET;
 use aikv::command::blocking;
 use aikv::server::{ConnectionConfig, Server, ServerSharedState};
+use aikv::storage::ttl_filter::TtlExpireFilter;
 use aikv::storage::{
     server_db_options_with_preset, AiDbEngine, DbPreset, KvStorage, KvStorageAdapter, MemoryEngine,
     StorageEngineKind, StorageObservation,
 };
-use aikv::storage::ttl_filter::TtlExpireFilter;
 use clap::{Parser as ClapParser, ValueEnum};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter, Registry};
 
@@ -168,14 +168,19 @@ fn build_storage(args: &Args, observation: Arc<StorageObservation>) -> StorageBu
                 path,
                 server_db_options_with_preset(args.sync_wal, preset),
             )
-                .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string())?;
             // 注入 TTL compaction 过滤器以自动清理过期 key.
-            engine.db.set_compaction_filter(Some(std::sync::Arc::new(TtlExpireFilter)));
+            engine
+                .db
+                .set_compaction_filter(Some(std::sync::Arc::new(TtlExpireFilter)));
             let db = engine.db.clone();
             let adapter: Arc<dyn aikv::storage::StorageAdapter> = engine;
             #[cfg(feature = "cluster")]
             let adapter: Arc<dyn aikv::storage::StorageAdapter> =
-                aikv::storage::cluster_adapter::ClusterDataAdapter::new(adapter, aikv::storage::cluster_adapter::ClusterDataAdapter::DEFAULT_EAGER_FLUSH);
+                aikv::storage::cluster_adapter::ClusterDataAdapter::new(
+                    adapter,
+                    aikv::storage::cluster_adapter::ClusterDataAdapter::DEFAULT_EAGER_FLUSH,
+                );
             Ok((
                 KvStorageAdapter::with_observation(adapter, Some(observation)),
                 StorageEngineKind::AiDb,
@@ -411,7 +416,8 @@ async fn init_cluster(
     // 11. 启动 Lifecycle (数据 Group 自动创建/销毁)
     // Data groups 使用 LogCommitter 自适应 Raft 组提交.
     let mut data_raft_config = raft_config.clone();
-    data_raft_config.log_committer_config = Some(aidb::cluster::log_committer::LogCommitterConfig::default());
+    data_raft_config.log_committer_config =
+        Some(aidb::cluster::log_committer::LogCommitterConfig::default());
     let lifecycle_cfg = aidb::cluster::multi_raft_node::LifecycleConfig {
         data_dir: data_dir.to_path_buf(),
         raft_node_config: data_raft_config,
@@ -686,8 +692,7 @@ async fn main() {
         let metrics_addr_str = format!("{}:{}", args.metrics_addr, args.metrics_port);
         match metrics_addr_str.parse::<std::net::SocketAddr>() {
             Ok(metrics_addr) => {
-                let metrics_server =
-                    aikv::server::metrics_server::MetricsServer::new(metrics_addr);
+                let metrics_server = aikv::server::metrics_server::MetricsServer::new(metrics_addr);
                 tokio::spawn(async move {
                     metrics_server.run().await;
                 });

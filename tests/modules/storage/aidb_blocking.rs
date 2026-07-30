@@ -23,7 +23,10 @@ async fn test_aidb_get_set_offload_to_blocking_pool() {
     });
 
     for _ in 0..32 {
-        assert_eq!(engine.get(key.clone()).await.unwrap(), Some(expected_val.clone()));
+        assert_eq!(
+            engine.get(key.clone()).await.unwrap(),
+            Some(expected_val.clone())
+        );
     }
 
     tokio::time::sleep(Duration::from_millis(20)).await;

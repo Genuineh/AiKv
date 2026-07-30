@@ -1,5 +1,7 @@
-use aikv::storage::{server_db_options, testing_db_options, AiDbEngine, KvStorage, KvStorageAdapter};
 use aidb::config::Options;
+use aikv::storage::{
+    server_db_options, testing_db_options, AiDbEngine, KvStorage, KvStorageAdapter,
+};
 use tempfile::TempDir;
 
 #[test]
@@ -20,9 +22,15 @@ fn server_db_options_is_not_for_testing() {
 
 #[test]
 fn server_db_options_validates() {
-    server_db_options(false).validate().expect("valid prod options");
-    server_db_options(true).validate().expect("valid prod options with sync_wal");
-    testing_db_options().validate().expect("valid testing options");
+    server_db_options(false)
+        .validate()
+        .expect("valid prod options");
+    server_db_options(true)
+        .validate()
+        .expect("valid prod options with sync_wal");
+    testing_db_options()
+        .validate()
+        .expect("valid testing options");
 }
 
 #[test]
@@ -57,12 +65,15 @@ async fn open_and_open_with_server_options_are_equivalent() {
     let dir_b = TempDir::new().unwrap();
 
     let engine_a = AiDbEngine::open(dir_a.path()).expect("open prod");
-    let engine_b =
-        AiDbEngine::open_with_options(dir_b.path(), server_db_options(false)).expect("open explicit");
+    let engine_b = AiDbEngine::open_with_options(dir_b.path(), server_db_options(false))
+        .expect("open explicit");
     let storage_a = KvStorageAdapter::new(engine_a);
     let storage_b = KvStorageAdapter::new(engine_b);
 
     storage_a.set(0, b"k", b"v").await.unwrap();
     storage_b.set(0, b"k", b"v").await.unwrap();
-    assert_eq!(storage_a.get(0, b"k").await.unwrap(), storage_b.get(0, b"k").await.unwrap());
+    assert_eq!(
+        storage_a.get(0, b"k").await.unwrap(),
+        storage_b.get(0, b"k").await.unwrap()
+    );
 }

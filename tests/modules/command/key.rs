@@ -565,10 +565,7 @@ async fn test_migrate_keys_stops_at_auth2() {
         result
     );
     assert!(
-        !result
-            .unwrap_err()
-            .to_string()
-            .contains("wrong number"),
+        !result.unwrap_err().to_string().contains("wrong number"),
         "should not be a parsing error"
     );
     assert_eq!(

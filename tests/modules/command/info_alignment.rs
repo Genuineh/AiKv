@@ -255,12 +255,7 @@ async fn info_all_includes_commandstats_errorstats_threads_latencystats() {
         .filter(|l| l.starts_with("# "))
         .map(|l| l.trim_start_matches("# ").trim())
         .collect();
-    for section in [
-        "Commandstats",
-        "Errorstats",
-        "Threads",
-        "Latencystats",
-    ] {
+    for section in ["Commandstats", "Errorstats", "Threads", "Latencystats"] {
         assert!(
             headers.contains(&section),
             "INFO all missing section: {section}"

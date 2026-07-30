@@ -89,7 +89,8 @@ impl StringCommands {
             });
         }
 
-        self.apply_set(db, &opts.key, &opts.value, opts.expire_at).await
+        self.apply_set(db, &opts.key, &opts.value, opts.expire_at)
+            .await
     }
 
     async fn apply_set(
@@ -599,8 +600,8 @@ fn string_range_slice(value: &[u8], start: i64, end: i64) -> Vec<u8> {
 }
 
 fn parse_setrange_offset(b: &[u8]) -> Result<usize> {
-    let s = std::str::from_utf8(b)
-        .map_err(|_| Error::Command("ERR offset is out of range".into()))?;
+    let s =
+        std::str::from_utf8(b).map_err(|_| Error::Command("ERR offset is out of range".into()))?;
     if s.starts_with('-') {
         return Err(Error::Command("ERR offset is out of range".into()));
     }

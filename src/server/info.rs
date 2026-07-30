@@ -153,8 +153,12 @@ impl<'a> InfoRenderer<'a> {
         let uptime_days = uptime / 86_400;
         let server_time_usec = server_time_usec();
         let arch_bits = std::mem::size_of::<usize>() * 8;
-        let executable = crate::server::process_metrics::read_executable_path()
-            .unwrap_or_else(|| std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default());
+        let executable =
+            crate::server::process_metrics::read_executable_path().unwrap_or_else(|| {
+                std::env::current_exe()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default()
+            });
         let multiplexing = if cfg!(target_os = "linux") {
             "epoll"
         } else {
@@ -233,11 +237,7 @@ impl<'a> InfoRenderer<'a> {
         } else {
             100.0
         };
-        let dataset_perc = if used_memory > 0 {
-            100.0
-        } else {
-            0.0
-        };
+        let dataset_perc = if used_memory > 0 { 100.0 } else { 0.0 };
 
         let mut out = String::from("# Memory\r\n");
         append_kv_u64(&mut out, "used_memory", used_memory);
@@ -310,7 +310,11 @@ impl<'a> InfoRenderer<'a> {
     fn render_stats(&self) -> String {
         let m = self.shared.metrics();
         let mut out = String::from("# Stats\r\n");
-        append_kv_u64(&mut out, "total_connections_received", m.connections_total());
+        append_kv_u64(
+            &mut out,
+            "total_connections_received",
+            m.connections_total(),
+        );
         append_kv_u64(
             &mut out,
             "total_commands_processed",

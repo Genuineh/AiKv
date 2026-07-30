@@ -104,9 +104,7 @@ impl KeyLock {
 }
 
 fn script_lock_timeout_err(timeout: Duration) -> Error {
-    Error::Command(format!(
-        "ERR Lock acquisition timeout after {timeout:?}"
-    ))
+    Error::Command(format!("ERR Lock acquisition timeout after {timeout:?}"))
 }
 
 /// 多 key 锁 RAII guard; Vec 逆序 drop 释放锁
@@ -227,6 +225,7 @@ impl CommandRouter {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn execute_with_client(
         &self,
         cmd: &str,
@@ -859,7 +858,9 @@ fn classify_command(cmd: &str) -> crate::cluster::router::CommandType {
         "get" | "exists" | "hget" | "hgetall" | "hkeys" | "hvals" | "hlen" | "hexists"
         | "lrange" | "lindex" | "llen" | "smembers" | "scard" | "sismember" | "zrange"
         | "zcard" | "zscore" | "zrank" | "type" | "ttl" | "pttl" | "strlen" | "getbit"
-        | "getrange" | "mget" | "json.get" | "json.mget" => crate::cluster::router::CommandType::Read,
+        | "getrange" | "mget" | "json.get" | "json.mget" => {
+            crate::cluster::router::CommandType::Read
+        }
         _ => crate::cluster::router::CommandType::Write,
     }
 }

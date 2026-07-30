@@ -842,7 +842,11 @@ async fn test_json_mget_basic() {
     );
 
     let RespValue::Array(Some(items)) = r
-        .execute("JSON.MGET", &[b("d1"), b("d2"), b("missing"), b("$.a")], &mut db)
+        .execute(
+            "JSON.MGET",
+            &[b("d1"), b("d2"), b("missing"), b("$.a")],
+            &mut db,
+        )
         .await
         .unwrap()
     else {

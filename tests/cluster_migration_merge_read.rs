@@ -44,11 +44,16 @@ const DEL_KEY: &[u8] = b"del_key{m}";
 /// 就绪的 `ClusterStateManager` (已注册进 `CLUSTER_STATE_MGR`).
 async fn build_mgr() -> Arc<ClusterStateManager> {
     let slot = key_to_slot(PREPARE_KEY);
-    assert_eq!(slot, key_to_slot(DEL_KEY), "test keys must share a slot (hash tag)");
+    assert_eq!(
+        slot,
+        key_to_slot(DEL_KEY),
+        "test keys must share a slot (hash tag)"
+    );
 
     let meta_dir = TempDir::new().unwrap();
     let meta_db = DB::open(meta_dir.path().join("meta"), Options::for_testing()).unwrap();
-    let meta_factory = RaftNetworkClientFactory::new(1, aidb::cluster::METARAFT_GROUP_ID, 30, 65 * 1024 * 1024);
+    let meta_factory =
+        RaftNetworkClientFactory::new(1, aidb::cluster::METARAFT_GROUP_ID, 30, 65 * 1024 * 1024);
     let meta_cfg = RaftNodeConfig {
         node_id: 1,
         group_id: aidb::cluster::METARAFT_GROUP_ID,
@@ -59,7 +64,11 @@ async fn build_mgr() -> Arc<ClusterStateManager> {
         snapshot_logs_since_last: 200,
         ..Default::default()
     };
-    let meta_raft = Arc::new(MetaRaftNode::new(meta_cfg, meta_db, meta_factory).await.unwrap());
+    let meta_raft = Arc::new(
+        MetaRaftNode::new(meta_cfg, meta_db, meta_factory)
+            .await
+            .unwrap(),
+    );
     meta_raft
         .initialize(vec![(1, "http://127.0.0.1:1".into())])
         .await
@@ -70,7 +79,10 @@ async fn build_mgr() -> Arc<ClusterStateManager> {
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    assert!(meta_raft.is_leader().await, "meta raft should elect itself leader");
+    assert!(
+        meta_raft.is_leader().await,
+        "meta raft should elect itself leader"
+    );
 
     meta_raft
         .propose(MetaRequest::RegisterNode {
@@ -144,12 +156,19 @@ async fn build_mgr() -> Arc<ClusterStateManager> {
     // 等两个 group 都在本地创建出来并选出 leader.
     for _ in 0..100 {
         let ids = multi_raft.local_group_ids();
-        if ids.len() == 2 && multi_raft.is_elected_leader_sync(1) && multi_raft.is_elected_leader_sync(2) {
+        if ids.len() == 2
+            && multi_raft.is_elected_leader_sync(1)
+            && multi_raft.is_elected_leader_sync(2)
+        {
             break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    assert_eq!(multi_raft.local_group_ids().len(), 2, "both groups must be created locally");
+    assert_eq!(
+        multi_raft.local_group_ids().len(),
+        2,
+        "both groups must be created locally"
+    );
 
     let mgr = ClusterStateManager {
         router: (*router).clone(),
@@ -239,12 +258,19 @@ async fn migration_merge_read_and_del_tombstone_lifecycle() {
         .expect("set during Copying should succeed via MigrationWrite");
     // 必须落在 target (group 2), 走 Request::MigrationWrite.
     assert_eq!(
-        mgr.multi_raft.get_key_from_group(2, &prepare_key_enc).await.unwrap(),
+        mgr.multi_raft
+            .get_key_from_group(2, &prepare_key_enc)
+            .await
+            .unwrap(),
         Some(b"v1".to_vec()),
         "MigrationWrite Put must land on target group"
     );
     let got = adapter.get(prepare_key_enc.clone()).await.unwrap();
-    assert_eq!(got, Some(b"v1".to_vec()), "merge-read must see the just-written value on target");
+    assert_eq!(
+        got,
+        Some(b"v1".to_vec()),
+        "merge-read must see the just-written value on target"
+    );
 
     // ═══════════════════════════════════════════════════════════════
     // 测试计划 #2: target miss 的 DEL 仍一律 propose, 记录 tombstone, 之后 GET miss.
@@ -274,9 +300,15 @@ async fn migration_merge_read_and_del_tombstone_lifecycle() {
         .delete(del_key_enc.clone())
         .await
         .expect("delete during Copying should succeed via MigrationWrite");
-    assert!(existed, "DEL return value should reflect merge-read existence (found on source)");
+    assert!(
+        existed,
+        "DEL return value should reflect merge-read existence (found on source)"
+    );
     assert_eq!(
-        mgr.multi_raft.get_key_from_group(2, &del_key_enc).await.unwrap(),
+        mgr.multi_raft
+            .get_key_from_group(2, &del_key_enc)
+            .await
+            .unwrap(),
         None,
         "target must not have the key after DEL (was never copied, nothing to delete on sm_key)"
     );
@@ -293,7 +325,10 @@ async fn migration_merge_read_and_del_tombstone_lifecycle() {
 
     // 合并读必须看到 tombstone=Del, 不得回落 source (否则会复活 old-on-source).
     let got = adapter.get(del_key_enc.clone()).await.unwrap();
-    assert_eq!(got, None, "merge-read must return miss after Del tombstone, not resurrect from source");
+    assert_eq!(
+        got, None,
+        "merge-read must return miss after Del tombstone, not resurrect from source"
+    );
 
     // ═══════════════════════════════════════════════════════════════
     // 测试计划 #3: DEL 后模拟 bulk-copy PutConditional 不复活; ReadyToCommit 后仍 miss.
@@ -310,34 +345,48 @@ async fn migration_merge_read_and_del_tombstone_lifecycle() {
         .await
         .unwrap();
     assert_eq!(
-        mgr.multi_raft.get_key_from_group(2, &del_key_enc).await.unwrap(),
+        mgr.multi_raft
+            .get_key_from_group(2, &del_key_enc)
+            .await
+            .unwrap(),
         None,
         "PutConditional must respect the Del tombstone and skip the copy"
     );
     let got = adapter.get(del_key_enc.clone()).await.unwrap();
-    assert_eq!(got, None, "merge-read must still miss after a skipped PutConditional resurrection attempt");
+    assert_eq!(
+        got, None,
+        "merge-read must still miss after a skipped PutConditional resurrection attempt"
+    );
 
     // 收尾到 ReadyToCommit (纯 target 读, 无 source fallback): 仍应 miss.
-    mgr.meta_raft.set_migration_state(Some(SlotMigrationState::ReadyToCommit {
-        source_group: 1,
-        target_group: 2,
-        slots: vec![slot],
-    }));
+    mgr.meta_raft
+        .set_migration_state(Some(SlotMigrationState::ReadyToCommit {
+            source_group: 1,
+            target_group: 2,
+            slots: vec![slot],
+        }));
     let got = adapter.get(del_key_enc.clone()).await.unwrap();
-    assert_eq!(got, None, "ReadyToCommit pure-target read must still miss del_key");
+    assert_eq!(
+        got, None,
+        "ReadyToCommit pure-target read must still miss del_key"
+    );
 
     // ═══════════════════════════════════════════════════════════════
     // 测试计划 #9: Frozen 合并读回归 — 不再纯 source, 能看到只落在 target 的新写.
     // ═══════════════════════════════════════════════════════════════
-    mgr.meta_raft.set_migration_state(Some(SlotMigrationState::Frozen {
-        source_group: 1,
-        target_group: 2,
-        slots: vec![slot],
-    }));
+    mgr.meta_raft
+        .set_migration_state(Some(SlotMigrationState::Frozen {
+            source_group: 1,
+            target_group: 2,
+            slots: vec![slot],
+        }));
     // prepare_key 只存在于 target (从未 propose 到 source), 若 Frozen 读
     // 仍是 A2 的"纯 source", 这里会看到 miss — 必须是 Some(v1).
     assert_eq!(
-        mgr.multi_raft.get_key_from_group(1, &prepare_key_enc).await.unwrap(),
+        mgr.multi_raft
+            .get_key_from_group(1, &prepare_key_enc)
+            .await
+            .unwrap(),
         None,
         "sanity: prepare_key must never have landed on source"
     );

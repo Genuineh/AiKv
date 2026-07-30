@@ -55,10 +55,14 @@ pub trait StorageAdapter: Send + Sync {
     async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         let out = Arc::new(std::sync::Mutex::new(Vec::new()));
         let out_c = out.clone();
-        self.for_each_prefix(prefix.to_vec(), Box::new(move |k, v| {
-            out_c.lock().unwrap().push((k, v));
-            Ok(())
-        })).await?;
+        self.for_each_prefix(
+            prefix.to_vec(),
+            Box::new(move |k, v| {
+                out_c.lock().unwrap().push((k, v));
+                Ok(())
+            }),
+        )
+        .await?;
         Ok(Arc::try_unwrap(out).unwrap().into_inner().unwrap())
     }
 
@@ -203,26 +207,31 @@ impl KvStorageAdapter {
         let expired = Arc::new(std::sync::Mutex::new(Vec::new()));
         let expired_c = expired.clone();
 
-        self.storage.for_each_prefix(prefix, Box::new(move |encoded, raw| {
-            let Some(user_key) = Self::decode_user_key(&encoded) else {
-                return Ok(());
-            };
-            // 跳过 subkey entry (非 bincode StoredValue)
-            let Ok(stored) = Self::deserialize(&raw) else {
-                return Ok(());
-            };
-            if stored.is_expired() {
-                if let Some(obs) = &observation {
-                    obs.record_expired_key();
-                }
-                expired_c.lock().unwrap().push(user_key);
-                return Ok(());
-            }
-            if pattern.is_empty() || glob_match(&pattern, &user_key) {
-                keys_c.lock().unwrap().push(user_key);
-            }
-            Ok(())
-        })).await?;
+        self.storage
+            .for_each_prefix(
+                prefix,
+                Box::new(move |encoded, raw| {
+                    let Some(user_key) = Self::decode_user_key(&encoded) else {
+                        return Ok(());
+                    };
+                    // 跳过 subkey entry (非 bincode StoredValue)
+                    let Ok(stored) = Self::deserialize(&raw) else {
+                        return Ok(());
+                    };
+                    if stored.is_expired() {
+                        if let Some(obs) = &observation {
+                            obs.record_expired_key();
+                        }
+                        expired_c.lock().unwrap().push(user_key);
+                        return Ok(());
+                    }
+                    if pattern.is_empty() || glob_match(&pattern, &user_key) {
+                        keys_c.lock().unwrap().push(user_key);
+                    }
+                    Ok(())
+                }),
+            )
+            .await?;
 
         // 延迟清理: for_each_prefix 返回后统一处理过期 key
         let expired = Arc::try_unwrap(expired).unwrap().into_inner().unwrap();
@@ -239,19 +248,24 @@ impl KvStorageAdapter {
         let out = Arc::new(std::sync::Mutex::new(Vec::new()));
         let out_c = out.clone();
 
-        self.storage.for_each_prefix(prefix, Box::new(move |encoded, raw| {
-            let Some(user_key) = Self::decode_user_key(&encoded) else {
-                return Ok(());
-            };
-            // 跳过 subkey entry (非 bincode StoredValue)
-            let Ok(stored) = Self::deserialize(&raw) else {
-                return Ok(());
-            };
-            if !stored.is_expired() {
-                out_c.lock().unwrap().push((user_key, stored));
-            }
-            Ok(())
-        })).await?;
+        self.storage
+            .for_each_prefix(
+                prefix,
+                Box::new(move |encoded, raw| {
+                    let Some(user_key) = Self::decode_user_key(&encoded) else {
+                        return Ok(());
+                    };
+                    // 跳过 subkey entry (非 bincode StoredValue)
+                    let Ok(stored) = Self::deserialize(&raw) else {
+                        return Ok(());
+                    };
+                    if !stored.is_expired() {
+                        out_c.lock().unwrap().push((user_key, stored));
+                    }
+                    Ok(())
+                }),
+            )
+            .await?;
 
         Ok(Arc::try_unwrap(out).unwrap().into_inner().unwrap())
     }

@@ -33,10 +33,7 @@ impl StorageAdapter for MockAdapter {
     }
 
     async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
-        self.data
-            .lock()
-            .unwrap()
-            .insert(key, value);
+        self.data.lock().unwrap().insert(key, value);
         Ok(())
     }
 
@@ -122,7 +119,9 @@ async fn expired_key_skips_delete_when_not_allowed() {
     let mock = Arc::new(MockAdapter::new());
     mock.allow_lazy_expire.store(false, Ordering::SeqCst);
     let encoded_key = aikv::storage::AiDbEngine::encode_key(0, b"k");
-    mock.set(encoded_key.clone(), expired_value_bytes()).await.unwrap();
+    mock.set(encoded_key.clone(), expired_value_bytes())
+        .await
+        .unwrap();
 
     let kv = KvStorageAdapter::new(mock.clone());
     let result = kv.get(0, b"k").await;
@@ -140,7 +139,9 @@ async fn expired_key_read_never_errors_even_if_delete_fails() {
     let mock = Arc::new(MockAdapter::new());
     mock.fail_delete.store(true, Ordering::SeqCst);
     let encoded_key = aikv::storage::AiDbEngine::encode_key(0, b"k");
-    mock.set(encoded_key.clone(), expired_value_bytes()).await.unwrap();
+    mock.set(encoded_key.clone(), expired_value_bytes())
+        .await
+        .unwrap();
 
     let kv = KvStorageAdapter::new(mock.clone());
     let result = kv.get(0, b"k").await;
@@ -157,7 +158,9 @@ async fn expired_key_read_never_errors_even_if_delete_fails() {
 async fn expired_key_deleted_when_allowed() {
     let mock = Arc::new(MockAdapter::new());
     let encoded_key = aikv::storage::AiDbEngine::encode_key(0, b"k");
-    mock.set(encoded_key.clone(), expired_value_bytes()).await.unwrap();
+    mock.set(encoded_key.clone(), expired_value_bytes())
+        .await
+        .unwrap();
 
     let kv = KvStorageAdapter::new(mock.clone());
     let result = kv.get(0, b"k").await;

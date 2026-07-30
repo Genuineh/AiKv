@@ -751,13 +751,9 @@ async fn test_script_json_mget() {
 async fn test_script_json_mget_keys_validation() {
     let r = router();
     let mut db = 0;
-    r.execute(
-        "JSON.SET",
-        &[b("j1"), b("$"), b(r#"{"a":1}"#)],
-        &mut db,
-    )
-    .await
-    .unwrap();
+    r.execute("JSON.SET", &[b("j1"), b("$"), b(r#"{"a":1}"#)], &mut db)
+        .await
+        .unwrap();
     let script = r#"return redis.call('JSON.MGET', KEYS[1], 'undeclared', '$.a')"#;
     let err = r
         .execute("EVAL", &[b(script), b("1"), b("j1")], &mut db)
