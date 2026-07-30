@@ -13,6 +13,7 @@
 
 ### Changed
 
+- **集群 Data Raft Node 启用 LogCommitter 自适应组提交**: 在 `init_cluster` 阶段为 Data Raft Node 配置 `LogCommitterConfig::default()`，开启日志追加层的自适应非阻塞凑批. 文件: `src/main.rs`.
 - **全局分配器 glibc malloc → mimalloc**: 将 aikv binary 全局内存分配器替换为 mimalloc, 降低多线程分配器争用开销. 基于 eBPF 火焰图 baseline: malloc + free + realloc 占 CPU 18.6%. 文件: `src/main.rs`, `Cargo.toml`.
 - **集群 SET batcher perf 插桩**: `run_set_batcher` 新增 `target: "perf"` 的 `batcher_batch_done` 日志 (wait_us, propose_us, total_us, op_count), 微秒级精度. 文件: `src/storage/cluster_adapter.rs`.
 - **INFO Redis 8.8 键名校正**: fixture `redis88_info_full_fields.txt` 对照 8.8 `genRedisInfoString` 常驻键; rename (`current_cow_size_age`, `avg_pipeline_length_*`, `acl_access_denied_tls_cert`, slot-migration buffer 名等); 补 `monotonic_clock`/`active_clients`/…; `INFO` `# Cluster` 仅 `cluster_enabled` (`cluster_stats_messages_*` 仍在 `CLUSTER INFO`); default 始终输出 Cluster 段; e2e `test_info` 全量键名 + 关键格式.

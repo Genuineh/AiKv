@@ -409,9 +409,9 @@ async fn init_cluster(
     let multi_raft = Arc::new(multi_raft);
 
     // 11. 启动 Lifecycle (数据 Group 自动创建/销毁)
-    // Data groups 使用同步路径 (LogCommitter 在当前负载下引入额外开销而无收益).
+    // Data groups 使用 LogCommitter 自适应 Raft 组提交.
     let mut data_raft_config = raft_config.clone();
-    data_raft_config.log_committer_config = None;
+    data_raft_config.log_committer_config = Some(aidb::cluster::log_committer::LogCommitterConfig::default());
     let lifecycle_cfg = aidb::cluster::multi_raft_node::LifecycleConfig {
         data_dir: data_dir.to_path_buf(),
         raft_node_config: data_raft_config,
