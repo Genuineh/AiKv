@@ -143,7 +143,7 @@ pub fn init_otel(config: &OtelInitConfig) -> bool {
         .with_batch_exporter(span_exporter)
         .with_resource(resource.clone())
         .build();
-    let _ = global::set_tracer_provider(tracer_provider.clone());
+    global::set_tracer_provider(tracer_provider.clone());
     let _ = TRACER_PROVIDER.set(tracer_provider);
 
     let metric_exporter = match opentelemetry_otlp::MetricExporter::builder()
@@ -168,7 +168,7 @@ pub fn init_otel(config: &OtelInitConfig) -> bool {
         .with_reader(reader)
         .with_resource(resource)
         .build();
-    let _ = global::set_meter_provider(meter_provider.clone());
+    global::set_meter_provider(meter_provider.clone());
     let _ = METER_PROVIDER.set(meter_provider);
 
     aidb::metrics::init();
