@@ -234,7 +234,7 @@ impl<'a> InfoRenderer<'a> {
             100.0
         };
         let dataset_perc = if used_memory > 0 {
-            (used_memory as f64 / used_memory as f64) * 100.0
+            100.0
         } else {
             0.0
         };
