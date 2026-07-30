@@ -159,7 +159,7 @@ impl ServerMetrics {
         let mut entry = self
             .commands_total
             .entry(command.to_ascii_uppercase())
-            .or_insert_with(CommandTotals::default);
+            .or_default();
         if ok {
             entry.ok += 1;
         } else {
@@ -217,7 +217,7 @@ impl ServerMetrics {
         let mut entry = self
             .commands_total
             .entry(command.to_ascii_uppercase())
-            .or_insert_with(CommandTotals::default);
+            .or_default();
         entry.usec = entry.usec.saturating_add(duration_us);
         let _ = ok;
     }
@@ -231,7 +231,7 @@ impl ServerMetrics {
         let mut entry = self
             .commands_total
             .entry(command.to_ascii_uppercase())
-            .or_insert_with(CommandTotals::default);
+            .or_default();
         entry.slowlog_count += 1;
         entry.slowlog_time_ms_sum = entry.slowlog_time_ms_sum.saturating_add(ms);
         entry.slowlog_time_ms_max = entry.slowlog_time_ms_max.max(ms);

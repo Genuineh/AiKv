@@ -53,20 +53,18 @@ impl StringCommands {
             let old_value = self.storage.get(db, &opts.key).await?;
 
             // NX: 仅在 key 不存在时设置
-            if opts.condition == SetCondition::Nx && old_value.is_some() {
-                return Ok(if opts.return_old {
-                    router::bulk(old_value.unwrap())
-                } else {
-                    router::nil_bulk()
-                });
+            if opts.condition == SetCondition::Nx {
+                if let Some(val) = old_value {
+                    return Ok(if opts.return_old {
+                        router::bulk(val)
+                    } else {
+                        router::nil_bulk()
+                    });
+                }
             }
             // XX: 仅在 key 存在时设置
             if opts.condition == SetCondition::Xx && old_value.is_none() {
-                return Ok(if opts.return_old {
-                    router::nil_bulk()
-                } else {
-                    router::nil_bulk()
-                });
+                return Ok(router::nil_bulk());
             }
 
             // KEEPTTL: 保留现有过期时间

@@ -38,6 +38,12 @@ pub struct BlockingRegistry {
     waiters: DashMap<Vec<u8>, Vec<PendingRequest>>,
 }
 
+impl Default for BlockingRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BlockingRegistry {
     pub fn new() -> Self {
         Self {

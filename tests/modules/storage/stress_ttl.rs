@@ -34,7 +34,7 @@ fn test_concurrent_write_with_ttl_filter() {
                 let key = format!("key_{}_{}", tid, i % 200);
                 let val = format!("val_{}", i);
 
-                let expires_at = if i % 3 == 0 {
+                let expires_at = if i.is_multiple_of(3) {
                     Some(now_ms() + 500) // 500ms TTL
                 } else {
                     None

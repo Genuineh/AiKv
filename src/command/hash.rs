@@ -247,7 +247,7 @@ impl HashCommands {
         router::require_args("HKEYS", args, 1)?;
         let keys = self.load_hash_all_fields(db, &args[0]).await?;
         Ok(array_of_bulk(
-            keys.into_iter().map(|(k, _)| k).collect(),
+            keys.into_keys().collect(),
         ))
     }
 
@@ -255,7 +255,7 @@ impl HashCommands {
         router::require_args("HVALS", args, 1)?;
         let keys = self.load_hash_all_fields(db, &args[0]).await?;
         Ok(array_of_bulk(
-            keys.into_iter().map(|(_, v)| v).collect(),
+            keys.into_values().collect(),
         ))
     }
 
