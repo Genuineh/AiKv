@@ -198,13 +198,13 @@ static COMMAND_TABLE: &[CommandInfo] = &[
     cmd!("LASTSAVE", 1, &["admin", "fast"], 0, 0, 0),
     cmd!("SHUTDOWN", -1, &["admin"], 0, 0, 0),
     #[cfg(feature = "cluster")]
-    cmd!("cluster", -2, &["readonly", "movablekeys"], 2, 2, 1),
+    cmd!("CLUSTER", -2, &["readonly", "movablekeys"], 2, 2, 1),
     #[cfg(feature = "cluster")]
-    cmd!("readonly", 1, &["readonly", "fast"], 0, 0, 0),
+    cmd!("READONLY", 1, &["readonly", "fast"], 0, 0, 0),
     #[cfg(feature = "cluster")]
-    cmd!("readwrite", 1, &["readonly", "fast"], 0, 0, 0),
+    cmd!("READWRITE", 1, &["readonly", "fast"], 0, 0, 0),
     #[cfg(feature = "cluster")]
-    cmd!("asking", 1, &["readonly", "fast"], 0, 0, 0),
+    cmd!("ASKING", 1, &["readonly", "fast"], 0, 0, 0),
 ];
 
 static COMMAND_INDEX: std::sync::OnceLock<HashMap<&'static str, CommandInfo>> =

@@ -324,6 +324,7 @@ impl CommandRouter {
             "command",
             "latency",
             "slowlog",
+            "script",
             // Cursor-based iteration — these scan the local keyspace and MUST
             // NOT be routed by key (args.first() is the cursor, not a key).
             "scan",
@@ -357,8 +358,12 @@ impl CommandRouter {
         if args.len() > 1 && is_multi_key_cmd(cmd) {
             // MSET args are [key, val, key, val, ...] — only even indices are keys.
             let is_mset = cmd.eq_ignore_ascii_case("mset");
+            let is_blocking_pop =
+                cmd.eq_ignore_ascii_case("blpop") || cmd.eq_ignore_ascii_case("brpop");
             let key_bytes: Vec<&[u8]> = if is_mset {
                 args.iter().step_by(2).map(|a| a.as_ref()).collect()
+            } else if is_blocking_pop {
+                args[..args.len() - 1].iter().map(|a| a.as_ref()).collect()
             } else {
                 args.iter().map(|a| a.as_ref()).collect()
             };
