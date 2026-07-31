@@ -25,38 +25,26 @@ uv pip install -r e2e/requirements.txt --python .venv-e2e
 
 ```bash
 AIKV_HOST=127.0.0.1 AIKV_PORT=6379 \
-  .venv-e2e/bin/pytest e2e/ -v
+  pytest e2e/function/ -v
 ```
 
 在 **test-ui** 中执行时, 顶部环境条会注入 `AIKV_HOST`/`AIKV_PORT`, 无需手设.
 
-### 功能测试 (`e2e/function/`)
+### 功能测试划分 (`e2e/function/`)
 
-树: `aikv → 端到端 → 功能测试 → 文件 → 用例`.
+按 4 个核心维度结构化划分子目录：
 
-| 文件 | 内容 |
-|------|------|
-| `test_commands.py` | Smoke (PING); String CRUD; INFO / CLUSTER INFO (Redis 8.8 字段); CLUSTER NODES L1 拓扑不变量 (非集群 skip) |
-| `test_types.py` | Hash / List / Set / ZSet 浅 CRUD |
-| `test_correctness.py` | 覆盖写 / 缺键 / 双连接 |
-| `test_wrongtype.py` | WRONGTYPE 后仍可用 |
-| `test_concurrency.py` | 双客户端并发 |
-| `test_persist.py` | 写探针 + 重启后再读 |
+| 维度目录 | 内容与文件 |
+|---|---|
+| `01_single_node/` | **单机 RESP 基础命令与服务诊断** (8 个套件: String, Hash, List, Set, ZSet, Lua, JSON, Protocol/INFO parity) |
+| `02_persistence_crash/` | **持久化与崩溃恢复** (3 个套件: RDB 快照, 优雅重启, SIGKILL 强杀 WAL 重放) |
+| `03_cluster_migration/` | **集群拓扑与动态槽位迁移** (3 个套件: 集群拓扑不变量, MEET/REPLICATE 扩缩容, SETSLOT/ASK 在线切槽) |
+| `04_ha_failover/` | **高可用故障转移** (3 个套件: Smart Client 自动重路由, 主节点故障转移, 故障节点恢复同步) |
 
 ```bash
 AIKV_HOST=127.0.0.1 AIKV_PORT=6379 \
-  .venv-e2e/bin/pytest e2e/function/ -v
+  pytest e2e/function/ -v
 ```
-
-持久 / 重启编排 (客户端不负责起停):
-
-1. 跑 seed: `test_persist_seed_graceful`
-2. **部署侧**优雅停再起同一 data-dir
-3. `AIKV_E2E_AFTER_RESTART=1` 再跑 `test_persist_after_graceful_restart`
-4. 跑 `test_persist_seed_kill` → **部署侧** `kill -9` 再起
-5. `AIKV_E2E_AFTER_KILL=1` 再跑 `test_persist_after_kill`
-
-未设上述 env 时, 对应「再读」用例会 `skip` (不算失败).
 
 ### Fixture
 
@@ -64,34 +52,16 @@ AIKV_HOST=127.0.0.1 AIKV_PORT=6379 \
 |---------|------|
 | `svc` | 唯一入口: 连 `AIKV_HOST`/`AIKV_PORT` |
 
-### 显示样板
+### 显示样板与 test-ui 规范
 
-[`test_set.py`](test_set.py) 仅作 test-ui 元数据写法样例 (`# @title` / docstring), 挂在「端到端」根下.
+所有测试文件均遵循 test-ui 元数据标准规范 (`# @component` / `# @title` / docstring)：
 
 | 用途 | 写法 |
 |------|------|
 | 树-文件中文名 | 文件头 `# @title …` |
-| 详情-文件说明 | 模块 docstring (无编号步骤时 Markdown 渲染) |
+| 详情-文件说明 | 模块 docstring (Markdown 渲染) |
 | 树/详情-用例标题 | 函数上方 `# @title …` |
-| 详情-用例说明 | 编号步骤剧本: `N. 主谓宾动作 \| 期望` (含主语如 key/连接/被测服务; 也兼容 `→ 期望`); test-ui 渲染为步骤条 |
-| Map | `# @component aikv-…` |
-
-用例 docstring 示例:
-
-```python
-# @title String
-def test_string_crud(svc):
-    """String 的增删改查.
-
-    1. 将 key SET 为 "hello" | 成功
-    2. GET 该 key | 返回 "hello"
-    3. 将同一 key SET 为 "world" | 成功
-    4. GET 该 key | 返回 "world"
-    5. DEL 该 key | 删除数 1
-    6. GET 该 key | 缺键 (None)
-    """
-```
-
+| Map 组件关联 | `# @component aikv-server` |
 
 ## Layout
 
@@ -99,8 +69,11 @@ def test_string_crud(svc):
 e2e/
 ├── harness/              # 客户端 / 外部连接 / (本机 start_node 仅调试用)
 ├── conftest.py           # 仅 svc
-├── function/             # 功能测试 (UI: 功能测试)
-├── test_set.py           # 显示样板
+├── function/             # 4 维度端到端功能测试目录
+│   ├── 01_single_node/       # 单机 RESP 基础命令与诊断
+│   ├── 02_persistence_crash/ # 持久化落盘与崩溃恢复
+│   ├── 03_cluster_migration/ # 集群拓扑与动态槽位迁移
+│   └── 04_ha_failover/       # 高可用故障转移
 ├── pytest.ini
 ├── requirements.txt
 └── old/                  # 旧资产 (不收集)
@@ -109,4 +82,4 @@ e2e/
 ## Notes
 
 - pytest **不收集** `old/`
-- 完整覆盖矩阵 / Redis Tcl 对齐 **后置**
+- 完整覆盖矩阵 / Redis Tcl 对齐
