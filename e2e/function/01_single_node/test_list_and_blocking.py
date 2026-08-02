@@ -35,7 +35,6 @@ def test_list_ops_and_move(svc):
     assert c.lrange(k1, 0, -1) == ["b", "a", "c"]
     assert c._r.llen(k1) == 3
 
-    # LMOVE
     assert c._r.lmove(k1, k2, src="LEFT", dest="RIGHT") == "b"
     assert c.lrange(k1, 0, -1) == ["a", "c"]
     assert c.lrange(k2, 0, -1) == ["b"]
