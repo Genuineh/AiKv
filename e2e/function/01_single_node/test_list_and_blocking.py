@@ -3,26 +3,25 @@
 """覆盖 List 列表双端推拉 (LPUSH/RPUSH, LPOP/RPOP), 切片获取 (LRANGE), 移动元素 (LMOVE) 及阻塞超时 (BLPOP)."""
 
 from __future__ import annotations
-import pytest
 
 _PREFIX = "{tag0}:"
 
 
-# @title List 双端推拉与 LMOVE 跨列表移动 (LPUSH, RPUSH, LPOP, RPOP, LRANGE, LMOVE)
+# @title List 双端推拉与 LMOVE 跨列表移动 (LPUSH, RPUSH, LPOP, RPOP, LRANGE, LLEN, LMOVE)
 def test_list_ops_and_move(svc):
     """List 双端推拉、范围截取与 LMOVE 跨列表元素移动.
 
-    1. 清理测试 Key list1, list2 | 成功
-    2. 从左侧 LPUSH 推入 "a", "b" 到 list1 | 返回列表长度 2
-    3. 从右侧 RPUSH 推入 "c" 到 list1 | 返回列表长度 3
-    4. 读取 list1 全量切片 LRANGE | 返回 ["b", "a", "c"]
-    5. 查询 list1 长度 LLEN | 返回 3
-    6. 执行 LMOVE 将 list1 左端弹出推入 list2 右端 | 返回移动的元素 "b"
-    7. 读取 list1 切片 | 返回 ["a", "c"]
-    8. 读取 list2 切片 | 返回 ["b"]
-    9. 从 list1 左端 LPOP 弹出 | 返回 "a"
-    10. 从 list1 右端 RPOP 弹出 | 返回 "c"
-    11. 清理测试 Key list1, list2 | 成功
+    1. 清理测试 Key l1, l2 | 成功
+    2. 从左侧 LPUSH 推入 "a", "b" 到 l1 | 返回列表长度 2
+    3. 从右侧 RPUSH 推入 "c" 到 l1 | 返回列表长度 3
+    4. 读取 l1 全量切片 LRANGE | 返回 ["b", "a", "c"]
+    5. 查询 l1 长度 LLEN | 返回 3
+    6. 执行 LMOVE 将 l1 左端弹出推入 l2 右端 | 返回移动的元素 "b"
+    7. 读取 l1 切片 | 返回 ["a", "c"]
+    8. 读取 l2 切片 | 返回 ["b"]
+    9. 从 l1 左端 LPOP 弹出 | 返回 "a"
+    10. 从 l1 右端 RPOP 弹出 | 返回 "c"
+    11. 清理测试 Key l1, l2 | 成功
     """
     c = svc.client()
     k1 = _PREFIX + "l1"

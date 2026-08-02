@@ -3,8 +3,8 @@
 """覆盖 SAVE 阻塞式同步快照落盘、BGSAVE 异步后台落盘及 LASTSAVE 时间戳更新校验."""
 
 from __future__ import annotations
+
 import time
-import pytest
 
 _PREFIX = "{tag0}:"
 
@@ -13,8 +13,8 @@ _PREFIX = "{tag0}:"
 def test_save_and_bgsave_snapshot(svc):
     """SAVE 同步快照与 BGSAVE 异步快照落盘触发及 LASTSAVE 更新.
 
-    1. 执行 LASTSAVE 获取旧快照时间戳 | 返回整数时间戳
-    2. 写入测试数据 Key | 写入成功
+    1. 写入测试数据 Key | 写入成功
+    2. 执行 LASTSAVE 获取旧快照时间戳 | 返回整数时间戳
     3. 执行 SAVE 同步快照落盘 | 返回 OK
     4. 执行 BGSAVE 触发后台异步快照 | 返回 OK 或 Background saving started
     5. 再次查询 LASTSAVE 时间戳 | 时间戳不小于初始时间戳

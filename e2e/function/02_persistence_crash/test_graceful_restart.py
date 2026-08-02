@@ -3,7 +3,9 @@
 """通过控管句柄优雅停止 (SIGTERM) 节点进程并保留数据目录重新拉起, 校验已持久化数据完好性."""
 
 from __future__ import annotations
+
 import pytest
+
 from harness.binary import ensure_release_binary
 from harness.node import start_node
 
@@ -14,17 +16,19 @@ _PREFIX = "{e2e:func:02:restart}:"
 def test_graceful_restart_data_integrity(svc):
     """验证服务优雅停止 (SIGTERM) 并重启后数据零丢失.
 
+    本用例自建临时单机节点, 不依赖外部被测服务 (svc 仅保持 fixture 签名一致).
+
     1. 构建/确认 aikv 二进制可执行文件 | 成功
     2. 启动临时单机测试节点 | 节点就绪
     3. 写入测试数据 Key | 写入成功
-    4. 获取节点数据目录与端口，执行 stop(keep_data=True) 优雅停止节点 | 进程停止
+    4. 获取节点端口，执行 stop(keep_data=True) 优雅停止节点 | 进程停止
     5. 复用相同数据目录在原端口拉起新节点 | 节点就绪
     6. 读取之前写入的 Key | 内容与重启前完全一致
     7. 优雅清理并关闭临时节点 | 清理成功
     """
     try:
         binary = ensure_release_binary()
-    except Exception:
+    except Exception:  # noqa: BLE001 — 无法构建二进制时整体 Skip
         pytest.skip("无法构建/获取 aikv 可执行二进制文件，跳过优雅重启测试")
 
     temp_node = start_node(binary=binary, engine="aidb")

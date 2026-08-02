@@ -3,7 +3,6 @@
 """覆盖 Smart Client (redis-py / cluster) 在收到 MOVED 重定向错误时自动感知并重新路由到正确节点的特性."""
 
 from __future__ import annotations
-import pytest
 
 _PREFIX = "{e2e:func:04:smart}:"
 

@@ -1,14 +1,13 @@
 # @component aikv-server
 # @title String、Bitmaps 与 Key 空间管理功能测试
-"""覆盖 String 全量读写 (SET NX/EX, MSET/MGET)、Bitmaps 位图、数值自增切片与 Key 空间过期管理 (EXPIRE/TTL/SCAN 等)."""
+"""覆盖 String 全量读写 (SET NX/EX, MSET/MGET)、Bitmaps 位图、数值自增递减与 Key 空间过期管理 (EXPIRE/TTL/SCAN 等)."""
 
 from __future__ import annotations
-import pytest
 
 _PREFIX = "{tag0}:"
 
 
-# @title String 基础读写与高级选项 (SET NX/EX/GET, MSET, MGET)
+# @title String 基础读写与高级选项 (SET NX/EX/GET, MSET, MGET, STRLEN, APPEND)
 def test_string_crud_and_opts(svc):
     """SET NX/EX 扩展选项与 MSET/MGET 批量读写.
 
@@ -45,7 +44,7 @@ def test_string_crud_and_opts(svc):
     c.delete(k1, k2)
 
 
-# @title 数值运算与 Bitmaps 位图 (INCR, INCRBYFLOAT, SETBIT, GETBIT)
+# @title 数值运算与 Bitmaps 位图 (INCR, INCRBY, DECR, INCRBYFLOAT, SETBIT, GETBIT)
 def test_numeric_and_bitmaps(svc):
     """数值递增递减与 Bitmaps 按位读写.
 

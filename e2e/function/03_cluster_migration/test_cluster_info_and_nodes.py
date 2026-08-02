@@ -1,8 +1,9 @@
 # @component aikv-server
 # @title 集群拓扑不变量与状态诊断功能测试
-"""覆盖 CLUSTER INFO 状态查询与 CLUSTER NODES L1 级 16384 槽位不变量断言."""
+"""覆盖 CLUSTER INFO 状态查询与 CLUSTER NODES 16384 槽位不变量断言."""
 
 from __future__ import annotations
+
 import pytest
 
 _PREFIX = "{e2e:func:03:topology}:"
@@ -13,7 +14,7 @@ def test_cluster_info_and_nodes_invariants(svc):
     """CLUSTER INFO 状态与 CLUSTER NODES 16384 全槽覆盖不变量断言.
 
     1. 校验当前被测节点是否处于集群模式 | 若非集群则 Skip
-    2. 执行 CLUSTER INFO 查询集群整体运行状态 | 返回字符串包含 cluster_state:ok
+    2. 执行 CLUSTER INFO 查询集群整体运行状态 | 返回字符串包含 cluster_state
     3. 执行 CLUSTER NODES 获取节点列表与槽位分配文本 | 节点行数 >= 1
     4. 解析所有 Master 节点覆盖的 Slot 范围段 | 累加覆盖总 Slot 数等于 16384
     """

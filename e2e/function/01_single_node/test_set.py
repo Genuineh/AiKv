@@ -3,7 +3,6 @@
 """覆盖 Set 集合增删 (SADD/SREM), 成员判定 (SISMEMBER), 随机弹栈 (SPOP), 及多集合交并差集运算 (SINTER/SUNION/SDIFF/SINTERSTORE)."""
 
 from __future__ import annotations
-import pytest
 
 _PREFIX = "{tag0}:"
 
@@ -46,7 +45,7 @@ def test_set_basic_ops(svc):
     c.delete(k)
 
 
-# @title Set 集合运算与结果存储 (SINTER, SUNION, SDIFF, SINTERSTORE)
+# @title Set 集合运算与结果存储 (SINTER, SUNION, SDIFF, SINTERSTORE, SMEMBERS)
 def test_set_inter_union_diff_store(svc):
     """Set 多集合交集、并集、差集计算与 SINTERSTORE 结果持久存储.
 

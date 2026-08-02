@@ -1,22 +1,23 @@
 # @component aikv-server
 # @title RESP 协议与 INFO 服务诊断功能测试
-"""覆盖 INFO 命令全量 239 个字段 Parity 校验及 BulkString `\x00` 字节流二进制安全性."""
+"""覆盖 INFO 命令全量诊断字段 Parity 校验及 BulkString `\x00` 字节流二进制安全性."""
 
 from __future__ import annotations
-import pytest
+
 import redis
 
 _PREFIX = "{tag0}:"
 
 
-# @title INFO 命令 239 字段 Parity 完整性校验 (INFO)
+# @title INFO 命令诊断字段 Parity 完整性校验 (INFO)
 def test_info_everything_parity(svc):
-    """INFO 命令全量 239 个诊断字段提取与结构齐备性断言.
+    """INFO 命令全量诊断字段提取与结构齐备性断言.
 
     1. 执行 INFO everything 命令获取全量诊断信息 | 返回字符串文本
-    2. 校验输出中包含 redis_version / uptime_in_seconds 等 Server 核心字段 | 匹配成功
+    2. 校验输出中包含 redis_version 等 Server 核心字段 | 匹配成功
     3. 校验输出中包含 used_memory 等 Memory 字段 | 匹配成功
     4. 校验输出中包含 connected_clients 等 Clients 字段 | 匹配成功
+    5. 统计输出中的诊断字段总数 | 不低于 100 个 (结构齐备)
     """
     c = svc.client()
     info_raw = c.cli("INFO", "everything")
@@ -24,6 +25,11 @@ def test_info_everything_parity(svc):
     assert "redis_version" in info_raw
     assert "used_memory" in info_raw
     assert "connected_clients" in info_raw
+    # 防御性下限抽查: 字段数不低于 100, 防止诊断字段异常丢失
+    field_count = sum(
+        1 for line in info_raw.splitlines() if ":" in line and not line.startswith("#")
+    )
+    assert field_count >= 100, f"INFO 字段数异常偏少: {field_count}"
 
 
 # @title BulkString `\x00` 零字节与二进制安全 (SET, GET)

@@ -3,9 +3,12 @@
 """通过 SIGKILL 信号强杀节点进程模拟突发断电/崩溃, 重启后校验崩溃前已落盘 WAL 日志重放准确性."""
 
 from __future__ import annotations
+
 import os
 import signal
+
 import pytest
+
 from harness.binary import ensure_release_binary
 from harness.node import start_node
 
@@ -15,6 +18,8 @@ _PREFIX = "{e2e:func:02:crash}:"
 # @title 强杀崩溃恢复后数据一致性
 def test_crash_recovery_wal_replay(svc):
     """验证 SIGKILL 强杀后重启 WAL 日志重放无损坏 (非伪通过).
+
+    本用例自建临时单机节点, 不依赖外部被测服务 (svc 仅保持 fixture 签名一致).
 
     1. 构建/确认 aikv 二进制可执行文件 | 成功
     2. 启动临时单机测试节点 | 节点就绪
@@ -26,7 +31,7 @@ def test_crash_recovery_wal_replay(svc):
     """
     try:
         binary = ensure_release_binary()
-    except Exception:
+    except Exception:  # noqa: BLE001 — 无法构建二进制时整体 Skip
         pytest.skip("无法构建/获取 aikv 可执行二进制文件，跳过 SIGKILL 崩溃恢复测试")
 
     temp_node = start_node(binary=binary, engine="aidb")

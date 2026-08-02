@@ -3,6 +3,7 @@
 """覆盖 Lua 脚本求值 (EVAL, SCRIPT LOAD, EVALSHA), 及 MULTI/EXEC/WATCH 事务乐观锁控制."""
 
 from __future__ import annotations
+
 import pytest
 import redis
 
@@ -33,7 +34,7 @@ def test_lua_eval_and_sha(svc):
     c.delete(k)
 
 
-# @title MULTI/EXEC 事务与 WATCH 乐观锁 (MULTI, EXEC, WATCH, DISCARD)
+# @title MULTI/EXEC 事务与 WATCH 乐观锁 (MULTI, EXEC, WATCH)
 def test_transaction_multi_exec_watch(svc):
     """MULTI/EXEC 事务打包执行与 WATCH 乐观锁隔离防并发冲突.
 
@@ -53,7 +54,10 @@ def test_transaction_multi_exec_watch(svc):
     k2 = _PREFIX + "tx2"
     c.delete(k1, k2)
 
-    pipe = c._r.pipeline(transaction=True)
+    # 事务/WATCH 语义与集群路由无关, 用 standalone 直连任一节点验证
+    r_tx = redis.Redis(host=svc.host, port=svc.port, decode_responses=True)
+
+    pipe = r_tx.pipeline(transaction=True)
     pipe.set(k1, "v1")
     pipe.set(k2, "v2")
     res = pipe.execute()

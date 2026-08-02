@@ -1,14 +1,16 @@
 # @component aikv-server
 # @title 集群在线切槽与所有权转移功能测试
-"""覆盖 CLUSTER SETSLOT <slot> MIGRATING/STABLE 完整在线切槽: 数据自动迁移到目标分片后 STABLE 收尾, 所有权随之后移."""
+"""覆盖 CLUSTER SETSLOT <slot> MIGRATING/STABLE 完整在线切槽: 数据自动迁移到目标分片后 STABLE 收尾, 所有权随之转移."""
 
 from __future__ import annotations
+
+import time
 
 import pytest
 import redis
 
 _CLIENT_PORTS = (6379, 6380, 6381, 7379, 7380, 7381)
-# 目标分片 (不与当前被测分片同组), 使用一个落在源分片内、可迁移的 slot
+# 目标迁移 slot (落在源分片内, 待迁移到其他分片)
 _TARGET_SLOT = 500
 
 def _exec_setslot(svc, *args):
@@ -92,7 +94,7 @@ def _find_other_master(svc, slot: int) -> tuple[str, int]:
         if owns:
             continue
         addr = parts[1].split("@", 1)[0]
-        host, _, port_s = addr.partition(":")
+        _, _, port_s = addr.partition(":")
         return parts[0], int(port_s)
     raise RuntimeError(f"未找到不持有 slot {slot} 的 master")
 
@@ -100,8 +102,6 @@ def _find_other_master(svc, slot: int) -> tuple[str, int]:
 def _wait_served_on_target(svc, key: str, target_port: int, expected: str, timeout: float = 15.0):
     """STABLE 后目标节点路由表经 LifecycleManager 异步同步, 直连读取可能短暂
     返回 MOVED/None; 轮询直到目标节点直连可读到期望值."""
-    import time
-
     deadline = time.monotonic() + timeout
     last = None
     while time.monotonic() < deadline:
@@ -122,7 +122,7 @@ def _wait_served_on_target(svc, key: str, target_port: int, expected: str, timeo
 
 
 # @title 在线切槽: SETSLOT MIGRATING 迁移数据后 STABLE 完成所有权转移
-def test_slot_migration_and_ask_redirect(svc):
+def test_slot_migration_and_transfer(svc):
     """验证在线切槽: MIGRATING 自动完成数据拷贝, STABLE 收尾并完成所有权转移.
 
     1. 校验当前被测节点是否处于集群模式 | 若非集群则 Skip
@@ -164,4 +164,21 @@ def test_slot_migration_and_ask_redirect(svc):
     # (LifecycleManager 每秒 tick 刷新路由, STABLE 后存在短暂异步窗口).
     _wait_served_on_target(svc, k, target_port, "migrated_val")
 
-    c.delete(k)
+    # 清理: 数据已落目标分片, 直连目标节点删除; 避免集群客户端在
+    # 路由同步窗口期对刚迁移 slot 的请求报 migration target unknown.
+    r_target = redis.Redis(host=svc.host, port=target_port, decode_responses=True)
+    try:
+        deadline = time.monotonic() + 10
+        deleted = False
+        while time.monotonic() < deadline:
+            try:
+                if r_target.delete(k):
+                    deleted = True
+                    break
+            except redis.ResponseError:
+                time.sleep(0.5)
+            else:
+                break
+        assert deleted is True, f"目标节点 :{target_port} 清理测试 Key 失败"
+    finally:
+        r_target.close()

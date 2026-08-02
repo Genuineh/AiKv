@@ -3,7 +3,6 @@
 """覆盖 ZSet 有序集合分数值写入 (ZADD), 分数/排名查询 (ZSCORE/ZRANK/ZREVRANK), 正反向切片 (ZRANGE), 及按成员移除 (ZREM)."""
 
 from __future__ import annotations
-import pytest
 
 _PREFIX = "{tag0}:"
 
@@ -18,7 +17,7 @@ def test_zset_score_and_rank(svc):
     4. 查询 "bob" 的升序排名 ZRANK | 返回 0 (最少分)
     5. 查询 "alice" 的降序排名 ZREVRANK | 返回 0 (最高分)
     6. 按分升序获取全量切片 ZRANGE | 返回 ["bob", "charlie", "alice"]
-    7. 带分数 WITHSCORES 获取切片 ZRANGE | 返回包含 Tuple 列表
+    7. 带分数 WITHSCORES 获取切片 ZRANGE | 返回 [(成员, 分数)] 形式的列表
     8. 清理测试 Key z1 | 成功
     """
     c = svc.client()
@@ -42,7 +41,7 @@ def test_zset_score_and_rank(svc):
 
 
 # @title ZSet 按成员批量删除 (ZREM)
-def test_zset_rem_by_score_and_rank(svc):
+def test_zset_rem_by_member(svc):
     """ZSet 按成员名称批量删除元素.
 
     1. 清理测试 Key zrem | 成功
@@ -57,7 +56,7 @@ def test_zset_rem_by_score_and_rank(svc):
     k = _PREFIX + "zrem"
     c.delete(k)
 
-    c.zadd(k, {"a": 1, "b": 2, "c": 3, "d": 4, "e": 5})
+    assert c.zadd(k, {"a": 1, "b": 2, "c": 3, "d": 4, "e": 5}) == 5
     assert c.zrem(k, "b", "c") == 2
     assert c.zrange(k, 0, -1) == ["a", "d", "e"]
 
