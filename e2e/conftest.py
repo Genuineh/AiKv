@@ -28,15 +28,27 @@ def _require_redis_cli() -> None:
         pytest.exit(str(exc), returncode=1)
 
 
+def _load_env_file() -> None:
+    """若环境变量未指定, 尝试从 e2e/.env 加载."""
+    env_file = _E2E / ".env"
+    if not env_file.is_file():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key, val = key.strip(), val.strip().strip("\"'")
+        if key and key not in os.environ:
+            os.environ[key] = val
+
+
 @pytest.fixture
 def svc() -> Iterator[Node]:
-    """预部署被测服务 (黑盒). 地址来自 `AIKV_HOST` / `AIKV_PORT` (test-ui 环境条自动注入)."""
-    host = os.environ.get("AIKV_HOST", "").strip()
-    port_s = os.environ.get("AIKV_PORT", "").strip()
-    if not host or not port_s:
-        pytest.fail(
-            "黑盒 e2e 需要被测服务地址: 设置 AIKV_HOST 与 AIKV_PORT "
-            "(在 test-ui 中使用顶部环境条即可)"
-        )
+    """预部署被测服务 (黑盒). 地址按优先级依次取: 环境变量 > e2e/.env > 默认值 127.0.0.1:6379."""
+    _load_env_file()
+    host = os.environ.get("AIKV_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    port_s = os.environ.get("AIKV_PORT", "6379").strip() or "6379"
     node = connect_external(host, int(port_s))
+    node.flush_all()
     yield node

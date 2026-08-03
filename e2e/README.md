@@ -1,17 +1,15 @@
 # AiKv E2E Tests (Python / pytest)
 
-黑盒客户端验收: **用例只连已部署 被测服务**, 不 spawn 进程、不选引擎.  
-部署由 test-ui 环境条 / [`aifactory/scripts`](../aifactory/scripts/) (`up-single.sh`, `up-cluster.sh`) / [`aifactory/benchmark/aikv`](../aifactory/benchmark/aikv/) 对照压测 compose / 手工 `cargo run` 完成 (实验室约定 aidb).
+黑盒客户端验收：**用例仅连接已部署的被测服务**（单机或集群拓扑均可），不直接控制进程生命周期。  
+部署操作由 `test-ui` 环境条 / [`aifactory/scripts`](../aifactory/scripts/) (`up-single.sh`, `up-cluster.sh`) / [`aifactory/benchmark/aikv`](../aifactory/benchmark/aikv/) 对照压测 compose 或手动 `cargo run` 完成。
 
-旧 shell / 旧 pytest 在 [`old/`](old/) (**仅参考, 不维护**).
+## 环境前置
 
-## Prerequisites
+- 已部署并就绪的 AiKv 服务（单机或集群），地址端口可知
+- `redis-cli` 工具已安装在系统 `PATH` 中（自动门禁检查）
+- 使用 [uv](https://github.com/astral-sh/uv) 管理 Python 虚拟环境
 
-- 已部署的单机 (或集群) aikv, 地址可知
-- `redis-cli` on PATH (逃生口 / 会话检查)
-- [uv](https://github.com/astral-sh/uv) 管理 Python 环境
-
-## Setup (uv)
+## 环境搭建 (uv)
 
 ```bash
 cd aikv
@@ -19,67 +17,95 @@ uv venv .venv-e2e
 uv pip install -r e2e/requirements.txt --python .venv-e2e
 ```
 
-## Run
+## 环境配置 (.env)
 
-先部署 被测服务, 再:
+`aikv/e2e` 支持本地配置文件解耦。可通过复制 `.env.example` 生成本地 `.env` 文件：
+
+```bash
+cp e2e/.env.example e2e/.env
+```
+
+`svc` 节点的被测服务地址解析优先级如下：
+1. **进程环境变量**（如终端显示执行 `AIKV_PORT=6380 pytest` 或 test-ui 自动注入）
+2. **本地 `e2e/.env` 文件**（持久化记录常用测试节点地址）
+3. **默认回退值** (`127.0.0.1:6379`)
+
+## 测试运行
+
+直接运行 pytest（自动读取 `.env` 或默认连 127.0.0.1:6379）：
+
+```bash
+pytest e2e/function/ -v
+```
+
+或显式指定地址覆盖运行：
 
 ```bash
 AIKV_HOST=127.0.0.1 AIKV_PORT=6379 \
   pytest e2e/function/ -v
 ```
 
-在 **test-ui** 中执行时, 顶部环境条会注入 `AIKV_HOST`/`AIKV_PORT`, 无需手设.
+## 功能测试划分 (`e2e/function/`)
 
-### 功能测试划分 (`e2e/function/`)
+测试用例按 4 个核心维度结构化划分子目录：
 
-按 4 个核心维度结构化划分子目录：
-
-| 维度目录 | 内容与文件 |
-|---|---|
-| `single/` | **单机 RESP 基础命令与服务诊断** (`test_proto.py`, `test_string.py`, `test_list.py`, `test_hash.py`, `test_set.py`, `test_zset.py`, `test_lua_tx.py`, `test_json.py`) |
-| `crash/` | **持久化与崩溃恢复** (`test_crash.py`, `test_restart.py`, `test_rdb.py`) |
-| `migration/` | **集群拓扑与动态槽位迁移** (`test_nodes.py`, `test_scale.py`, `test_migration.py`) |
-| `failover/` | **高可用故障转移** (`test_reconnect.py`, `test_node_fail.py`, `test_failover.py`) |
-
-```bash
-AIKV_HOST=127.0.0.1 AIKV_PORT=6379 \
-  pytest e2e/function/ -v
-```
+| 维度目录 | 说明 | 包含脚本 |
+|---|---|---|
+| `command/` | **命令与协议 (单机/集群通用)** | `test_proto.py`, `test_string.py`, `test_list.py`, `test_hash.py`, `test_set.py`, `test_zset.py`, `test_lua_tx.py`, `test_json.py` |
+| `crash/` | **持久化与崩溃恢复** | `test_crash.py`, `test_restart.py`, `test_rdb.py` |
+| `migration/` | **集群拓扑与动态槽位迁移** | `test_nodes.py`, `test_scale.py`, `test_migration.py` |
+| `failover/` | **高可用故障转移** | `test_reconnect.py`, `test_node_fail.py`, `test_failover.py` |
 
 ### Fixture
 
 | Fixture | 含义 |
 |---------|------|
-| `svc` | 唯一入口: 连 `AIKV_HOST`/`AIKV_PORT` |
+| `svc` | 唯一入口：连接 `AIKV_HOST`/`AIKV_PORT`，在交付用例前自动执行 `FLUSHALL` 前置清库 |
 
-### 显示样板与 test-ui 规范
+### test-ui 编写规范与示例
 
-所有测试文件均遵循 test-ui 元数据标准规范 (`# @component` / `# @title` / docstring)：
+所有测试脚本均遵循 test-ui 元数据标准规范 (`# @component` / `# @title` / docstring)：
 
-| 用途 | 写法 |
+| 用途 | 语法/位置 |
 |------|------|
-| 树-文件中文名 | 文件头 `# @title …` |
-| 详情-文件说明 | 模块 docstring (Markdown 渲染) |
+| 树-文件中文名 | 文件头部 `# @title …` |
+| 详情-文件说明 | 模块 docstring（Markdown 渲染） |
 | 树/详情-用例标题 | 函数上方 `# @title …` |
 | Map 组件关联 | `# @component aikv-server` |
 
-## Layout
+#### 示例代码
+
+```python
+# @component aikv-server
+# @title SET 命令
+"""黑盒 SET/GET: 仅连预部署外部被测服务 (单机或集群拓扑均可)."""
+
+from __future__ import annotations
+
+
+# @title SET/GET
+def test_set_get(svc):
+    """SET/GET 样板.
+
+    1. 将 key k1 SET 为 "v1" | 成功
+    2. GET key k1 | 返回 "v1"
+    """
+    c = svc.client()
+    assert c.set("{test}k1", "v1") is True
+    assert c.get("{test}k1") == "v1"
+```
+
+## 目录布局
 
 ```text
 e2e/
-├── harness/              # 客户端 / 外部连接 / (本机 start_node 仅调试用)
-├── conftest.py           # 仅 svc
-├── function/             # 4 维度端到端功能测试目录
-│   ├── single/           # 单机 RESP 基础命令与诊断
-│   ├── crash/            # 持久化落盘与崩溃恢复
-│   ├── migration/        # 集群拓扑与动态槽位迁移
-│   └── failover/         # 高可用故障转移
+├── harness/        # 底层测试脚手架 (Node, RedisClient, ClusterNodes)
+├── conftest.py     # 全局入口 (前置自动 FLUSHALL 清库)
+├── function/       # 4 维度端到端功能测试目录
+│   ├── command/    # 命令与协议 (单机/集群通用)
+│   ├── crash/      # 持久化落盘与崩溃恢复
+│   ├── migration/  # 集群拓扑与动态槽位迁移
+│   └── failover/   # 高可用故障转移
 ├── pytest.ini
-├── requirements.txt
-└── old/                  # 旧资产 (不收集)
+└── requirements.txt
 ```
-
-## Notes
-
-- pytest **不收集** `old/`
-- 完整覆盖矩阵 / Redis Tcl 对齐

@@ -39,6 +39,26 @@ class Node:
     def client(self, db: int = 0) -> RedisClient:
         return RedisClient(self.host, self.port, db=db)
 
+    @property
+    def is_cluster(self) -> bool:
+        """判断目标节点是否运行在集群模式下."""
+        try:
+            res = self.client().execute("CLUSTER", "INFO")
+            return "cluster_state:" in str(res)
+        except Exception:
+            return False
+
+    def tag_key(self, name: str, tag: str = "test") -> str:
+        """生成带 Hash Tag 的 Key, 确保集群模式下计算至相同 Slot."""
+        return f"{{{tag}}}{name}"
+
+    def flush_all(self) -> None:
+        """清空数据 (自动兼容单机与集群)."""
+        try:
+            self.client().execute("FLUSHALL")
+        except Exception:
+            pass
+
     def stop(self, *, keep_data: bool = False) -> None:
         """停止进程; 默认清理 data-dir (`keep_data=True` 时保留)."""
         log = get_logger()
