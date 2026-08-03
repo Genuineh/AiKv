@@ -2,7 +2,7 @@
 name: aikv-server
 depends_on:
   - aikv-protocol
-description: AiKv TCP server — Listener accept loop, Connection read/pipeline loop, HELLO negotiation, adapt_for_protocol, CommandRouter dispatch, ATOM transaction. Use when changing src/server/{listener,connection,config}, debugging connection lifecycle, pipeline, protocol negotiation on the wire, or max_clients/shutdown.
+description: AiKv TCP 服务端 — Listener 接受循环、Connection 读/pipeline 循环、HELLO 协商、adapt_for_protocol、CommandRouter 分发、ATOM 事务. 改 src/server/{listener,connection,config}、排查连接生命周期、pipeline、线上协议协商或 max_clients/shutdown 时读本文.
 ---
 
 # AiKv Server (TCP 连接层)
@@ -12,7 +12,7 @@ description: AiKv TCP server — Listener accept loop, Connection read/pipeline 
 - 改 `server/{listener,connection,config}` 或 TCP 读写循环、pipeline、连接级命令分发
 - 排查 HELLO 协商、`protocol_negotiated` 门控、响应 null 线格式 (`$-1` vs `_`)、fatal 协议断连
 - 排查 MONITOR 模式、ATOM 事务 (MULTI/EXEC/WATCH)、`max_clients` 拒绝连接
-- **不覆盖**: RESP 帧语法 / parser limits → [protocol.md](protocol.md); 命令实现 → [commands-core.md](commands-core.md) / [commands-extended.md](commands-extended.md); MOVED/ASK 路由 → [cluster.md](cluster.md); slowlog/latency/INFO/metrics 数据结构 → [observability.md](observability.md)
+- **不覆盖**: RESP 帧语法 / parser limits → [protocol.md](01-protocol.md); 命令实现 → [commands-core.md](04-commands-core.md) / [commands-extended.md](05-commands-extended.md); MOVED/ASK 路由 → [cluster.md](06-cluster.md); slowlog/latency/INFO/metrics 数据结构 → [observability.md](07-observability.md)
 
 ## 代码地图
 
@@ -23,21 +23,22 @@ description: AiKv TCP server — Listener accept loop, Connection read/pipeline 
 | `server/connection.rs` | 单连接读写、pipeline、分发、HELLO、响应编码、ATOM/MONITOR | `Connection::handle`, `run`, `process_value`, `adapt_for_protocol` |
 | `server/config.rs` | 连接配置 + 进程共享状态 | `ConnectionConfig`, `ServerSharedState::new_with_backup_dir`, `router()` |
 | `main.rs` (~L621–699) | 构造 `ServerSharedState`; 可选 Metrics 后台任务; `Server::run` | 非 server 模块正文, 启动关联 |
+| `src/error.rs` | 类型化错误: Io / Protocol / Command / Storage / Config / Cluster | `Error`, `Result` |
 
-同目录 **不归本文正文**: `slowlog.rs`, `latency.rs`, `info.rs`, `metrics.rs`, `metrics_server.rs`, `process_metrics.rs` → [observability.md](observability.md).
+同目录 **不归本文正文**: `slowlog.rs`, `latency.rs`, `info.rs`, `info_catalog.rs`, `metrics.rs`, `metrics_server.rs`, `process_metrics.rs`, `otel.rs`, `otel_metrics.rs` → [observability.md](07-observability.md).
 
 公共 re-export (`lib.rs`): `pub mod server`; `Server`, `Connection`, `ServerSharedState` 等.
 
 ## 关键 invariant (勿破坏)
 
 - **每连接一 task**: accept 后 `tokio::spawn(Connection::handle)`; 连接状态 (`current_db`, `parser`, `tx_state`) 不跨连接共享.
-- **Pipeline 内层循环**: 单次 `read` 后 `feed`, 然后 `loop { parse_frame → process_value }` 直到 `Ok(None)`; 与 [protocol.md](protocol.md) 单帧语义一致.
+- **Pipeline 内层循环**: 单次 `read` 后 `feed`, 然后 `loop { parse_frame → process_value }` 直到 `Ok(None)`; 与 [protocol.md](01-protocol.md) 单帧语义一致.
 - **Buffer 超限断连**: `parser.buffer_len() + n > max_buffer_size()` 时直接 break, 不写 ERR.
 - **Fatal vs recoverable**: `is_fatal_protocol` (depth / too large / buffer size / line too long) → 断连; 其它 `Protocol` → `write_error` 后继续.
 - **命令请求形态**: 顶层须为 `Array`; 命令名与参数须为 `BulkString` (`process_value` 校验).
 - **HELLO 门控线格式**: 默认 `ProtocolVersion::Resp3`, 但 `protocol_negotiated = false` 直到客户端发 `HELLO 2|3`; 仅协商 Resp3 后 `adapt_for_protocol` 才把 `$-1`/`*-1` 转为 `_`.
 - **Router 懒加载**: `ServerSharedState::router()` 用 `OnceLock` 首次调用时建 `CommandRouter`.
-- **Observability 钩子**: 经 Router 的命令 (非内联列表) 成功后写 latency/slowlog/metrics; 详情见 [observability.md](observability.md).
+- **Observability 钩子**: 经 Router 的命令 (非内联列表) 成功后写 latency/slowlog/metrics; 详情见 [observability.md](07-observability.md).
 
 ## 数据流
 
@@ -218,7 +219,7 @@ Monitor 模式 **不支持 RESET** (oldmain 有; 当前仅 QUIT).
 ### 修改 observability 记录范围
 
 1. 改 `should_track_observability` 排除列表
-2. 数据结构 / SLOWLOG 命令 → [observability.md](observability.md)
+2. 数据结构 / SLOWLOG 命令 → [observability.md](07-observability.md)
 
 ## 配置与 feature flags
 

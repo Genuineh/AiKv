@@ -35,10 +35,10 @@ Redis Client → TCP/RESP → CommandRouter/ClusterRouter
 | **类型 → KV** | `StoredValue` / `ValueType` 序列化后写入 AiDb 扁平 key (`{db_index}:{user_key}`) | [Kvrocks](https://github.com/apache/kvrocks) 的 Redis-on-LSM 编码思路 | 存储引擎是 AiDb 自研 LSM, 非 Kvrocks/RocksDB 直用 |
 | **Cluster** | MOVED/ASK、16384 slot、CLUSTER 子命令、slot 迁移状态机 | [Redis 8.8 Cluster spec](https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/) · `redis-cli -c` 客户端行为 | **无** 服务端透明转发; 命令统计仅在实际执行节点 |
 | **Gossip** | 轻量拓扑 tick: 刷新 leader 路由缓存 + gossip metrics; NODES 读 MetaRaft | Redis Cluster gossip 的**语义标签** (非实现) | 故障判定走 MetaRaft, 非 SWIM/Serf; 不引入完整 Cassandra 式 gossip |
-| **INFO / 监控** | INFO 8.8 键名 parity (部分 stub `0`/`-1`); commandstats 八字段; 生产经 OTLP `aikv_*` | [Redis INFO](https://redis.io/docs/latest/commands/info/) · [observability-reference.md](docs/modules/observability-reference.md) | `redis_version` 为 AiKv 真实版本; 指标语义对齐 redis_exporter 解析 INFO, **不**引入 `redis_*` Prom 命名 |
+| **INFO / 监控** | INFO 8.8 键名 parity (部分 stub `0`/`-1`); commandstats 八字段; 生产经 OTLP `aikv_*` | [Redis INFO](https://redis.io/docs/latest/commands/info/) · [observability-reference.md](docs/modules/08-observability-reference.md) | `redis_version` 为 AiKv 真实版本; 指标语义对齐 redis_exporter 解析 INFO, **不**引入 `redis_*` Prom 命名 |
 | **共识 / LSM** | 委托 **AiDb** (OpenRaft + tonic + 自研 LSM) | [../aidb/AGENTS.md](../aidb/AGENTS.md) | 不在本仓实现 Raft / Compaction / WAL |
 
-字段 stub vs 真源: [docs/modules/observability.md](docs/modules/observability.md).
+字段 stub vs 真源: [docs/modules/observability.md](docs/modules/07-observability.md).
 
 ## 工作流 (vibe-coding)
 
@@ -74,6 +74,6 @@ Redis Client → TCP/RESP → CommandRouter/ClusterRouter
 ## 进一步阅读
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) · [DESIGN.md](DESIGN.md) · [docs/README.md](docs/README.md)
-- [docs/modules/cluster.md](docs/modules/cluster.md) · [docs/modules/observability.md](docs/modules/observability.md) · [docs/modules/observability-reference.md](docs/modules/observability-reference.md)
+- [docs/modules/cluster.md](docs/modules/06-cluster.md) · [docs/modules/observability.md](docs/modules/07-observability.md) · [docs/modules/observability-reference.md](docs/modules/08-observability-reference.md)
 - [CONTRIBUTING.md](CONTRIBUTING.md) · [`.github/README.md`](.github/README.md)
 - [../aidb/AGENTS.md](../aidb/AGENTS.md) — LSM / Raft 入口

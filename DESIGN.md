@@ -6,14 +6,14 @@
 
 | 域 | 深入阅读 |
 |----|----------|
-| RESP2/3、Pipeline、解析 limits | [protocol.md](docs/modules/protocol.md) |
-| TCP 循环、HELLO、内联命令 | [server.md](docs/modules/server.md) |
-| `KvStorage`、memory/aidb、`StoredValue` | [storage.md](docs/modules/storage.md) |
-| 核心命令、Router、KeyLock | [commands-core.md](docs/modules/commands-core.md) |
-| JSON/Lua/SAVE/INFO/MIGRATE | [commands-extended.md](docs/modules/commands-extended.md) |
-| MOVED/ASK、CLUSTER 子命令 | [cluster.md](docs/modules/cluster.md) |
-| slowlog、INFO、OTel | [observability.md](docs/modules/observability.md) |
-| LSM、WAL、MetaRaft/MultiRaft | [aidb engine](../aidb/docs/modules/engine.md)、[aidb cluster](../aidb/docs/modules/cluster.md) |
+| RESP2/3、Pipeline、解析 limits | [protocol.md](docs/modules/01-protocol.md) |
+| TCP 循环、HELLO、内联命令 | [server.md](docs/modules/02-server.md) |
+| `KvStorage`、memory/aidb、`StoredValue` | [storage.md](docs/modules/03-storage.md) |
+| 核心命令、Router、KeyLock | [commands-core.md](docs/modules/04-commands-core.md) |
+| JSON/Lua/SAVE/INFO/MIGRATE | [commands-extended.md](docs/modules/05-commands-extended.md) |
+| MOVED/ASK、CLUSTER 子命令 | [cluster.md](docs/modules/06-cluster.md) |
+| slowlog、INFO、OTel | [observability.md](docs/modules/07-observability.md) |
+| LSM、WAL、MetaRaft/MultiRaft | [aidb engine](../aidb/docs/modules/01-engine.md)、[aidb cluster](../aidb/docs/modules/03-cluster.md) |
 
 ## 产品形态与横切取舍
 
@@ -47,7 +47,7 @@ AiKv 是 **bin + lib** 的 Redis RESP 服务 (Tokio async). [AiDb](../aidb/DESIG
 
 | 项 | 说明 |
 |----|------|
-| telnet 内联 (`PING\r\n`) | 仅数组命令; 见 [server.md](docs/modules/server.md) |
+| telnet 内联 (`PING\r\n`) | 仅数组命令; 见 [server.md](docs/modules/02-server.md) |
 | 标准 `dump.rdb` / memory AOF | 持久化走 aidb `Checkpoint`; memory 无生产持久化 |
 | Redis DUMP 互操作 | 内部 `version + bincode(StoredValue)` |
 | `CONFIG REWRITE` | 未实现 |
@@ -99,7 +99,7 @@ Redis `SELECT 0–15`. MemoryEngine 每 db 独立容器 + 过期队列; `FLUSHDB
 **演进**: oldmain / wiqun-kv 曾为每逻辑库独立 `DB` 目录; 现 **单 `aidb::DB` + ASCII 前缀** 模拟多库.
 
 - **理由**: 减实例数; cluster 每 **数据 group** 一 `DB` 目录更清晰.
-- **trade-off**: scan/sort 在大 keyspace 上 O(n); 见 [storage.md](docs/modules/storage.md).
+- **trade-off**: scan/sort 在大 keyspace 上 O(n); 见 [storage.md](docs/modules/03-storage.md).
 
 ### 为什么 `spawn_blocking` 包装 AiDb?
 
@@ -111,7 +111,7 @@ AiDb 字节 KV + tombstone; **Redis 类型语义** 属协议/命令层. bincode(
 
 ### 为什么 cluster 写走 `ClusterDataAdapter`?
 
-Assigned slot 写 **必须** `propose_group` → Raft apply; **禁止** local fallback (防 SET 成功 GET 空). 读本地 group 或 `CLUSTERDOWN`. 数据面细节链 [aidb cluster](../aidb/docs/modules/cluster.md).
+Assigned slot 写 **必须** `propose_group` → Raft apply; **禁止** local fallback (防 SET 成功 GET 空). 读本地 group 或 `CLUSTERDOWN`. 数据面细节链 [aidb cluster](../aidb/docs/modules/03-cluster.md).
 
 ### 已知限制 (摘要)
 
@@ -140,7 +140,7 @@ Redis 官方脚本语言; 零系统 lua 依赖; 沙箱裁 StdLib. **放弃** rha
 
 ### 为什么 `ScriptTransaction` + WriteBatch?
 
-`redis.call` 多写原子提交; 读见己写; 失败 drop buffer. aidb 路径单 `WriteBatch` WAL 原子; memory 路径语义见 [commands-extended.md](docs/modules/commands-extended.md).
+`redis.call` 多写原子提交; 读见己写; 失败 drop buffer. aidb 路径单 `WriteBatch` WAL 原子; memory 路径语义见 [commands-extended.md](docs/modules/05-commands-extended.md).
 
 ### 为什么 PING/ECHO/HELLO 在 connection?
 
@@ -178,7 +178,7 @@ WiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障�
 - smart client (`redis-cli -c` 等) 更新 slot 表并重试.
 - **命令统计** 仅在实际执行节点计入 `commandstats`; MOVED 响应节点 **不** 给该命令加 calls.
 
-**放弃:** 服务端透明代理 (`forward_command`). 历史实现偏离 DESIGN, 已移除; 现行行为见 [docs/modules/cluster.md](docs/modules/cluster.md).
+**放弃:** 服务端透明代理 (`forward_command`). 历史实现偏离 DESIGN, 已移除; 现行行为见 [docs/modules/cluster.md](docs/modules/06-cluster.md).
 
 ### 为什么 `ClusterRouter::decide` 同步?
 
@@ -206,7 +206,7 @@ WiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障�
 
 ## 可观测性
 
-**Redis 参考:** Open Source **8.8** (`redis_compatible_version:8.8`; INFO sections + commandstats 行格式). 字段与 OTLP 对照见 [docs/modules/observability.md](docs/modules/observability.md) · [observability-reference.md](docs/modules/observability-reference.md).
+**Redis 参考:** Open Source **8.8** (`redis_compatible_version:8.8`; INFO sections + commandstats 行格式). 字段与 OTLP 对照见 [docs/modules/observability.md](docs/modules/07-observability.md) · [observability-reference.md](docs/modules/08-observability-reference.md).
 
 ### 为什么 tracing 始终编译, OTel 在 `monitoring` feature?
 
@@ -215,11 +215,11 @@ WiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障�
 
 ### 为什么 RESP 端口不兼 HTTP metrics?
 
-**RESP 端口不能兼 HTTP**. 健康检查走 `--metrics-addr`/`--metrics-port` (默认 9191); 生产业务指标经 **OTLP → Collector → Prom remote write**, 与 [observability.md](docs/modules/observability.md) 一致.
+**RESP 端口不能兼 HTTP**. 健康检查走 `--metrics-addr`/`--metrics-port` (默认 9191); 生产业务指标经 **OTLP → Collector → Prom remote write**, 与 [observability.md](docs/modules/07-observability.md) 一致.
 
 ### 为什么 `ServerMetrics` 为 INFO 唯一数据源?
 
-`InfoRenderer` / `CLUSTER INFO` stats 只读 `ServerMetrics` (及 refresh 后 gauge). **OTel `aikv_*` 为 INFO 镜像** — 热路径仅写 `ServerMetrics`; `refresh_runtime_metrics` 经 `info_catalog::sync_otel_from_server_metrics` delta 同步 OTLP (最多滞后 ~15s). **放弃** INFO 与监控双计数 — invariant 见 [observability.md](docs/modules/observability.md).
+`InfoRenderer` / `CLUSTER INFO` stats 只读 `ServerMetrics` (及 refresh 后 gauge). **OTel `aikv_*` 为 INFO 镜像** — 热路径仅写 `ServerMetrics`; `refresh_runtime_metrics` 经 `info_catalog::sync_otel_from_server_metrics` delta 同步 OTLP (最多滞后 ~15s). **放弃** INFO 与监控双计数 — invariant 见 [observability.md](docs/modules/07-observability.md).
 
 ### 与 redis_exporter 的关系
 
@@ -244,6 +244,40 @@ WiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障�
 | `evicted_keys` | 恒 0 | 无 maxmemory eviction |
 
 指标前缀: **`aikv_*`** (非历史 `wiqun_kv_*`). `aidb_*` 不进 Redis INFO, 经同一 OTLP 管道导出.
+
+---
+
+## 性能
+
+### 为什么全局分配器用 mimalloc?
+
+生产环境在 `main.rs` 经 `#[global_allocator]` 使用 **mimalloc** 替代 glibc malloc. 基线来自 eBPF 火焰图 (Grafana Profiles / Pyroscope, 15min 累计), 分配器自身是当时最大 CPU 热点:
+
+| 排名 | Symbol | Self Time | CPU 占比 |
+|:----:|--------|:---------:|:--------:|
+| 1 | `__libc_malloc` | 8.42 s | 8.1% |
+| 2 | `cfree` | 7.37 s | 7.1% |
+| 3 | `seccomp_export_bpf` | 3.95 s | 3.8% |
+| 4 | `__libc_realloc` | 3.53 s | 3.4% |
+| **合计** | malloc + free + realloc | **~19.3 s** | **18.6%** |
+
+**预期收益**: 分配器自身开销 (锁争用、碎片整理) 降低 **30-50%**, 总 CPU 收益 **5-9%**.
+
+### 如何验证 / 对比基准
+
+```bash
+redis-benchmark -h 127.0.0.1 -p 6379 -t SET,GET -n 50000 -c 50 -d 64 --cluster
+```
+
+对照压测脚本与结果见 [aifactory/benchmark/README.md](../aifactory/benchmark/README.md); 火焰图看板见 [aifactory/monitor/README.md](../aifactory/monitor/README.md).
+
+### 后续优化 (Phase 2)
+
+在验证 Phase 1 收益后, 通过新火焰图定位逻辑层分配热点, 进行 buffer 复用优化 — 待核实, 见 [ISSUES.md](ISSUES.md).
+
+### 已知限制 (摘要)
+
+- 无 SAVE/RDB 之外的 heap 峰值控制; 大 value 突发分配可能抬升 RSS.
 
 ---
 
@@ -292,3 +326,4 @@ WiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障�
 
 - 集群 failover / stub 子命令 — 见 [ISSUES.md](ISSUES.md) (ISSUE-016, ISSUE-019; modules 一行引用).
 - 可观测性默认与 metrics 刷新 — 见 [ISSUES.md](ISSUES.md) (ISSUE-020~023).
+- mimalloc Phase 2 (逻辑层分配热点 buffer 复用) — 收益未量化, 见 [性能](#性能).

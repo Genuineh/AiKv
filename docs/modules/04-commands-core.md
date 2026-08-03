@@ -2,7 +2,7 @@
 name: aikv-commands-core
 depends_on:
   - aikv-storage
-description: AiKv core Redis commands — String/Hash/List/Set/ZSet/Key/Database handlers, CommandRouter dispatch, registry metadata, KeyLock. Use when changing src/command/{string,hash,list,set,zset,key,database,registry,router}, adding core data-structure commands, debugging WRONGTYPE/routing/key_indices, or cluster CROSSSLOT before handler runs.
+description: AiKv 核心 Redis 命令 — String/Hash/List/Set/ZSet/Key/Database 处理器、CommandRouter 分发、registry 元数据、KeyLock. 改 src/command/{string,hash,list,set,zset,key,database,registry,router}, 新增核心数据结构命令, 排查 WRONGTYPE/路由/key_indices, 或 handler 前的 cluster CROSSSLOT 时读本文.
 ---
 
 # AiKv Commands Core (核心命令层)
@@ -12,10 +12,10 @@ description: AiKv core Redis commands — String/Hash/List/Set/ZSet/Key/Database
 - 改 `src/command/{string,hash,list,set,zset,key,database,registry,router}` 或 `scan_util.rs`
 - 新增/修改 **核心数据结构** Redis 命令 (非 JSON/Lua/INFO/SAVE)
 - 排查 WRONGTYPE、命令未注册、`COMMAND GETKEYS`、写路径竞态
-- 理解 `Connection` 如何进入命令 handler (上游见 [server.md](server.md))
-- **不覆盖**: `KvStorage` / `StoredValue` 契约 → [storage.md](storage.md)
-- **不覆盖**: JSON/Lua/阻塞基础设施/MIGRATE TCP/持久化/Server 命令 → [commands-extended.md](commands-extended.md)
-- **不覆盖**: MOVED/ASK / CLUSTER 子命令详述 → [cluster.md](cluster.md)
+- 理解 `Connection` 如何进入命令 handler (上游见 [server.md](02-server.md))
+- **不覆盖**: `KvStorage` / `StoredValue` 契约 → [storage.md](03-storage.md)
+- **不覆盖**: JSON/Lua/阻塞基础设施/MIGRATE TCP/持久化/Server 命令 → [commands-extended.md](05-commands-extended.md)
+- **不覆盖**: MOVED/ASK / CLUSTER 子命令详述 → [cluster.md](06-cluster.md)
 
 ## 架构一览
 
@@ -61,7 +61,7 @@ flowchart TB
 | `command/key.rs` | 过期/KEYS/SCAN/rename/DUMP/RESTORE/MIGRATE 入口 | `KeyCommands` |
 | `command/scan_util.rs` | HSCAN/SSCAN/ZSCAN 共用分页 | `parse_scan_options`, `paginate_slice` |
 
-Extended handler (`json`, `script`, `server`, `persistence`) 由 Router match 转发; 实现见 [commands-extended.md](commands-extended.md).
+Extended handler (`json`, `script`, `server`, `persistence`) 由 Router match 转发; 实现见 [commands-extended.md](05-commands-extended.md).
 
 ## 关键 invariant (勿破坏)
 
@@ -72,7 +72,7 @@ Extended handler (`json`, `script`, `server`, `persistence`) 由 Router match �
 - **registry ↔ router 双维护**: 新命令须同时更新 `COMMAND_TABLE` 与 `execute_inner` match (或子 dispatch).
 - **SELECT**: 唯一在 handler 内修改 `*db` 的核心命令 (`database::select`).
 - **HMSET**: 走 HSET 逻辑, 返回 `OK` (非新增字段数).
-- **DUMP 格式**: `[u8 version=0][bincode(StoredValue)]` — 非 Redis DUMP; 与 [storage.md](storage.md) `dump.rs` 一致.
+- **DUMP 格式**: `[u8 version=0][bincode(StoredValue)]` — 非 Redis DUMP; 与 [storage.md](03-storage.md) `dump.rs` 一致.
 
 ## 数据流
 
@@ -97,7 +97,7 @@ sequenceDiagram
   R-->>C: Result
 ```
 
-`Connection` 另用 `registry::lookup` + `key_indices` 做 ATOM WATCH 键追踪与写命令判定 (见 [server.md](server.md)).
+`Connection` 另用 `registry::lookup` + `key_indices` 做 ATOM WATCH 键追踪与写命令判定 (见 [server.md](02-server.md)).
 
 ### Typed 写路径 (Hash/List/Set/ZSet 共用模式)
 
@@ -122,7 +122,7 @@ sequenceDiagram
 
 **metrics** (仅 `new_with_shared`): GET/MGET/HGET/EXISTS 等记录 keyspace hit/miss; 每条命令 `on_command` 成功/失败.
 
-**cluster 前置** (`feature cluster`): `cluster_route` 在 `execute_inner` 之前 — admin 白名单 (SCAN/MIGRATE/SELECT/…)、多 key CROSSSLOT、单 key MOVED/ASK. 详述 → [cluster.md](cluster.md).
+**cluster 前置** (`feature cluster`): `cluster_route` 在 `execute_inner` 之前 — admin 白名单 (SCAN/MIGRATE/SELECT/…)、多 key CROSSSLOT、单 key MOVED/ASK. 详述 → [cluster.md](06-cluster.md).
 
 ## registry (命令元数据)
 
@@ -190,7 +190,7 @@ pub struct CommandInfo {
 
 1. 确认 key 上实际 `ValueType` (`TYPE` 或 `get_typed`).
 2. String 命令误用 `get`/`set` 访问 Hash 等 → 预期 WRONGTYPE.
-3. MGET 遇非 String: 对齐 Redis 7, per-key 返回 `nil` (非 WRONGTYPE); 见 [storage.md](storage.md) invariant.
+3. MGET 遇非 String: 对齐 Redis 7, per-key 返回 `nil` (非 WRONGTYPE); 见 [storage.md](03-storage.md) invariant.
 
 ### 排查命令 unknown
 

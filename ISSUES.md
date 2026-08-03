@@ -101,7 +101,7 @@
 - **相关 src**: `src/cluster/commands.rs` (`dispatch_cluster`)
 - **oldmain 代码**: `aikv-oldmain/src/cluster/commands.rs` — `SET-CONFIG-EPOCH` 有实现; `COUNT-FAILURE-REPORTS` 部分逻辑
 - **现象**: 现码 `SET-CONFIG-EPOCH` 恒 OK; `COUNT-FAILURE-REPORTS` 恒 0
-- **修复**: doc-only — stub 表与「未实现 / stub」节见 [cluster.md](docs/modules/cluster.md)
+- **修复**: doc-only — stub 表与「未实现 / stub」节见 [cluster.md](docs/modules/06-cluster.md)
 - **影响**: redis-cli 部分检查路径可能跳过
 
 ### ISSUE-018: CLUSTER FAILOVER 仅 FORCE/TAKEOVER 手动升主
@@ -112,7 +112,7 @@
 - **旧文档**: `aikv-oldmain/docs/development/api/02-cluster-api.md` — 称 openraft 自动故障切换
 - **oldmain 代码**: `FailoverMode::Default|Force|Takeover`; 部分路径经 MetaRaft leader 转发
 - **现象**: 现码仅 `FORCE|TAKEOVER`; replica 上 `change_group_membership` 升主; 无 Redis 标准选举等待
-- **修复**: doc-only — 手动 failover 模型见 [cluster.md](docs/modules/cluster.md#手动-failover)
+- **修复**: doc-only — 手动 failover 模型见 [cluster.md](docs/modules/06-cluster.md#手动-failover)
 - **影响**: 与 Redis 全兼容 FAILOVER 语义不同
 
 ### ISSUE-017: CLUSTER REPLICATE 仅本地 ReplicationRole 元数据
@@ -122,7 +122,7 @@
 - **相关 src**: `src/cluster/commands.rs` (`cluster_replicate`, `cluster_failover`)
 - **oldmain 代码**: oldmain `cluster_replicate` 调 membership/MultiRaft 路径更完整
 - **现象**: 现码只写 `ReplicationRole::Replica { primary_id }`; 注释声明 replicas 不服务数据读取
-- **修复**: doc-only — REPLICATE 仅本地元数据; replica 读依赖 `READONLY` + 本地 group, 见 [cluster.md](docs/modules/cluster.md)
+- **修复**: doc-only — REPLICATE 仅本地元数据; replica 读依赖 `READONLY` + 本地 group, 见 [cluster.md](docs/modules/06-cluster.md)
 - **影响**: FAILOVER 前需 REPLICATE
 
 ### ISSUE-016: CLUSTER RESET 未实现
@@ -132,7 +132,7 @@
 - **相关 src**: `src/cluster/commands.rs` (`dispatch_cluster` RESET arm)
 - **旧文档**: `aikv-oldmain/docs/development/architecture/03-cluster.md` §排障 — `CLUSTER RESET SOFT`
 - **现象**: MetaRaft 架构下集群元数据为共识状态, 单节点 RESET 无法等价 Redis 语义; oldmain `cluster_reset()` 亦未接入 dispatch (SOFT 空操作, HARD 仅部分清 slot)
-- **修复**: doc-only — `CLUSTER RESET` 返回明确 ERR + 替代运维步骤见 [cluster.md](docs/modules/cluster.md#重置集群无-cluster-reset)
+- **修复**: doc-only — `CLUSTER RESET` 返回明确 ERR + 替代运维步骤见 [cluster.md](docs/modules/06-cluster.md#重置集群无-cluster-reset)
 - **影响**: redis-cli / 旧脚本需改用停服 + 清 `data_dir` 重搭 (e2e 同模式)
 
 ### ISSUE-015: CLUSTER METARAFT * 子命令已移除
@@ -143,7 +143,7 @@
 - **旧文档**: `aikv-oldmain/docs/development/api/02-cluster-api.md`, `03-cluster.md` §METARAFT
 - **oldmain 代码**: `aikv-oldmain/src/server/connection.rs` — ADDLEARNER/PROMOTE/MEMBERS/STATUS/SETSTATUS
 - **现象**: 重构后 MetaRaft 运维不在 aikv CLUSTER 子命令暴露; 由 aidb gRPC/内部 API 承担
-- **修复**: doc-only — METARAFT 运维见 [aidb cluster.md](../aidb/docs/modules/cluster.md); aikv 无 RESP 子命令
+- **修复**: doc-only — METARAFT 运维见 [aidb cluster.md](../aidb/docs/modules/03-cluster.md); aikv 无 RESP 子命令
 - **影响**: 勿写 aikv 支持 METARAFT
 
 ### ISSUE-014: GossipState 后台刷新但未接入 CLUSTER NODES
@@ -208,7 +208,7 @@
 - **相关 src**: `src/command/persistence.rs` (`parse_shutdown_mode` — 仅 Default/SAVE/NOSAVE)
 - **旧文档**: `aikv-oldmain/docs/development/api/01-commands.md` §SHUTDOWN
 - **现象**: oldmain API 文档列 NOW/FORCE/ABORT; 现码仅 SAVE/NOSAVE; 未知 mode → ERR
-- **修复**: doc-only — 仅 Default/SAVE/NOSAVE; 未知 mode → ERR, 见 [commands-extended.md](docs/modules/commands-extended.md)
+- **修复**: doc-only — 仅 Default/SAVE/NOSAVE; 未知 mode → ERR, 见 [commands-extended.md](docs/modules/05-commands-extended.md)
 - **影响**: Redis 全兼容客户端可能发未支持 flag
 
 ### ISSUE-010: MIGRATE 无 AUTH2 (username+password)
@@ -246,7 +246,7 @@
 - **相关 src**: `src/command/script.rs` (`script_kill`)
 - **旧文档**: `aikv-oldmain/docs/development/architecture/05-lua-scripting.md` Limitations — 已承认不可用
 - **现象**: 无运行中脚本跟踪; 始终 `NOTBUSY No scripts in execution right now.`
-- **修复**: doc-only — stub, 恒 NOTBUSY; 见 [commands-extended.md](docs/modules/commands-extended.md) Lua 节
+- **修复**: doc-only — stub, 恒 NOTBUSY; 见 [commands-extended.md](docs/modules/05-commands-extended.md) Lua 节
 - **影响**: `backup/aikv/README.md` 标 SCRIPT KILL ✅ 与事实不符 (不在本仓维护范围)
 
 ### ISSUE-006: MIGRATE KEYS 忽略 COPY, 批量路径始终 delete

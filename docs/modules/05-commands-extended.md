@@ -2,7 +2,7 @@
 name: aikv-commands-extended
 depends_on:
   - aikv-commands-core
-description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, BlockingRegistry, MIGRATE TCP restore, SAVE/BGSAVE/SHUTDOWN, server admin (INFO/CONFIG/CLIENT/COMMAND/OBJECT). Use when changing src/command/{json,jsonpath,script,blocking,migrate,persistence,server}, router extended dispatch, debugging JSONPath/Lua sandbox/MIGRATE/checkpoint, or blocking wait/notify integration.
+description: AiKv 扩展 Redis 命令 — JSON/JSONPath、Lua EVAL/SCRIPT、BlockingRegistry、MIGRATE TCP 恢复、SAVE/BGSAVE/SHUTDOWN、服务端管理 (INFO/CONFIG/CLIENT/COMMAND/OBJECT). 改 src/command/{json,jsonpath,script,blocking,migrate,persistence,server}、router 扩展分发, 排查 JSONPath/Lua 沙箱/MIGRATE/checkpoint, 或阻塞等待/通知集成时读本文.
 ---
 
 # AiKv Commands Extended (扩展命令层)
@@ -12,10 +12,10 @@ description: AiKv extended Redis commands — JSON/JSONPath, Lua EVAL/SCRIPT, Bl
 - 改 `src/command/{json,jsonpath,jsonpath_util,script,blocking,migrate,persistence,server}` 或 `router.rs` 中 extended match / `dispatch_object|config|client`
 - 新增/修改 JSON.*、EVAL/SCRIPT、SAVE/BGSAVE、INFO/CONFIG/CLIENT/COMMAND、MIGRATE 网络传输
 - 排查 JSONPath filter、Lua `redis.call`、脚本沙箱/超时、BGSAVE/checkpoint、阻塞唤醒
-- **不覆盖**: String~ZSet/Key/DB handler、KeyLock 机制 → [commands-core.md](commands-core.md)
-- **不覆盖**: ATOM.MULTI/EXEC/WATCH → [server.md](server.md) (`connection.rs`)
-- **不覆盖**: MOVED/ASK、CLUSTER 子命令 → [cluster.md](cluster.md)
-- **不覆盖**: slowlog 环形缓冲、latency 直方图、InfoRenderer 字段、Prometheus → [observability.md](observability.md)
+- **不覆盖**: String~ZSet/Key/DB handler、KeyLock 机制 → [commands-core.md](04-commands-core.md)
+- **不覆盖**: ATOM.MULTI/EXEC/WATCH → [server.md](02-server.md) (`connection.rs`)
+- **不覆盖**: MOVED/ASK、CLUSTER 子命令 → [cluster.md](06-cluster.md)
+- **不覆盖**: slowlog 环形缓冲、latency 直方图、InfoRenderer 字段、Prometheus → [observability.md](07-observability.md)
 
 ## 架构一览
 
@@ -46,7 +46,7 @@ flowchart TB
   KeyM["key.rs migrate"] --> MigTCP["migrate::send_restore"]
 ```
 
-**装配** (见 [commands-core.md](commands-core.md)):
+**装配** (见 [commands-core.md](04-commands-core.md)):
 
 | 构造 | extended 能力 |
 |------|----------------|
@@ -85,7 +85,7 @@ flowchart TB
 - **Lua 缓存**: 仅 `SCRIPT LOAD` 写入 LRU; **EVAL 不**自动缓存.
 - **pcall 错误**: 返回 `{err="…"}` 表 (非 oldmain 的 `Nil`).
 - **BlockingRegistry**: 超时返回 **nil Array** (`RespValue::Array(None)`), 非 nil bulk.
-- **MIGRATE payload**: 与 [commands-core.md](commands-core.md) DUMP 相同 — `[u8 version=0][bincode(StoredValue)]`.
+- **MIGRATE payload**: 与 [commands-core.md](04-commands-core.md) DUMP 相同 — `[u8 version=0][bincode(StoredValue)]`.
 - **持久化**: SAVE/BGSAVE/SHUTDOWN SAVE 仅 `StorageEngineKind::AiDb`; memory → ERR.
 - **INFO**: 仅委托 `InfoRenderer`; 不在此 module 维护字段清单.
 
@@ -222,7 +222,7 @@ JSONPath 能力 (`jsonpath.rs`): `$`, `.`, `$.field`, `$[N]`, `[*]`, 多字段�
 
 ### 排查 BLPOP 永不返回
 
-1. handler 在 [commands-core.md](commands-core.md) `list.rs`; 本章查 `BlockingRegistry`.
+1. handler 在 [commands-core.md](04-commands-core.md) `list.rs`; 本章查 `BlockingRegistry`.
 2. 确认写侧是否 `notify` (LPUSH/ZADD).
 
 ## 配置与 feature flags

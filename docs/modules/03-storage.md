@@ -2,7 +2,7 @@
 name: aikv-storage
 depends_on:
   - aidb-engine
-description: AiKv storage layer — KvStorage trait, MemoryEngine, StorageAdapter/KvStorageAdapter, AiDbEngine, ClusterDataAdapter, StoredValue/TTL/DUMP encoding. Use when changing src/storage/*, debugging memory vs aidb engine paths, TTL expiry, persistence bridge (flush/checkpoint), or cluster data-plane Raft writes.
+description: AiKv 存储层 — KvStorage trait、MemoryEngine、StorageAdapter/KvStorageAdapter、AiDbEngine、ClusterDataAdapter、StoredValue/TTL/DUMP 编码. 改 src/storage/*、排查 memory 与 aidb 引擎路径差异、TTL 过期、持久化桥接 (flush/checkpoint), 或集群数据面 Raft 写时读本文.
 ---
 
 # AiKv Storage (存储层)
@@ -10,12 +10,12 @@ description: AiKv storage layer — KvStorage trait, MemoryEngine, StorageAdapte
 ## 何时读本文
 
 - 改 `src/storage/*` 或排查 memory / aidb 引擎、TTL、多 DB、`StoredValue` 编解码
-- 理解命令层如何持有 `Arc<dyn KvStorage>` (见 [commands-core.md](commands-core.md))
+- 理解命令层如何持有 `Arc<dyn KvStorage>` (见 [commands-core.md](04-commands-core.md))
 - 排查 cluster 模式下 **数据面** 写是否经 Raft (IMPORTING / slot 已分配)
-- **不覆盖**: AiDb LSM 内核 (WAL/MemTable/SSTable) → [aidb engine.md](../../../aidb/docs/modules/engine.md) / [engine-storage.md](../../../aidb/docs/modules/engine-storage.md)
-- **不覆盖**: MetaRaft/MultiRaft/Router → [aidb cluster.md](../../../aidb/docs/modules/cluster.md)
-- **不覆盖**: MOVED/ASK / CLUSTER 子命令 → [cluster.md](cluster.md) (步 11)
-- **不覆盖**: SAVE/BGSAVE/RESTORE 命令语义 → [commands-extended.md](commands-extended.md); INFO/metrics 渲染 → [observability.md](observability.md)
+- **不覆盖**: AiDb LSM 内核 (WAL/MemTable/SSTable) → [aidb engine.md](../../../aidb/docs/modules/01-engine.md) / [engine-storage.md](../../../aidb/docs/modules/02-engine-storage.md)
+- **不覆盖**: MetaRaft/MultiRaft/Router → [aidb cluster.md](../../../aidb/docs/modules/03-cluster.md)
+- **不覆盖**: MOVED/ASK / CLUSTER 子命令 → [cluster.md](06-cluster.md) (步 11)
+- **不覆盖**: SAVE/BGSAVE/RESTORE 命令语义 → [commands-extended.md](05-commands-extended.md); INFO/metrics 渲染 → [observability.md](07-observability.md)
 
 ## 架构一览
 
@@ -58,6 +58,8 @@ cluster 包装 **仅 aidb 路径**; memory 不经 `StorageAdapter`.
 | `storage/aidb_options.rs` | CLI / 单测 Options 构建 | `server_db_options`, `server_db_options_with_preset`, `DbPreset`, `testing_db_options` |
 | `storage/cluster_adapter.rs` | 数据面 Raft 包装 (`#[cfg(feature = "cluster")]`) | `ClusterDataAdapter::new` |
 | `storage/dump.rs` | 内部 DUMP 格式 | `encode` / `decode`, `DUMP_VERSION` |
+| `storage/subkey.rs` | Subkey 编码: 大 Hash/Set 的 field/member 独立存储 | `encode_hash_field_key`, `encode_set_member_key`, `decode_subkey` |
+| `storage/ttl_filter.rs` | TTL 过期 entry 的 compaction 过滤 (接入 aidb `CompactionFilter`) | `TtlExpireFilter` |
 | `storage/observation.rs` | 过期 key 计数 (INFO/metrics) | `StorageObservation` |
 | `main.rs` ~L130–157 | CLI 引擎装配 | `build_storage` |
 
@@ -142,7 +144,7 @@ flowchart LR
 
 实现: `AiDbEngine`; cluster 模式下外层 `ClusterDataAdapter` 再包一层.
 
-**集群写路径 (SET)**: `ClusterDataAdapter` 按 data group 串行 batcher — `try_recv` 凑批后 `propose_group` (Raft). 参数见 `cluster_adapter.rs`: `SET_BATCH_MAX_DELAY`, `eager_flush` (构造时传入), `SET_BATCH_MAX_OPS`. 压测与排查见 [docs/PERFORMANCE.md](../../../aifactory/docs/PERFORMANCE.md).
+**集群写路径 (SET)**: `ClusterDataAdapter` 按 data group 串行 batcher — `try_recv` 凑批后 `propose_group` (Raft). 参数见 `cluster_adapter.rs`: `SET_BATCH_MAX_DELAY`, `eager_flush` (构造时传入), `SET_BATCH_MAX_OPS`. 压测见 [`aifactory/benchmark/README.md`](../../../aifactory/benchmark/README.md).
 
 ### `AiDbEngine` key 工具
 
@@ -172,7 +174,7 @@ RESTORE 校验 version; 失败 → `ERR DUMP payload version or checksum error`.
 1. 在 `types.rs` trait 定义; 评估 memory 与 `KvStorageAdapter` **双实现**
 2. 若涉及 flat KV, 评估是否扩展 `StorageAdapter` + `AiDbEngine` + `ClusterDataAdapter`
 3. 在 `tests/modules/storage/compat.rs` 补 memory vs aidb 一致性 (若适用)
-4. 命令层在 [commands-core.md](commands-core.md) 对应 handler 调用
+4. 命令层在 [commands-core.md](04-commands-core.md) 对应 handler 调用
 
 ### 调试 memory vs aidb 行为不一致
 
@@ -186,20 +188,20 @@ RESTORE 校验 version; 失败 → `ERR DUMP payload version or checksum error`.
 1. 确认 `--engine aidb --data-dir` 指向持久目录
 2. 查 `AiDbEngine::open` 是否同一 path
 3. cluster 模式: 用户数据在 **group SM**, 不单靠 local `AiDbEngine` 单库
-4. LSM 恢复细节 → [aidb engine.md](../../../aidb/docs/modules/engine.md)
+4. LSM 恢复细节 → [aidb engine.md](../../../aidb/docs/modules/01-engine.md)
 
 ### 调试 cluster 写成功读为空
 
 1. 确认 `CLUSTER_STATE_MGR` 已初始化且 slot Assigned
 2. 查 `ClusterDataAdapter::should_use_local_engine` — 已分配 slot **不应** fallback local
 3. 查 `route_write` / IMPORTING 是否写到 target group
-4. 控制面/MOVED → [cluster.md](cluster.md); Raft → [aidb cluster.md](../../../aidb/docs/modules/cluster.md)
+4. 控制面/MOVED → [cluster.md](06-cluster.md); Raft → [aidb cluster.md](../../../aidb/docs/modules/03-cluster.md)
 
 ### 调试 TTL / keyspace stats
 
 1. 过期为惰性: `ttl`/`get_typed` 触发删除
 2. `keyspace_stats` 只计未过期 key; `avg_ttl` 来自 `compute_avg_ttl_ms`
-3. `StorageObservation` 计数在 INFO/metrics drain — [observability.md](observability.md)
+3. `StorageObservation` 计数在 INFO/metrics drain — [observability.md](07-observability.md)
 
 ## 配置与 feature flags
 

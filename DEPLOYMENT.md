@@ -129,7 +129,7 @@ chmod +x e2e/*.sh
 | `AIKV_OTLP_ENDPOINT` | — | `OTEL_EXPORTER_OTLP_ENDPOINT` 的 aikv fallback |
 | `AIKV_DEPLOYMENT_ENV` | — | `OTEL_DEPLOYMENT_ENVIRONMENT` 的 aikv fallback |
 | `AIKV_CLIENT_ADDR` | 从 rpc host + `--bind` port 推导 | 外部可达 `host:port` → MetaRaft `client_addr` |
-| `AIKV_CLUSTER_ANNOUNCE_MODE` | 默认 `unknown` | `fixed` \| `unknown` — MOVED / CLUSTER SLOTS 通告; 见 [cluster.md](docs/modules/cluster.md) |
+| `AIKV_CLUSTER_ANNOUNCE_MODE` | 默认 `unknown` | `fixed` \| `unknown` — MOVED / CLUSTER SLOTS 通告; 见 [cluster.md](docs/modules/06-cluster.md) |
 
 E2E 可选: `AIKV_HOST`, `AIKV_PORT`, `AIKV_CLUSTER_BASE_PORT` ([e2e/old/utils.sh](e2e/old/utils.sh); 活跃黑盒见 [e2e/README.md](e2e/README.md)).
 
@@ -245,7 +245,7 @@ redis-cli -c -p 6379
 
 集群应用须使用 cluster-aware 客户端 (如 `redis-cli -c`, Jedis Cluster, go-redis cluster 模式). 非 cluster 模式客户端收到 MOVED 后不会自动重定向.
 
-MOVED/ASK、failover、slot 迁移语义见 [docs/modules/cluster.md](docs/modules/cluster.md). MetaRaft/MultiRaft 实现见 [aidb cluster.md](../aidb/docs/modules/cluster.md).
+MOVED/ASK、failover、slot 迁移语义见 [docs/modules/cluster.md](docs/modules/06-cluster.md). MetaRaft/MultiRaft 实现见 [aidb cluster.md](../aidb/docs/modules/03-cluster.md).
 
 ### 跨 NAT / GUI 客户端 (可选)
 
@@ -271,7 +271,7 @@ export AIKV_CLUSTER_ANNOUNCE_MODE=fixed   # LAN/GUI; 默认 unknown 适合单种
 | Tracing | `RUST_LOG`; JSON 默认开 (`AIKV_JSON_LOG`) |
 | OTel | `[monitoring]` + `OTEL_EXPORTER_OTLP_ENDPOINT` (gRPC, 如 `http://127.0.0.1:4317`; fallback `AIKV_OTLP_ENDPOINT`) |
 
-全部 `aikv_*` / `aidb_*` (及 cluster 时 `aidb_raft_*`) 经 OTLP 出口. 指标全表见 [observability-reference.md](docs/modules/observability-reference.md).
+全部 `aikv_*` / `aidb_*` (及 cluster 时 `aidb_raft_*`) 经 OTLP 出口. 指标全表见 [observability-reference.md](docs/modules/08-observability-reference.md).
 
 ### 外部监控栈对接 (摘要)
 
@@ -280,7 +280,7 @@ export AIKV_CLUSTER_ANNOUNCE_MODE=fixed   # LAN/GUI; 默认 unknown 适合单种
 3. 验证: `curl -s http://<host>:9191/health`; Prom 存在 `{service_name="aikv"}` 指标.
 4. JSON 日志 (`AIKV_JSON_LOG=true`) 可经 Alloy → Loki; 面板 PromQL 前缀 **`aikv_*`** / **`aidb_*`** (非历史 `wiqun_kv_*`).
 
-详情: [docs/modules/observability.md](docs/modules/observability.md).
+详情: [docs/modules/observability.md](docs/modules/07-observability.md).
 
 ### 告警参考 (可选)
 
@@ -310,7 +310,7 @@ redis-cli LASTSAVE
 
 AiDb `BackupManager` 全量备份 API 见 [aidb DEPLOYMENT §备份](../aidb/DEPLOYMENT.md#备份与恢复); AiKv `BGSAVE` **不** 经 `BackupManager`.
 
-命令细节: [commands-extended.md](docs/modules/commands-extended.md).
+命令细节: [commands-extended.md](docs/modules/05-commands-extended.md).
 
 ## AiFactory 部署 (Docker)
 
@@ -324,7 +324,7 @@ AiDb `BackupManager` 全量备份 API 见 [aidb DEPLOYMENT §备份](../aidb/DEP
 
 停止与清数据: `aifactory/scripts/down.sh [single\|cluster] [--no-clean]`; 压测目录内 `./scripts/down.sh` 行为相同. 规格与三系统对比见 [`aifactory/benchmark/README.md`](../aifactory/benchmark/README.md).
 
-集群压测须 `redis-benchmark --cluster` (或 `redis-cli -c`); 详见 [`aifactory/docs/PERFORMANCE.md`](../aifactory/docs/PERFORMANCE.md).
+集群压测须 `redis-benchmark --cluster` (或 `redis-cli -c`); 基准命令与三系统对比见 [`aifactory/benchmark/README.md`](../aifactory/benchmark/README.md).
 
 ## Docker 简例
 
@@ -345,7 +345,7 @@ CMD ["aikv", "--bind", "0.0.0.0:6379", "--engine", "aidb", \
 
 真实生产镜像见上节 **AiFactory 部署**; 以下为最小自建 Dockerfile 参考 (不含 compose 与集群引导脚本).
 
-集群 compose 需为每节点映射 RESP、RPC、data 端口及独立 `--data-dir`; 可参考 [e2e/utils.sh](e2e/utils.sh) 端口间距.
+集群 compose 需为每节点映射 RESP、RPC、data 端口及独立 `--data-dir`; 可参考 [e2e/old/utils.sh](e2e/old/utils.sh) 端口间距.
 
 ## 相关文档
 

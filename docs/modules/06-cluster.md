@@ -3,7 +3,7 @@ name: aikv-cluster
 depends_on:
   - aikv-storage
   - aidb-cluster
-description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTER subcommands, connection ASKING/READONLY, init_cluster wiring to aidb MetaRaft/MultiRaft, AnnounceResolver, slot migration hooks. Use when changing src/cluster/*, command/router cluster_route, main init_cluster, debugging redirects, CLUSTER MEET/SETSLOT/FAILOVER, or cluster feature startup.
+description: AiKv Redis Cluster 协议 — MOVED/ASK/CROSSSLOT 路由、CLUSTER 子命令、连接级 ASKING/READONLY、到 aidb MetaRaft/MultiRaft 的 init_cluster wiring、AnnounceResolver、slot 迁移钩子. 改 src/cluster/*、命令/router cluster_route、main init_cluster, 排查重定向、CLUSTER MEET/SETSLOT/FAILOVER, 或 cluster feature 启动时读本文.
 ---
 
 # AiKv Cluster (Redis Cluster 协议层)
@@ -13,11 +13,11 @@ description: AiKv Redis Cluster protocol — MOVED/ASK/CROSSSLOT routing, CLUSTE
 - 改 `src/cluster/*`、`main.rs` 的 `init_cluster`, 或 `command/router.rs` 的 `cluster_route`
 - 排查 MOVED/ASK/CROSSSLOT/CLUSTERDOWN、slot 迁移 (SETSLOT/MIGRATE)、failover、节点 MEET/FORGET
 - 理解 aikv 与 aidb 在集群上的分工
-- **不覆盖**: MetaRaft/MultiRaft/Router 实现、slot 迁移状态机、gRPC → [aidb cluster.md](../../../aidb/docs/modules/cluster.md)
-- **不覆盖**: 数据面 `propose_group` / `ClusterDataAdapter` → [storage.md](storage.md)
-- **不覆盖**: 命令分发骨架 / CROSSSLOT 前置插入点 → [commands-core.md](commands-core.md)
-- **不覆盖**: MIGRATE TCP/RESTORE → [commands-extended.md](commands-extended.md)
-- **不覆盖**: `aikv_cluster_redirects_total` / INFO cluster 段 → [observability.md](observability.md)
+- **不覆盖**: MetaRaft/MultiRaft/Router 实现、slot 迁移状态机、gRPC → [aidb cluster.md](../../../aidb/docs/modules/03-cluster.md)
+- **不覆盖**: 数据面 `propose_group` / `ClusterDataAdapter` → [storage.md](03-storage.md)
+- **不覆盖**: 命令分发骨架 / CROSSSLOT 前置插入点 → [commands-core.md](04-commands-core.md)
+- **不覆盖**: MIGRATE TCP/RESTORE → [commands-extended.md](05-commands-extended.md)
+- **不覆盖**: `aikv_cluster_redirects_total` / INFO cluster 段 → [observability.md](07-observability.md)
 - **构建**: `--features cluster` (启用 `aidb/cluster`); aidb 侧需 `protoc`
 
 ## 与 aidb 的分工
@@ -192,7 +192,7 @@ Frozen: 写 TRYAGAIN, 读合并读. ReadyToCommit: 写 TRYAGAIN, 读纯 target.
 | 子命令 | 行为 |
 |--------|------|
 | CLUSTER RESET | **不支持** — 返回 ERR; 见下方 [重置集群](#重置集群无-cluster-reset) |
-| CLUSTER METARAFT * | 不在 aikv; 见 [aidb cluster.md](../../../aidb/docs/modules/cluster.md) |
+| CLUSTER METARAFT * | 不在 aikv; 见 [aidb cluster.md](../../../aidb/docs/modules/03-cluster.md) |
 | SET-CONFIG-EPOCH | 恒 OK |
 | COUNT-FAILURE-REPORTS | 恒 0 |
 
@@ -282,7 +282,7 @@ cargo test --features cluster -p aikv --test cluster_creategroup
 - **无 CLUSTER METARAFT RESP 子命令**.
 - **无 ADDSLOTSRANGE** (redis-cli 常用 ADDSLOTS 仍可用).
 - **透明转发**: 仅 server 侧; smart client (`redis-cli -c`) 仍靠 MOVED/ASK 字符串.
-- **MSETNX**: 未实现; 非 cluster 特有限制 — 见 [commands-core.md](commands-core.md).
+- **MSETNX**: 未实现; 非 cluster 特有限制 — 见 [commands-core.md](04-commands-core.md).
 
 ## Gossip (轻量)
 

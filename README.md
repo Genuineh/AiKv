@@ -89,13 +89,13 @@ cargo run --example basic
 | [AGENTS.md](AGENTS.md) | AI 助手与 CI 入口 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | hooks、CI、测试矩阵、提交/PR 规范 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
-| [docs/modules/protocol.md](docs/modules/protocol.md) | RESP parser/encoder |
-| [docs/modules/server.md](docs/modules/server.md) | TCP Listener/Connection |
-| [docs/modules/storage.md](docs/modules/storage.md) | KvStorage, MemoryEngine, AiDbEngine |
-| [docs/modules/commands-core.md](docs/modules/commands-core.md) | 核心数据结构命令, Router |
-| [docs/modules/commands-extended.md](docs/modules/commands-extended.md) | JSON, Lua, SAVE, INFO, MIGRATE |
-| [docs/modules/cluster.md](docs/modules/cluster.md) | MOVED/ASK, CLUSTER 子命令 |
-| [docs/modules/observability.md](docs/modules/observability.md) | slowlog, INFO, OTLP metrics |
+| [docs/modules/protocol.md](docs/modules/01-protocol.md) | RESP parser/encoder |
+| [docs/modules/server.md](docs/modules/02-server.md) | TCP Listener/Connection |
+| [docs/modules/storage.md](docs/modules/03-storage.md) | KvStorage, MemoryEngine, AiDbEngine |
+| [docs/modules/commands-core.md](docs/modules/04-commands-core.md) | 核心数据结构命令, Router |
+| [docs/modules/commands-extended.md](docs/modules/05-commands-extended.md) | JSON, Lua, SAVE, INFO, MIGRATE |
+| [docs/modules/cluster.md](docs/modules/06-cluster.md) | MOVED/ASK, CLUSTER 子命令 |
+| [docs/modules/observability.md](docs/modules/07-observability.md) | slowlog, INFO, OTLP metrics |
 | [ISSUES.md](ISSUES.md) | 待核实项 |
 
 ## 已知限制
