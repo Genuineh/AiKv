@@ -25,13 +25,13 @@
 
 | Module | 何时读 |
 |--------|--------|
-| [protocol.md](modules/protocol.md) | 改 `protocol/*`; RESP2/3 parse/encode、buffer/深度限制、ProtocolVersion |
-| [server.md](modules/server.md) | 改 `server/{listener,connection,config}`; TCP 读写/pipeline、HELLO、ATOM 事务、`max_clients` |
-| [storage.md](modules/storage.md) | 改 `storage/*`; KvStorage、MemoryEngine/AiDbEngine、TTL/StoredValue、集群数据面 Raft 写 |
-| [commands-core.md](modules/commands-core.md) | 改核心数据结构命令与 Router; String~ZSet/Key/DB、WRONGTYPE、KeyLock、CROSSSLOT 前路由 |
-| [commands-extended.md](modules/commands-extended.md) | 改 JSON/Lua/阻塞/MIGRATE/SAVE/INFO/CONFIG 等扩展命令与 router extended dispatch |
-| [cluster.md](modules/cluster.md) | 改 `cluster/*`、`init_cluster`; MOVED/ASK、CLUSTER 子命令、slot 迁移/failover (`cluster` feature) |
-| [observability.md](modules/observability.md) | 改 slowlog/latency/info/metrics; INFO/SLOWLOG/LATENCY、OTLP metrics (`monitoring`); 指标表 → [observability-reference.md](modules/observability-reference.md) |
+| [protocol.md](modules/01-protocol.md) | 改 `protocol/*`; RESP2/3 parse/encode、buffer/深度限制、ProtocolVersion |
+| [server.md](modules/02-server.md) | 改 `server/{listener,connection,config}`; TCP 读写/pipeline、HELLO、ATOM 事务、`max_clients` |
+| [storage.md](modules/03-storage.md) | 改 `storage/*`; KvStorage、MemoryEngine/AiDbEngine、TTL/StoredValue、集群数据面 Raft 写 |
+| [commands-core.md](modules/04-commands-core.md) | 改核心数据结构命令与 Router; String~ZSet/Key/DB、WRONGTYPE、KeyLock、CROSSSLOT 前路由 |
+| [commands-extended.md](modules/05-commands-extended.md) | 改 JSON/Lua/阻塞/MIGRATE/SAVE/INFO/CONFIG 等扩展命令与 router extended dispatch |
+| [cluster.md](modules/06-cluster.md) | 改 `cluster/*`、`init_cluster`; MOVED/ASK、CLUSTER 子命令、slot 迁移/failover (`cluster` feature) |
+| [observability.md](modules/07-observability.md) | 改 slowlog/latency/info/metrics; INFO/SLOWLOG/LATENCY、OTLP metrics (`monitoring`); 指标表 → [observability-reference.md](modules/08-observability-reference.md) |
 
 依赖顺序: protocol → server → storage → commands-core → commands-extended; cluster 依赖 storage + aidb cluster; observability 横切 (INFO 命令 dispatch 仍见 commands-extended).
 

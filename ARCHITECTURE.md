@@ -141,15 +141,15 @@ aikv/src/
 
 | Module 文档 | 覆盖 `src/` | 何时深入 |
 |-------------|-------------|----------|
-| [protocol.md](docs/modules/protocol.md) | `protocol/*` | RESP 帧解析/编码, pipeline 边界 |
-| [server.md](docs/modules/server.md) | `server/{config,listener,connection}` | TCP 循环, HELLO, ATOM 事务 |
-| [storage.md](docs/modules/storage.md) | `storage/*` | `KvStorage`, memory/aidb, cluster 数据面写 |
-| [commands-core.md](docs/modules/commands-core.md) | `command/{string~router,...}` | 核心命令, Router, KeyLock |
-| [commands-extended.md](docs/modules/commands-extended.md) | `command/{json,script,blocking,...}` | JSON/Lua/SAVE/INFO/MIGRATE |
-| [cluster.md](docs/modules/cluster.md) | `cluster/*`, router `cluster_route` | MOVED/ASK, CLUSTER 子命令, init wiring |
-| [observability.md](docs/modules/observability.md) | `server/{slowlog,latency,info,info_catalog,metrics*,otel_metrics}`, `storage/observation` | SLOWLOG, INFO, OTLP sync |
+| [protocol.md](docs/modules/01-protocol.md) | `protocol/*` | RESP 帧解析/编码, pipeline 边界 |
+| [server.md](docs/modules/02-server.md) | `server/{config,listener,connection}` | TCP 循环, HELLO, ATOM 事务 |
+| [storage.md](docs/modules/03-storage.md) | `storage/*` | `KvStorage`, memory/aidb, cluster 数据面写 |
+| [commands-core.md](docs/modules/04-commands-core.md) | `command/{string~router,...}` | 核心命令, Router, KeyLock |
+| [commands-extended.md](docs/modules/05-commands-extended.md) | `command/{json,script,blocking,...}` | JSON/Lua/SAVE/INFO/MIGRATE |
+| [cluster.md](docs/modules/06-cluster.md) | `cluster/*`, router `cluster_route` | MOVED/ASK, CLUSTER 子命令, init wiring |
+| [observability.md](docs/modules/07-observability.md) | `server/{slowlog,latency,info,info_catalog,metrics*,otel_metrics}`, `storage/observation` | SLOWLOG, INFO, OTLP sync |
 
-AiDb 域文档: [engine](../aidb/docs/modules/engine.md), [engine-storage](../aidb/docs/modules/engine-storage.md), [cluster](../aidb/docs/modules/cluster.md).
+AiDb 域文档: [engine](../aidb/docs/modules/01-engine.md), [engine-storage](../aidb/docs/modules/02-engine-storage.md), [cluster](../aidb/docs/modules/03-cluster.md).
 
 ## Feature 边界
 
@@ -200,7 +200,7 @@ flowchart LR
 3. **[monitoring]** spawn `MetricsServer` + 后台 refresh; `aidb::metrics::register_into`.
 4. `Server::run` 进入 accept 循环.
 
-细节: [server.md](docs/modules/server.md), [storage.md](docs/modules/storage.md).
+细节: [server.md](docs/modules/02-server.md), [storage.md](docs/modules/03-storage.md).
 
 ### 命令执行 (单机 / 集群本地)
 
@@ -214,7 +214,7 @@ accept → Connection read loop
   → adapt_for_protocol → write RESP; metrics / slowlog
 ```
 
-细节: [protocol.md](docs/modules/protocol.md), [commands-core.md](docs/modules/commands-core.md), [commands-extended.md](docs/modules/commands-extended.md).
+细节: [protocol.md](docs/modules/01-protocol.md), [commands-core.md](docs/modules/04-commands-core.md), [commands-extended.md](docs/modules/05-commands-extended.md).
 
 ### 集群初始化 (feature `cluster`)
 
@@ -233,7 +233,7 @@ flowchart TB
 - **协议层**: `ClusterStateManager` + `MembershipCoordinator` + `SlotMigrationManager` (aidb) glue.
 - **端口**: 客户端 RESP 在 `--bind`; MetaRaft 在 `--cluster-rpc-addr`; 数据 Raft 在 `rpc_port + --cluster-data-port-offset` (默认 10000).
 
-MetaRaft/MultiRaft/Router 实现见 [aidb cluster.md](../aidb/docs/modules/cluster.md); Redis 语义见 [cluster.md](docs/modules/cluster.md).
+MetaRaft/MultiRaft/Router 实现见 [aidb cluster.md](../aidb/docs/modules/03-cluster.md); Redis 语义见 [cluster.md](docs/modules/06-cluster.md).
 
 ### 集群命令路由
 
@@ -251,9 +251,9 @@ MetaRaft/MultiRaft/Router 实现见 [aidb cluster.md](../aidb/docs/modules/clust
 
 - **Tracing**: 始终编译; 命令/连接 span.
 - **Prometheus / OTel**: `monitoring` feature; HTTP `/metrics` 在 AiKv; `aidb_*` 经 `register_into`.
-- **INFO / SLOWLOG / LATENCY**: 数据结构在 `server/*`; 命令 dispatch 在 [commands-extended.md](docs/modules/commands-extended.md).
+- **INFO / SLOWLOG / LATENCY**: 数据结构在 `server/*`; 命令 dispatch 在 [commands-extended.md](docs/modules/05-commands-extended.md).
 
-详情: [observability.md](docs/modules/observability.md).
+详情: [observability.md](docs/modules/07-observability.md).
 
 ## 与 AiDb 的分工 (嵌入关系)
 

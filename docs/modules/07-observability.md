@@ -2,7 +2,7 @@
 name: aikv-observability
 depends_on:
   - aikv-server
-description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, InfoRenderer, OTel metrics/tracing, health HTTP. Use when changing src/server/{slowlog,latency,info,metrics,metrics_server,process_metrics,otel_metrics}, storage/observation, main.rs monitoring setup, or debugging INFO/SLOWLOG/LATENCY/metrics alignment.
+description: AiKv 可观测性 — SlowQueryLog、LatencyStats、ServerMetrics、InfoRenderer、OTel 指标/tracing、health HTTP. 改 src/server/{slowlog,latency,info,metrics,metrics_server,process_metrics,otel_metrics}、storage/observation、main.rs monitoring 配置, 或排查 INFO/SLOWLOG/LATENCY/metrics 对齐时读本文.
 ---
 
 # AiKv Observability (可观测性)
@@ -12,10 +12,10 @@ description: AiKv observability — SlowQueryLog, LatencyStats, ServerMetrics, I
 - 改 `server/{slowlog,latency,info,metrics,metrics_server,process_metrics}`、`storage/observation`, 或 `main.rs` tracing/OTel/metrics 装配
 - 排查 INFO 与 OTel/PromQL 数值不一致、慢查询/SLOWLOG、LATENCY 直方图
 - 接集群 gossip/failover/redirect 计数、JSON/Lua 专用 metrics
-- **不覆盖**: TCP 连接循环与内联命令 → [server.md](server.md)
-- **不覆盖**: INFO/SLOWLOG/LATENCY/COMMAND **命令 dispatch** → [commands-extended.md](commands-extended.md)
-- **不覆盖**: MOVED/ASK、CLUSTER 子命令语义 → [cluster.md](cluster.md) (本章只写 metrics/INFO 段写入点)
-- **不覆盖**: `aidb_*` / `aidb_raft_*` 定义与引擎 span → [aidb observability.md](../../../aidb/docs/modules/observability.md)
+- **不覆盖**: TCP 连接循环与内联命令 → [server.md](02-server.md)
+- **不覆盖**: INFO/SLOWLOG/LATENCY/COMMAND **命令 dispatch** → [commands-extended.md](05-commands-extended.md)
+- **不覆盖**: MOVED/ASK、CLUSTER 子命令语义 → [cluster.md](06-cluster.md) (本章只写 metrics/INFO 段写入点)
+- **不覆盖**: `aidb_*` / `aidb_raft_*` 定义与引擎 span → [aidb observability.md](../../../aidb/docs/modules/05-observability.md)
 - **构建**: `--features monitoring` 启用 OTel + health HTTP; 默认 **不** 启用
 
 ## 架构: ServerMetrics atomics + OTel 唯一出口
@@ -59,7 +59,7 @@ flowchart TB
 - **冷路径**: `[monitoring]` 下 `main` 每 **15s** 调 `refresh_runtime_metrics` + `refresh_process_metrics`
 - **无 monitoring**: slowlog/latency/INFO/`ServerMetrics` 仍可用; **无** health HTTP 端口、无 OTel layer、**无** 自动 refresh
 - **生产指标**: 仅 **OTLP** → Collector → Prom remote write; **无** 进程内 Prometheus registry, **无** HTTP `/metrics`
-- **INFO ↔ OTel sync (P3)**: 热路径 **仅** 写 `ServerMetrics`; `[monitoring]` 下 `refresh_runtime_metrics` 末尾经 `info_catalog::sync_otel_from_server_metrics` 读真源、算 delta、写 OTLP 镜像 (相对 INFO 最多滞后 ~15s) — 见 [observability-reference.md](observability-reference.md) §INFO mapping
+- **INFO ↔ OTel sync (P3)**: 热路径 **仅** 写 `ServerMetrics`; `[monitoring]` 下 `refresh_runtime_metrics` 末尾经 `info_catalog::sync_otel_from_server_metrics` 读真源、算 delta、写 OTLP 镜像 (相对 INFO 最多滞后 ~15s) — 见 [observability-reference.md](08-observability-reference.md) §INFO mapping
 - **内部命令**: 含 `.` 的伪命令 (`GOSSIP.tick`, `JSON.get`, `CLUSTER.redirect.moved`) **不** 进 INFO `commandstats`
 
 ## 代码地图
@@ -67,6 +67,7 @@ flowchart TB
 | 路径 | 职责 | 入口 |
 |------|------|------|
 | `server/metrics.rs` | `ServerMetrics` 热路径计数 (P3: 不写 OTel) | `on_connect`, `on_command` |
+| `server/otel.rs` | OTel traces + metrics 初始化 (global provider) | `init_otel`, `otel_config_from_env`, `shutdown_otel` `[monitoring]` |
 | `server/otel_metrics.rs` | `OtelMetrics` instruments; refresh delta sync | `init_global`, `sync_counters` |
 | `server/info.rs` | Redis INFO section 渲染 | `InfoRenderer::render`, `redis_mode()` |
 | `server/info_catalog.rs` | INFO ↔ OTel refresh sync | `sync_otel_from_server_metrics` `[monitoring]` |
@@ -89,7 +90,7 @@ flowchart TB
 | `cluster/gossip.rs` | `on_gossip_refresh` |
 | `cluster/commands.rs` | `cluster_info()` 读 `cluster_messages_*`; failover → `on_failover` |
 
-完整 `aikv_*` 指标表 → [observability-reference.md](observability-reference.md).
+完整 `aikv_*` 指标表 → [observability-reference.md](08-observability-reference.md).
 
 ## 关键 invariant (勿破坏)
 
@@ -98,7 +99,7 @@ flowchart TB
 - **I3 跟踪排除**: `PING|ECHO|HELLO|QUIT|MONITOR|SLOWLOG` 不经 `record_command_observability`
 - **I4 客户端 commandstats**: `is_client_command` 过滤含 `.` 的内部 key
 - **I5 expired_keys**: 存储 TTL 路径写 `StorageObservation`; 须经 `refresh_runtime_metrics` drain 汇入 `ServerMetrics`
-- **I6 MOVED/ASK**: cluster 重定向响应 **不** 经 `record_command_observability` / Router `on_command` (对齐 Redis 8.8; 见 [cluster.md](cluster.md))
+- **I6 MOVED/ASK**: cluster 重定向响应 **不** 经 `record_command_observability` / Router `on_command` (对齐 Redis 8.8; 见 [cluster.md](06-cluster.md))
 
 ## 数据流
 
@@ -196,7 +197,7 @@ INFO 读 `ServerMetrics` atomics; PromQL 读 OTLP 导出的 `aikv_*`. 两者同�
 | `blocked_clients` | `aikv_blocked_clients` | `BlockedClientGuard` (BLPOP 等阻塞等待) |
 | `evicted_keys` | `aikv_evicted_keys_total` | 无 maxmemory eviction, 恒 0 |
 
-Golden 字段: `tests/fixtures/redis88_info_p0_fields.txt` (P0 / INFO all); 全量键名: `tests/fixtures/redis88_info_full_fields.txt` (INFO everything). Stub 与真源对照见上文 **字段三类** 与 [observability-reference.md](observability-reference.md#stub-字段策略).
+Golden 字段: `tests/fixtures/redis88_info_p0_fields.txt` (P0 / INFO all); 全量键名: `tests/fixtures/redis88_info_full_fields.txt` (INFO everything). Stub 与真源对照见上文 **字段三类** 与 [observability-reference.md](08-observability-reference.md#stub-字段策略).
 
 ## 关键类型与 API
 

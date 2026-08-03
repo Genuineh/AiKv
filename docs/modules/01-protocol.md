@@ -1,6 +1,6 @@
 ---
 name: aikv-protocol
-description: AiKv RESP2/RESP3 codec — RespValue, RespParser feed/parse, serialize, parse limits, recoverable errors. Use when changing src/protocol/*, debugging RESP frame parse/encode, pipeline buffering, or ProtocolVersion types.
+description: AiKv RESP2/RESP3 编解码 — RespValue、RespParser feed/parse、serialize、解析 limits、可恢复错误. 改 src/protocol/*、排查 RESP 帧解析/编码、pipeline 缓冲, 或 ProtocolVersion 类型时读本文.
 ---
 
 # AiKv Protocol (RESP 编解码)
@@ -9,7 +9,7 @@ description: AiKv RESP2/RESP3 codec — RespValue, RespParser feed/parse, serial
 
 - 改 `protocol/{types,parser,encoder}` 或 `RespParser` / `RespValue` 公共 API
 - 排查 RESP 帧解析失败、编码 roundtrip、buffer 超限、嵌套深度错误
-- **不覆盖**: TCP 读写循环 / HELLO 协商 / null 线格式转换 → [server.md](server.md); 命令参数拆解 → [commands-core.md](commands-core.md)
+- **不覆盖**: TCP 读写循环 / HELLO 协商 / null 线格式转换 → [server.md](02-server.md); 命令参数拆解 → [commands-core.md](04-commands-core.md)
 
 ## 代码地图
 
@@ -26,7 +26,7 @@ description: AiKv RESP2/RESP3 codec — RespValue, RespParser feed/parse, serial
 
 ## 关键 invariant (勿破坏)
 
-- **单帧语义**: 每次 `parse()` 至多消费 buffer 头部 **一个** 完整顶层 `RespValue`; pipeline 由调用方循环 `parse()` (见 [server.md](server.md)).
+- **单帧语义**: 每次 `parse()` 至多消费 buffer 头部 **一个** 完整顶层 `RespValue`; pipeline 由调用方循环 `parse()` (见 [server.md](02-server.md)).
 - **不完整不消费**: 数据不足 → `Ok(None)`, cursor 回退, buffer 保留待 `feed`.
 - **可恢复错误**: `is_recoverable` 命中时 `advance(1)` 后返回 `Err`; 调用方可写 ERR 响应并继续 (fatal 判定在 server).
 - **不可恢复错误**: depth / too large / line too long / length 类错误不 advance; server 应断连.
@@ -92,7 +92,7 @@ pub enum ProtocolVersion { Resp2, Resp3 }  // Default = Resp3
 ```
 
 - 定义在 `protocol/types.rs`; 默认 **Resp3**
-- `HELLO` 协商、`protocol_negotiated` 门控、响应 null 线格式 (`$-1` vs `_`) 在 [server.md](server.md), 不在本模块
+- `HELLO` 协商、`protocol_negotiated` 门控、响应 null 线格式 (`$-1` vs `_`) 在 [server.md](02-server.md), 不在本模块
 
 ### `RespParser`
 

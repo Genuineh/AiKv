@@ -2,16 +2,16 @@
 name: aikv-observability-reference
 depends_on:
   - aikv-observability
-description: AiKv OTel aikv_* metric catalog and INFO field cross-reference. Use when looking up metric names, labels, or INFO↔PromQL mapping for aikv observability.
+description: AiKv OTel aikv_* 指标目录与 INFO 字段对照表. 查询指标名、标签, 或 aikv 可观测性的 INFO↔PromQL 映射时读本文.
 ---
 
-# AiKv Observability Reference
+# AiKv Observability Reference (可观测性参考)
 
-> 主文档: [observability.md](observability.md). `aidb_*` → [aidb observability.md](../../../aidb/docs/modules/observability.md).
+> 主文档: [observability.md](07-observability.md). `aidb_*` → [aidb observability.md](../../../aidb/docs/modules/05-observability.md).
 
 ## OTel Resource 与 Trace
 
-Resource / span 语义见 [observability.md](observability.md) §配置. 全部 instrument 声明 UCUM `unit` (`s`, `By`, `ms`, `1`, `{request}/s`).
+Resource / span 语义见 [observability.md](07-observability.md) §配置. 全部 instrument 声明 UCUM `unit` (`s`, `By`, `ms`, `1`, `{request}/s`).
 
 PromQL label 来自 OTLP 属性: 点号 `.` 通常映射为下划线 `_` (如 `aikv.command.status` → `aikv_command_status`).
 
@@ -72,7 +72,7 @@ PromQL label 来自 OTLP 属性: 点号 `.` 通常映射为下划线 `_` (如 `a
 
 ## INFO ↔ `aikv_*` ↔ redis_exporter (Redis 8.8 基线)
 
-对照基准: Redis Open Source **8.8**; stub/真源策略见 [observability.md](observability.md).
+对照基准: Redis Open Source **8.8**; stub/真源策略见 [observability.md](07-observability.md).
 
 **同步模型 (P3):** 热路径仅写 `ServerMetrics`; `refresh_runtime_metrics` 周期调用 `info_catalog::sync_otel_from_server_metrics` 读真源、算 delta、写 OTel (OTLP 相对 INFO 最多滞后 ~15s). 实现: [`info_catalog.rs`](../../src/server/info_catalog.rs).
 
@@ -177,4 +177,4 @@ Redis 8.8 **键名齐全**; 无子系统真源的字段在 INFO 中以 `0` / `-1
 | `redis_compatible_version:8.8` | 无 (测试/golden 断言) | N/A |
 | `redis_version` | 无 (AiKv 真实版本) | N/A |
 
-**语义注意:** MOVED/ASK 响应节点 **不** 增加 `cmdstat_*:calls` (Redis 8.8). 集群客户端须 `-c` / cluster-aware SDK — 见 [cluster.md](cluster.md).
+**语义注意:** MOVED/ASK 响应节点 **不** 增加 `cmdstat_*:calls` (Redis 8.8). 集群客户端须 `-c` / cluster-aware SDK — 见 [cluster.md](06-cluster.md).
