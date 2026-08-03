@@ -36,10 +36,10 @@ AIKV_HOST=127.0.0.1 AIKV_PORT=6379 \
 
 | 维度目录 | 内容与文件 |
 |---|---|
-| `01_single_node/` | **单机 RESP 基础命令与服务诊断** (8 个套件: String, Hash, List, Set, ZSet, Lua, JSON, Protocol/INFO parity) |
-| `02_persistence_crash/` | **持久化与崩溃恢复** (3 个套件: RDB 快照, 优雅重启, SIGKILL 强杀 WAL 重放) |
-| `03_cluster_migration/` | **集群拓扑与动态槽位迁移** (3 个套件: 集群拓扑不变量, MEET/REPLICATE 扩缩容, SETSLOT/ASK 在线切槽) |
-| `04_ha_failover/` | **高可用故障转移** (3 个套件: Smart Client 自动重路由, 主节点故障转移, 故障节点恢复同步) |
+| `single/` | **单机 RESP 基础命令与服务诊断** (`test_proto.py`, `test_string.py`, `test_list.py`, `test_hash.py`, `test_set.py`, `test_zset.py`, `test_lua_tx.py`, `test_json.py`) |
+| `crash/` | **持久化与崩溃恢复** (`test_crash.py`, `test_restart.py`, `test_rdb.py`) |
+| `migration/` | **集群拓扑与动态槽位迁移** (`test_nodes.py`, `test_scale.py`, `test_migration.py`) |
+| `failover/` | **高可用故障转移** (`test_reconnect.py`, `test_node_fail.py`, `test_failover.py`) |
 
 ```bash
 AIKV_HOST=127.0.0.1 AIKV_PORT=6379 \
@@ -70,10 +70,10 @@ e2e/
 ├── harness/              # 客户端 / 外部连接 / (本机 start_node 仅调试用)
 ├── conftest.py           # 仅 svc
 ├── function/             # 4 维度端到端功能测试目录
-│   ├── 01_single_node/       # 单机 RESP 基础命令与诊断
-│   ├── 02_persistence_crash/ # 持久化落盘与崩溃恢复
-│   ├── 03_cluster_migration/ # 集群拓扑与动态槽位迁移
-│   └── 04_ha_failover/       # 高可用故障转移
+│   ├── single/           # 单机 RESP 基础命令与诊断
+│   ├── crash/            # 持久化落盘与崩溃恢复
+│   ├── migration/        # 集群拓扑与动态槽位迁移
+│   └── failover/         # 高可用故障转移
 ├── pytest.ini
 ├── requirements.txt
 └── old/                  # 旧资产 (不收集)
