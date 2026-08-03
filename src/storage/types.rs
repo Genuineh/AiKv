@@ -1,4 +1,20 @@
-//! 存储层类型与 KvStorage trait
+//! 存储层类型与 `KvStorage` trait: 命令层唯一依赖的存储契约 (多 DB、typed value、TTL).
+//!
+//! # 关键类型
+//!
+//! - `KvStorage`: 命令层存储接口, `MemoryEngine` 与 `KvStorageAdapter` 双实现.
+//! - `StoredValue { value, expires_at }`: `expires_at` 为 Unix 毫秒, `None` = 永不过期.
+//! - `ValueType`: String / Hash / List / Set / ZSet, 另有 `CollectionHeader`
+//!   (subkey 格式的大集合元数据, 见 `storage/subkey.rs`).
+//! - `WriteOp` (命令层批量) 与 `AdapterWriteOp` (扁平 KV) 独立, 转换在
+//!   `KvStorageAdapter::write_batch`.
+//! - 常量: `DB_COUNT` = 16; `TTL_NO_EXPIRY` = -1 (存储层 sentinel, 命令层映射 Redis -1).
+//!
+//! # Invariant
+//!
+//! - `as_*` / `as_*_mut` 类型不符 → `Error::Command(WRONGTYPE)`.
+//! - `raw_subkey_*` 仅持久化引擎实现; `MemoryEngine` 返回
+//!   `Error::Storage("raw subkey access not supported")`.
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};

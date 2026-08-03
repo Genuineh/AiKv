@@ -1,4 +1,31 @@
-//! StorageAdapter trait 与 KvStorage 适配层
+//! `StorageAdapter` trait 与 `KvStorage` 适配层: 把扁平 KV 抽象 (`StorageAdapter`,
+//! 底层为 `AiDbEngine` 或 `ClusterDataAdapter`) 包装为命令层多 DB 语义
+//! (`KvStorageAdapter`, 实现 `KvStorage`).
+//!
+//! # Key 布局 (扁平 KV → 多 DB)
+//!
+//! ```text
+//! 物理 key: {db_index}:{user_key}          # ASCII, 例 b"0:mykey"
+//!   ├─ db_prefix(db) = encode_key(db, "")  # 每 DB 的扫描前缀
+//!   ├─ prefix_end    = 前缀进位            # 范围扫描上界
+//!   └─ 值: bincode(StoredValue)            # 类型 + expires_at
+//! subkey:  {db_index}:{user_key}\x01H|S... # 大 Hash/Set 的 field/member, raw bytes
+//! ```
+//!
+//! 多 DB 完全靠 key 前缀隔离 (`clear`/`keys`/`scan` 依赖 `db_prefix` + `prefix_end`).
+//!
+//! # Invariant
+//!
+//! - 两套 WriteOp: `storage::WriteOp` (命令/Lua batch) ≠ `AdapterWriteOp` (扁平 KV);
+//!   转换在 `KvStorageAdapter::write_batch` (Put → bincode `StoredValue`).
+//! - AiDb key 编码: 物理 key = `{db_index}:{user_key}` (ASCII); `clear`/`keys`/`scan`
+//!   依赖 `db_prefix` + `prefix_end`.
+//! - String `get`/`set` 仅 String; 非 String → `WRONGTYPE`; Hash/List/Set/ZSet
+//!   必须 `get_typed`/`set_typed`.
+//! - 惰性 TTL: 读路径 (`load_typed`) 遇过期返回"不存在"并尽力物理删除
+//!   (`try_lazy_expire_delete`, 先经 `allow_lazy_expire_delete` 判断是否值得发起).
+//! - MGET wrong-type: 非 String 或 missing key 对该位返回 `nil`, 整命令不失败
+//!   (对齐 Redis 7, 与 `GET` 的 WRONGTYPE 不同).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

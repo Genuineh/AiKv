@@ -1,8 +1,17 @@
-//! 连接级指标 (Phase 8: Atomic; monitoring 下 OTel 导出)
+//! 连接级指标 (`ServerMetrics`, Phase 8 Atomic): INFO 与业务计数的唯一热路径真源.
+//! monitoring 下经 `info_catalog` refresh delta 同步到 OTel (`OtelMetrics`), 相对 INFO
+//! 最多滞后 ~15s. `error_stats` 供 INFO errorstats (错误前缀, 非命令名); 全局
+//! `slowlog_commands_*` 与逐命令 commandstats `slowlog_*` 字段并存
+//! (Redis 8.8 stats + commandstats 语义).
 //!
-//! INFO 真源: 热路径写本结构体; `InfoRenderer` 只读; OTLP 经 `info_catalog` refresh delta 同步.
-//! `error_stats` 供 INFO errorstats (错误前缀, 非命令名). 全局 `slowlog_commands_*` 与逐命令
-//! commandstats `slowlog_*` 字段并存 (Redis 8.8 stats + commandstats 语义).
+//! # Invariant
+//!
+//! - INFO 字段须与同期 `ServerMetrics` atomics 一致; 禁止在 `InfoRenderer` 内独立计数公式.
+//! - 钩子分工: Router `on_command` 计 calls/err; Connection `on_command_duration`
+//!   计 usec/histogram; 勿在 INFO 重复累加.
+//! - 跟踪排除: `PING|ECHO|HELLO|QUIT|MONITOR|SLOWLOG` 不经 `record_command_observability`.
+//! - 客户端 commandstats: `is_client_command` 过滤含 `.` 的内部伪命令
+//!   (如 `GOSSIP.tick`), 不进 INFO commandstats.
 
 use dashmap::DashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};

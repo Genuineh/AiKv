@@ -1,4 +1,19 @@
-//! RESP 编码器
+//! RESP 编码器: `RespValue` → 字节帧 (`RespValue::serialize` / `encode_into`), 与
+//! `parser.rs` 对称.
+//!
+//! # 编码约定
+//!
+//! - 每个变体输出 marker + 载荷 + `\r\n`; 容器变体 (Array / Map / Set / Push /
+//!   Attribute / StreamedString) 递归 `encode_into`; bulk 载荷二进制安全
+//!   (`bytes::Bytes` 原样拷贝).
+//! - RESP2 null 线格式: `BulkString(None)` → `$-1\r\n`, `Array(None)` → `*-1\r\n`.
+//! - 特判: `Double` 的 nan / inf / -inf / -0; `VerbatimString` 要求 3 字符 format + `:`.
+//!
+//! # Invariant
+//!
+//! - 与解析器对称: `serialize()` 输出可被 `RespParser::parse` 完整恢复 (roundtrip).
+//! - `ProtocolVersion` 不影响 `serialize()` 输出; 版本相关 null 线格式适配
+//!   (`$-1`/`*-1` → `_`) 在 `server/connection.rs::adapt_for_protocol`.
 
 use bytes::{BufMut, Bytes, BytesMut};
 

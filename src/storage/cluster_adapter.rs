@@ -1,16 +1,19 @@
-//! 集群数据面存储适配器.
-//!
-//! 在 cluster 模式下, 用户数据的读写必须经过数据面 Raft group 才能在副本间
-//! 复制, 从而保证 primary failover 后新 leader 能读到旧数据.
-//!
-//! 本适配器包裹本地引擎 (`StorageAdapter`), 当 `CLUSTER_STATE_MGR` 已初始化且
-//! key 路由到一个已分配 slot 的 group 时:
-//! - 写 (`set`/`delete`/`write_batch`): 通过 `propose_group` 提交到对应 group 的
-//!   Raft, 由 Raft 复制并 apply 到各节点的 group 状态机.
+//! 集群数据面存储适配器: 将用户数据的读写路由到数据面 Raft group, 保证 primary
+//! failover 后新 leader 能读到旧数据. 包裹本地引擎 (`StorageAdapter`), 当
+//! `CLUSTER_STATE_MGR` 已初始化且 key 路由到已分配 slot 的 group 时:
+//! - 写 (`set`/`delete`/`write_batch`): 经 `propose_group` 提交到对应 group 的 Raft,
+//!   由 Raft 复制并 apply 到各节点的 group 状态机.
 //! - 读 (`get`/`exists`/`scan_prefix`): 直接读本地 group 状态机.
 //!
-//! 当集群未初始化 (单机模式) 或 slot 未分配时, 回退到本地引擎.
-//! 已分配 slot 的数据 **禁止** 写本地引擎 fallback, 避免 SET 成功但 GET 读 Raft 为空.
+//! 集群未初始化 (单机模式) 或 slot 未分配时回退本地引擎.
+//!
+//! # Invariant
+//!
+//! - 已分配 slot 的写**必须** `propose_group`, **禁止** 写本地引擎 fallback, 避免
+//!   SET 成功但 GET 读 Raft 为空; 仅 `Unallocated` 或未初始化 cluster 写 local.
+//! - 惰性 TTL 删除仅当本节点是 key 所在 data group 的 Raft leader 时才允许
+//!   (`allow_lazy_expire_delete` 覆盖, 经 `is_local_group_leader` 判断); 只读副本上
+//!   惰性过期发现的 key 直接跳过物理删除, 留给 leader 或后续写连接清理.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};

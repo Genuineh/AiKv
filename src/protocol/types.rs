@@ -1,4 +1,5 @@
-//! RESP 值类型
+//! RESP 值类型: RESP2 + RESP3 共 17 个变体 (`RespValue`) 与协议版本枚举
+//! (`ProtocolVersion`, 默认 RESP3, 可经 `HELLO` 协商). 解析 / 编码见 `parser.rs` / `encoder.rs`.
 
 use bytes::Bytes;
 

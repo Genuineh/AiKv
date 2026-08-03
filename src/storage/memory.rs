@@ -1,4 +1,17 @@
-//! 内存存储引擎
+//! 内存存储引擎 (`MemoryEngine`): 直接实现 `KvStorage`, 不经过 `StorageAdapter` /
+//! bincode / key 前缀编码. 每个逻辑 DB 一个 `RwLock<HashMap<Vec<u8>, StoredValue>>`.
+//!
+//! # Invariant
+//!
+//! - String `get`/`set` 仅 String; 非 String → `WRONGTYPE` (与 aidb 路径一致).
+//! - 惰性过期: `get_entry_read` / `keys` / `scan` / `ttl` 遇过期 key 即从 map 删除并
+//!   经 `StorageObservation` 计数 (与 aidb 路径 `try_lazy_expire_delete` 语义一致).
+//! - `write_batch` 顺序 await 各操作, **非原子**; aidb 路径单 `WriteBatch` 原子
+//!   (行为差异见 `docs/modules/03-storage.md` 已知限制).
+//! - `swap_db` 以 `mem::take` 整体交换两个 DB 的 map (O(1)).
+//! - `glob_match` 仅支持 `*` / `?`, 不支持 `[abc]` 字符类.
+//! - `create_checkpoint` → `ERR Persistence not supported on memory engine`;
+//!   `flush` / `close_engine` 为 no-op.
 
 use std::collections::HashMap;
 use std::sync::Arc;

@@ -1,4 +1,22 @@
-//! AiDb 存储引擎适配器 (StorageAdapter)
+//! AiDb 存储引擎适配器: 把同步 `aidb::DB` 包装为 async `StorageAdapter`.
+//! 所有 DB 操作经 `spawn_blocking` (LSM 写盘 / 扫描不阻塞 tokio runtime).
+//!
+//! # 持久化模式
+//!
+//! - 物理 key 编码: `encode_key(db, user_key)` = `{db_index}:{user_key}` (ASCII);
+//!   `decode_key` 反解, `prefix_end` 求范围扫描上界 (`for_each_prefix` 使用).
+//! - 值: 命令层 blob = `bincode(StoredValue)` (与 `storage/dump.rs` 同类型, DUMP 多
+//!   1 字节 version 前缀).
+//! - `write_batch` 组装 aidb `WriteBatch` 一次提交 (原子); `clear` 亦走批量 delete.
+//! - 持久化: `flush` → `DB::flush`; `create_checkpoint` → `Checkpoint::create`;
+//!   `close` → `DB::close`.
+//!
+//! # Invariant
+//!
+//! - key 编码 `{db_index}:{user_key}` 是全部范围操作 (scan / clear / delete_range) 的
+//!   前缀隔离基础, 不得变更.
+//! - 单库多 DB 语义: 16 个逻辑 DB 共享一个 `aidb::DB`, 靠 key 前缀隔离
+//!   (非 oldmain 的 16 个独立 DB 目录).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

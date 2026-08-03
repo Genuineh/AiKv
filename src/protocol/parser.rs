@@ -1,4 +1,37 @@
-//! RESP 解析器
+//! RESP 流式解析器: 维护字节 buffer, 支持 `feed` 追加 / `parse` 消费. 每次 `parse()`
+//! 至多从 buffer 头部解析 **一个** 完整顶层 `RespValue`; 数据不足时返回 `Ok(None)`
+//! 并保留 buffer 待后续 `feed`, 由此支撑 pipeline (连续帧留在同一 buffer).
+//!
+//! # 解析状态机
+//!
+//! ```text
+//! TCP bytes ──feed──> BytesMut buffer
+//!                         │
+//! parse(): 冻结 buffer 为 Bytes, Cursor 顺序读
+//!   ├─ parse_value(depth): 读 1 字节 marker ── 类型分发 ──┐
+//!   │    + - :  → read_line (CRLF 结尾, max_line_len 校验)
+//!   │    $     → parse_dollar: length 行 → parse_bulk (len + CRLF 校验)
+//!   │           $? → parse_streamed_string (多块 chunk, ;0 终止)
+//!   │    * % ~ > | → parse_length → 递归 parse_value (depth+1) 循环;
+//!   │                % 与 | 为 pair 型 (key + value 两两读)
+//!   │    _ # , ( ! = ; → 各自特判 (Null / Boolean / Double / BigNumber /
+//!   │                     BulkError / VerbatimString / 顶层孤立 ; 拒绝)
+//!   ├─ 完整帧   → 消费后保留剩余字节, 返回 Ok(Some(value))
+//!   ├─ 数据不足 → cursor 回退到帧头, buffer 复原, 返回 Ok(None)
+//!   ├─ 可恢复错误 → buffer advance(1) 跳过 1 字节, 返回 Err (可重试)
+//!   └─ 不可恢复错误 → buffer 不前进, 返回 Err (上层应断连)
+//! ```
+//!
+//! # Invariant
+//!
+//! - 单帧语义: 每次 `parse()` 至多消费一个完整顶层帧; pipeline 由调用方循环 `parse()`
+//!   (见 `server/connection.rs` 的内层循环).
+//! - 不完整不消费: 数据不足 → `Ok(None)`, cursor 回退, buffer 保留待 `feed`.
+//! - 可恢复错误 (`is_recoverable`): 跳过 1 字节后返回 `Err`; 调用方可写 ERR 响应并继续.
+//! - 不可恢复错误 (depth / too large / buffer size / line too long / length 类):
+//!   不 advance, 上层应断连.
+//! - 默认 limits: `max_bulk_len` 512 MiB / `max_buffer_size` 64 MiB / `max_parse_depth` 128 /
+//!   `max_array_len` 4 MiB 元素 / `max_line_len` 1 MiB; 生产路径 `new()` 使用默认值.
 
 use std::io::Cursor;
 

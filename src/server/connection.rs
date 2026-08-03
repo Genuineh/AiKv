@@ -1,4 +1,43 @@
-//! 单连接处理
+//! 单连接处理: 每连接一个 tokio task (`Connection::handle`), 负责 TCP 读写、RESP 解析、
+//! 协议分发 (内联命令 / ATOM 事务 / MONITOR / Router)、HELLO 协商与响应编码.
+//! 连接级状态 (`current_db`, `parser`, `tx_state`, `cluster_state`) 不跨连接共享.
+//!
+//! # 读-解析-写 pipeline 循环
+//!
+//! ```text
+//! run():
+//!   loop {
+//!     ├─ shutdown / quit / idle_timeout → break
+//!     ├─ read_buf (16 KiB, 受 read_timeout 约束)
+//!     │    ├─ n == 0 (客户端关闭) → break
+//!     │    └─ buffer_len + n > max_buffer_size → break (静默断连, 不写 ERR)
+//!     ├─ parser.feed(&buf[..n])
+//!     └─ 内层循环 (pipeline):
+//!          parse_frame
+//!            ├─ Ok(Some) → process_value → process_command → write_response → 继续
+//!            ├─ Ok(None) → break 外层 (等更多数据)
+//!            ├─ Err fatal (is_fatal_protocol) → return Err (断连)
+//!            └─ Err recoverable → write_error → 继续
+//!   }
+//!
+//! process_value : 顶层必须是 Array, 命令名与参数必须是 BulkString
+//! process_command: PING/ECHO/HELLO/QUIT/MONITOR/ATOM.* 内联; 其余经 Router
+//! write_response : encode() → (协商后) adapt_for_protocol → serialize → write_all
+//! ```
+//!
+//! # Invariant
+//!
+//! - 每连接一 task: `tokio::spawn(Connection::handle)`; 连接状态不跨连接共享.
+//! - Pipeline 内层循环: 单次 `read` 后 `feed`, 然后循环 `parse_frame → process_value`
+//!   直到 `Ok(None)` (与 `protocol/parser.rs` 单帧语义一致).
+//! - Buffer 超限断连: `buffer_len + n > max_buffer_size()` 时直接 break, 不写 ERR.
+//! - Fatal vs recoverable: `is_fatal_protocol` (depth / too large / buffer size /
+//!   line too long) → 断连; 其它 `Protocol` → `write_error` 后继续.
+//! - HELLO 门控线格式: 默认 `ProtocolVersion::Resp3` 但 `protocol_negotiated = false`
+//!   直到客户端发 `HELLO 2|3`; 仅协商 Resp3 后 `adapt_for_protocol` 才把
+//!   `$-1`/`*-1` 转为 `_` (未协商时保持 RESP2 线格式).
+//! - Router 懒加载: `ServerSharedState::router()` 经 `OnceLock` 首次调用时建
+//!   `CommandRouter`.
 
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;

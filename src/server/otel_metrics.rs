@@ -1,4 +1,14 @@
-//! OTel metrics instruments (`aikv_*` 唯一出口, 经 OTLP 导出).
+//! OTel metrics instruments: `aikv_*` 生产指标的 OTLP 唯一出口.
+//!
+//! # Invariant
+//!
+//! - 热路径只写 `ServerMetrics`; `aikv_*` 由 `refresh_runtime_metrics` →
+//!   `info_catalog::sync_otel_from_server_metrics` 读真源、算 delta 后写 OTLP
+//!   (相对 INFO 最多滞后 ~15s); 禁止在热路径直接写 OTel.
+//! - OTel counter 仅支持 `add(delta)`: `SyncSnapshot` 保存上次 cumulative 快照,
+//!   `sync_counters` / `sync_commandstats` 逐字段差分后 add.
+//! - Gauge 类 (used_memory_bytes / instantaneous_ops_per_sec 等) 经 Observable
+//!   回调读 `GaugeSnapshot` atomics.
 //!
 //! TODO(exemplars): metrics↔traces 跳转需 OTel Rust SDK exemplar 采集; 当前 0.32 仍不支持.
 

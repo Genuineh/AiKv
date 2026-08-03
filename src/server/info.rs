@@ -1,20 +1,20 @@
 //! INFO 格式化: Redis 8.8 语义对齐, 单一数据源 (ServerMetrics + storage).
 //!
-//! ## 字段策略
+//! # 字段策略
 //!
 //! - **键名**: Redis 8.8 有的键名均输出 (golden: `redis88_info_full_fields.txt`).
 //! - **Stub**: 无子系统真源的字段固定 `0` / `-1` / `ok` (pubsub, AOF, allocator, eventloop 等).
 //! - **配置零值**: `maxmemory:0` 等来自 CONFIG, 非 stub.
 //! - **真源**: stats/commandstats/keyspace/latency/RSS 等见 [`observability-reference.md`](../../docs/modules/observability-reference.md).
 //!
-//! ## Section 模型 (Redis 7.0+)
+//! # Section 模型 (Redis 7.0+)
 //!
 //! - `INFO` / `INFO default`: default 段集合
 //! - `INFO all`: default + commandstats + errorstats + threads + latencystats
 //! - `INFO everything`: all + modules
 //! - `INFO stats memory`: 多 section 拼接
 //!
-//! ## 读数注意
+//! # 读数注意
 //!
 //! - AiDb 集群下 `used_memory` 为 memtable/cache 近似值; 数据集规模看 `INFO keyspace`.
 //! - `instantaneous_*` / `slowlog_commands_*` 依赖 refresh 采样与 100ms 慢日志阈值.
