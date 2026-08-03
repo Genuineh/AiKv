@@ -1,3 +1,34 @@
+//! CLUSTER 子命令实现与统一分发: `dispatch_cluster` 是全部 CLUSTER 命令的入口,
+//! 覆盖 Redis 标准子命令 (MEET / FORGET / INFO / NODES / SLOTS / SHARDS / ADDSLOTS /
+//! DELSLOTS / SETSLOT / FAILOVER / REPLICATE / REPLICAS / KEYSLOT / MYID 等) 与
+//! AiKv 扩展 (CREATEGROUP / ADD_REPLICA / DEL_REPLICA / REBALANCE / GROUPSTATUS),
+//! 均通过 `CLUSTER_STATE_MGR` 访问 aidb 的 MetaRaft / MultiRaft / migration manager.
+//!
+//! # 分发流程
+//!
+//! ```text
+//! CLUSTER <sub> ... ── dispatch_cluster
+//!   ├─ 只读: INFO/NODES/SLOTS/SHARDS/MYID/KEYSLOT/REPLICAS/GROUPSTATUS
+//!   │        直接读 MetaRaft 快照 (get_cluster_meta / get_slot_table) 构造 RESP
+//!   ├─ 成员: MEET/FORGET ── MembershipCoordinator (MEET NotLeader 指数退避重试)
+//!   ├─ slot: ADDSLOTS/DELSLOTS/SETSLOT NODE ── MetaRaft propose
+//!   │        (ADDSLOTS 无 group 时自动 CreateGroup + 升 Voter)
+//!   ├─ 迁移: SETSLOT MIGRATING → start_migration + run_pending_migration
+//!   │        SETSLOT IMPORTING → 本地 importing_slots
+//!   │        SETSLOT STABLE    → finish_migration (freeze→quiesce→final_verify→mark_ready→commit)
+//!   │        REBALANCE         → 贪心搬槽 + run_pending_migration + finish_migration
+//!   ├─ failover/replica: FAILOVER → change_group_membership 升主; REPLICATE → 仅本地 role
+//!   └─ propose 出错统一 map_propose_error → MOVED 0 <addr> / CLUSTERDOWN
+//! ```
+//!
+//! # Invariant
+//!
+//! - `CLUSTER_STATE_MGR` 门控: 各子命令先 `get()`, 未初始化返回 `CLUSTERDOWN`.
+//! - 迁移状态语义: MIGRATING / STABLE 走 `SlotMigrationManager` 完整收尾链, 失败返回 ERR 不静默跳过.
+//! - NotLeader propose → `MOVED 0 <addr>` 或 CLUSTERDOWN (leader unknown).
+//! - `CLUSTER INFO` 的 `cluster_state` 动态判定: slot 全覆盖 + 映射到已知 group + 均有 leader → `ok`, 否则 `fail`.
+//! - `CLUSTER RESET` 不支持: 返回明确 ERR (MetaRaft 共识, 停服清 data_dir 重搭).
+
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 

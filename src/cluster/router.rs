@@ -1,3 +1,36 @@
+//! 同步集群路由决策: `ClusterRouter::decide` 依据 MetaRaft 迁移相位与 Router 缓存,
+//! 决定 key 请求是本地执行 (`Execute`) 还是重定向 (`Moved` / `Ask` / `TryAgain` /
+//! `ClusterDown`), 由 `CommandRouter::cluster_route` 调用.
+//!
+//! # 决策树
+//!
+//! ```text
+//! decide(key, cmd_type, asking, readonly)
+//!   ├─ CLUSTER_STATE_MGR 未 set → ClusterDown
+//!   ├─ migration_phase_for_slot 命中 (F-056 / F-056-A1):
+//!   │    ├─ Frozen / ReadyToCommit: Write → TryAgain
+//!   │    │                          Read  → 导向 target group (合并读/纯 target 由 adapter 区分)
+//!   │    └─ Copying (Prepare/Migrating): Read 且 target 本地 + (asking|importing) → Execute
+//!   │                                   Read 否则 → decide_target_read (合并读导向 target)
+//!   │                                   Write 继续落到下方 v7 逻辑
+//!   ├─ router.route_key 失败 → 刷新缓存重试一次 → 仍失败 → ClusterDown
+//!   ├─ Write + importing_slots 含 slot → Execute (IMPORTING 窗口, 不含 Frozen/Ready)
+//!   └─ SlotStatus:
+//!        ├─ Assigned:   本地可执行 (group leader 或 readonly 读)? Execute
+//!       │                否则刷新后再判 → Moved (group leader)
+//!        ├─ Migrating:  本机 source → Read: Execute / Write: Ask(target) / Admin: Execute
+//!       │                本机 target → asking|importing: Execute, 否则 Moved(source)
+//!       │                其他节点   → ClusterDown (migration in progress)
+//!        └─ Unallocated: 刷新重试; 新 Assign 且本地 leader → Execute, 否则 Moved / ClusterDown
+//! ```
+//!
+//! # Invariant
+//!
+//! - `decide` 同步: 只读缓存 + MetaRaft 快照, 不 await OpenRaft.
+//! - readonly replica 读: `READONLY` + `Read` + 本地 group → 本地读; 写仍 Moved 到 leader.
+//! - `check_cross_slot`: 多 key 命令须同 slot, 否则 CROSSSLOT (MSET key 在偶数下标).
+//! - `scan_tryagain_if_migrating`: SCAN 族在任意活跃迁移期间 TRYAGAIN (admin 白名单短路前拦截).
+
 use std::collections::HashMap;
 
 use aidb::cluster::meta_types::SlotMigrationState;

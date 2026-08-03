@@ -1,3 +1,6 @@
+//! 连接级集群状态: 每个 TCP 连接独立持有 ASKING / READONLY 标志, 供路由决策使用.
+//! ASKING 一次性 (每命令执行后由 Connection 调用 `reset_asking`); READONLY 使副本读放行.
+
 /// 连接级集群状态 (每个 TCP 连接独立持有).
 #[derive(Debug, Clone)]
 pub struct ClusterConnectionState {

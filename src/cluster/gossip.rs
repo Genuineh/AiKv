@@ -1,3 +1,6 @@
+//! 拓扑后台刷新 (轻量 gossip): 周期性从 MetaRaft 刷新本地 group leader 路由缓存,
+//! 并递增 gossip metrics. 无 Redis cluster bus PING/PONG; 成员/故障以 MetaRaft/Raft 为准.
+
 use std::sync::Arc;
 
 /// 启动集群拓扑后台刷新循环.

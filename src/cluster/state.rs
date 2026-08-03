@@ -1,3 +1,20 @@
+//! 集群全局状态: 全局单例 `CLUSTER_STATE_MGR` 与 `ClusterStateManager` 管理器.
+//! 聚合 aidb 的 MetaRaft / MultiRaft / Router 引用与本地缓存 (group leader 缓存、
+//! `importing_slots`、`role`、迁移目标 leader), 供同步路由决策与 CLUSTER 子命令读取.
+//!
+//! # 职责
+//!
+//! - 全局单例 `CLUSTER_STATE_MGR` (`OnceLock`), `init_cluster` 装配成功后才 `set`.
+//! - `refresh` / `apply_observed_group_leader`: 从 MetaRaft / MultiRaft 观测刷新本地 leader 缓存.
+//! - `migration_target_leader`: ASK 重定向目标 (覆盖 Prepare / Migrating / Frozen / ReadyToCommit).
+//! - `migration_epoch`: 活跃迁移 epoch, 供 `Request::MigrationWrite` / tombstone 定位.
+//!
+//! # Invariant
+//!
+//! - `CLUSTER_STATE_MGR` 未 `set` 时 `cluster_route` 跳过 (非 cluster 单机行为).
+//! - `ClusterRouter::decide` 只读本管理器缓存 + MetaRaft 快照, 不 await OpenRaft.
+//! - 权威拓扑始终来自 MetaRaft; 本模块只维护本地视图缓存.
+
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::sync::OnceLock;

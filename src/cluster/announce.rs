@@ -1,3 +1,18 @@
+//! MOVED/ASK 客户端地址解析: `AnnounceResolver` 决定 `CLUSTER SLOTS` / MOVED / ASK 中
+//! 向客户端通告的地址形态, `AnnounceMode` 由 env `AIKV_CLUSTER_ANNOUNCE_MODE` 配置.
+//!
+//! # 职责
+//!
+//! - `Fixed`: 通告完整 `host:port`.
+//! - `UnknownEndpoint` (默认): 仅通告 `:port`, 客户端沿用种子连接地址 (Redis 7 语义).
+//! - `tcp_connect_addr`: 服务端跨分片转发用地址 (rpc_addr 主机名 + 客户端端口).
+//!
+//! # Invariant
+//!
+//! - Announce unknown 模式: 客户端见 `:port`; smart client 靠 `redis-cli -c` 或 cluster-aware SDK 跟随 MOVED/ASK.
+//! - `client_addr` 优先于 `rpc_addr`: MOVED / CLUSTER NODES 用 `client_addr`, 未设置时回落 `rpc_addr`.
+//! - mode 仅进程内配置 (env), 不写入 MetaRaft.
+
 use aidb::cluster::Router;
 
 /// 集群客户端地址通告模式 (仅进程配置, 不写入 MetaRaft).
