@@ -1,4 +1,20 @@
-//! Hash 命令
+//! Hash 命令: HSET/HMSET/HGET/HMGET/HDEL/HEXISTS/HLEN/HKEYS/HVALS/HGETALL/HSETNX/
+//! HINCRBY/HINCRBYFLOAT/HSCAN. HMSET 走 HSET 逻辑并返回 `OK`.
+//!
+//! # 存储表示 (双格式)
+//!
+//! ```text
+//! 小 hash (≤ 64 fields): ValueType::Hash(HashMap<field, value>)
+//!                        bincode 存于 StoredValue
+//! 大 hash (> 64 fields): ValueType::CollectionHeader { kind: Hash, count }
+//!                        field 独立 subkey:
+//!                        {encoded_user_key}\x01H{field_len:2B}{field} → raw value
+//! ```
+//!
+//! 写路径: `key_lock.lock(key)` → `load_or_create_hash` (兼容两种格式) → 修改 →
+//! 超过 `HASH_MAX_BINCODE_FIELDS` (64) 时 `migrate_hash_to_subkey`; 删空后 `delete`.
+//! subkey 读写走 `raw_subkey_*`, 仅持久化引擎支持 (Memory 引擎返回 Err).
+//! 类型分轨: `get_typed`/`set_typed`; 非 Hash → WRONGTYPE.
 
 use std::collections::HashMap;
 use std::sync::Arc;

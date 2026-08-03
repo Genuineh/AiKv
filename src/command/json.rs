@@ -1,4 +1,23 @@
-//! JSON 命令 (Phase 11)
+//! JSON.* 命令集合 (Phase 11): GET/MGET/SET/DEL/TYPE/STRLEN/ARRLEN/OBJLEN/NUMINCRBY/
+//! ARRAPPEND/UPDATE/MSET. 文档以 `serde_json::Value` 序列化 bytes 存于 **String KV**
+//! (`storage.get/set/set_with_ttl`, 非 typed 写路径); 非 String key → WRONGTYPE.
+//!
+//! # 写路径
+//!
+//! ```text
+//! JSON.SET / JSON.DEL / JSON.NUMINCRBY / JSON.ARRAPPEND / JSON.UPDATE
+//!   ├─ KeyLock lock(key)
+//!   ├─ load_json: storage.get → serde_json 解析 (无 key → nil / 空文档)
+//!   ├─ JsonPathEngine.set / delete / incr / append 修改内存文档
+//!   └─ write_back_json: 先 get_typed 取 expires_at, 再 set / set_with_ttl 写回 (保留 TTL)
+//! ```
+//!
+//! # Invariant
+//!
+//! - JSON 存 String KV: 子路径修改用 `write_back_json` 保留原 TTL; 全新 key 直接 `set`.
+//! - JSON.MSET: 对 batch 内全部 key 取 `key_lock.lock_keys_sorted` (去重 + 字典序).
+//! - 路径缺省 `$`; JSONPath 根 `$` 与 `.` 等价 (见 `jsonpath.rs`).
+//! - 全文档 RMW: 无 RedisJSON 级内存优化, 大文档每次修改全量重读重写.
 
 use std::sync::Arc;
 

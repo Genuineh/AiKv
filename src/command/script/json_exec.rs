@@ -1,4 +1,12 @@
-//! JSON 命令在 Lua 脚本内的执行 (redis.call / redis.pcall)
+//! Lua 脚本内 JSON 命令子集的执行: 由 `execute.rs::dispatch` 按命令名转发, 支持 10 条
+//! JSON.* 命令 (GET/MGET/SET/DEL/TYPE/STRLEN/ARRLEN/OBJLEN/NUMINCRBY/ARRAPPEND).
+//!
+//! JSON 文档以 `serde_json::Value` 序列化 bytes 存于 String KV (与 `json.rs` 一致).
+//! 读写均经 `ScriptTransaction`: 读用 `txn.get` (写缓冲优先), 写用 `txn.set_string` 缓冲
+//! 待脚本结束后统一 commit.
+//!
+//! 与 `json.rs` 的差异: 精简子集, 参数解析简化 — JSON.SET 支持 NX/XX, 无 XE/TTL;
+//! 其余命令不支持选项; 路径缺省 `$`.
 
 use bytes::Bytes;
 use serde_json::Value as JsonValue;

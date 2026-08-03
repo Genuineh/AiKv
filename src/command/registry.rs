@@ -1,4 +1,26 @@
-//! 命令元数据注册表 (与 router 同步维护)
+//! 全量命令元数据表 (~131+ 条, 含 JSON/Lua/Server/Cluster 条目), 供 COMMAND 子命令、
+//! ATOM WATCH 键追踪与写命令判定、cluster 路由等消费 (见 `router.rs` / `server.rs`).
+//!
+//! # 数据模型
+//!
+//! ```text
+//! static COMMAND_TABLE: &[CommandInfo]
+//!   CommandInfo { name, arity, flags, first_key, last_key, step }
+//!     arity < 0         → 至少 |arity| 个参数
+//!     first/last/step   → key 参数定位 (Redis COMMAND GETKEYS 语义)
+//! COMMAND_INDEX: OnceLock<HashMap<name, CommandInfo>> 惰性建索引
+//! ```
+//!
+//! # 接口
+//!
+//! - `lookup(name)`: 大小写不敏感查表.
+//! - `key_indices(info, argc)`: 计算 key 参数位置; `first_key=0` → 无 key.
+//! - `all_commands()` / `command_count()`: COMMAND 子命令数据源.
+//!
+//! # Invariant
+//!
+//! - registry ↔ router 双维护: 新增命令必须同时更新 `COMMAND_TABLE` 与 `router.rs`
+//!   `execute_inner` 的 match (或子 dispatch), 否则表内命中但路由漏分发.
 
 use std::collections::HashMap;
 

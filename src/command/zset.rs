@@ -1,4 +1,26 @@
-//! Sorted Set 命令
+//! Sorted Set 命令: ZADD/ZREM/ZSCORE/ZRANK/ZREVRANK/ZRANGE*/ZRANGEBYSCORE/ZRANGEBYLEX/
+//! ZCOUNT/ZLEXCOUNT/ZPOPMIN/ZPOPMAX/BZPOPMIN/BZPOPMAX/ZINCRBY/ZSCAN, 以及聚合
+//! ZINTER/ZUNION/ZDIFF (含 *STORE 变体).
+//!
+//! # 存储表示
+//!
+//! ```text
+//! ValueType::ZSet(BTreeMap<Vec<u8>, f64>)
+//!   member → score (f64); BTreeMap 按 member 字节序排列
+//!   经 get_typed / set_typed 整体读写; 无独立 score 索引
+//! ```
+//!
+//! # 关键点
+//!
+//! - 有序访问: 按 score 排序用 `sorted_by_score` 临时排序; 按 lex 利用 BTreeMap 天然字典序
+//!   (ZRANGEBYLEX/ZLEXCOUNT); rank 为排序后下标 (ZRANK/ZREVRANK).
+//! - 范围边界: score 用 `ScoreBound` (`-inf`/`+inf`, `(` 开区间, 见 `score_in_range`);
+//!   lex 用 `LexBound` (`-`/`+`, `(`/`[`, 见 `lex_in_range`).
+//! - 聚合: ZINTER/ZUNION/ZDIFF 经 `parse_zset_combine_args` 解析 numkeys/WEIGHTS/AGGREGATE,
+//!   `aggregate_score` 按 SUM/MIN/MAX 合并.
+//! - 阻塞 BZPOP*: 先非阻塞 `zpopmin`/`zpopmax`, 失败后 `BlockingRegistry::register` +
+//!   10ms 轮询; 写侧 (ZADD) 成功后 `notify(key)` 唤醒; 超时返回 nil Array.
+//! - 类型分轨与空容器删除: `get_typed`/`set_typed`; pop/zrem 后集合为空则 `delete`.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

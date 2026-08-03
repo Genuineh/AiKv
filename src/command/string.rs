@@ -1,4 +1,13 @@
-//! String 命令
+//! String 命令: GET/SET/SETNX/SETEX/PSETEX/GETEX/GETDEL/MGET/MSET/STRLEN/GETRANGE/
+//! SETRANGE/SETBIT/GETBIT/APPEND/INCR/DECR/INCRBY/DECRBY/INCRBYFLOAT, 以及 DEL/EXISTS.
+//!
+//! # Invariant
+//!
+//! - 类型分轨: String 一律走 `storage.get`/`set` (非 typed 写路径); 访问非 String key →
+//!   `WRONGTYPE` (见 `storage/types.rs`).
+//! - MGET wrong-type: 对齐 Redis 7, 对非 String / missing key 返回 `nil`, 整命令不失败.
+//! - mutating 写 (SET NX/XX、INCR 等) 先 `key_lock.lock(key)` 再读改写.
+//! - DEL/EXISTS 位于本文件 (registry 中归 String 域).
 
 use std::sync::Arc;
 

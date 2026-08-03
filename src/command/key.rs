@@ -1,4 +1,18 @@
-//! Key 命令 (过期 + 管理)
+//! Key 管理命令: 过期 (EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT/EXPIRETIME/PEXPIRETIME/TTL/PTTL/
+//! PERSIST)、键空间 (KEYS/SCAN/RANDOMKEY)、重命名 (RENAME/RENAMENX)、COPY、TYPE、
+//! DUMP/RESTORE、MIGRATE 编排.
+//!
+//! # 关键点
+//!
+//! - 过期: 负 TTL 直接 `delete`; 其余映射为 Unix ms 写入 `expires_at`; `TTL_NO_EXPIRY` (-1)
+//!   映射 Redis -1 (见 `map_ttl_seconds`/`map_pttl_ms`).
+//! - 键空间: KEYS 直调 `storage.keys` (pattern 走 `glob_match`, 仅 `*`/`?`); SCAN 走
+//!   引擎级游标 (`storage.scan`).
+//! - 双 key 写: RENAME/RENAMENX/COPY 用 `key_lock.lock_two` (字典序, 同 key 不重入).
+//! - DUMP 格式: `[u8 version=0][bincode(StoredValue)]` (非 Redis DUMP); RESTORE 校验
+//!   version, 失败 → `ERR DUMP payload version or checksum error`.
+//! - MIGRATE: 本文件编排 — `get_typed` → `dump_encode` → `migrate::send_restore` (TCP) →
+//!   非 COPY 时源端 `delete`; 支持 KEYS/AUTH/AUTH2/REPLACE 等选项.
 
 use std::sync::Arc;
 

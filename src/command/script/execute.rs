@@ -1,4 +1,26 @@
-//! redis.call / redis.pcall 命令执行 (async)
+//! Lua 脚本内 `redis.call` / `redis.pcall` 的异步执行: 参数转换 → KEYS 声明校验 →
+//! 按命令名 dispatch 到各域 exec_* → 写操作进 `ScriptTransaction` 缓冲, 读操作优先读缓冲.
+//!
+//! # 执行流程
+//!
+//! ```text
+//! redis.call("GET", key, …) ── mlua 闭包 ──> redis_call_async(lua, storage, txn, declared, args, throw_error)
+//!   │ 1. Lua 参数 → Bytes: String/Integer/Number/Boolean; 其它类型 throw_error → RuntimeError, 否则 Nil
+//!   ├─ 2. validate_keys: 用 command_key_indices 定位命令 key 参数, 须在 EVAL 声明的 KEYS 内
+//!   │       未声明 → "ERR Script attempted to access undeclared key"
+//!   ├─ 3. dispatch(cmd): match 到各域 exec_* (String/Hash/List/Set/ZSet/JSON/EXPIRE)
+//!   │       读: txn.get / txn.get_value (写缓冲优先; CollectionHeader 透明展开为完整集合)
+//!   │       写: txn.set_* / txn.delete / txn.set_expire_at 缓冲
+//!   ├─ 4a. 成功 → resp_to_lua (RESP → LuaValue)
+//!   └─ 4b. 失败 → throw_error ? mlua RuntimeError : pcall_error_table ({err="…"})
+//! ```
+//!
+//! # Invariant
+//!
+//! - KEYS 校验: 脚本访问未声明的 key 报错 (redis.call 抛错 / redis.pcall 返回 `{err}` 表).
+//! - 写操作全部进入 `ScriptTransaction.write_buffer`, 由 `script.rs::execute_script` 结束后
+//!   单次 `commit` 落盘; 脚本失败时缓冲随 txn drop 丢弃, 保证原子性.
+//! - `pcall` 错误返回 `{err="…"}` 表 (非 nil), 与 `convert.rs::pcall_error_table` 对齐.
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 

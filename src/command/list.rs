@@ -1,4 +1,27 @@
-//! List 命令
+//! List 命令: LPUSH/RPUSH/LPOP/RPOP/LLEN/LRANGE/LINDEX/LSET/LREM/LINSERT/LMOVE/LPOS/
+//! LTRIM, 以及阻塞 BLPOP/BRPOP/BLMOVE.
+//!
+//! # 存储表示
+//!
+//! ```text
+//! ValueType::List(VecDeque<Vec<u8>>)
+//!   LPUSH → push_front      LPOP → pop_front
+//!   RPUSH → push_back       RPOP → pop_back
+//!   空 list → delete (不留空 key)
+//! ```
+//!
+//! # 阻塞 pop (BLPOP/BRPOP/BLMOVE)
+//!
+//! ```text
+//! try_pop_any 非阻塞尝试 (遍历 keys, 取首个非空 list)
+//!   ├─ 命中 → 返回 [key, element]
+//!   ├─ timeout=0 → nil Array (立即返回)
+//!   ├─ timeout<0 → 300s 上限
+//!   └─ 否则 BlockingRegistry::register(key, dur) + 10ms 轮询 try_recv;
+//!        写侧 LPUSH/RPUSH 成功后 notify(key, OK) 唤醒
+//! ```
+//!
+//! 类型分轨: `get_typed`/`set_typed`; LMOVE/BLMOVE 双 key 用 `lock_two` (字典序).
 
 use std::collections::VecDeque;
 use std::sync::Arc;

@@ -1,4 +1,38 @@
-//! 命令路由与 key 级锁
+//! 命令路由与 key 级锁: `CommandRouter` 是全部 Redis 命令的分发中心, 同时提供
+//! `KeyLock` 分桶写锁、RESP 构造 helper (`ok`/`bulk`/`integer`/`nil_bulk`) 与 metrics 钩子.
+//!
+//! # 分发流程
+//!
+//! ```text
+//! Connection ── execute_with_client(cmd, args, db, client_id, proto, cluster_state)
+//!   │
+//!   ├─ [feature cluster] cluster_route:            ┐
+//!   │    admin 白名单 (PING/INFO/SCAN 族等) 直通    │ 命中 → 直接返回
+//!   │    MIGRATE/RESTORE: 仅写冻结 TRYAGAIN        │ (MOVED/ASK/CROSSSLOT/
+//!   │    多 key 命令: CROSSSLOT 校验               │  TRYAGAIN/CLUSTERDOWN)
+//!   │    (MSET 取偶索引, BLPOP/BRPOP 去末参数)     ┘
+//!   │
+//!   ├─ span 记录 → execute_inner: 按命令名 match 到各域 handler
+//!   │    GET / MGET / HGET / EXISTS 额外记录 keyspace hit/miss
+//!   │    CONFIG / CLIENT / OBJECT 走 dispatch_config / dispatch_client / dispatch_object
+//!   │
+//!   └─ record_command_outcome: commandstats (成功/失败) + errorstats
+//! ```
+//!
+//! # Invariant
+//!
+//! - KeyLock 写路径: mutating 单 key 写用 `lock(key)` (SET NX/XX, INCR, HSET, LPUSH 等);
+//!   双 key 用 `lock_two` (按 key 字节序加锁, 同 key 不重入, 见 RENAME/COPY/LMOVE/SMOVE);
+//!   多 key 用 `lock_keys_sorted` (去重 + 字典序, JSON.MSET), EVAL 用
+//!   `lock_keys_sorted_with_timeout` (默认 30s).
+//! - registry ↔ router 双维护: 新命令须同时更新 `registry.rs` `COMMAND_TABLE` 与
+//!   本文件 `execute_inner` 的 match (或子 dispatch), 否则出现表内命中但路由漏分发的 bug.
+//! - metrics 仅 `new_with_shared` 装配; `new` (测试路径) 无 INFO/SAVE,
+//!   `require_server` / `require_persistence` 返回 ERR.
+//!
+//! 各域 handler 见 `string.rs` / `hash.rs` / `list.rs` / `set.rs` / `zset.rs` / `key.rs`;
+//! extended (JSON/Lua/Server/Persistence) 语义见 `docs/modules/05-commands-extended.md`,
+//! 类型分轨与空容器删除等核心约束见 `docs/modules/04-commands-core.md`.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};

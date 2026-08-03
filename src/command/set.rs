@@ -1,4 +1,20 @@
-//! Set 命令
+//! Set 命令: SADD/SREM/SMEMBERS/SISMEMBER/SCARD/SPOP/SRANDMEMBER/SMOVE/SSCAN,
+//! 以及集合运算 SUNION/SINTER/SDIFF 与其 *STORE 变体.
+//!
+//! # 存储表示 (双格式)
+//!
+//! ```text
+//! 小 set (≤ 64 members): ValueType::Set(HashSet<member>)
+//!                        bincode 存于 StoredValue
+//! 大 set (> 64 members): ValueType::CollectionHeader { kind: Set, count }
+//!                        member 独立 subkey:
+//!                        {encoded_user_key}\x01S{member_len:2B}{member} → 空值 (仅存在性)
+//! ```
+//!
+//! 写路径: `key_lock.lock(key)` → `load_or_create_set` → 修改 → 超过
+//! `SET_MAX_BINCODE_MEMBERS` (64) 时 `migrate_set_to_subkey`; 删空后 `delete`.
+//! SMOVE 跨源/目标双 key 用 `lock_two`; store 类集合运算读多 key 不加锁.
+//! 类型分轨: `get_typed`/`set_typed`; 非 Set → WRONGTYPE.
 
 use std::collections::HashSet;
 use std::sync::Arc;

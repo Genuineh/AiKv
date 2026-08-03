@@ -1,4 +1,25 @@
-//! Lua 脚本命令 (EVAL / EVALSHA / SCRIPT)
+//! Lua 脚本命令入口: EVAL / EVALSHA / SCRIPT (LOAD/EXISTS/FLUSH/KILL). 子模块:
+//! `sandbox` (mlua 沙箱) / `execute` (redis.call) / `json_exec` (JSON 子集) /
+//! `transaction` (写缓冲 + commit) / `convert` (Lua ↔ RESP) / `cache` (SCRIPT LOAD LRU).
+//!
+//! # 执行流程
+//!
+//! ```text
+//! EVAL script numkeys key… arg…
+//!   ├─ parse_keys_argv: 按 numkeys 切分 KEYS / ARGV
+//!   ├─ key_lock.lock_keys_sorted_with_timeout(KEYS, 30s)
+//!   ├─ new_sandbox_lua: StdLib = TABLE|STRING|MATH|UTF8; 封印 load/require/rawget/rawset…
+//!   ├─ set_memory_limit (128MB) + 指令 hook 超时 (默认 5s)
+//!   ├─ populate_keys_argv (全局 KEYS/ARGV) + install_redis_api (redis.call/pcall)
+//!   ├─ eval_async → lua_to_resp
+//!   └─ txn.commit: 脚本内写操作单次落盘
+//! ```
+//!
+//! # Invariant
+//!
+//! - 原子性: 脚本内写操作进 `ScriptTransaction` 缓冲; 成功结束单次 `commit`, 失败 drop.
+//! - 仅 `SCRIPT LOAD` 写入 LRU 缓存 (max 256); **EVAL 不自动缓存**; EVALSHA 未命中 → NOSCRIPT.
+//! - 超时与内存上限由 mlua hook 与 memory limit 强制; SCRIPT KILL 恒 NOTBUSY (stub).
 
 mod cache;
 mod convert;

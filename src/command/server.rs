@@ -1,4 +1,17 @@
-//! Server 命令 (Phase 10.5)
+//! 服务端管理命令: INFO/TIME/CONFIG/CLIENT/COMMAND/SLOWLOG/LATENCY. 仅 `new_with_shared`
+//! 装配 (router 的 `require_server` 校验; 测试路径 `new` 下调用 → ERR).
+//!
+//! # 命令与数据源
+//!
+//! - INFO: 委托 `InfoRenderer` 渲染 (字段清单见 observability module).
+//! - TIME: Unix 秒 + 微秒.
+//! - CONFIG GET/SET: 读写 `shared.config_map`; `slowlog-*` 联动; `appendonly` SET → ERR.
+//!   REWRITE/RESETSTAT 由 `router.dispatch_config` 处理 (OK no-op).
+//! - CLIENT LIST/SETNAME/GETNAME: 读写 `shared.clients`.
+//! - COMMAND: 读 `registry` — 无参返回全量元数据; COUNT / INFO / GETKEYS / DOCS / HELP 子命令.
+//! - SLOWLOG: 读 `shared.slow_query_log` (`SlowQueryEntry`).
+//! - LATENCY: 读 `shared.latency_stats`; RESP2/RESP3 格式分支.
+//! - OBJECT (router.dispatch_object): ENCODING 按 `ValueType`; REFCOUNT/IDLETIME/FREQ 为 stub.
 
 use std::sync::Arc;
 
