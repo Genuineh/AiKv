@@ -165,6 +165,12 @@ class RedisClient:
     def zrem(self, key: str, *members: str) -> int:
         return int(self._r.zrem(key, *members))
 
+    def zremrangebyscore(self, key: str, min_val: float | str, max_val: float | str) -> int:
+        return int(self._r.zremrangebyscore(key, min_val, max_val))
+
+    def zremrangebyrank(self, key: str, min_val: int, max_val: int) -> int:
+        return int(self._r.zremrangebyrank(key, min_val, max_val))
+
     def info(self, section: str | None = None) -> dict[str, Any]:
         if section is None:
             return dict(self._r.info())
@@ -178,6 +184,13 @@ class RedisClient:
 
     def close(self) -> None:
         self._r.close()
+
+    def cli(self, *args: str) -> str:
+        """方便在 RedisClient 实例上直接调用 redis-cli 命令行辅助工具."""
+        return cli(self.host, self.port, *args)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._r, name)
 
 
 def cli(host: str, port: int, *args: str, db: int | None = None) -> str:

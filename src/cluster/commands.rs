@@ -1144,7 +1144,11 @@ pub async fn cluster_set_slot(
                 .slot_migration_manager
                 .as_ref()
                 .ok_or_else(|| "ERR SlotMigrationManager not initialized".to_string())?;
-            sm.start_migration(source_gid, target_gid, vec![slot])
+            let migration_id = sm
+                .start_migration(source_gid, target_gid, vec![slot])
+                .await
+                .map_err(|e| format!("ERR {e}"))?;
+            run_pending_migration_to_completion(sm, migration_id)
                 .await
                 .map_err(|e| format!("ERR {e}"))?;
             Ok("OK".to_string())
@@ -1648,6 +1652,50 @@ pub fn cluster_replicas(node_id: u64) -> Result<Vec<String>, String> {
 // ---------------------------------------------------------------------------
 // CLUSTER REBALANCE
 // ---------------------------------------------------------------------------
+/// 从 MetaRaft 迁移状态构造 `ActiveMigration` 并驱动 `run_pending_migration`,
+/// 使迁移真正执行数据拷贝. 若无此步, 迁移停留在 `Prepare` 状态,
+/// 后续 `finish_migration` (STABLE) 会被 aidb 防呆拒绝.
+/// `CLUSTER SETSLOT MIGRATING` 与 `CLUSTER REBALANCE` 共用.
+async fn run_pending_migration_to_completion(
+    sm: &aidb::cluster::SlotMigrationManager,
+    migration_id: u64,
+) -> Result<(), String> {
+    let mgr = CLUSTER_STATE_MGR
+        .get()
+        .ok_or_else(|| "CLUSTERDOWN Cluster not initialized".to_string())?;
+    let migration_state = mgr
+        .meta_raft
+        .get_migration_state()
+        .ok_or_else(|| "ERR migration state lost".to_string())?;
+    let (src, dst, slots) = match &migration_state {
+        SlotMigrationState::Prepare {
+            source_group,
+            target_group,
+            slots,
+            ..
+        } => (*source_group, *target_group, slots.clone()),
+        _ => return Err("ERR unexpected migration state".to_string()),
+    };
+    let active = aidb::cluster::slot_migration::ActiveMigration {
+        migration_id,
+        source_group: src,
+        target_group: dst,
+        slots,
+        checkpoint: Vec::new(),
+    };
+    let result = sm
+        .run_pending_migration(active)
+        .await
+        .map_err(|e| format!("run_migration: {e}"))?;
+    if !result.is_completed {
+        return Err(format!(
+            "migration incomplete: {} keys migrated",
+            result.migrated_count
+        ));
+    }
+    Ok(())
+}
+
 #[tracing::instrument(name = "cmd_cluster_rebalance", skip_all)]
 pub async fn cluster_rebalance() -> Result<String, String> {
     let mgr = CLUSTER_STATE_MGR
@@ -1730,40 +1778,9 @@ pub async fn cluster_rebalance() -> Result<String, String> {
                 .await
                 .map_err(|e| format!("ERR start_migration: {e}"))?;
 
-            // Build ActiveMigration from migration state
-            let migration_state = mgr
-                .meta_raft
-                .get_migration_state()
-                .ok_or_else(|| "ERR migration state lost".to_string())?;
-            let (src, dst, slots) = match &migration_state {
-                aidb::cluster::meta_types::SlotMigrationState::Prepare {
-                    source_group,
-                    target_group,
-                    slots,
-                    ..
-                } => (*source_group, *target_group, slots.clone()),
-                _ => return Err("ERR unexpected migration state".to_string()),
-            };
-
-            let active = aidb::cluster::slot_migration::ActiveMigration {
-                migration_id,
-                source_group: src,
-                target_group: dst,
-                slots,
-                checkpoint: Vec::new(),
-            };
-
-            let result = sm
-                .run_pending_migration(active)
+            run_pending_migration_to_completion(sm, migration_id)
                 .await
-                .map_err(|e| format!("ERR run_migration: {e}"))?;
-
-            if !result.is_completed {
-                return Err(format!(
-                    "ERR migration incomplete: {} keys migrated",
-                    result.migrated_count
-                ));
-            }
+                .map_err(|e| format!("ERR {e}"))?;
 
             // F-056: 完整收尾链, 失败返回 ERR (不得静默跳过).
             sm.finish_migration()
