@@ -123,6 +123,7 @@ pub fn is_not_subkey(encoded_key: &[u8]) -> bool {
 mod tests {
     use super::*;
 
+    /// 验证 Hash 字段 Key 拼接编码与解码 Roundtrip
     #[test]
     fn test_hash_field_roundtrip() {
         let user_key = b"myhash";
@@ -140,6 +141,7 @@ mod tests {
         assert_eq!(field2, field);
     }
 
+    /// 验证 Set 成员 Key 编码与解码 Roundtrip
     #[test]
     fn test_set_member_roundtrip() {
         let user_key = b"myset";
@@ -151,12 +153,14 @@ mod tests {
         assert_eq!(decoded.1, member);
     }
 
+    /// 验证 普通 Key 与 SubKey 判定分割符
     #[test]
     fn test_regular_key_is_not_subkey() {
         assert!(is_not_subkey(b"0:mykey"));
         assert!(!is_not_subkey(b"0:mykey\x01H\x00\x05hello"));
     }
 
+    /// 验证 SubKey 前缀构建格式 (\x01H / \x01S)
     #[test]
     fn test_subkey_prefixes() {
         let user_key = b"myhash";
@@ -167,6 +171,7 @@ mod tests {
         assert_eq!(s_prefix, b"myhash\x01S");
     }
 
+    /// 验证 从复合 SubKey 中提取原始 UserKey
     #[test]
     fn test_extract_user_key_from_subkey() {
         let encoded = encode_hash_field_key(b"mykey", b"field1");

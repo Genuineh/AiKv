@@ -1,3 +1,6 @@
+//! JSON 数据类型扩展命令族测试 (JSON.SET / JSON.GET / JSON.ARRAPPEND 等)
+//! @component aikv-command
+
 use aikv::protocol::RespValue;
 use serde_json::Value as JsonValue;
 
@@ -12,6 +15,7 @@ fn bulk_json(resp: RespValue) -> JsonValue {
     serde_json::from_slice(&data).expect("valid json")
 }
 
+/// 验证 JSON.SET 根节点设置与 JSON.GET 根节点获取
 #[tokio::test]
 async fn test_json_set_get_root() {
     let r = router();

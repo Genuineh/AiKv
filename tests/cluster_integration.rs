@@ -101,6 +101,7 @@ fn block_on<F: std::future::Future>(f: F) -> F::Output {
 
 // ── CLUSTER help / format ──
 
+/// 验证 CLUSTER INFO 输出响应字段格式
 #[test]
 fn cluster_info_format() {
     ensure_cluster_state();
@@ -116,6 +117,7 @@ fn cluster_info_format() {
     }
 }
 
+/// 验证 CLUSTER MYID 输出 40 字节节点 ID
 #[test]
 fn cluster_myid_format() {
     ensure_cluster_state();
@@ -124,6 +126,7 @@ fn cluster_myid_format() {
     assert!(myid.chars().all(|c| c.is_ascii_hexdigit()));
 }
 
+/// 验证 CLUSTER NODES 输出包含节点条目
 #[test]
 fn cluster_nodes_format() {
     ensure_cluster_state();
@@ -137,6 +140,7 @@ fn cluster_nodes_format() {
 
 // ── CLUSTER command errors (async) ──
 
+/// 验证 CLUSTER REPLICATE 设置从节点副本角色
 #[test]
 fn cluster_replicate_sets_role() {
     ensure_cluster_state();
@@ -152,6 +156,7 @@ fn cluster_replicate_sets_role() {
     let _ = replicas;
 }
 
+/// 验证 非 Leader 节点执行 CLUSTER ADDSLOTS 报 CLUSTERDOWN/ERR 错误
 #[test]
 fn cluster_add_slots_not_leader() {
     ensure_cluster_state();
@@ -160,6 +165,7 @@ fn cluster_add_slots_not_leader() {
     }
 }
 
+/// 验证 非 Leader 节点执行 CLUSTER DELSLOTS 报 CLUSTERDOWN/ERR 错误
 #[test]
 fn cluster_del_slots_not_leader() {
     ensure_cluster_state();
@@ -168,6 +174,7 @@ fn cluster_del_slots_not_leader() {
     }
 }
 
+/// 验证 主节点执行 CLUSTER FAILOVER 拒绝
 #[test]
 fn cluster_failover_from_primary() {
     ensure_cluster_state();
@@ -175,6 +182,7 @@ fn cluster_failover_from_primary() {
     assert!(err.contains("ERR"));
 }
 
+/// 验证 CLUSTER SAVECONFIG 命令路由派发
 #[test]
 fn cluster_saveconfig_dispatch() {
     ensure_cluster_state();
@@ -186,6 +194,7 @@ fn cluster_saveconfig_dispatch() {
 
 // ── Sync command error / format ──
 
+/// 验证 CLUSTER KEYSLOT 计算符合 CRC16 规则 (0..16383)
 #[test]
 fn cluster_keyslot_basic() {
     ensure_cluster_state();

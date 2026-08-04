@@ -1,7 +1,11 @@
+//! List 列表结构命令族测试
+//! @component aikv-command
+
 use aikv::protocol::RespValue;
 
 use super::helpers::{assert_int, b, router};
 
+/// 验证 LPUSH / RPUSH 列表推入与 LLEN 长度计算
 #[tokio::test]
 async fn test_lpush_rpush_llen() {
     let r = router();

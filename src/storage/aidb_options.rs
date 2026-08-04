@@ -63,6 +63,7 @@ mod tests {
     #[cfg(feature = "compression")]
     use aidb::config::CompressionType;
 
+    /// 验证 DbPreset 字符串配置别名解析
     #[test]
     fn db_preset_parse_aliases() {
         assert_eq!(DbPreset::parse("default"), Some(DbPreset::Default));
@@ -72,12 +73,14 @@ mod tests {
         assert!(DbPreset::parse("unknown").is_none());
     }
 
+    /// 验证 HighWrite 预设放大了 MemTable 容量配置
     #[test]
     fn high_write_preset_enlarges_memtable() {
         let opts = server_db_options_with_preset(false, DbPreset::HighWrite);
         assert_eq!(opts.memtable_size, 256 * 1024 * 1024);
     }
 
+    /// 验证 压缩类型配置匹配编译开关 feature gate
     #[test]
     fn compression_matches_feature_gate() {
         let opts = server_db_options(false);

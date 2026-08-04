@@ -1,10 +1,12 @@
-//! Step 4: TCP 内联命令
+//! TCP 内联命令与网络交互集成测试
+//! @component aikv-server
 
 use aikv::protocol::RespParser;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::helpers::{connect, read_all_available, read_response, start_server, write_cmd};
 
+/// 验证 TCP 协议直连发送 PING 返回 PONG
 #[tokio::test]
 async fn test_tcp_ping() {
     let (addr, _handle) = start_server().await;

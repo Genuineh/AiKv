@@ -1,4 +1,5 @@
 //! RESP Parser roundtrip 与边界测试 (Step 2)
+//! @component aikv-resp
 
 use aikv::protocol::{RespParser, RespValue};
 use bytes::Bytes;
@@ -16,6 +17,7 @@ fn roundtrip_f64(original: f64, parsed: f64) {
     assert!(original.is_nan() && parsed.is_nan() || (original - parsed).abs() < f64::EPSILON);
 }
 
+/// 验证 SimpleString 解析 Roundtrip
 #[test]
 fn test_simple_string_roundtrip() {
     roundtrip(RespValue::SimpleString("OK".into()));

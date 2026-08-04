@@ -1,7 +1,11 @@
+//! Hash 哈希结构命令族测试
+//! @component aikv-command
+
 use aikv::protocol::RespValue;
 
 use super::helpers::{assert_int, assert_nil, b, router};
 
+/// 验证 HMSET 返回 OK 字符串而非整数
 #[tokio::test]
 async fn test_hmset_returns_ok_not_integer() {
     let r = router();

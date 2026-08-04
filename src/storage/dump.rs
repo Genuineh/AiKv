@@ -34,6 +34,7 @@ mod tests {
     use super::*;
     use crate::storage::ValueType;
 
+    /// 验证 DUMP/RESTORE 数据序列化与反序列化 Roundtrip
     #[test]
     fn test_dump_roundtrip() {
         let value = StoredValue {
@@ -46,6 +47,7 @@ mod tests {
         assert_eq!(decoded, value);
     }
 
+    /// 验证 DUMP 校验和与版本号前缀校验
     #[test]
     fn test_dump_version_check() {
         let err = decode(&[1, 0, 1, 2]).unwrap_err();

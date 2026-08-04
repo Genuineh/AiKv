@@ -1,3 +1,6 @@
+//! MemoryEngine 内存存储引擎测试
+//! @component aikv-storage
+
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -7,6 +10,7 @@ fn engine() -> Arc<MemoryEngine> {
     MemoryEngine::new(16)
 }
 
+/// 验证 MemoryEngine Get/Set 基本读写
 #[tokio::test]
 async fn test_memory_engine_get_set() {
     let e = engine();

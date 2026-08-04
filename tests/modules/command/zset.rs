@@ -1,3 +1,6 @@
+//! ZSet 有序集合命令族测试
+//! @component aikv-command
+
 use aikv::protocol::RespValue;
 
 use super::helpers::{assert_int, assert_nil, b, router};
@@ -9,6 +12,7 @@ fn members(resp: RespValue) -> Vec<RespValue> {
     items
 }
 
+/// 验证 ZADD 成员添加与 ZRANGE 范围查询
 #[tokio::test]
 async fn test_zadd_zrange() {
     let r = router();

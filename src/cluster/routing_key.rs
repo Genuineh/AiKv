@@ -26,6 +26,7 @@ mod tests {
     use super::*;
     use bytes::Bytes;
 
+    /// 验证 EVAL 命令提取第一个声明的 Key 用于 Slot 路由
     #[test]
     fn eval_routing_key_uses_first_declared_key() {
         let args = [
@@ -37,6 +38,7 @@ mod tests {
         assert_eq!(cluster_routing_key("EVAL", &args), Some(&b"mykey:{0}"[..]));
     }
 
+    /// 验证 普通 GET 命令提取第一个参数作为路由 Key
     #[test]
     fn get_routing_key_uses_first_arg() {
         let args = [Bytes::from_static(b"userkey")];

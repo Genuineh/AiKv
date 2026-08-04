@@ -1,3 +1,6 @@
+//! Atom 原子类型扩展命令族测试 (ATOM.SWAP / ATOM.CAS / ATOM.ADD 等)
+//! @component aikv-command
+
 use std::net::SocketAddr;
 use std::time::Duration;
 

@@ -1,7 +1,11 @@
+//! String 字符串命令族测试
+//! @component aikv-command
+
 use aikv::protocol::RespValue;
 
 use super::helpers::{assert_int, assert_nil, assert_ok, b, router};
 
+/// 验证 SET 命令 EX/NX/XX 参数组合
 #[tokio::test]
 async fn test_set_with_ex_nx_xx() {
     let r = router();

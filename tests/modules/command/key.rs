@@ -1,8 +1,12 @@
+//! Key 键空间管理命令族测试
+//! @component aikv-command
+
 use std::collections::HashSet;
 use std::time::Duration;
 
 use super::helpers::{assert_err_contains, assert_int, assert_nil, assert_ok, b, router};
 
+/// 验证 KEYS 通配符 Pattern 匹配查找
 #[tokio::test]
 async fn test_keys_pattern() {
     let r = router();

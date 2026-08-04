@@ -1,3 +1,6 @@
+//! Set 集合结构命令族测试
+//! @component aikv-command
+
 use aikv::protocol::RespValue;
 
 use super::helpers::{assert_int, b, router};
@@ -16,6 +19,7 @@ fn bulk_str(resp: &RespValue) -> Option<bytes::Bytes> {
     v.clone()
 }
 
+/// 验证 SADD 元素添加与 SMEMBERS 获取全量集合成员
 #[tokio::test]
 async fn test_sadd_smembers() {
     let r = router();

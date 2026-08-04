@@ -1,5 +1,9 @@
+//! Database 数据库选库与清理命令族测试
+//! @component aikv-command
+
 use super::helpers::{assert_int, assert_nil, assert_ok, b, router};
 
+/// 验证 SELECT 切换到合法数据库 ID
 #[tokio::test]
 async fn test_select_valid_range() {
     let r = router();
