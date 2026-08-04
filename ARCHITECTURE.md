@@ -186,13 +186,13 @@ AiDb 域文档: [engine](../aidb/docs/modules/01-engine.md), [engine-storage](..
 flowchart LR
   A[init_logging] --> B[build_storage]
   B --> C[ServerSharedState]
-  C --> D{cluster CLI?}
-  D -->|是| E[init_cluster await]
-  D -->|否| F[Server::run]
+  C --> D{"cluster CLI?"}
+  D -->|是| E["init_cluster await"]
+  D -->|否| F["Server::run"]
   E --> F
-  B --> G[MemoryEngine | AiDbEngine]
-  G --> H{cluster+aidb?}
-  H -->|是| I[ClusterDataAdapter 包裹]
+  B --> G["MemoryEngine | AiDbEngine"]
+  G --> H{"cluster+aidb?"}
+  H -->|是| I["ClusterDataAdapter 包裹"]
 ```
 
 1. `build_storage`: `MemoryEngine` 或 `AiDbEngine`; cluster+aidb 时 **`ClusterDataAdapter` 包裹** → `KvStorageAdapter`.

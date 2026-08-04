@@ -128,7 +128,7 @@ sequenceDiagram
   else Moved/Ask/TryAgain
     R-->>C: -MOVED / -ASK / -TRYAGAIN (无服务端转发)
   end
-  C->>C: reset_asking; 跳过 MOVED/ASK commandstats
+  C->>C: reset_asking, 跳过 MOVED/ASK commandstats
 ```
 
 ### Slot 迁移 (Kv 侧协调)
