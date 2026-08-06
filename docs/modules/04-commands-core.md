@@ -43,7 +43,7 @@ flowchart TB
 | `CommandRouter::new(storage)` | 测试; 无 INFO/SAVE |
 | `CommandRouter::new_with_shared(storage, state)` | 生产; 注入 `ServerCommands` / `PersistenceCommands` / metrics |
 
-共享 **1024 桶** `KeyLock` 注入 String/Hash/List/Set/ZSet/Key/Json/Script handler.
+共享 **4096 桶** `KeyLock` 注入 String/Hash/List/Set/ZSet/Key/Json/Script handler.
 
 ## 代码地图
 
@@ -154,7 +154,7 @@ pub struct CommandInfo {
 | `lock_keys_sorted(keys)` | 多 key 字典序 (JSON.MSET 等; 无超时) |
 | `lock_keys_sorted_with_timeout(keys, timeout)` | 多 key 字典序 (EVAL/EVALSHA; 默认 30s) |
 
-分桶 `DefaultHasher(key) % 1024`; 避免同 key Mutex 重入死锁.
+分桶 `DefaultHasher(key) % locks.len()` (4096 桶); 避免同 key Mutex 重入死锁.
 
 ## 命令域速查
 

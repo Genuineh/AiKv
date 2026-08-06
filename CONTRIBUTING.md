@@ -65,7 +65,7 @@ sudo apt-get install -y protobuf-compiler
 | CI `test-cluster` | link aidb → fmt → clippy (cluster) → `cargo test --workspace --features cluster -- --test-threads=1` | push / PR |
 | CI `test-server-stress` | `--test server -- --ignored` (TCP 压测) | `test-cluster` 通过后 |
 | CI `test-commands-slow` | `--test commands -- --ignored` (TTL 慢测) | `test-cluster` 通过后 |
-| CI `e2e` | release 构建 + `e2e/test_cluster_*.sh` (需 redis-cli) | `test-cluster` 通过后 |
+| CI `e2e` | `pytest e2e/` (黑盒; 需 redis-cli + 已部署被测服务) | `test-cluster` 通过后 |
 | Security | `cargo audit` + `cargo deny check` | push / PR / 每日 cron |
 
 Security ([`.github/workflows/security.yml`](.github/workflows/security.yml)) 与主 CI **并行、互不阻塞**. 同一分支新 push 会 cancel 未完成的旧 CI run.
@@ -165,30 +165,22 @@ cargo test --workspace --features cluster -- --test-threads=1
 
 ### E2E
 
-**pytest (新用例优先)** — 单节点 memory smoke, 需 `redis-cli` + Python 3.10+:
+**pytest (黑盒, 新用例优先)** — 连接已部署被测服务 (单机或集群均可), 需 `redis-cli` + [uv](https://github.com/astral-sh/uv):
 
 ```bash
-pip install -r e2e/requirements.txt
-pytest e2e/ -v
+uv venv .venv-e2e
+uv pip install -r e2e/requirements.txt --python .venv-e2e
+pytest e2e/function/ -v
 ```
 
-文件放 `e2e/test_*.py`; 文件头 `# @component aikv-{domain}` (与 test-ui B2-v1 一致). 慢/压测用 `@pytest.mark.slow` / `@pytest.mark.stress`. 详见 [e2e/README.md](e2e/README.md).
+文件放 `e2e/function/{domain}/test_*.py` (四维度: `command` / `crash` / `migration` / `failover`); 文件头 `# @component aikv-{domain}` + `# @title` (与 test-ui B2-v1 一致). 慢/压测用 `@pytest.mark.slow` / `@pytest.mark.stress`. 详见 [e2e/README.md](e2e/README.md).
 
-**shell (存量)** — 本地需 `redis-cli`; 多数脚本用 memory 引擎:
-
-```bash
-cargo build --release --features cluster
-chmod +x e2e/*.sh
-./e2e/test_basic.sh
-# … 共 21 个 test_*.sh, 见 e2e/README.md
-```
-
-**CI `e2e` job**: `e2e/test_cluster_*.sh` (9 个) + `pytest e2e/`. Cluster shell: formation, routing, slots, failover, forget, announce, 3node_routing, data_consistency, aidb_persistence.
+**CI `e2e` job**: `pytest e2e/` (黑盒); 历史 cluster shell 用例 (`test_cluster_*.sh`) 已迁移为 pytest.
 
 | 场景 | 落点 |
 |------|------|
-| 单节点 TCP smoke | `e2e/test_*.py` (pytest) |
-| 多节点集群 / failover | `e2e/test_cluster_*.sh` (shell, 暂不重写) |
+| 单节点 TCP smoke | `e2e/function/command/` (pytest) |
+| 多节点集群 / failover | `e2e/function/failover/`、`e2e/function/migration/` (pytest) |
 
 Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/README.md](e2e/README.md).
 

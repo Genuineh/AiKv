@@ -13,10 +13,10 @@ AiKv 是用 Rust 实现的 **Redis RESP 兼容 KV 服务** (bin + lib). 对外�
 | 类型编码 | `StoredValue` / `ValueType` → 扁平 key `{db}:{user_key}` | 字节 KV + tombstone |
 | 单机存储 | `MemoryEngine` 或 `AiDbEngine` (`spawn_blocking`) | `DB::put/get/...`, MVCC, LSM |
 | 集群客户端 | MOVED/ASK, CLUSTER *, ASKING/READONLY | — |
-| 集群共识 | `init_cluster` wiring + `ClusterStateManager` | MetaRaft, Multi-Raft, Router, slot 迁移 |
+| 集群共识 | `init_cluster` wiring + `ClusterStateManager` | MetaRaft, MultiRaft, Router, slot 迁移 |
 | 数据面写 | `ClusterDataAdapter` → `propose_group` | `OpenRaftNode` + `ShardedStorage` |
 | 持久化 | `SAVE`/`BGSAVE` → `Checkpoint` (aidb 路径) | WAL, flush, `Checkpoint::create` |
-| 指标 | HTTP `/metrics`, `aikv_*`; `aidb::metrics::register_into` | `aidb_*` 库内系列 |
+| 指标 | OTLP `aikv_*` + `aidb_*` (global MeterProvider); HTTP 仅 `/health` | `aidb_*` 库内系列 (`init`/`init_otel`) |
 
 **分工原则**: Redis 协议与命令在 AiKv; LSM 写路径、Raft 状态机、slot 表与 gRPC 在 AiDb. AiKv 侧 **拓扑 tick** 刷新 leader 路由缓存与 gossip metrics; `CLUSTER NODES` 读 MetaRaft; 故障判定走 MetaRaft, 非 Redis 16379 gossip 共识.
 
@@ -197,7 +197,7 @@ flowchart LR
 
 1. `build_storage`: `MemoryEngine` 或 `AiDbEngine`; cluster+aidb 时 **`ClusterDataAdapter` 包裹** → `KvStorageAdapter`.
 2. **[cluster]** `--cluster-node-id` + `--cluster-rpc-addr` → **`init_cluster` 同步 await** (确保 `CLUSTER_STATE_MGR` 就绪).
-3. **[monitoring]** spawn `MetricsServer` + 后台 refresh; `aidb::metrics::register_into`.
+3. **[monitoring]** spawn `MetricsServer` (仅 `/health`) + 后台 refresh; `aidb::metrics::init()` (otel.rs:199, 绑定 global OTel Meter).
 4. `Server::run` 进入 accept 循环.
 
 细节: [server.md](docs/modules/02-server.md), [storage.md](docs/modules/03-storage.md).
@@ -250,7 +250,7 @@ MetaRaft/MultiRaft/Router 实现见 [aidb cluster.md](../aidb/docs/modules/03-cl
 ### 可观测性
 
 - **Tracing**: 始终编译; 命令/连接 span.
-- **Prometheus / OTel**: `monitoring` feature; HTTP `/metrics` 在 AiKv; `aidb_*` 经 `register_into`.
+- **OTel**: `monitoring` feature; OTLP 导出在 AiKv; `aidb_*` 经 `aidb::metrics::init()` 与 `aikv_*` 共用出口; HTTP 仅 `/health`.
 - **INFO / SLOWLOG / LATENCY**: 数据结构在 `server/*`; 命令 dispatch 在 [commands-extended.md](docs/modules/05-commands-extended.md).
 
 详情: [observability.md](docs/modules/07-observability.md).
@@ -262,7 +262,7 @@ AiKv 通过 `Cargo.toml` `aidb = { path = "../aidb" }` 依赖 AiDb:
 1. **单机**: `AiDbEngine::open` 包装 `DB`; 用户 key 编码 `{db_index}:{user_key}`; 同步 I/O 经 `spawn_blocking`.
 2. **集群**: `main::init_cluster` 启动 MetaRaft/MultiRaft; `ClusterDataAdapter` 将已分配 slot 的写路由到数据面 Raft; MOVED/ASK 与 CLUSTER 子命令留在 aikv `cluster/`.
 3. **存在性/删除**: 须走 AiDb `DB::get` 与 tombstone 规则, 不在 storage adapter 绕过.
-4. **指标**: 启动时 `aidb::metrics::register_into`; HTTP 暴露在 aikv `MetricsServer`.
+4. **指标**: 启动时 `aidb::metrics::init()` (otel.rs); `aidb_*` 与 `aikv_*` 同出 OTLP; aikv `MetricsServer` 仅 `/health`.
 
 AiDb 侧总览: [aidb/ARCHITECTURE.md](../aidb/ARCHITECTURE.md).
 
@@ -270,7 +270,7 @@ AiDb 侧总览: [aidb/ARCHITECTURE.md](../aidb/ARCHITECTURE.md).
 
 - **协议与存储解耦**: `KvStorage` trait; memory/aidb 可切换; 命令层不感知 LSM.
 - **RESP 双版本**: RESP2 默认兼容; HELLO 协商 RESP3 — 详见 [DESIGN.md](DESIGN.md).
-- **集群**: 同一二进制, `#[cfg(feature = "cluster")]`; Redis Cluster 客户端协议 + AiDb MetaRaft/Multi-Raft.
+- **集群**: 同一二进制, `#[cfg(feature = "cluster")]`; Redis Cluster 客户端协议 + AiDb MetaRaft/MultiRaft.
 - **async + blocking 分离**: Tokio 服务层; AiDb 同步 API 在 blocking pool.
 
 完整决策与 trade-off 见 [DESIGN.md](DESIGN.md).

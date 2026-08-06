@@ -31,7 +31,7 @@ Feature 组合、CLI 全表与集群多节点示例见 [DEPLOYMENT.md](DEPLOYMEN
 
 ## 与 AiDb
 
-[AiDb](../aidb/) 提供同步 LSM 引擎与 MetaRaft/Multi-Raft 共识; AiKv 在其上实现 TCP、Redis 命令与 Cluster **客户端协议**. Monorepo 内 `aidb = { path = "../aidb" }`; 本地开发需 sibling 布局 `../aidb`.
+[AiDb](../aidb/) 提供同步 LSM 引擎与 MetaRaft/MultiRaft 共识; AiKv 在其上实现 TCP、Redis 命令与 Cluster **客户端协议**. Monorepo 内 `aidb = { path = "../aidb" }`; 本地开发需 sibling 布局 `../aidb`.
 
 ## 快速开始
 
@@ -69,13 +69,13 @@ cargo run --example basic
 
 ## E2E 测试
 
-基于 `redis-cli` 的 shell smoke 测试 (需先 `cargo build --release --features cluster`):
+基于 pytest 的黑盒测试 (需已部署被测服务 + `redis-cli`):
 
 ```bash
-./e2e/test_basic.sh
+pytest e2e/function/ -v
 ```
 
-详见 [e2e/README.md](e2e/README.md).
+用例按 `command` / `crash` / `migration` / `failover` 四维度组织. 详见 [e2e/README.md](e2e/README.md).
 
 ## 文档
 

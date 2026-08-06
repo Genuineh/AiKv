@@ -73,7 +73,7 @@ flowchart TB
 | `cluster/replication.rs` | HELLO/INFO role 标签 | `node_replication_role` |
 | `command/router.rs` | 普通命令 cluster 前置 + `CLUSTER` dispatch | `cluster_route`, `execute_with_client` |
 | `server/connection.rs` | ASKING/READONLY/READWRITE; 传/重置 asking | `Connection::run` |
-| `main.rs` | CLI + `init_cluster` + `build_storage` 包 adapter | `init_cluster` (~L209–501) |
+| `main.rs` | CLI + `init_cluster` + `build_storage` 包 adapter | `init_cluster` (main.rs L246–545) |
 
 > 实现文件为 `cluster/commands.rs`, **非** `command/cluster_commands.rs`.
 
@@ -241,7 +241,7 @@ AiKv 集群元数据由 **MetaRaft 共识** 维护, 非 Redis 式每节点本地
 | 场景 | 替代步骤 |
 |------|----------|
 | 单节点重初始化 | 停进程 → `rm -rf <data_dir>/*` → 重启 (bootstrap: `--cluster-peers` 空; join: 带 peers) |
-| 全集群重搭 | 所有节点停服 → 各节点清 `data_dir` → 按 e2e 流程 MEET + ADDSLOTS (参考 `e2e/test_cluster_formation.sh`) |
+| 全集群重搭 | 所有节点停服 → 各节点清 `data_dir` → 按 e2e 流程 MEET + ADDSLOTS (参考 `e2e/function/` pytest 套件, 如 [failover](../../e2e/function/failover/test_failover.py)) |
 | slot 冲突 / 重复分配 | MetaRaft leader 上 `CLUSTER DELSLOTS` / `FORGET`; 严重则全量清 data_dir |
 | 仅清连接 ephemeral | 重启进程 (清 `importing_slots`、ASKING 等) |
 
@@ -268,10 +268,9 @@ cargo test --features cluster -p aikv --test cluster_routing
 cargo test --features cluster -p aikv --test cluster_commands
 cargo test --features cluster -p aikv --test cluster_creategroup
 
-# e2e
-./e2e/test_cluster_formation.sh
-./e2e/test_cluster_routing.sh
-./e2e/test_cluster_failover.sh
+# e2e (pytest, 黑盒; 需已部署被测服务)
+pytest e2e/function/failover -v   # 故障切换
+pytest e2e/function/migration -v  # 槽位迁移
 ```
 
 ## 已知限制

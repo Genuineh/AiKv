@@ -69,15 +69,13 @@ cargo test --test server --features cluster -- --ignored --test-threads=1
 cargo test --test commands --features cluster -- --ignored --test-threads=1
 ```
 
-E2E (需 `redis-cli`; CI job `e2e`):
+E2E (黑盒; CI job `e2e` 跑 `pytest e2e/`):
 
 ```bash
-cargo build --release --features cluster
-chmod +x e2e/*.sh
-./e2e/test_cluster_formation.sh
+pytest e2e/function/ -v   # 需先部署被测服务 (单机或集群)
 ```
 
-见 [e2e/README.md](e2e/README.md). **`monitoring` 无独立 CI job** — 本地可 `cargo build --features cluster,monitoring`.
+见 [e2e/README.md](e2e/README.md). `monitoring,cluster` 组合的 CI 步骤 (`Clippy monitoring` / `Test monitoring`) 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml); 本地可 `cargo build --features cluster,monitoring`.
 
 ## Monorepo 布局
 
@@ -130,8 +128,15 @@ chmod +x e2e/*.sh
 | `AIKV_DEPLOYMENT_ENV` | — | `OTEL_DEPLOYMENT_ENVIRONMENT` 的 aikv fallback |
 | `AIKV_CLIENT_ADDR` | 从 rpc host + `--bind` port 推导 | 外部可达 `host:port` → MetaRaft `client_addr` |
 | `AIKV_CLUSTER_ANNOUNCE_MODE` | 默认 `unknown` | `fixed` \| `unknown` — MOVED / CLUSTER SLOTS 通告; 见 [cluster.md](docs/modules/06-cluster.md) |
+| `AIKV_HOST_LABEL` | 空 | Resource `host.name` (与 Alloy HOST_LABEL 对齐) |
+| `AIKV_NODE_ID` | — | Resource `node_id` + `service.instance.id` (或 `--cluster-node-id`) |
+| `OTEL_RESOURCE_ATTRIBUTES` | 空 | 追加 Resource 键值 (`k=v,k2=v2`) |
+| `OTEL_SERVICE_NAME` | `aikv` | Resource `service.name` |
+| `AIKV_OTEL_SAMPLE_RATIO` | `1.0` | Trace 采样率 0.0-1.0; 非法输入回退 1.0 |
 
-E2E 可选: `AIKV_HOST`, `AIKV_PORT`, `AIKV_CLUSTER_BASE_PORT` ([e2e/old/utils.sh](e2e/old/utils.sh); 活跃黑盒见 [e2e/README.md](e2e/README.md)).
+> env 表权威: [observability.md](docs/modules/07-observability.md) §配置 (避免双表分叉).
+
+E2E 黑盒 fixture 读 `AIKV_HOST` / `AIKV_PORT`; 详见 [e2e/README.md](e2e/README.md).
 
 > `AIKV_AIDB_PRESET` 不是 aikv 进程直接读取的环境变量 (aikv 只认 `--aidb-preset` CLI). Docker 部署时在 compose `environment` 或 `aifactory/scripts/utils/entrypoint.sh` 层透传为 CLI. aifactory [`.env.example`](../aifactory/.env.example) 仅配置镜像与远程主机 (OTel 等由脚本默认).
 
@@ -345,7 +350,7 @@ CMD ["aikv", "--bind", "0.0.0.0:6379", "--engine", "aidb", \
 
 真实生产镜像见上节 **AiFactory 部署**; 以下为最小自建 Dockerfile 参考 (不含 compose 与集群引导脚本).
 
-集群 compose 需为每节点映射 RESP、RPC、data 端口及独立 `--data-dir`; 可参考 [e2e/old/utils.sh](e2e/old/utils.sh) 端口间距.
+集群 compose 需为每节点映射 RESP、RPC、data 端口及独立 `--data-dir`; 端口间距约定见 `../aifactory/scripts/up-cluster.sh` 与 [e2e/README.md](e2e/README.md).
 
 ## 相关文档
 

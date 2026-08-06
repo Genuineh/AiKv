@@ -326,6 +326,10 @@ Grafana 面板 description 与 PromQL 见 AiFactory [`aikv-cluster.json`](../../
 
 ### Trace span (`kv_command` / `kv_connection`)
 
+**热路径 span 级别硬约束**: 入口 `kv_command`/`cmd_string` 及 IO/存储子 span (`kv_read`/`kv_parse`/`kv_write`/`kv_encode`、`kv_cluster_route`/`kv_cluster_cross_slot`、`mem_engine_*`) 一律 `#[instrument(level = "debug")]` — 生产默认 `RUST_LOG=info` 不创建热路径 span, 避免进入 OTel layer 造成开销 (AGENTS.md:66 硬约束). 由契约测试 `test_hot_path_span_level_debug` 源码扫描强制.
+
+**SDK 采样**: `AIKV_OTEL_SAMPLE_RATIO` 经 `Sampler::ParentBased(TraceIdRatioBased(ratio))` 注入 `SdkTracerProvider` — 父 span 已采样则子 span 必采样; 与 Collector `tail_sampling` 构成两层采样 (见下). 采样率解析由 `test_sample_ratio_parse` 契约覆盖.
+
 | 字段 | 说明 |
 |------|------|
 | `otel.kind` | `server` |
@@ -357,7 +361,7 @@ cargo test -p aikv --features cluster gossip_refresh -- --test-threads=1
 
 | 测试 | 覆盖 |
 |------|------|
-| `tests/modules/server/observability.rs` | 连接计数、/health(404 /metrics)、INFO↔atomics; OTel testutil 指标 catalog |
+| `tests/modules/server/observability.rs` | 连接计数、/health(404 /metrics)、INFO↔atomics; OTel testutil 指标 catalog; **热路径 span debug 契约** (`test_hot_path_span_level_debug`)、`AIKV_OTEL_SAMPLE_RATIO` 解析契约 (`test_sample_ratio_parse`) |
 | `tests/modules/command/info_golden.rs` | Redis 7 P0 字段 |
 | `tests/modules/command/info_alignment.rs` | memory 非 placeholder、stats 字段 |
 | `tests/modules/cluster/observability.rs` | gossip → cluster_messages |
