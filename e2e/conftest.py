@@ -13,9 +13,6 @@ _E2E = Path(__file__).resolve().parent
 if str(_E2E) not in sys.path:
     sys.path.insert(0, str(_E2E))
 
-# 不收集 e2e/old/ 下的旧资产
-collect_ignore_glob = ["old/*"]
-
 from harness.client import require_redis_cli  # noqa: E402
 from harness.node import Node, connect_external  # noqa: E402
 

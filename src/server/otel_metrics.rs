@@ -486,15 +486,15 @@ impl OtelMetrics {
 
     /// 遍历 command totals, 对 ok/err/usec/slowlog 分别 delta 到 OTel.
     pub fn sync_commandstats(&self, metrics: &crate::server::metrics::ServerMetrics) {
-        let info_calls: u64 = metrics
-            .client_command_totals()
+        let processed = metrics.total_commands_processed();
+        let all_calls: u64 = metrics
+            .all_command_totals()
             .iter()
             .map(|(_, totals)| totals.ok + totals.err)
             .sum();
-        let processed = metrics.total_commands_processed();
         debug_assert_eq!(
-            processed, info_calls,
-            "total_commands_processed must match sum of client commandstats calls"
+            processed, all_calls,
+            "total_commands_processed must match sum of all commandstats calls"
         );
 
         let mut snap = self.sync_snapshot.lock();
