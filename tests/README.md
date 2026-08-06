@@ -8,7 +8,7 @@
 | `cargo test --test server` | L2: TCP listener + 内联命令 + Phase 9 SET/GET/SELECT/EXPIRE |
 | `cargo test --test storage` | L1: MemoryEngine 读写/过期/scan/glob/并发 |
 | `cargo test --test commands` | L1: CommandRouter 全命令族 |
-| `cargo test --test cluster_info_golden` | L1: CLUSTER INFO Redis 8.8 字段 golden (独立 binary, 进程隔离) |
+| `cargo test --features cluster --test cluster_info_golden` | L1: CLUSTER INFO Redis 8.8 字段 golden (独立 binary, 进程隔离) |
 | `cargo test -- --test-threads=1` | 全量串行 (CI 推荐) |
 
 ## 测试写法与范围 (硬性)
