@@ -8,6 +8,7 @@
 | `cargo test --test server` | L2: TCP listener + 内联命令 + Phase 9 SET/GET/SELECT/EXPIRE |
 | `cargo test --test storage` | L1: MemoryEngine 读写/过期/scan/glob/并发 |
 | `cargo test --test commands` | L1: CommandRouter 全命令族 |
+| `cargo test --test cluster_info_golden` | L1: CLUSTER INFO Redis 8.8 字段 golden (独立 binary, 进程隔离) |
 | `cargo test -- --test-threads=1` | 全量串行 (CI 推荐) |
 
 ## 测试写法与范围 (硬性)
@@ -116,3 +117,16 @@ cargo test --test server --features cluster -- --ignored --test-threads=1
 cargo test --test commands --features cluster -- --ignored --test-threads=1
 cargo test --test stress_ttl --features cluster -- --ignored --test-threads=1
 ```
+
+## 测试隔离约束: CLUSTER_STATE_MGR 全局污染 (2026-08-06)
+
+`CLUSTER_STATE_MGR` 是 OnceLock 一次性全局单例. `tests/commands.rs` binary 内
+任何测试若调用 `CLUSTER_STATE_MGR.set(...)`, 会永久污染同进程后续所有命令测试:
+临时服务器被误判为集群模式, 命令报 `slot N is not allocated to any group`,
+曾导致 MIGRATE 3 测 + atom_json_batch 5 测失败.
+
+约束:
+1. `tests/commands.rs` binary (`tests/modules/command/*`) 禁止 set 全局集群状态.
+2. 需要集群状态的 golden 测试放独立 test binary (如 `tests/cluster_info_golden.rs`),
+   依赖 cargo auto-discovery 的进程隔离.
+3. 新增 set 全局状态的测试前, 先确认目标 binary 内没有依赖「未初始化全局」的测试.
