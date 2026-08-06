@@ -193,6 +193,94 @@ fn test_span_naming() {
     );
 }
 
+/// 热路径 span 必须显式 `level = "debug"` (AGENTS.md 硬约束).
+///
+/// 无 `level` 参数时 tracing 默认 Info, 生产 `RUST_LOG=info` 会创建 span 并进入
+/// OTel, 是 Phase 2 profiling 定位到的集群压测性能主因 (E15 + connection 层).
+#[test]
+fn test_hot_path_span_level_debug() {
+    let kv_src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+
+    let hot_paths: &[(&str, &str)] = &[
+        // 入口 span (AGENTS.md:66 强制): 每条命令必经
+        ("command/router.rs", "name = \"kv_command\""),
+        ("command/string.rs", "name = \"cmd_string\""),
+        // 每条命令 I/O 必经路径
+        ("server/connection.rs", "name = \"kv_read\""),
+        ("server/connection.rs", "name = \"kv_parse\""),
+        ("server/connection.rs", "name = \"kv_write\""),
+        ("server/connection.rs", "name = \"kv_encode\""),
+        // 集群路由决策 (每条命令)
+        ("cluster/router.rs", "name = \"kv_cluster_route\""),
+        ("cluster/router.rs", "name = \"kv_cluster_cross_slot\""),
+        // 默认引擎 (MemoryEngine) 每条命令
+        ("storage/memory.rs", "name = \"mem_engine_get\""),
+        ("storage/memory.rs", "name = \"mem_engine_set\""),
+        ("storage/memory.rs", "name = \"mem_engine_del\""),
+        ("storage/memory.rs", "name = \"mem_engine_expire\""),
+    ];
+
+    let mut violations = Vec::new();
+    for (rel, anchor) in hot_paths {
+        let path = kv_src.join(rel);
+        let content =
+            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path:?} failed: {e}"));
+        match instrument_attr_before(&content, anchor) {
+            Some(attr) => {
+                if !attr.contains("level = \"debug\"") {
+                    violations.push(format!("{rel} @ {anchor}\n  -> {attr}"));
+                }
+            }
+            None => violations.push(format!("{rel} @ {anchor}: instrument attr not found")),
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "热路径 span 必须显式 level = \"debug\" (AGENTS.md 硬约束), 否则生产 \
+         RUST_LOG=info 下会创建 span 并进入 OTel:\n{}",
+        violations.join("\n")
+    );
+}
+
+/// 采样率解析契约: `AIKV_OTEL_SAMPLE_RATIO` 合法范围 0.0-1.0, 非法输入回退 1.0.
+#[cfg(feature = "monitoring")]
+#[test]
+fn test_sample_ratio_parse() {
+    use aikv::server::otel::parse_sample_ratio;
+
+    assert_eq!(parse_sample_ratio("1"), 1.0);
+    assert_eq!(parse_sample_ratio("0.1"), 0.1);
+    assert_eq!(parse_sample_ratio("0"), 0.0);
+    assert_eq!(parse_sample_ratio("0.5"), 0.5);
+    assert_eq!(parse_sample_ratio(" 0.5 "), 0.5);
+    assert_eq!(parse_sample_ratio("+0.5"), 0.5);
+    // 非法/越界 → 回退 1.0
+    assert_eq!(parse_sample_ratio(""), 1.0);
+    assert_eq!(parse_sample_ratio("abc"), 1.0);
+    assert_eq!(parse_sample_ratio("-0.5"), 1.0);
+    assert_eq!(parse_sample_ratio("1.5"), 1.0);
+    assert_eq!(parse_sample_ratio("2"), 1.0);
+    assert_eq!(parse_sample_ratio("NaN"), 1.0);
+    assert_eq!(parse_sample_ratio("inf"), 1.0);
+}
+
+/// 返回锚点文本之前的最近一个 instrument 属性文本.
+fn instrument_attr_before(content: &str, anchor: &str) -> Option<String> {
+    let anchor_pos = content.find(anchor)?;
+    let prefix = &content[..anchor_pos];
+    let start = [
+        prefix.rfind("#[tracing::instrument"),
+        prefix.rfind("#[instrument"),
+    ]
+    .into_iter()
+    .flatten()
+    .max()?;
+    let attr = &content[start..];
+    let end = attr.find(']')?;
+    Some(attr[..=end].to_string())
+}
+
 /// 递归搜索文件中是否包含指定字符串。
 fn walk_grep(dir: &std::path::Path, pattern: &str) -> Result<bool, std::io::Error> {
     if !dir.is_dir() {

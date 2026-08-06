@@ -381,7 +381,7 @@ impl Connection {
         Ok(())
     }
 
-    #[instrument(name = "kv_read", skip(self, buf))]
+    #[instrument(level = "debug", name = "kv_read", skip(self, buf))]
     async fn read_buf(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let n = self.stream.read(buf).await?;
         if n > 0 {
@@ -391,7 +391,12 @@ impl Connection {
         Ok(n)
     }
 
-    #[instrument(name = "kv_parse", skip(self), fields(frame_size, resp_version))]
+    #[instrument(
+        level = "debug",
+        name = "kv_parse",
+        skip(self),
+        fields(frame_size, resp_version)
+    )]
     async fn parse_frame(&mut self) -> Result<Option<RespValue>> {
         let before = self.parser.buffer_len();
         let result = self.parser.parse();
@@ -989,7 +994,12 @@ impl Connection {
         self.write_response(RespValue::Error(msg)).await
     }
 
-    #[instrument(name = "kv_write", skip(self, value), fields(response_size))]
+    #[instrument(
+        level = "debug",
+        name = "kv_write",
+        skip(self, value),
+        fields(response_size)
+    )]
     async fn write_response(&mut self, value: RespValue) -> Result<()> {
         let bytes = self.encode(&value);
         tracing::Span::current().record("response_size", bytes.len());
@@ -999,7 +1009,12 @@ impl Connection {
         Ok(())
     }
 
-    #[instrument(name = "kv_encode", skip(self, value), fields(value_type))]
+    #[instrument(
+        level = "debug",
+        name = "kv_encode",
+        skip(self, value),
+        fields(value_type)
+    )]
     fn encode(&self, value: &RespValue) -> Bytes {
         // 仅 RESP3 协商后才做 null 适配, 否则直接序列化 (免克隆, F-034)
         let bytes = if self.protocol_negotiated && self.protocol_version == ProtocolVersion::Resp3 {

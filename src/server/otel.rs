@@ -7,7 +7,7 @@ use opentelemetry::global;
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
-use opentelemetry_sdk::trace::SdkTracerProvider;
+use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider};
 use opentelemetry_sdk::Resource;
 
 static TRACER_PROVIDER: OnceLock<SdkTracerProvider> = OnceLock::new();
@@ -23,10 +23,26 @@ pub struct OtelInitConfig {
     pub tcp_port: u16,
     pub deployment_environment: Option<String>,
     pub extra_resource_attrs: Vec<KeyValue>,
+    /// Trace 采样率 (0.0-1.0), 由 `AIKV_OTEL_SAMPLE_RATIO` 控制, 默认 1.0.
+    pub sample_ratio: f64,
 }
 
 fn env_nonempty(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|v| !v.is_empty())
+}
+
+/// 解析采样率 (0.0-1.0). 非法输入回退 1.0 (保持全采样, 不静默丢 trace).
+pub fn parse_sample_ratio(raw: &str) -> f64 {
+    match raw.trim().parse::<f64>() {
+        Ok(r) if r.is_finite() && (0.0..=1.0).contains(&r) => r,
+        _ => {
+            eprintln!(
+                "warn: invalid AIKV_OTEL_SAMPLE_RATIO value {:?}, falling back to 1.0 (full sampling)",
+                raw
+            );
+            1.0
+        }
+    }
 }
 
 /// 解析 `OTEL_RESOURCE_ATTRIBUTES` (key=value,key2=value2).
@@ -97,6 +113,9 @@ pub fn otel_config_from_env(
     let extra_resource_attrs = env_nonempty("OTEL_RESOURCE_ATTRIBUTES")
         .map(|raw| parse_resource_attributes(&raw))
         .unwrap_or_default();
+    let sample_ratio = env_nonempty("AIKV_OTEL_SAMPLE_RATIO")
+        .map(|v| parse_sample_ratio(&v))
+        .unwrap_or(1.0);
     Some(OtelInitConfig {
         endpoint,
         service_name,
@@ -105,6 +124,7 @@ pub fn otel_config_from_env(
         tcp_port,
         deployment_environment,
         extra_resource_attrs,
+        sample_ratio,
     })
 }
 
@@ -140,6 +160,11 @@ pub fn init_otel(config: &OtelInitConfig) -> bool {
     };
 
     let tracer_provider = SdkTracerProvider::builder()
+        // 默认 ParentBased(AlwaysOn) 会全量导出 span; 经 AIKV_OTEL_SAMPLE_RATIO
+        // 可降采样, 减少 SDK→Collector 传输与 BatchSpanProcessor 开销.
+        .with_sampler(Sampler::ParentBased(Box::new(Sampler::TraceIdRatioBased(
+            config.sample_ratio,
+        ))))
         .with_batch_exporter(span_exporter)
         .with_resource(resource.clone())
         .build();

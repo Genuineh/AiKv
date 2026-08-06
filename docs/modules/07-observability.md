@@ -309,6 +309,7 @@ Grafana 面板 description 与 PromQL 见 AiFactory [`aikv-cluster.json`](../../
 | `AIKV_DEPLOYMENT_ENV` | env | `OTEL_DEPLOYMENT_ENVIRONMENT` 的 aikv fallback |
 | `OTEL_RESOURCE_ATTRIBUTES` | env | 追加 Resource 键值 (`k=v,k2=v2`) |
 | `OTEL_SERVICE_NAME` | env | Resource `service.name` (默认 `aikv`) |
+| `AIKV_OTEL_SAMPLE_RATIO` | env | Trace 采样率 0.0-1.0 (`[monitoring]`), 默认 1.0 (全采样); 非法输入回退 1.0. 降低可显著减少 SDK→Collector 传输与 BatchSpanProcessor 开销 |
 | `RUST_LOG` | env | tracing filter |
 
 ### OTel Resource (OTLP → Prom 标签)

@@ -148,7 +148,7 @@ fn glob_match_impl(pattern: &[u8], text: &[u8], pi: usize, ti: usize) -> bool {
 
 #[async_trait]
 impl KvStorage for MemoryEngine {
-    #[instrument(name = "mem_engine_get", skip(self, key), fields(db, key_size = key.len()))]
+    #[instrument(level = "debug", name = "mem_engine_get", skip(self, key), fields(db, key_size = key.len()))]
     async fn get(&self, db: usize, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let stored = self.get_typed(db, key).await?;
         match stored {
@@ -160,7 +160,7 @@ impl KvStorage for MemoryEngine {
         }
     }
 
-    #[instrument(name = "mem_engine_set", skip(self, key, value), fields(db, key_size = key.len(), value_size = value.len()))]
+    #[instrument(level = "debug", name = "mem_engine_set", skip(self, key, value), fields(db, key_size = key.len(), value_size = value.len()))]
     async fn set(&self, db: usize, key: &[u8], value: &[u8]) -> Result<()> {
         self.set_typed(db, key, StoredValue::string(value.to_vec()))
             .await
@@ -184,7 +184,7 @@ impl KvStorage for MemoryEngine {
         .await
     }
 
-    #[instrument(name = "mem_engine_del", skip(self, key), fields(db, key_size = key.len()))]
+    #[instrument(level = "debug", name = "mem_engine_del", skip(self, key), fields(db, key_size = key.len()))]
     async fn delete(&self, db: usize, key: &[u8]) -> Result<bool> {
         self.check_db(db)?;
         let mut map = self.databases[db].write();
@@ -322,7 +322,7 @@ impl KvStorage for MemoryEngine {
         Ok(())
     }
 
-    #[instrument(name = "mem_engine_expire", skip(self, key), fields(db, key_size = key.len()))]
+    #[instrument(level = "debug", name = "mem_engine_expire", skip(self, key), fields(db, key_size = key.len()))]
     async fn expire(&self, db: usize, key: &[u8], ttl_ms: u64) -> Result<bool> {
         self.check_db(db)?;
         let mut map = self.databases[db].write();
