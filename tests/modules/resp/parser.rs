@@ -256,6 +256,48 @@ fn test_parse_unknown_type_marker() {
     assert_eq!(got, RespValue::SimpleString("OK".into()));
 }
 
+/// 内联垃圾行 (非数组命令) 只报一次错误, 且错误后连接可复用.
+#[test]
+fn test_parse_inline_junk_reports_once_and_recovers() {
+    let mut parser = RespParser::new();
+    // 对应测试场景: 发送 telnet 式 PING\r\n, 期望 1 个错误后仍可解析数组 PING.
+    parser.feed(b"PING\r\n*1\r\n$4\r\nPING\r\n");
+
+    let first = parser.parse().unwrap_err();
+    assert!(
+        first.to_string().contains("unknown type marker"),
+        "expected unknown type marker, got: {first}"
+    );
+    // 修复前会对 P/I/N/G/\r/\n 逐个报错; 修复后只报一次并整行跳过.
+    assert_eq!(parser.buffer_len(), b"*1\r\n$4\r\nPING\r\n".len());
+
+    let second = parser.parse().unwrap();
+    assert_eq!(
+        second,
+        Some(RespValue::Array(Some(vec![RespValue::BulkString(Some(
+            Bytes::copy_from_slice(b"PING")
+        ))])))
+    );
+    assert_eq!(parser.buffer_len(), 0);
+}
+
+/// 内联垃圾行不带 CRLF 结尾时 (分片), 仍只报一次错误且不死循环.
+#[test]
+fn test_parse_inline_junk_without_crlf_recovers() {
+    let mut parser = RespParser::new();
+    // 分片: 垃圾数据未带 CRLF 结尾
+    parser.feed(b"\xFFbad");
+    let first = parser.parse().unwrap_err();
+    assert!(first.to_string().contains("unknown type marker"));
+    // 无 \n 时消费整个 buffer, 避免对不完整行逐字节报错
+    assert_eq!(parser.buffer_len(), 0);
+
+    // 后续合法帧仍可解析
+    parser.feed(b"+OK\r\n");
+    let next = parser.parse().unwrap();
+    assert_eq!(next, Some(RespValue::SimpleString("OK".into())));
+}
+
 #[test]
 fn test_parse_depth_limit() {
     let mut parser = RespParser::with_limits(1024, 1024 * 1024, 2, 1024, 1024);
