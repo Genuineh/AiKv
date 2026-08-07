@@ -53,7 +53,7 @@ use tracing::instrument;
 
 use crate::command;
 use crate::error::{Error, Result};
-use crate::protocol::{ProtocolVersion, RespParser, RespValue};
+use crate::protocol::{is_fatal_protocol, ProtocolVersion, RespParser, RespValue};
 use crate::server::config::ServerSharedState;
 use crate::storage::dump::{decode as dump_decode, encode as dump_encode};
 use crate::storage::StoredValue;
@@ -1356,18 +1356,6 @@ fn extract_bulk(value: &RespValue) -> Option<Bytes> {
         RespValue::BulkString(Some(b)) => Some(b.clone()),
         RespValue::BulkString(None) => Some(Bytes::new()),
         _ => None,
-    }
-}
-
-fn is_fatal_protocol(err: &Error) -> bool {
-    match err {
-        Error::Protocol(msg) => {
-            msg.contains("depth")
-                || msg.contains("too large")
-                || msg.contains("buffer size")
-                || msg.contains("line too long")
-        }
-        _ => false,
     }
 }
 

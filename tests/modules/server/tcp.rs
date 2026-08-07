@@ -408,3 +408,19 @@ async fn test_tcp_rejects_inline_ping() {
     let pong = read_response(&mut stream).await;
     assert_eq!(pong, b"+PONG\r\n");
 }
+
+/// 畸形长度类输入 ($-2\r\n) 是不可恢复协议错误, 服务端必须断连,
+/// 不能对同一 buffer 死循环写错误 (ISSUE-026).
+#[tokio::test]
+async fn test_tcp_fatal_protocol_error_closes_connection() {
+    let (addr, _handle) = start_server().await;
+    let mut stream = connect(addr).await;
+    stream.write_all(b"$-2\r\n").await.unwrap();
+    // 修复前: 服务端对同一 buffer 无限写错误; 修复后: 断连, 收到 EOF.
+    let resp = read_all_available(&mut stream).await;
+    assert!(
+        resp.len() < 1024,
+        "不可恢复协议错误应关闭连接而非堆积错误, got {} bytes",
+        resp.len()
+    );
+}

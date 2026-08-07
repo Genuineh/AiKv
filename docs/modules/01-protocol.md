@@ -29,7 +29,7 @@ description: AiKv RESP2/RESP3 编解码 — RespValue、RespParser feed/parse、
 - **单帧语义**: 每次 `parse()` 至多消费 buffer 头部 **一个** 完整顶层 `RespValue`; pipeline 由调用方循环 `parse()` (见 [server.md](02-server.md)).
 - **不完整不消费**: 数据不足 → `Ok(None)`, cursor 回退, buffer 保留待 `feed`.
 - **可恢复错误**: `is_recoverable` 命中时返回 `Err`, 调用方可写 ERR 响应并继续 (fatal 判定在 server). 其中 `unknown type marker` 跳过**整行** (消费到第一个 `\n`, 无 `\n` 则消费整个 buffer), 其余错误跳过 1 字节; 避免对垃圾输入逐字节报错.
-- **不可恢复错误**: depth / too large / line too long / length 类错误不 advance; server 应断连.
+- **不可恢复错误**: 非 recoverable 的错误 (depth / too large / length 类 / malformed) 不 advance buffer; 由 `is_fatal_protocol` (parser 单一来源, server 复用) 判定, server 收到后**断连**, 避免对同一 buffer 死循环写错误 (见 ISSUES.md#ISSUE-026).
 - **默认 limits**: 见下表; 生产路径 `RespParser::new()` 使用默认值.
 - **命令请求形态**: AiKv 期望顶层 `Array` of bulk strings; 由 `server::process_value` 校验, parser 不 enforce.
 

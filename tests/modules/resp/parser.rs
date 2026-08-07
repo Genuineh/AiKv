@@ -1,7 +1,7 @@
 //! RESP Parser roundtrip 与边界测试 (Step 2)
 //! @component aikv-resp
 
-use aikv::protocol::{RespParser, RespValue};
+use aikv::protocol::{is_fatal_protocol, RespParser, RespValue};
 use bytes::Bytes;
 
 fn roundtrip(value: RespValue) {
@@ -294,6 +294,34 @@ fn test_parse_inline_junk_without_crlf_recovers() {
 
     // 后续合法帧仍可解析
     parser.feed(b"+OK\r\n");
+    let next = parser.parse().unwrap();
+    assert_eq!(next, Some(RespValue::SimpleString("OK".into())));
+}
+
+/// 不可恢复协议错误 (invalid bulk length) 不消费 buffer, 上层必须断连.
+#[test]
+fn test_fatal_protocol_error_does_not_consume_buffer() {
+    let mut parser = RespParser::new();
+    parser.feed(b"$-2\r\n*1\r\n$4\r\nPING\r\n");
+    let err = parser.parse().unwrap_err();
+    assert!(
+        err.to_string().contains("invalid bulk length"),
+        "expected invalid bulk length, got: {err}"
+    );
+    // 不可恢复错误不 advance, buffer 保留原样 (上层应断连, 否则死循环)
+    assert_eq!(parser.buffer_len(), b"$-2\r\n*1\r\n$4\r\nPING\r\n".len());
+    assert!(is_fatal_protocol(&err));
+}
+
+/// recoverable 错误 (unknown type marker) 非 fatal, 应跳过整行继续.
+#[test]
+fn test_unknown_marker_is_not_fatal() {
+    let mut parser = RespParser::new();
+    parser.feed(b"PING\r\n+OK\r\n");
+    let err = parser.parse().unwrap_err();
+    assert!(err.to_string().contains("unknown type marker"));
+    assert!(!is_fatal_protocol(&err));
+    // 整行被消费, 后续帧可解析
     let next = parser.parse().unwrap();
     assert_eq!(next, Some(RespValue::SimpleString("OK".into())));
 }

@@ -40,12 +40,13 @@
 
 ### ISSUE-026: 部分协议错误未判 fatal, 连接死循环写错误
 
-- **状态**: open
+- **状态**: closed
 - **发现于**: `test_tcp_rejects_inline_ping` 排查 (2026-08-07)
 - **相关 src**: `src/protocol/parser.rs` (`is_recoverable`), `src/server/connection.rs` (`is_fatal_protocol`)
 - **现象**: parser 判为不可恢复 (不 advance buffer) 的错误包括 `length overflow` / `invalid bulk length` / `invalid array length` / `length mismatch` / `malformed verbatim` 等; 而 server 层 `is_fatal_protocol` 只把 `depth / too large / buffer size / line too long` 判为 fatal. 客户端发 `$-2\r\n` 等输入时, parser 返回错误且不消费 buffer → server 不断连 → `run()` 内层循环反复 `parse → write_error → parse`, **死循环写错误**.
+- **修复**: parser 暴露结构化判定 `is_fatal_protocol` (= 非 recoverable), server 复用同一来源, 消除两处 contains 列表漂移; 畸形长度类错误触发断连. 回归测: `test_tcp_fatal_protocol_error_closes_connection` + parser 单测 `test_fatal_protocol_error_does_not_consume_buffer` / `test_unknown_marker_is_not_fatal`.
 - **影响**: 畸形长度类输入可导致单连接无限输出错误; 影响面限于该连接, 不涉及其他连接.
-- **下一步**: 待修 — 对齐 parser 不可恢复错误集合与 server `is_fatal_protocol` (可让 parser 暴露结构化判定, 替代字符串 contains).
+- **下一步**: 已修复, 待用户验收 (未 commit).
 
 ### ISSUE-025: OTel 无 CPU user/system 拆分
 

@@ -183,6 +183,16 @@ fn is_unknown_marker(err: &Error) -> bool {
     matches!(err, Error::Protocol(msg) if msg.starts_with("unknown type marker"))
 }
 
+/// 判定协议错误是否不可恢复 (fatal): parser 对这类错误不消费 buffer,
+/// 上层收到后应关闭连接. 与 `is_recoverable` 互补:
+/// recoverable 错误跳过输入后继续解析; fatal 错误保持 buffer 不变.
+///
+/// 单一来源: server 层直接复用本判定, 勿自行维护另一份 contains 列表,
+/// 否则 parser 不消费而 server 不断连会对同一 buffer 反复报错 (死循环).
+pub fn is_fatal_protocol(err: &Error) -> bool {
+    matches!(err, Error::Protocol(_)) && !is_recoverable(err)
+}
+
 fn parse_value(
     cursor: &mut Cursor<&[u8]>,
     depth: u8,
