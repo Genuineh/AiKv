@@ -152,8 +152,9 @@ Frozen: 写 TRYAGAIN, 读合并读. ReadyToCommit: 写 TRYAGAIN, 读纯 target.
 
 - **探活规则**: 仅对本节点是 leader 的 group 判定; 读 `RaftMetrics::last_quorum_acked`,
   距最近一次 quorum ack 超过 `lease` (= `--raft-election-timeout-max`, 默认 2000ms) →
-  该 group 已失去多数派. 判定/汇总为纯函数 `judge_leader_quorum` +
-  `derive_cluster_ok` (单测覆盖).
+  该 group 已失去多数派. **单节点 group (voters 仅自己) 恒为 self-quorum 直接判有效**
+  (openraft ≥alpha.32 无 follower 回复, 该时间戳会停滞). 判定/汇总为纯函数
+  `judge_leader_quorum` + `derive_cluster_ok` (单测覆盖).
 - **效果**:
   - 被隔离的少数派旧 leader 视角 `CLUSTER INFO` 的 `cluster_state` 报 `fail`.
   - 路由层拒绝**所有**数据访问 (读与写) → `CLUSTERDOWN` (Redis 语义:

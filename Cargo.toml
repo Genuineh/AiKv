@@ -50,8 +50,8 @@ clap = { version = "4", features = ["derive"] }
 mlua = { version = "0.10", features = ["lua54", "async", "send", "vendored"] }
 
 # Openraft
-openraft = { version = "0.10.0-alpha.31", optional = true }
-openraft-rt-tokio = { version = "0.10.0-alpha.31", optional = true }
+openraft = { version = "0.10.0-alpha.33", optional = true }
+openraft-rt-tokio = { version = "0.10.0-alpha.33", optional = true }
 
 # AiDb storage engine
 aidb = { path = "../aidb" }
