@@ -20,7 +20,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Once};
 use std::time::Duration;
 
@@ -108,6 +108,8 @@ fn ensure_remote_slot0_cluster_state() {
                     l.insert(1u64, false);
                     RwLock::new(l)
                 },
+                group_quorum_ok: RwLock::new(HashMap::new()),
+                cluster_state_ok: AtomicBool::new(true),
                 membership_coordinator: None,
                 slot_migration_manager: None,
                 data_dir: None,

@@ -3,7 +3,7 @@
 #[cfg(feature = "cluster")]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::atomic::AtomicU64;
+    use std::sync::atomic::{AtomicBool, AtomicU64};
     use std::sync::Arc;
 
     use parking_lot::RwLock;
@@ -99,6 +99,8 @@ mod tests {
                 l.insert(1u64, true);
                 RwLock::new(l)
             },
+            group_quorum_ok: RwLock::new(HashMap::new()),
+            cluster_state_ok: AtomicBool::new(true),
             membership_coordinator: None,
             slot_migration_manager: None,
             data_dir: None,
@@ -616,6 +618,53 @@ mod tests {
         // that the function does not panic/unwrap_err.
         let slots = aikv::cluster::cluster_slots();
         assert!(slots.is_ok(), "cluster_slots should not panic after init");
+
+        // ═══════════════════════════════════════════════════════════════
+        // 13. cluster_state:fail 门控 — 拒绝所有读写 (Redis 语义)
+        // ═══════════════════════════════════════════════════════════════
+        // 探活消费链路会经 apply_observed_group_quorum 派生该标志; 此处直接
+        // store(false) 模拟分区期探活判定失败, 断言路由层读写均返回 CLUSTERDOWN.
+        mgr_ref
+            .cluster_state_ok
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        let r = ClusterRouter::decide(b"x", CommandType::Read, false, false);
+        assert!(
+            matches!(&r, RouteDecision::ClusterDown(msg) if msg.contains("CLUSTERDOWN")),
+            "expected CLUSTERDOWN for read when cluster_state:fail, got {:?}",
+            r
+        );
+        let r = ClusterRouter::decide(b"x", CommandType::Write, false, false);
+        assert!(
+            matches!(&r, RouteDecision::ClusterDown(msg) if msg.contains("CLUSTERDOWN")),
+            "expected CLUSTERDOWN for write when cluster_state:fail, got {:?}",
+            r
+        );
+        // 迁移相位分支 (Frozen write → TryAgain) 也应被 fail 门控覆盖
+        mgr_ref
+            .meta_raft
+            .set_migration_state(Some(SlotMigrationState::Frozen {
+                source_group: 1,
+                target_group: 2,
+                slots: vec![0],
+            }));
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Write, false, false);
+        assert!(
+            matches!(&r, RouteDecision::ClusterDown(_)),
+            "fail gate must precede migration TRYAGAIN, got {:?}",
+            r
+        );
+        mgr_ref.meta_raft.set_migration_state(None);
+        // 恢复 → 路由恢复正常 (fail 门控解除). slot 0 在本测试中分配给了
+        // 本地 leader group 1 → Execute.
+        mgr_ref
+            .cluster_state_ok
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let r = ClusterRouter::decide(b"\x00\x00", CommandType::Write, false, false);
+        assert!(
+            matches!(r, RouteDecision::Execute),
+            "gate lifted after recovery, got {:?}",
+            r
+        );
     }
 
     // ── ClusterConnectionState ──

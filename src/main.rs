@@ -93,6 +93,13 @@ struct Args {
     #[arg(long, default_value = "500", verbatim_doc_comment)]
     raft_rpc_timeout_ms: u64,
 
+    /// MetaRaft RPC (Vote/AppendEntries) 超时 (ms), default 100.
+    /// 分区选举时 vote RPC 慢 → 超时 → 选举定时器提前触发 → term 膨胀活锁.
+    /// MetaRaft 与数据面使用独立超时: 数据面保留 raft-rpc-timeout-ms.
+    #[cfg(feature = "cluster")]
+    #[arg(long, default_value = "100", verbatim_doc_comment)]
+    meta_rpc_timeout_ms: u64,
+
     /// Raft heartbeat 间隔 (ms), default 300. 必须 < election_timeout_min
     #[cfg(feature = "cluster")]
     #[arg(long, default_value = "300")]
@@ -253,6 +260,7 @@ async fn init_cluster(
     raft_election_timeout_min: u64,
     raft_election_timeout_max: u64,
     raft_rpc_timeout_ms: u64,
+    meta_rpc_timeout_ms: u64,
     raft_heartbeat_interval: u64,
     lifecycle_tick_ms: u64,
     gossip_interval: u64,
@@ -282,11 +290,25 @@ async fn init_cluster(
         }
     };
 
-    // 2. 创建 RaftNetworkClientFactory
-    let net_factory = RaftNetworkClientFactory::new(node_id, 0, 30, 64 * 1024 * 1024);
+    // 2. 创建 RaftNetworkClientFactory (MetaRaft 专用, 独立快超时)
+    // MetaRaft 分区选举时 6 成员同时参与, vote RPC 处理慢时若超时过大,
+    // 选举定时器在投票完成前再次触发 → term 膨胀 → 选举活锁 (~100s).
+    // 历史硬编码 30ms 有效; 现用独立参数 `--meta-rpc-timeout-ms` (默认 100ms)
+    // 并留裕量给心跳, 不再复用数据面 `--raft-rpc-timeout-ms` (500ms).
+    let net_factory =
+        RaftNetworkClientFactory::new(node_id, 0, meta_rpc_timeout_ms, 64 * 1024 * 1024);
     let net_factory = Arc::new(parking_lot::RwLock::new(net_factory));
 
+    // 线性化读: 集群装配默认开启 (LeaseRead 正常期零 RTT, 分区期读侧快速失败).
+    // AIKV_LINEARIZABLE_READ=0/false 可关闭 (回退 FollowerRead).
+    let linearizable_read = std::env::var("AIKV_LINEARIZABLE_READ")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(true);
+
     // 3. 创建 MetaRaftNode (控制平面, group_id=0)
+    // rpc_timeout_ms 字段保留 raft_rpc_timeout_ms: 该 config 会 clone 为数据面
+    // 配置 (data_raft_config), 数据面工厂由它派生; MetaRaft 实际网络超时由上方
+    // net_factory (meta_rpc_timeout_ms) 决定, 与数据面独立.
     let raft_config = RaftNodeConfig {
         node_id,
         group_id: 0,
@@ -299,7 +321,7 @@ async fn init_cluster(
         rpc_timeout_ms: raft_rpc_timeout_ms,
         grpc_max_message_size: 64 * 1024 * 1024,
         snapshot_size_threshold: None,
-        linearizable_read: false,
+        linearizable_read,
         log_committer_config: None, // MetaRaft 使用同步路径
     };
     let factory = net_factory.read().clone(); // drop read lock before .await
@@ -488,6 +510,7 @@ async fn init_cluster(
         multi_raft.clone(),
         meta_raft.clone(),
         std::time::Duration::from_millis(tick_ms),
+        std::time::Duration::from_millis(raft_election_timeout_max), // lease = election_timeout_max
     ));
     let (watcher_tx, watcher_rx) = tokio::sync::watch::channel(false);
     let watcher_for_task = leader_watcher.clone();
@@ -505,6 +528,12 @@ async fn init_cluster(
                       mgr.apply_observed_group_leader(group_id, leader_id);
                     }
                   }
+                  // 探活 quorum 状态注入 → 派生 cluster_state_ok (fail 时路由拒绝读写).
+                  mgr.apply_observed_group_quorum(
+                    watcher_for_task.leader_quorum_status(),
+                    mgr.meta_raft.get_slot_table(),
+                    mgr.meta_raft.get_cluster_meta(),
+                  );
                 }
               }
               _ = shutdown_rx.changed() => {
@@ -670,6 +699,7 @@ async fn main() {
             args.raft_election_timeout_min,
             args.raft_election_timeout_max,
             args.raft_rpc_timeout_ms,
+            args.meta_rpc_timeout_ms,
             args.raft_heartbeat_interval,
             args.lifecycle_tick_ms,
             args.gossip_interval,

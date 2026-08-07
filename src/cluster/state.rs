@@ -15,18 +15,54 @@
 //! - `ClusterRouter::decide` 只读本管理器缓存 + MetaRaft 快照, 不 await OpenRaft.
 //! - 权威拓扑始终来自 MetaRaft; 本模块只维护本地视图缓存.
 
-use std::collections::HashMap;
-use std::sync::atomic::AtomicU64;
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
 
 use parking_lot::RwLock;
 
 use crate::cluster::announce::AnnounceResolver;
+use aidb::cluster::meta_types::{ClusterMeta, SlotStatus, SlotTable};
 use aidb::cluster::slot_migration::SlotMigrationManager;
 use aidb::cluster::{MembershipCoordinator, MetaRaftNode, MultiRaftNode, Router};
 
-/// 数据面端口偏移默认值 (与 Redis Cluster @cport 约定一致).
+/// 默认数据面端口偏移 (与 Redis Cluster @cport 约定一致).
 pub const DEFAULT_DATA_PORT_OFFSET: u16 = 10000;
+
+/// 收集 slot table 中负责 slot 的 group 集合 (Assigned / Migrating).
+pub(crate) fn groups_with_slots(slot_table: &SlotTable) -> HashSet<u64> {
+    slot_table
+        .iter()
+        .filter_map(|status| match status {
+            SlotStatus::Assigned(gid) | SlotStatus::Migrating(gid) => Some(*gid),
+            SlotStatus::Unallocated => None,
+        })
+        .collect()
+}
+
+/// 本机视角集群健康派生 (纯函数): 负责 slot 的 group 中, 若有本节点作为
+/// leader 的 group 已失去 quorum (探活判定失败), 则视为不健康.
+///
+/// 规则:
+/// - 对每个负责 slot 的 group: 若 `quorum_status.get(gid) == Some(false)` → false.
+/// - `quorum_status` 无该 group 记录 (本机非其 leader) → 不判定 (由 MetaRaft
+///   `is_leader` 正常维护, 分区时 leader 在多数派侧转移).
+/// - slot 指向的 group 不在 `meta.groups` (孤儿 group) → false, 与
+///   `compute_cluster_state` 的 `slots_map_to_known_groups` 判定对齐, 避免
+///   router 门开放而 CLUSTER INFO 报 fail 的分裂.
+/// - 本机不负责任何 group → true.
+pub fn derive_cluster_ok(
+    quorum_status: &HashMap<u64, bool>,
+    slot_table: &SlotTable,
+    meta: &ClusterMeta,
+) -> bool {
+    groups_with_slots(slot_table).iter().all(|gid| {
+        if !meta.groups.contains_key(gid) {
+            return false;
+        }
+        quorum_status.get(gid) != Some(&false)
+    })
+}
 
 /// 本节点角色
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +84,12 @@ pub struct ClusterStateManager {
     pub role: RwLock<ReplicationRole>,
     /// 本地 Group Leader 缓存 {group_id → is_leader}
     pub local_group_leaders: RwLock<HashMap<u64, bool>>,
+    /// 本节点作为 leader 的 group → 是否仍保有 quorum (LeaderChangeWatcher 探活注入).
+    /// 无记录 (非 leader 或探活未 tick) → 视为有效.
+    pub group_quorum_ok: RwLock<HashMap<u64, bool>>,
+    /// 本机视角集群健康标志: 由 `derive_cluster_ok` 从探活状态派生.
+    /// 初始 true (探活未注入前不误伤).
+    pub cluster_state_ok: AtomicBool,
     /// 成员协调器 (CLUSTER MEET/FORGET/REPLICATE 使用)
     pub membership_coordinator: Option<std::sync::Arc<MembershipCoordinator>>,
     /// 槽迁移管理器 (CLUSTER SETSLOT 使用)
@@ -84,6 +126,8 @@ impl ClusterStateManager {
             config_epoch: AtomicU64::new(0),
             role: RwLock::new(ReplicationRole::Primary),
             local_group_leaders: RwLock::new(HashMap::new()),
+            group_quorum_ok: RwLock::new(HashMap::new()),
+            cluster_state_ok: AtomicBool::new(true),
             membership_coordinator: None,
             slot_migration_manager: None,
             data_dir: None,
@@ -171,6 +215,33 @@ impl ClusterStateManager {
         self.router.update_group_leader(group_id, leader_id);
         let is_local = leader_id == self.node_id;
         self.local_group_leaders.write().insert(group_id, is_local);
+    }
+
+    /// 应用探活观测的 group quorum 状态, 并用 `derive_cluster_ok` 派生集群健康.
+    /// 参数化 (status 全量覆盖 + 注入 slot_table/meta), 便于纯函数单测.
+    pub fn apply_observed_group_quorum(
+        &self,
+        status: HashMap<u64, bool>,
+        slot_table: SlotTable,
+        meta: ClusterMeta,
+    ) {
+        let ok = derive_cluster_ok(&status, &slot_table, &meta);
+        *self.group_quorum_ok.write() = status;
+        self.cluster_state_ok.store(ok, Ordering::Relaxed);
+    }
+
+    /// 本节点作为某 group leader 是否仍保有 quorum (无记录默认有效).
+    pub fn group_quorum_ok(&self, group_id: u64) -> bool {
+        self.group_quorum_ok
+            .read()
+            .get(&group_id)
+            .copied()
+            .unwrap_or(true)
+    }
+
+    /// 本机视角集群是否健康 (fail 时路由层拒绝读写).
+    pub fn cluster_state_ok(&self) -> bool {
+        self.cluster_state_ok.load(Ordering::Relaxed)
     }
 }
 

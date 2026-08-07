@@ -221,6 +221,14 @@ impl ClusterRouter {
         let Some(mgr) = CLUSTER_STATE_MGR.get() else {
             return RouteDecision::ClusterDown("CLUSTERDOWN Cluster not initialized".into());
         };
+
+        // 本机视角 cluster_state:fail (探活判定本节点为 leader 的 slot 组已失去
+        // quorum) → 拒绝所有读写 (Redis 语义). 置于迁移相位分支之前, 分区期间
+        // 迁移本应中断; admin 命令 (CLUSTER INFO 等) 在 cluster_route 白名单绕过.
+        if !mgr.cluster_state_ok() {
+            return RouteDecision::ClusterDown("CLUSTERDOWN The cluster is down".into());
+        }
+
         let slot = key_to_slot(key);
 
         // F-056 / F-056-A1: 最先查 migration_state 相位, 覆盖 ASKING / importing_slots 旁路.

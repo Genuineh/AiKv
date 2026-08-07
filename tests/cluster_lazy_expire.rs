@@ -3,7 +3,7 @@
 #[cfg(feature = "cluster")]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::atomic::AtomicU64;
+    use std::sync::atomic::{AtomicBool, AtomicU64};
     use std::sync::Arc;
 
     use parking_lot::RwLock;
@@ -74,6 +74,8 @@ mod tests {
                 l.insert(1u64, true);
                 RwLock::new(l)
             },
+            group_quorum_ok: RwLock::new(HashMap::new()),
+            cluster_state_ok: AtomicBool::new(true),
             membership_coordinator: None,
             slot_migration_manager: None,
             data_dir: None,

@@ -3,7 +3,7 @@
 #![cfg(feature = "cluster")]
 
 use std::collections::HashMap;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, LazyLock};
 
 use parking_lot::RwLock;
@@ -78,6 +78,8 @@ async fn setup_cluster_mgr() -> ClusterStateManager {
         config_epoch: AtomicU64::new(0),
         role: RwLock::new(ReplicationRole::Primary),
         local_group_leaders: RwLock::new(HashMap::new()),
+        group_quorum_ok: RwLock::new(HashMap::new()),
+        cluster_state_ok: AtomicBool::new(true),
         membership_coordinator: None,
         slot_migration_manager: None,
         data_dir: None,

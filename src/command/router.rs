@@ -370,7 +370,8 @@ impl CommandRouter {
             return None;
         }
         // MIGRATE/RESTORE: 平时不走 MOVED/ASK (本地读 + 远端 RESTORE), 但 F-056
-        // Frozen/Ready 写冻结仍须 TRYAGAIN (白名单外不放行用户数据写).
+        // Frozen/Ready 写冻结仍须 TRYAGAIN (白名单外不放行用户数据写); cluster_state
+        // fail (分区) 时同样须 CLUSTERDOWN, 与 decide 全局门控保持一致.
         if lower == "migrate" || lower == "restore" {
             if let Some(key) = crate::cluster::routing_key::cluster_routing_key(cmd, args) {
                 let decision = crate::cluster::router::ClusterRouter::decide(
@@ -379,11 +380,20 @@ impl CommandRouter {
                     conn_state.is_asking(),
                     conn_state.is_readonly(),
                 );
-                if let crate::cluster::router::RouteDecision::TryAgain { reason } = decision {
-                    if let Some(m) = self.metrics.as_ref() {
-                        m.on_error_stat(&reason);
+                match decision {
+                    crate::cluster::router::RouteDecision::TryAgain { reason } => {
+                        if let Some(m) = self.metrics.as_ref() {
+                            m.on_error_stat(&reason);
+                        }
+                        return Some(Ok(RespValue::Error(reason)));
                     }
-                    return Some(Ok(RespValue::Error(reason)));
+                    crate::cluster::router::RouteDecision::ClusterDown(msg) => {
+                        if let Some(m) = self.metrics.as_ref() {
+                            m.on_error_stat(&msg);
+                        }
+                        return Some(Ok(RespValue::Error(msg)));
+                    }
+                    _ => {}
                 }
             }
             return None;

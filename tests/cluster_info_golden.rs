@@ -8,7 +8,7 @@
 #[cfg(feature = "cluster")]
 mod tests {
     use std::collections::HashMap;
-    use std::sync::atomic::AtomicU64;
+    use std::sync::atomic::{AtomicBool, AtomicU64};
     use std::sync::Arc;
 
     use aidb::cluster::meta_types::{default_slot_table, SlotStatus};
@@ -79,6 +79,8 @@ mod tests {
                     config_epoch: AtomicU64::new(0),
                     role: RwLock::new(ReplicationRole::Primary),
                     local_group_leaders: RwLock::new(HashMap::from([(1u64, true)])),
+                    group_quorum_ok: RwLock::new(HashMap::new()),
+                    cluster_state_ok: AtomicBool::new(true),
                     membership_coordinator: None,
                     slot_migration_manager: None,
                     data_dir: None,

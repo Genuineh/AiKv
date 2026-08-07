@@ -144,6 +144,47 @@ Frozen: 写 TRYAGAIN, 读合并读. ReadyToCommit: 写 TRYAGAIN, 读纯 target.
 目标 IMPORTING 写仅在 Prepare/Migrating 窗口 `Execute` (含 `ASKING` /
 `importing_slots`); Frozen/Ready 一律 TRYAGAIN. 活跃迁移期 SCAN 族 TRYAGAIN.
 
+## 分区/脑裂防护 (cluster_state:fail)
+
+本节点视角集群健康由 `ClusterStateManager::cluster_state_ok` (`AtomicBool`) 派生,
+数据源为 LeaderChangeWatcher 的 group 级 quorum 探活 (aidb 侧, 规则见
+[aidb cluster.md](../../../aidb/docs/modules/03-cluster.md)):
+
+- **探活规则**: 仅对本节点是 leader 的 group 判定; 读 `RaftMetrics::last_quorum_acked`,
+  距最近一次 quorum ack 超过 `lease` (= `--raft-election-timeout-max`, 默认 2000ms) →
+  该 group 已失去多数派. 判定/汇总为纯函数 `judge_leader_quorum` +
+  `derive_cluster_ok` (单测覆盖).
+- **效果**:
+  - 被隔离的少数派旧 leader 视角 `CLUSTER INFO` 的 `cluster_state` 报 `fail`.
+  - 路由层拒绝**所有**数据访问 (读与写) → `CLUSTERDOWN` (Redis 语义:
+    写拒绝防双主, 读拒绝防滞后读). admin 命令 (CLUSTER INFO/NODES 等) 经
+    `cluster_route` 白名单绕过.
+  - 多数派侧节点不受影响: follower 不参与 quorum 判定; 新 leader 首个 quorum ack
+    前 (`last_quorum_acked = None`) 不误判.
+- **装配**: `main.rs` watcher 同步任务每 tick 调 `apply_observed_group_quorum`
+  注入探活状态并派生 `cluster_state_ok`. `derive_cluster_ok` (路由门) 与
+  `compute_cluster_state` (CLUSTER INFO) 为独立实现, 但**共用同一 quorum 数据源**
+  (`group_quorum_ok` / `resolve_group_leader_for_info`), 孤儿 slot 组 (槽指派但
+  group 不在 meta) 与 quorum 失效均判 fail, 避免两套判定漂移.
+- **读路径一致性**: 集群装配默认 `linearizable_read=true` (env
+  `AIKV_LINEARIZABLE_READ=0/false` 可关); aidb 侧 `OpenRaftNode::get` 用
+  `ReadPolicy::LeaseRead` (正常期零 RTT 本地读, 分区期 lease 过期快速失败).
+  aikv 主 GET 走本地状态机直读 (`ClusterDataAdapter::get`), 不经过 LeaseRead,
+  其分区期保护由上述 cluster_state:fail 门控覆盖.
+- **known limitations**: 无 key 数据命令 (PING/INFO 等) 在 fail 态不拒绝;
+  新 leader 首个 quorum ack 前被分区时, 写挂起至 client 超时且**路由门控同样保持
+  开放** (此时读侧 LeaseRead 会快速失败, 且新 leader 持有全部已提交日志故无数据
+  正确性问题, 只是写侧不对称); 与旧 leader 同处少数派分区的 follower 不被门控
+  (非 leader 不判定, 会持续服务陈旧本地读 — 与 Redis 全节点 fail 语义的取舍);
+  slot 未全分配 / 孤儿 slot 组时 gate 与 CLUSTER INFO 语义按「未知 group 视为
+  有效 (gate) / 视为 fail (INFO)」处理, 两处已对齐为 fail;
+  探活门控为单次判定 (无滞回): 健康 leader 偶发停顿 > lease (如大 batch apply /
+  存储 IO 阻塞) 时该节点会误报 CLUSTERDOWN, 属 fail-closed 取舍;
+  直读路径门控采样粒度 = watcher tick (`election_timeout_min/2` = 500ms),
+  最坏情形门控关闭较 lease 过期滞后 ≤1 tick; 3 成员数据组下新 leader 选举耗时
+  (>lease) 与门控时序有 500ms 余量, 但 >3 成员数据组存在 (lease, lease+tick]
+  窗口内读到旧 leader 陈旧数据的理论可能.
+
 ## 关键类型
 
 | 类型 | 说明 |
@@ -161,7 +202,7 @@ Frozen: 写 TRYAGAIN, 读合并读. ReadyToCommit: 写 TRYAGAIN, 读纯 target.
 | 子命令 | 入口 | 说明 |
 |--------|------|------|
 | KEYSLOT, MYID | `cluster_keyslot`, `cluster_myid` | |
-| INFO, NODES, SLOTS, SHARDS, MYSHARDID | `cluster_*` | INFO: `cluster_state` 按 slot 覆盖 + group leader 动态 ok/fail |
+| INFO, NODES, SLOTS, SHARDS, MYSHARDID | `cluster_*` | INFO: `cluster_state` 按 slot 覆盖 + group leader 动态 ok/fail, 并纳入 quorum 探活 (分区期被隔离旧 leader 报 fail) |
 | COUNTKEYSINSLOT, GETKEYSINSLOT | scan 本地 group SM | |
 | MEET, FORGET [FORCE] | `MembershipCoordinator` | MEET NotLeader 退避重试 |
 | ADDSLOTS [NODE id], DELSLOTS | MetaRaft `AssignSlots`/`UnassignSlots` | 无 group 时 ADDSLOTS 可自动 CreateGroup |

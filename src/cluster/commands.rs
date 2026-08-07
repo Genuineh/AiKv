@@ -29,9 +29,12 @@
 //! - `CLUSTER INFO` 的 `cluster_state` 动态判定: slot 全覆盖 + 映射到已知 group + 均有 leader → `ok`, 否则 `fail`.
 //! - `CLUSTER RESET` 不支持: 返回明确 ERR (MetaRaft 共识, 停服清 data_dir 重搭).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::Duration;
 
+#[cfg(test)]
+use crate::cluster::state::derive_cluster_ok;
+use crate::cluster::state::groups_with_slots;
 use crate::cluster::state::ClusterStateManager;
 use crate::cluster::state::CLUSTER_STATE_MGR;
 use crate::cluster::state::DEFAULT_DATA_PORT_OFFSET;
@@ -51,6 +54,7 @@ use aidb::cluster::ReplicaAllocator;
 use aidb::cluster::{failpoint_registry, FailPoint};
 use aidb::Error as AidbError;
 use bytes::Bytes;
+use openraft::rt::watch::WatchReceiver;
 use tokio::time::sleep;
 
 /// Parse an integer from bytes (used by CLUSTER command argument parsing).
@@ -124,16 +128,34 @@ fn resolve_group_leader_for_info(
     meta: &ClusterMeta,
     group_id: u64,
 ) -> Option<u64> {
-    if let Some(group) = meta.groups.get(&group_id) {
-        if let Some(replica) = group.replicas.iter().find(|r| r.is_leader) {
-            return Some(replica.node_id);
+    let leader = meta
+        .groups
+        .get(&group_id)
+        .and_then(|g| g.replicas.iter().find(|r| r.is_leader))
+        .map(|replica| replica.node_id);
+    let leader = leader.or_else(|| {
+        if let Some(node) = mgr.multi_raft.get_groups().read().get(&group_id) {
+            node.raft().metrics().borrow_watched().current_leader
+        } else {
+            None
         }
+    });
+    // 本节点作为该 group leader 且已失去 quorum (探活判定) → 视为无 leader,
+    // 驱动 CLUSTER INFO 报 cluster_state:fail (隔离的少数派旧 leader 视角).
+    apply_leader_quorum_gate(leader, mgr.node_id, mgr.group_quorum_ok(group_id))
+}
+
+/// quorum 门控 (纯函数): 本节点作为 leader 且已失去 quorum → 视为无 leader.
+fn apply_leader_quorum_gate(
+    leader: Option<u64>,
+    self_id: u64,
+    group_quorum_ok: bool,
+) -> Option<u64> {
+    if leader == Some(self_id) && !group_quorum_ok {
+        None
+    } else {
+        leader
     }
-    if let Some(node) = mgr.multi_raft.get_groups().read().get(&group_id) {
-        use openraft::rt::watch::WatchReceiver;
-        return node.raft().metrics().borrow_watched().current_leader;
-    }
-    None
 }
 
 /// 动态 `cluster_state:ok` / `fail` (对齐 oldmain: slot 满 + leader + 映射一致).
@@ -161,13 +183,7 @@ where
         return "fail";
     }
 
-    let groups_with_slots: HashSet<u64> = slot_table
-        .iter()
-        .filter_map(|status| match status {
-            SlotStatus::Assigned(gid) | SlotStatus::Migrating(gid) => Some(*gid),
-            SlotStatus::Unallocated => None,
-        })
-        .collect();
+    let groups_with_slots = groups_with_slots(slot_table);
 
     if !groups_with_slots
         .iter()
@@ -246,8 +262,6 @@ pub fn cluster_groupstatus(group_id: Option<u64>) -> Result<String, String> {
 
     let groups = mgr.multi_raft.get_groups();
     let groups_guard = groups.read();
-
-    use openraft::rt::watch::WatchReceiver;
 
     let iter: Vec<(u64, &aidb::cluster::OpenRaftNode)> = match group_id {
         Some(gid) => {
@@ -2221,7 +2235,7 @@ mod cluster_nodes_role_tests {
 
 #[cfg(test)]
 mod cluster_info_state_tests {
-    use super::compute_cluster_state;
+    use super::{apply_leader_quorum_gate, compute_cluster_state};
     use aidb::cluster::meta_types::{
         default_slot_table, ClusterMeta, GroupMeta, ReplicaInfo, SlotStatus,
     };
@@ -2290,6 +2304,92 @@ mod cluster_info_state_tests {
         table[0] = SlotStatus::Migrating(1);
         let meta = meta_with_group(1, true);
         assert_eq!(compute_cluster_state(&table, &meta, |_| Some(1)), "ok");
+    }
+
+    /// `apply_leader_quorum_gate`: CLUSTER INFO 报 fail 的直接驱动.
+    /// 本节点作为 leader 且失去 quorum → None; 其他情况透传.
+    #[test]
+    fn quorum_gate_only_blocks_self_leader_lost_quorum() {
+        // 本节点是 leader + 失去 quorum → 视为无 leader (fail)
+        assert_eq!(apply_leader_quorum_gate(Some(7), 7, false), None);
+        // 本节点是 leader + 保有 quorum → 透传
+        assert_eq!(apply_leader_quorum_gate(Some(7), 7, true), Some(7));
+        // 本节点非 leader (其他节点) → 不拦截 (follower 不判定)
+        assert_eq!(apply_leader_quorum_gate(Some(8), 7, false), Some(8));
+        // 无 leader → 透传 None (compute_cluster_state 自会判 fail)
+        assert_eq!(apply_leader_quorum_gate(None, 7, false), None);
+    }
+}
+
+#[cfg(test)]
+mod derive_cluster_ok_tests {
+    use super::derive_cluster_ok;
+    use aidb::cluster::meta_types::{
+        default_slot_table, ClusterMeta, GroupMeta, ReplicaInfo, SlotStatus,
+    };
+    use std::collections::HashMap;
+
+    fn meta_with_group(group_id: u64) -> ClusterMeta {
+        ClusterMeta {
+            groups: HashMap::from([(
+                group_id,
+                GroupMeta {
+                    group_id,
+                    replicas: vec![ReplicaInfo {
+                        node_id: group_id,
+                        is_leader: true,
+                    }],
+                    slot_ranges: vec![],
+                    config_version: 1,
+                },
+            )]),
+            ..ClusterMeta::default()
+        }
+    }
+
+    fn full_slot_table(group_id: u64) -> Vec<SlotStatus> {
+        let mut table = default_slot_table();
+        for slot in table.iter_mut() {
+            *slot = SlotStatus::Assigned(group_id);
+        }
+        table
+    }
+
+    #[test]
+    fn quorum_failed_group_owns_slots_is_down() {
+        let table = full_slot_table(1);
+        let meta = meta_with_group(1);
+        let quorum = HashMap::from([(1u64, false)]);
+        assert!(!derive_cluster_ok(&quorum, &table, &meta));
+    }
+
+    #[test]
+    fn quorum_ok_or_empty_is_healthy() {
+        let table = full_slot_table(1);
+        let meta = meta_with_group(1);
+        let quorum_ok = HashMap::from([(1u64, true)]);
+        assert!(derive_cluster_ok(&quorum_ok, &table, &meta));
+        let quorum_empty = HashMap::new();
+        assert!(derive_cluster_ok(&quorum_empty, &table, &meta));
+    }
+
+    #[test]
+    fn no_slot_owning_group_is_healthy() {
+        let table = default_slot_table();
+        let meta = meta_with_group(1);
+        let quorum = HashMap::from([(1u64, false)]);
+        assert!(derive_cluster_ok(&quorum, &table, &meta));
+    }
+
+    #[test]
+    fn orphan_slot_owning_group_is_down() {
+        // slot 指向的 group 不在 meta.groups (孤儿) → 视为不健康,
+        // 与 compute_cluster_state 的 slots_map_to_known_groups 判定对齐
+        // (避免 router 门开放而 CLUSTER INFO 报 fail 的分裂).
+        let table = full_slot_table(1);
+        let meta = meta_with_group(2); // 仅 group 2 存在, group 1 是孤儿
+        let quorum = HashMap::new();
+        assert!(!derive_cluster_ok(&quorum, &table, &meta));
     }
 }
 
