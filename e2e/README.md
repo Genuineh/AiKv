@@ -1,7 +1,7 @@
 # AiKv E2E Tests (Python / pytest)
 
 黑盒客户端验收：**用例仅连接已部署的被测服务**（单机或集群拓扑均可），不直接控制进程生命周期。  
-部署操作由 `test-ui` 环境条 / [`aifactory/scripts`](../aifactory/scripts/) (`up-single.sh`, `up-cluster.sh`) / [`aifactory/benchmark/aikv`](../aifactory/benchmark/aikv/) 对照压测 compose 或手动 `cargo run` 完成。
+部署操作由 `console` 环境条 / [`aifactory/scripts`](../aifactory/scripts/) (`up-single.sh`, `up-cluster.sh`) / [`aifactory/benchmark/aikv`](../aifactory/benchmark/aikv/) 对照压测 compose 或手动 `cargo run` 完成。
 
 ## 环境前置
 
@@ -26,7 +26,7 @@ cp e2e/.env.example e2e/.env
 ```
 
 `svc` 节点的被测服务地址解析优先级如下：
-1. **进程环境变量**（如终端显示执行 `AIKV_PORT=6380 pytest` 或 test-ui 自动注入）
+1. **进程环境变量**（如终端显示执行 `AIKV_PORT=6380 pytest` 或 console 自动注入）
 2. **本地 `e2e/.env` 文件**（持久化记录常用测试节点地址）
 3. **默认回退值** (`127.0.0.1:6379`)
 
@@ -62,9 +62,9 @@ AIKV_HOST=127.0.0.1 AIKV_PORT=6379 \
 |---------|------|
 | `svc` | 唯一入口：连接 `AIKV_HOST`/`AIKV_PORT`，在交付用例前自动执行 `FLUSHALL` 前置清库 |
 
-### test-ui 编写规范与示例
+### console 编写规范与示例
 
-所有测试脚本均遵循 test-ui 元数据标准规范 (`# @component` / `# @title` / docstring)：
+所有测试脚本均遵循 console 元数据标准规范 (`# @component` / `# @title` / docstring)：
 
 | 用途 | 语法/位置 |
 |------|------|

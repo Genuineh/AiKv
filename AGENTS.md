@@ -6,7 +6,7 @@
 
 - **对外**: RESP2/RESP3、Redis 命令、Redis Cluster (MOVED/ASK、CLUSTER、slot 迁移)
 - **对内**: 不实现 LSM/Raft; 持久化与共识委托 **AiDb**
-- **存储**: 生产推荐 `--engine aidb` (`AiDbEngine`); `MemoryEngine` 当前仅做拓展预留不开发相关功能.
+- **存储**: 生产推荐 `--engine aidb` (`AiDbEngine`); `MemoryEngine` 当前仅作扩展预留, 不开发相关功能.
 
 ```text
 Redis Client → TCP/RESP → CommandRouter/ClusterRouter
@@ -39,10 +39,11 @@ Redis Client → TCP/RESP → CommandRouter/ClusterRouter
 - **Batcher** (`cluster_adapter.rs`): `SET_BATCH_MAX_OPS=512`, `SET_BATCH_MAX_DELAY=1ms`, `DEFAULT_EAGER_FLUSH=48`; 调 `eager_flush` 须权衡吞吐与尾延迟, 经 `ClusterDataAdapter::DEFAULT_EAGER_FLUSH` 引用
 - **指标**: 生产经 OTLP `aikv_*`; INFO 目标对齐 Redis 8.8 (部分字段 stub)
 - **测试纪律**: 修 bug 必带回归测 ([CONTRIBUTING.md §回归测试](CONTRIBUTING.md#回归测试-必带)); 新测写法与落点 ([tests/README.md §测试写法与范围 (硬性)](tests/README.md#测试写法与范围-硬性)); 验证需 sibling `../aidb`, 默认 `--features cluster`, `RUSTFLAGS='-D warnings'` + `--test-threads=1` (完整命令见 [CONTRIBUTING.md](CONTRIBUTING.md))
+- **文档同步 (强制)**: 改公共 API / 行为 / 模块边界必须同步对应 `docs/modules/*.md` 与根文档; commit 消息修 bug 须带 `(ISSUE-NNN)`; 不满足不进 commit (见 [CONTRIBUTING.md §文档同步](CONTRIBUTING.md#文档同步-硬性))
 
 ## 进一步阅读
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) · [DESIGN.md](DESIGN.md) · [docs/README.md](docs/README.md)
-- [docs/modules/cluster.md](docs/modules/06-cluster.md) · [docs/modules/observability.md](docs/modules/07-observability.md) · [docs/modules/observability-reference.md](docs/modules/08-observability-reference.md)
-- [CONTRIBUTING.md](CONTRIBUTING.md) · [`.github/README.md`](.github/README.md)
+- [docs/modules/06-cluster.md](docs/modules/06-cluster.md) · [docs/modules/07-observability.md](docs/modules/07-observability.md) · [docs/modules/08-observability-reference.md](docs/modules/08-observability-reference.md)
+- [CONTRIBUTING.md](CONTRIBUTING.md) · `[.github/README.md](.github/README.md)`
 - [../aidb/AGENTS.md](../aidb/AGENTS.md) — LSM / Raft 入口; 排查 **LSM/Raft/Compaction** → 此处

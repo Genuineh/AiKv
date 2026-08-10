@@ -1,8 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "=== pre-commit: aikv ==="
+echo "=== pre-commit: $(basename "$PWD") ==="
 
+# 0. 分支保护 (硬性): 禁止在基础分支直接提交
+bash "$(dirname "$0")/check-branch.sh" || exit 1
+
+# 0.5 文档链接检查 (硬性): staged .md 相对链接存在性
+bash "$(dirname "$0")/check-docs-links.sh" || exit 1
+
+# 原有路径依赖检查 (保留)
 if [[ ! -f ../aidb/Cargo.toml ]]; then
   echo "ERROR: path dependency ../aidb not found."
   echo "Clone AiDb as sibling: .../aidb and .../aikv, or: ln -sf /path/to/aidb ../aidb"

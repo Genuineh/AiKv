@@ -173,7 +173,7 @@ uv pip install -r e2e/requirements.txt --python .venv-e2e
 pytest e2e/function/ -v
 ```
 
-文件放 `e2e/function/{domain}/test_*.py` (四维度: `command` / `crash` / `migration` / `failover`); 文件头 `# @component aikv-{domain}` + `# @title` (与 test-ui B2-v1 一致). 慢/压测用 `@pytest.mark.slow` / `@pytest.mark.stress`. 详见 [e2e/README.md](e2e/README.md).
+文件放 `e2e/function/{domain}/test_*.py` (四维度: `command` / `crash` / `migration` / `failover`); 文件头 `# @component aikv-{domain}` + `# @title` (与 console B2-v1 一致). 慢/压测用 `@pytest.mark.slow` / `@pytest.mark.stress`. 详见 [e2e/README.md](e2e/README.md).
 
 **CI `e2e` job**: `pytest e2e/` (黑盒); 历史 cluster shell 用例 (`test_cluster_*.sh`) 已迁移为 pytest.
 
@@ -221,7 +221,7 @@ Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/
 |------|------|
 | 同一 PR | 测试与修复同 PR; 建议先红后绿 |
 | 命名 / 注释 | 描述性 `test_*`; **`///`** 写明 bug 现象、期望与 ISSUE (若有) |
-| `@component` | entry 文件加 `//! @component aikv-{domain}` (与 test-ui B2-v1 一致) |
+| `@component` | entry 文件加 `//! @component aikv-{domain}` (与 console B2-v1 一致) |
 
 ### 放置决策
 
@@ -235,6 +235,18 @@ Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/
 示例 (B1.3): ISSUE-002 生产 Options → [`tests/modules/storage/prod_options.rs`](tests/modules/storage/prod_options.rs).
 
 aikv **无** 独立 `tests/regression/` 入口; 回归测放在对应模块或 cluster integration test 中 (与 aidb L4 分工不同, 见 [aidb CONTRIBUTING](../aidb/CONTRIBUTING.md)).
+
+## 文档同步 (硬性)
+
+修改涉及公共 API / 行为 / 模块边界时, 必须同步更新相关文档, 否则视为 incomplete:
+
+1. 改动触及 `docs/modules/*.md` 描述的行为 → 同步更新对应 module
+2. 改动改变对外能力 / 使用方式 / 依赖 → 更新 `README.md` / `DEPLOYMENT.md`
+3. 改动改变设计取舍 → 更新 `DESIGN.md` / `ARCHITECTURE.md`
+4. PR 描述必须列出本次更新的文档文件; 未列视为 incomplete
+5. 修 bug 的 commit 消息须带 `(ISSUE-NNN)` 引用, 关闭条目时更新 `ISSUES.md` 状态
+
+> 文档同步在 code-review 通过后、commit 前执行; 文档无影响时在 PR 描述写明「文档无需变更」.
 
 ## 相关文档
 
