@@ -276,7 +276,7 @@ NotLeader (MetaRaft propose): `map_propose_error` → `MOVED 0 <addr>` 或 CLUST
 
 ### 重置集群 (无 CLUSTER RESET)
 
-AiKv 集群元数据由 **MetaRaft 共识** 维护, 非 Redis 式每节点本地 `nodes.conf`. 单节点 `CLUSTER RESET` **不支持** (ISSUE-016, doc-only): 命令返回明确 ERR, 不会清 MetaRaft / MultiRaft 状态.
+AiKv 集群元数据由 **MetaRaft 共识** 维护, 非 Redis 式每节点本地 `nodes.conf`. 单节点 `CLUSTER RESET` **不支持**: 命令返回明确 ERR, 不会清 MetaRaft / MultiRaft 状态.
 
 **为何不支持**: 忘记节点、清空 slot、改 node ID 等需 MetaRaft propose 或删持久化目录; 运行中假 OK 比 explicit ERR 更易造成运维误判. oldmain 虽有 `cluster_reset()` 但未接入 dispatch, SOFT 为空操作.
 

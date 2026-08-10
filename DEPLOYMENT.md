@@ -359,9 +359,8 @@ CMD ["aikv", "--bind", "0.0.0.0:6379", "--engine", "aidb", \
 - [AGENTS.md](AGENTS.md) — AI 助手与 CI 速查
 - [aidb/DEPLOYMENT.md](../aidb/DEPLOYMENT.md) — protoc、aidb 数据目录、库侧 cluster
 - [docs/modules/](docs/modules/) — 域级实现
-- [ISSUES.md](ISSUES.md) — 待核实项
 
 ## 待核实
 
-- 无 `[monitoring]` 时 runtime metrics 不自动 refresh — 见 [ISSUES.md#ISSUE-021](ISSUES.md#issue-021-refresh_runtime_metrics-仅-monitoring-后台-tick).
-- metrics 后台 tick **15s** (非 1s spec) — 见 [ISSUES.md#ISSUE-022](ISSUES.md#issue-022-metrics-refresh-周期-15s-vs-设计-spec-1s).
+- 无 `[monitoring]` 时 runtime metrics 不自动 refresh.
+- metrics 后台 tick **15s** (非 1s spec).

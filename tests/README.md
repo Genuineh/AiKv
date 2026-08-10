@@ -24,7 +24,7 @@ L0 `src/**` → UI「单元测试」; 其余落点见该映射表与下文「落
 | `tests/` 下新建/改动的集成测文件 | `//! @component aikv-{domain}` + 中文摘要 |
 | L0 `src/**` 新建 `#[test]` | 中文 `///`; 不要求 `@component` |
 | 每个新增/改动的 `#[test]` | 中文 `///`; 禁止用 `//` 顶替 |
-| bug 回归 | `///` 含现象、期望、ISSUE (若有) |
+| bug 回归 | `///` 含现象、期望、Issue 编号 (若有) |
 | e2e pytest | `# @component` + 文件/用例 `# @title`; docstring 为 `N. 主谓宾 \| 期望` 剧本; 详见 [e2e/README.md](../e2e/README.md) |
 | e2e shell | `# @component aikv-{domain}`; 首条说明性 `#` 作摘要 (仅索引, 不在 console 执行) |
 
@@ -97,7 +97,7 @@ bugfix **必带** 回归测; 详见 [CONTRIBUTING.md §回归测试](../CONTRIBU
 | storage | `tests/modules/storage/` |
 | 集群 | `tests/cluster_*.rs` |
 
-示例: `prod_options.rs` (ISSUE-002). entry 文件加 `//! @component aikv-{domain}`.
+示例: `prod_options.rs`. entry 文件加 `//! @component aikv-{domain}`.
 
 ## 慢测与压测 (`#[ignore]`)
 

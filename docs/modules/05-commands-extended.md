@@ -255,5 +255,3 @@ cargo test --test commands
 - **SAVE 日志**: 同步 SAVE 成功事件名 `bgsave.complete` (target `persist`).
 
 ## 待核实
-
-- (无 open 条目 — BlockingRegistry evict 见 ISSUE-005 closed)

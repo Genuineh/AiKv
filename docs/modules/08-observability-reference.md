@@ -146,7 +146,7 @@ Redis 8.8 **键名齐全**; 无子系统真源的字段在 INFO 中以 `0` / `-1
 | `commandstats` / `latencystats` | `ServerMetrics` / `LatencyStats` | MOVED/ASK 不计 |
 | `keyspace` | `KvStorage` | AiDb 下比 `used_memory` 更反映 key 数 |
 | `memory.used_memory_rss` | `/proc` VmRSS | refresh 缓存 |
-| `memory.mem_fragmentation_ratio` | rss/used | ISSUE-024 OTel gauge 仍缺 |
+| `memory.mem_fragmentation_ratio` | rss/used | OTel gauge 仍缺 |
 
 ### Commandstats 段 (动态行, Redis 8.8 八字段)
 

@@ -115,7 +115,7 @@ Assigned slot 写 **必须** `propose_group` → Raft apply; **禁止** local fa
 
 ### 已知限制 (摘要)
 
-- MGET 对 non-String key: memory 静默 nil vs aidb WRONGTYPE — 见 [ISSUES.md#ISSUE-001](ISSUES.md#issue-001-memoryengine-mget-对非-string-key-静默返回-none).
+- MGET 对 non-String key: memory 静默 nil vs aidb WRONGTYPE.
 - aidb 路径 `scan`/`keys` 全量 sort; memory `write_batch` 非原子.
 
 ---
@@ -148,9 +148,9 @@ Redis 官方脚本语言; 零系统 lua 依赖; 沙箱裁 StdLib. **放弃** rha
 
 ### 已知限制 (摘要)
 
-- GETRANGE/SETRANGE — 已实现 (ISSUE-003 closed); MSETNX 未实现 (oldmain 亦无, doc-only ISSUE-004).
-- Lua 无 SCRIPT KILL — ISSUE-007.
-- SHUTDOWN 仅 SAVE/NOSAVE — ISSUE-011.
+- GETRANGE/SETRANGE — 已实现; MSETNX 未实现 (oldmain 亦无).
+- Lua 无 SCRIPT KILL.
+- SHUTDOWN 仅 SAVE/NOSAVE.
 
 ---
 
@@ -195,12 +195,12 @@ WiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障�
 | MetaRaft / MultiRaft / Router / slot 迁移执行 | ✅ | `init_cluster` wiring |
 | `ClusterDataAdapter` / `propose_group` | Raft 实现 | ✅ 包装写路径 |
 | MOVED/ASK / CLUSTER RESP / ASKING | — | ✅ |
-| METARAFT * RESP 子命令 | gRPC/内部 API | **已移除** — ISSUE-015 |
+| METARAFT * RESP 子命令 | gRPC/内部 API | **已移除** |
 
 ### 已知限制 (摘要)
 
-- 不支持 CLUSTER RESET (MetaRaft 共识; 停服清 data_dir 替代) — ISSUE-016 closed doc-only; FAILOVER 仅 FORCE/TAKEOVER — ISSUE-018.
-- SET-CONFIG-EPOCH / COUNT-FAILURE-REPORTS stub — ISSUE-019.
+- 不支持 CLUSTER RESET (MetaRaft 共识; 停服清 data_dir 替代); FAILOVER 仅 FORCE/TAKEOVER.
+- SET-CONFIG-EPOCH / COUNT-FAILURE-REPORTS stub.
 
 ---
 
@@ -238,9 +238,9 @@ WiQunTools inventory 07 中的完整 gossip 故障检测 **未实现**; 故障�
 
 | 项 | 现默认 | 备注 |
 |----|--------|------|
-| slowlog 阈值 | **100ms** (`100_000` µs) | Redis/oldmain 10ms — ISSUE-023 |
-| metrics refresh | **15s** (`main` 后台 tick) | design spec 1s — ISSUE-022 |
-| 无 `monitoring` | 无自动 refresh | stats 可能滞后 — ISSUE-021 |
+| slowlog 阈值 | **100ms** (`100_000` µs) | Redis/oldmain 10ms |
+| metrics refresh | **15s** (`main` 后台 tick) | design spec 1s |
+| 无 `monitoring` | 无自动 refresh | stats 可能滞后 |
 | `evicted_keys` | 恒 0 | 无 maxmemory eviction |
 
 指标前缀: **`aikv_*`** (非历史 `wiqun_kv_*`). `aidb_*` 不进 Redis INFO, 经同一 OTLP 管道导出.
@@ -273,7 +273,7 @@ redis-benchmark -h 127.0.0.1 -p 6379 -t SET,GET -n 50000 -c 50 -d 64 --cluster
 
 ### 后续优化 (Phase 2)
 
-在验证 Phase 1 收益后, 通过新火焰图定位逻辑层分配热点, 进行 buffer 复用优化 — 待核实, 见 [ISSUES.md](ISSUES.md).
+在验证 Phase 1 收益后, 通过新火焰图定位逻辑层分配热点, 进行 buffer 复用优化.
 
 ### 已知限制 (摘要)
 
@@ -315,15 +315,14 @@ redis-benchmark -h 127.0.0.1 -p 6379 -t SET,GET -n 50000 -c 50 -d 64 --cluster
 - [aidb/DESIGN.md](../aidb/DESIGN.md) — LSM/Raft/Checkpoint why
 - [aidb/ARCHITECTURE.md](../aidb/ARCHITECTURE.md) — AiDb 嵌入关系
 - [DEPLOYMENT.md](DEPLOYMENT.md) — 构建、feature、运行 (步 21)
-- [ISSUES.md](ISSUES.md) — 待核实与跟踪
 
 ## 已知限制 (根文档摘要)
 
-- 双引擎 MGET wrong-type 语义不一致 — [ISSUES.md#ISSUE-001](ISSUES.md#issue-001-memoryengine-mget-对非-string-key-静默返回-none).
-- 集群 Gossip 与 oldmain 行为差异 — [ISSUES.md](ISSUES.md) (ISSUE-014 等).
+- 双引擎 MGET wrong-type 语义不一致.
+- 集群 Gossip 与 oldmain 行为差异.
 
 ## 待核实
 
-- 集群 failover / stub 子命令 — 见 [ISSUES.md](ISSUES.md) (ISSUE-016, ISSUE-019; modules 一行引用).
-- 可观测性默认与 metrics 刷新 — 见 [ISSUES.md](ISSUES.md) (ISSUE-020~023).
+- 集群 failover / stub 子命令.
+- 可观测性默认与 metrics 刷新.
 - mimalloc Phase 2 (逻辑层分配热点 buffer 复用) — 收益未量化, 见 [性能](#性能).

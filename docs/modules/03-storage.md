@@ -181,7 +181,6 @@ RESTORE 校验 version; 失败 → `ERR DUMP payload version or checksum error`.
 1. 跑 `cargo test --test storage compat -- --test-threads=1`
 2. 确认走哪条路径: `engine_kind()` 或 CLI `--engine`
 3. 对比是否经 bincode / key 编码 (adapter 专有)
-4. 查 [ISSUES.md](../../ISSUES.md) 已知差异
 
 ### 调试 aidb 重启后数据丢失
 

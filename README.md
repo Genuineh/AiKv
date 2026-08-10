@@ -96,7 +96,6 @@ pytest e2e/function/ -v
 | [docs/modules/commands-extended.md](docs/modules/05-commands-extended.md) | JSON, Lua, SAVE, INFO, MIGRATE |
 | [docs/modules/cluster.md](docs/modules/06-cluster.md) | MOVED/ASK, CLUSTER 子命令 |
 | [docs/modules/observability.md](docs/modules/07-observability.md) | slowlog, INFO, OTLP metrics |
-| [ISSUES.md](ISSUES.md) | 待核实项 |
 
 ## 已知限制
 
@@ -104,7 +103,7 @@ pytest e2e/function/ -v
 
 ## 待核实
 
-集群 failover/stub 子命令与可观测性默认差异 — 见 [ISSUES.md](ISSUES.md).
+集群 failover/stub 子命令与可观测性默认差异.
 
 ## 许可
 

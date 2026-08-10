@@ -195,9 +195,19 @@ Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/
 
 ## 开发与 PR 规范
 
+### GitHub Issues 工作流
+
+每个开发任务对应一个 GitHub Issue, 全链路可追踪:
+
+1. 先创建 GitHub Issue (通用模板含类型/描述/验收标准).
+2. 分支命名: `{type}/{NN}-{slug}`, 如 `fix/42-key-expiry`.
+3. commit 消息带官方 keyword: `fix: ...\n\nFixes #42`.
+4. PR 描述首行 `Closes #42`, 合并进 default branch 时 GitHub 自动关闭 Issue.
+5. labels 初始化: `./scripts/setup-labels.sh <owner/repo>`; Milestone 按版本创建.
+
 1. **TDD (建议)**: 先写测试 → 实现 → 重构.
 2. **提交格式**: `type: 中文描述` — `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`.
-3. **修 bug (必带回归测)**: 见下节; `docs:` / doc-only 关闭 ISSUE 可豁免.
+3. **修 bug (必带回归测)**: 见下节; `docs:` 或纯文档 Issue 可豁免.
 4. **用户面向变更**: 更新 [CHANGELOG.md](CHANGELOG.md) 对应版本或 `[Unreleased]`.
 5. **PR**: CI + Security 须绿; 相关文档一并更新.
 
@@ -215,12 +225,12 @@ Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/
 
 ## 回归测试 (必带)
 
-所有 **bugfix PR** (`fix:`、修 ISSUE、行为修正) **必须** 在同一 PR 内附带可复现回归测. **豁免**: 纯文档变更 (`docs:`) 或 doc-only 关闭 ISSUE.
+所有 **bugfix PR** (`fix:`、修 Issue、行为修正) **必须** 在同一 PR 内附带可复现回归测. **豁免**: 纯文档变更 (`docs:`) 或纯文档 Issue.
 
 | 规则 | 说明 |
 |------|------|
 | 同一 PR | 测试与修复同 PR; 建议先红后绿 |
-| 命名 / 注释 | 描述性 `test_*`; **`///`** 写明 bug 现象、期望与 ISSUE (若有) |
+| 命名 / 注释 | 描述性 `test_*`; **`///`** 写明 bug 现象、期望与 Issue 编号 (若有) |
 | `@component` | entry 文件加 `//! @component aikv-{domain}` (与 console B2-v1 一致) |
 
 ### 放置决策
@@ -232,7 +242,7 @@ Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/
 | storage/持久化 | `tests/modules/storage/` |
 | 集群协议/路由 | `tests/cluster_*.rs` |
 
-示例 (B1.3): ISSUE-002 生产 Options → [`tests/modules/storage/prod_options.rs`](tests/modules/storage/prod_options.rs).
+示例 (B1.3): 生产 Options → [`tests/modules/storage/prod_options.rs`](tests/modules/storage/prod_options.rs).
 
 aikv **无** 独立 `tests/regression/` 入口; 回归测放在对应模块或 cluster integration test 中 (与 aidb L4 分工不同, 见 [aidb CONTRIBUTING](../aidb/CONTRIBUTING.md)).
 
@@ -244,7 +254,7 @@ aikv **无** 独立 `tests/regression/` 入口; 回归测放在对应模块或 c
 2. 改动改变对外能力 / 使用方式 / 依赖 → 更新 `README.md` / `DEPLOYMENT.md`
 3. 改动改变设计取舍 → 更新 `DESIGN.md` / `ARCHITECTURE.md`
 4. PR 描述必须列出本次更新的文档文件; 未列视为 incomplete
-5. 修 bug 的 commit 消息须带 `(ISSUE-NNN)` 引用, 关闭条目时更新 `ISSUES.md` 状态
+5. 修 bug 的 commit 消息须带官方 keyword 引用 (如 `Fixes #42`), 合并 PR 时 GitHub 自动关闭关联 Issue
 
 > 文档同步在 code-review 通过后、commit 前执行; 文档无影响时在 PR 描述写明「文档无需变更」.
 
@@ -257,4 +267,3 @@ aikv **无** 独立 `tests/regression/` 入口; 回归测放在对应模块或 c
 | [tests/README.md](tests/README.md) | 测试分层与新增约定 |
 | [e2e/README.md](e2e/README.md) | E2E smoke 脚本 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
-| [ISSUES.md](ISSUES.md) | 待核实项 |

@@ -19,7 +19,6 @@
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | hooks、CI、测试矩阵、提交/PR 规范 |
 | [CHANGELOG.md](../CHANGELOG.md) | 版本变更记录 |
 | [AGENTS.md](../AGENTS.md) | AI 助手与 CI 入口 |
-| [ISSUES.md](../ISSUES.md) | 待核实与已知疑点 |
 
 ## 按域阅读 (modules)
 
@@ -41,4 +40,3 @@
 
 ## 待核实
 
-详情见 [ISSUES.md](../ISSUES.md) (module 内一行引用, 不在此展开).
