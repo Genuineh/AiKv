@@ -31,12 +31,38 @@ Feature 组合、CLI 全表与集群多节点示例见 [DEPLOYMENT.md](DEPLOYMEN
 
 ## 与 AiDb
 
-[AiDb](../aidb/) 提供同步 LSM 引擎与 MetaRaft/MultiRaft 共识; AiKv 在其上实现 TCP、Redis 命令与 Cluster **客户端协议**. Monorepo 内 `aidb = { path = "../aidb" }`; 本地开发需 sibling 布局 `../aidb`.
+[AiDb](../aidb/) 提供同步 LSM 引擎与 MetaRaft/MultiRaft 共识; AiKv 在其上实现 TCP、Redis 命令与 Cluster **客户端协议**.
+
+**依赖**: `Cargo.toml` 中 `aidb = { git = "https://github.com/wiqun/AiDb.git", branch = "new/main" }`, 任何人都可独立 clone 编译 (CI 构建前执行 `cargo update -p aidb` 自动对齐 `new/main` 最新, 无需维护 aidb 的 lock).
+
+**本地开发** (aidb 高频迭代期): 通过 `~/.cargo/config.toml` 的 `[patch]` 把 aidb 覆盖为本地 sibling path, 保持"改 aidb 立即被 aikv 编译验证":
+
+```toml
+# ~/.cargo/config.toml (仅本机, 不提交仓库)
+# 注意: patch 的 path 相对配置文件所在目录 (~/.cargo/), 不是 CWD, 必须写绝对路径
+[patch."https://github.com/wiqun/AiDb.git"]
+aidb = { path = "/path/to/aidb" }
+```
+
+> 该 patch 只影响本地编译, CI 无此配置, 且构建前 `cargo update -p aidb` 强制对齐远程 `new/main` 最新 — push aidb 后, 再 push aikv (或开 PR) 触发 CI 即用最新 aidb, 无需本地手动 `cargo update` 维护 lock.
+
+**换环境三步** (新机器 / 新容器开发 aikv):
+
+```bash
+# 1. clone 两仓库为 sibling (aidb 与 aikv 同级)
+git clone <AiDb-url> aidb && git clone <AiKv-url> aikv
+# 2. 创建全局 patch 配置, 指向本机 aidb 绝对路径 (仅需一次)
+mkdir -p ~/.cargo && cat > ~/.cargo/config.toml <<EOF
+[patch."https://github.com/wiqun/AiDb.git"]
+aidb = { path = "$(pwd)/aidb" }
+EOF
+# 3. 验证 patch 生效
+cd aikv && cargo tree -i aidb   # 应显示 aidb vX.Y.Z (/.../aidb)
+```
 
 ## 快速开始
 
 ```bash
-# 确保 ../aidb 存在
 cargo build --release --features cluster
 ./target/release/aikv --bind 127.0.0.1:6379
 

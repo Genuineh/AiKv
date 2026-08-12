@@ -22,15 +22,24 @@ src/
 
 [`rust-toolchain.toml`](rust-toolchain.toml) 固定 **stable**, 含 `clippy` / `rustfmt`, 与 GitHub Actions 一致. 进入仓库目录后 `rustup` 会自动切换; 可用 `rustup show` 确认.
 
-**path 依赖**: `Cargo.toml` 中 `aidb = { path = "../aidb" }`. 本地需 sibling 布局:
+**aidb 依赖 (git + 本地 patch)**: `Cargo.toml` 中 `aidb = { git = "https://github.com/wiqun/AiDb.git", branch = "new/main" }`, 任何人可独立 clone 编译 (CI 直接由 cargo 拉取).
+
+本地开发 (aidb 高频迭代期) 通过 `~/.cargo/config.toml` 的 `[patch]` 把 aidb 覆盖为本地 sibling path, 保持"改 aidb 立即可被 aikv 验证":
+
+```toml
+# ~/.cargo/config.toml (仅本机, 不提交仓库)
+# 注意: patch 的 path 相对配置文件所在目录 (~/.cargo/), 不是 CWD, 必须写绝对路径
+[patch."https://github.com/wiqun/AiDb.git"]
+aidb = { path = "/path/to/aidb" }
+```
 
 ```text
 parent/
-├── aidb/    # wiqun/AiDb
+├── aidb/    # wiqun/AiDb (patch 指向)
 └── aikv/    # wiqun/AiKv
 ```
 
-CI 会 checkout 同名分支的 `wiqun/AiDb` 并 `ln -sf` 到 `../aidb`; 只改 aikv 时, 远程也应有对应分支的 AiDb.
+CI 无 patch, 构建前由 prepare action 执行 `cargo update -p aidb` 强制对齐 `new/main` 最新 — push aidb 后, 再 push aikv (或开 PR) 触发 CI 即用最新 aidb, 无需本地手动维护 aidb 的 lock. 注意: 本地改 aidb 的 API 时, 需先把改动 push 到远程 `new/main`, 否则 CI 上会因 API 不一致失败.
 
 开发与 CI 以 **`--features cluster`** 为主路径. `cluster` 启用 `aidb/cluster` (gRPC), 本地 clippy/测试需本机 **protoc**:
 
@@ -51,26 +60,45 @@ sudo apt-get install -y protobuf-compiler
 
 [`hooks/pre-commit`](hooks/pre-commit) 依次执行:
 
-1. 检查 `../aidb/Cargo.toml` 存在
-2. `cargo fmt --check`
-3. `cargo clippy --all-targets --features cluster` (`RUSTFLAGS='-D warnings'`)
+1. 分支保护 + 文档链接检查 (见下)
+2. aidb 依赖解析检查 (`cargo tree -i aidb`: git 或 path 来源均可)
+3. `cargo fmt --check`
+4. `cargo clippy --all-targets --all-features` (`RUSTFLAGS='-D warnings'`)
+5. `cargo audit` + `cargo deny check` (见 [`hooks/check-security.sh`](hooks/check-security.sh))
+
+[`hooks/commit-msg`](hooks/commit-msg) 校验提交说明是否遵循 Conventional Commits 规范 (如 `feat:`, `fix:`, `chore:` 等).
 
 **注意**: hook **不跑** `cargo test`; 测试在 CI (或 push 前手动) 执行.
+
+### Security 检查与逃生门
+
+pre-commit 里的 `cargo audit` + `cargo deny check` 与 CI `security.yml` 对齐 (两者都基于 `Cargo.lock` 全量扫描, 天然覆盖所有 feature 依赖). 依赖漏洞修复前 (见 `TEMP-RECORD-BUG.md`), 可临时跳过:
+
+```bash
+SKIP_SECURITY=1 git commit ...   # 仅跳过 security, fmt/clippy 仍执行
+```
+
+`cargo-audit` / `cargo-deny` 未安装时对应检查跳过并提示安装命令 (`cargo install cargo-audit --locked` / `cargo install cargo-deny --locked`).
 
 ## 本地验证 vs CI
 
 | 层级 | 做什么 | 何时失败 |
 |------|--------|----------|
-| pre-commit | fmt + clippy (`--features cluster`) | `git commit` |
-| CI `test-cluster` | link aidb → fmt → clippy (cluster) → `cargo test --workspace --features cluster -- --test-threads=1` | push / PR |
+| pre-commit | fmt + clippy (`--all-features`) + audit + deny | `git commit` |
+| CI `test-cluster` | fmt → clippy (cluster) → `cargo test --workspace --features cluster -- --test-threads=1` | push / PR |
 | CI `test-server-stress` | `--test server -- --ignored` (TCP 压测) | `test-cluster` 通过后 |
 | CI `test-commands-slow` | `--test commands -- --ignored` (TTL 慢测) | `test-cluster` 通过后 |
-| CI `e2e` | `pytest e2e/` (黑盒; 需 redis-cli + 已部署被测服务) | `test-cluster` 通过后 |
+| CI `test-stress-ttl` | `--test stress_ttl -- --ignored` (TTL + 并发写压测) | `test-cluster` 通过后 |
+| CI `test-compression` | `--lib storage::aidb_options` (Snap/LZ4 压缩 gate) | push / PR |
 | Security | `cargo audit` + `cargo deny check` | push / PR / 每日 cron |
+
+e2e (黑盒 pytest) 不纳入 CI: 套件仅连接已部署被测服务 (`e2e/function/`), 作为人工部署后的验收工具, 见 [`e2e/README.md`](e2e/README.md).
 
 Security ([`.github/workflows/security.yml`](.github/workflows/security.yml)) 与主 CI **并行、互不阻塞**. 同一分支新 push 会 cancel 未完成的旧 CI run.
 
-触发分支: `main`, `new/main` (见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+触发分支: `main`, `new/main`. 仅非文档变更触发: `.md` 与 `docs/` 变更被 `paths-ignore` 排除 (文档链接检查由 `docs-link-check` workflow 负责). 见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
+CI 使用 rust 缓存 (`setup-rust-toolchain` 内置 `rust-cache`, `cache-save-if` 仅在 `main` / `new/main` 保存, PR 分支只读不写).
 
 ### 推送前推荐命令
 
@@ -81,11 +109,12 @@ cargo clippy --all-targets --features cluster   # 需 protoc
 cargo test --workspace --features cluster -- --test-threads=1
 ```
 
-慢测 (与 CI `test-server-stress` / `test-commands-slow` 一致):
+慢测 (与 CI `test-server-stress` / `test-commands-slow` / `test-stress-ttl` 一致):
 
 ```bash
 cargo test --test server --features cluster -- --ignored --test-threads=1
 cargo test --test commands --features cluster -- --ignored --test-threads=1
+cargo test --test stress_ttl --features cluster -- --ignored --test-threads=1
 ```
 
 与 [AGENTS.md](AGENTS.md) 速查块相同; job 细节见 [.github/README.md](.github/README.md).
@@ -139,7 +168,7 @@ cargo test --test cluster_routing --features cluster -- --test-threads=1
 | `test_tcp_malicious_slow_send` | stress | `server` | `test-server-stress` |
 | `test_tcp_pipeline_large_buffer` | stress | `server` | `test-server-stress` |
 | `test_px_expiry_real_wait` | slow | `commands` | `test-commands-slow` |
-| `test_concurrent_write_with_ttl_filter` | stress | `stress_ttl` | 本地 `--ignored` |
+| `test_concurrent_write_with_ttl_filter` | stress | `stress_ttl` | `test-stress-ttl` |
 
 `test-cluster` 默认跳过上述用例. 本地:
 
@@ -154,7 +183,8 @@ cargo test --test stress_ttl --features cluster -- --ignored --test-threads=1
 | Feature | 本地验证 | CI |
 |---------|----------|-----|
 | `cluster` | clippy + 全量 test (主路径) | `test-cluster` 及下游 3 job |
-| `monitoring` | `cargo build --features cluster,monitoring` | **无独立 job** |
+| `monitoring` | `cargo build --features cluster,monitoring` | `test-cluster` 内含 (server + cluster_commands observability) |
+| `compression` | `cargo test --features compression --lib storage::aidb_options` | `test-compression` (Snap/LZ4 gate) |
 | default (无 feature) | `cargo build` | **无独立 job** |
 
 ### CI 全量 (与 push 门禁一致)
@@ -175,7 +205,7 @@ pytest e2e/function/ -v
 
 文件放 `e2e/function/{domain}/test_*.py` (四维度: `command` / `crash` / `migration` / `failover`); 文件头 `# @component aikv-{domain}` + `# @title` (与 console B2-v1 一致). 慢/压测用 `@pytest.mark.slow` / `@pytest.mark.stress`. 详见 [e2e/README.md](e2e/README.md).
 
-**CI `e2e` job**: `pytest e2e/` (黑盒); 历史 cluster shell 用例 (`test_cluster_*.sh`) 已迁移为 pytest.
+> **e2e 不纳入 CI** (2026-08 起): 套件仅连接已部署被测服务, 不自行启动, CI runner 无被测服务必然失败. 现作为人工部署后的验收工具; 待支持 CI 内自部署后接回.
 
 | 场景 | 落点 |
 |------|------|
@@ -199,11 +229,11 @@ Aidb 持久化 roundtrip 由 L1 `cargo test --test storage` 覆盖; 详见 [e2e/
 
 每个开发任务对应一个 GitHub Issue, 全链路可追踪:
 
-1. 先创建 GitHub Issue (通用模板含类型/描述/验收标准).
+1. 先创建 GitHub Issue (类型模板见 `.github/ISSUE_TEMPLATE/`: feat / fix / refactor / test / docs / chore / perf).
 2. 分支命名: `{type}/{NN}-{slug}`, 如 `fix/42-key-expiry`.
 3. commit 消息带官方 keyword: `fix: ...\n\nFixes #42`.
 4. PR 描述首行 `Closes #42`, 合并进 default branch 时 GitHub 自动关闭 Issue.
-5. labels 手动创建 (一次性): 类型 `bug` / `feature` / `refactor` / `docs` / `perf` + 状态 `ready` / `in-progress` / `blocked`; 删除默认冗余标签 (如 `enhancement` / `documentation`); Milestone 按版本创建.
+5. labels 手动创建 (一次性): 类型 `feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `perf` (与 commit 类型对齐) + 状态 `ready` / `in-progress` / `blocked`; 删除默认冗余标签 (如 `enhancement` / `documentation` / `bug`); Milestone 按版本创建.
 
 1. **TDD (建议)**: 先写测试 → 实现 → 重构.
 2. **提交格式**: `type: 中文描述` — `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`.

@@ -38,7 +38,7 @@ Redis Client → TCP/RESP → CommandRouter/ClusterRouter
 - **Span**: 入口 span (`kv_command`, `cmd_string`) 用 `level = "debug"`; `batcher_batch_done` (target `perf`) 生产默认不启用
 - **Batcher** (`cluster_adapter.rs`): `SET_BATCH_MAX_OPS=512`, `SET_BATCH_MAX_DELAY=1ms`, `DEFAULT_EAGER_FLUSH=48`; 调 `eager_flush` 须权衡吞吐与尾延迟, 经 `ClusterDataAdapter::DEFAULT_EAGER_FLUSH` 引用
 - **指标**: 生产经 OTLP `aikv_*`; INFO 目标对齐 Redis 8.8 (部分字段 stub)
-- **测试纪律**: 修 bug 必带回归测 ([CONTRIBUTING.md §回归测试](CONTRIBUTING.md#回归测试-必带)); 新测写法与落点 ([tests/README.md §测试写法与范围 (硬性)](tests/README.md#测试写法与范围-硬性)); 验证需 sibling `../aidb`, 默认 `--features cluster`, `RUSTFLAGS='-D warnings'` + `--test-threads=1` (完整命令见 [CONTRIBUTING.md](CONTRIBUTING.md))
+- **测试纪律**: 修 bug 必带回归测 ([CONTRIBUTING.md §回归测试](CONTRIBUTING.md#回归测试-必带)); 新测写法与落点 ([tests/README.md §测试写法与范围 (硬性)](tests/README.md#测试写法与范围-硬性)); 验证默认 `--features cluster`, `RUSTFLAGS='-D warnings'` + `--test-threads=1` (aidb 依赖 git + 本地 patch, 见 [CONTRIBUTING.md](CONTRIBUTING.md))
 - **文档同步 (强制)**: 改公共 API / 行为 / 模块边界必须同步对应 `docs/modules/*.md` 与根文档; commit 消息修 bug 须带 GitHub Issue 引用 (`Fixes #NN`); 不满足不进 commit (见 [CONTRIBUTING.md §文档同步](CONTRIBUTING.md#文档同步-硬性))
 
 ## 进一步阅读

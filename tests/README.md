@@ -108,7 +108,7 @@ bugfix **必带** 回归测; 详见 [CONTRIBUTING.md §回归测试](../CONTRIBU
 | `test_tcp_malicious_slow_send` | stress | `server` | `test-server-stress` |
 | `test_tcp_pipeline_large_buffer` | stress | `server` | `test-server-stress` |
 | `test_px_expiry_real_wait` | slow | `commands` | `test-commands-slow` |
-| `test_concurrent_write_with_ttl_filter` | stress | `stress_ttl` | 本地 `--ignored` |
+| `test_concurrent_write_with_ttl_filter` | stress | `stress_ttl` | `test-stress-ttl` |
 
 `test-cluster` 默认跳过上述用例. 本地:
 

@@ -20,7 +20,7 @@ AiDb 侧 protoc、LSM 数据目录、库侧 cluster API 见 [aidb/DEPLOYMENT.md]
 |----|------|
 | Rust | **stable** (见 [rust-toolchain.toml](rust-toolchain.toml); 含 clippy、rustfmt) |
 | 操作系统 | Linux / macOS (CI 为 `ubuntu-latest`) |
-| Monorepo | sibling 布局 `../aidb` (path 依赖); CI checkout 同名分支 AiDb 并 `ln -sf` |
+| Monorepo | `aidb` 走 git 依赖 (branch `new/main`); 本地开发可选 `~/.cargo/config.toml` `[patch]` 覆盖为本地 sibling `../aidb` |
 | 磁盘 | 持久化 (`--engine aidb`) 推荐 SSD; 容量随数据量 |
 | 内存 | `memory` 引擎全量驻内存; 生产集群推荐 `--engine aidb` |
 | protoc | **`cluster` feature** 本地 clippy/测试需要; 见 [aidb DEPLOYMENT §构建与验证](../aidb/DEPLOYMENT.md#构建与验证) |
@@ -53,7 +53,7 @@ AiDb 侧 protoc、LSM 数据目录、库侧 cluster API 见 [aidb/DEPLOYMENT.md]
 完整流程见 [AGENTS.md](AGENTS.md)、[.github/README.md](.github/README.md).
 
 ```bash
-# 确保 ../aidb 存在 (或 CI 等价 link)
+# 本地开发: 若配置了 ~/.cargo/config.toml patch 则用本地 aidb, 否则用 git 依赖
 ./install-hooks.sh   # 可选; pre-commit: fmt + clippy
 
 export RUSTFLAGS='-D warnings'
@@ -67,9 +67,10 @@ cargo test --workspace --features cluster -- --test-threads=1
 ```bash
 cargo test --test server --features cluster -- --ignored --test-threads=1
 cargo test --test commands --features cluster -- --ignored --test-threads=1
+cargo test --test stress_ttl --features cluster -- --ignored --test-threads=1
 ```
 
-E2E (黑盒; CI job `e2e` 跑 `pytest e2e/`):
+E2E (黑盒; 人工验收工具, 不纳入 CI — 需先部署被测服务):
 
 ```bash
 pytest e2e/function/ -v   # 需先部署被测服务 (单机或集群)
@@ -81,11 +82,13 @@ pytest e2e/function/ -v   # 需先部署被测服务 (单机或集群)
 
 ```shell
 <workspace>/
-├── aidb/          # LSM + 可选 MetaRaft/MultiRaft (path 依赖)
+├── aidb/          # LSM + 可选 MetaRaft/MultiRaft (本地 patch 覆盖 git 依赖)
 └── aikv/          # 本仓库 — RESP bin
     ├── src/main.rs
-    └── Cargo.toml # aidb = { path = "../aidb" }
+    └── Cargo.toml # aidb = { git = "https://github.com/wiqun/AiDb.git", branch = "new/main" }
 ```
+
+本地开发用 aidb 仓库时, 在 `~/.cargo/config.toml` 加 `[patch]` 指向上面的 aidb 目录 (见 [README.md §与 AiDb](README.md#与-aidb)).
 
 ## 命令行参数
 

@@ -1,0 +1,32 @@
+name: Prepare workspace
+description: >-
+  Checkout repo + setup Rust toolchain. aikv 依赖 aidb 走 git 依赖
+  (Cargo.toml: `aidb = { git = "https://github.com/wiqun/AiDb.git", branch = "new/main" }`),
+  CI 直接由 cargo 拉取, 无需 checkout/link. 本地开发通过 ~/.cargo/config.toml 的
+  [patch] 把 aidb 覆盖为 ../aidb path (见 README.md §与 AiDb).
+
+inputs:
+  components:
+    description: rustup components (e.g. "clippy, rustfmt")
+    required: false
+    default: ""
+  cache-save-if:
+    description: >-
+      依赖缓存保存条件. 仅 main/new/main 保存, PR 分支只读不写, 避免缓存膨胀.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        components: ${{ inputs.components }}
+        cache-save-if: ${{ inputs.cache-save-if }}
+
+    # 把 aidb git 分支依赖对齐到 new/main 最新 commit.
+    - name: Sync aidb to latest (new/main)
+      run: cargo update -p aidb
+      shell: bash

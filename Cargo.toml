@@ -54,7 +54,10 @@ openraft = { version = "0.10.0-alpha.33", optional = true }
 openraft-rt-tokio = { version = "0.10.0-alpha.33", optional = true }
 
 # AiDb storage engine
-aidb = { path = "../aidb" }
+# 开发期用 git 依赖 (可被任何人 clone 编译); 本地通过 ~/.cargo/config.toml 的
+# [patch] 覆盖为 ../aidb 的 path, 保持改 aidb 立即可被 aikv 验证.
+# 见 README.md §与 AiDb 与 CONTRIBUTING.md §aidb 依赖.
+aidb = { git = "https://github.com/wiqun/AiDb.git", branch = "new/main" }
 
 # Monitoring (optional)
 # Metrics HTTP server (monitoring feature)

@@ -14,6 +14,12 @@ allow = [
 
 [bans]
 multiple-versions = "deny"
+skip = [
+  # ring v0.17 依赖 getrandom 0.2, 项目已有 getrandom 0.3
+  { name = "getrandom" },
+  # ring v0.17 依赖 windows-sys 0.52, 项目已有 windows-sys 0.61
+  { name = "windows-sys" },
+]
 
 [sources]
 allow-git = []

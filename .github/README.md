@@ -1,96 +1,97 @@
-# 开发与 CI
+# CI
 
-push/PR 到 `main`、`new/main` 时, 本地 pre-commit 与 GitHub Actions 一起构成质量门禁.
+## 简介
+
+CI 质量门禁由本地 **Git Hooks(pre-commit)** 和云端 **GitHub Actions** 协同构成;
+辅以 **ISSUE** 与 **Pull Request** 模板, 全链路规范开发流程.
+
+> 需执行 [`install-hooks.sh`](../install-hooks.sh) 脚本安装到本地 hooks (软链到 .git/hooks/) 才生效.
+>
+> **aidb 依赖**: `Cargo.toml` 声明 `aidb = { git = "https://github.com/wiqun/AiDb.git", branch = "new/main" }`, CI 构建前由 prepare action 执行 `cargo update -p aidb` 强制对齐分支最新; 本地开发通过 `~/.cargo/config.toml` 的 `[patch]` 覆盖为本地 path (见 [README.md §与 AiDb](../README.md#与-aidb)).
 
 ## 总览
 
 ```mermaid
 flowchart TB
-    subgraph local [本地]
+    subgraph local [Local]
+        direction TB
         RT[rust-toolchain / editorconfig / rustfmt]
-        HOOK[install-hooks.sh → pre-commit]
+        HOOK[install-hooks.sh → pre-commit + commit-msg]
+        C[git commit]
         RT --> HOOK
+        HOOK --> C
     end
 
     subgraph remote [GitHub]
-        CI[ci.yml]
+        direction TB
+        subgraph CIJ [ci.yml]
+            direction TB
+            TC[test-cluster] --> TS[test-server-stress]
+            TC --> TSL[test-commands-slow]
+            TC --> TTL[test-stress-ttl]
+            TC --- TCM[test-compression]
+        end
         SEC[security.yml]
+        DL[docs-link-check.yml]
+        IL[issue-lint.yml]
     end
 
-    HOOK -->|push| CI
-    HOOK -->|push| SEC
+    C -->|git push| remote
 ```
 
-| 层级 | 做什么 | 何时失败 |
-|------|--------|----------|
-| 格式/工具链 | 4 空格, stable + clippy/rustfmt | 编辑 / `cargo fmt` |
-| pre-commit | 分支保护 + 链接检查 + fmt + clippy (不含 test) | `git commit` |
-| CI | 测试 + e2e | push / PR |
-| Security | audit + deny | push / PR / 每日定时 |
-
-## 本地流程
-
-```mermaid
-flowchart LR
-    A[clone + ../aidb] --> B[./install-hooks.sh]
-    B --> C[改代码]
-    C --> D[git commit]
-    D --> E[pre-commit: fmt + clippy]
-    E --> F[git push]
+```shell
+aikv/
+├── install-hooks.sh         # 安装本地 hooks (软链到 .git/hooks/)
+├── hooks/                   # 本地 commit 门禁
+│   ├── pre-commit           #   commit 时依次执行下面 4 个脚本 + fmt/clippy
+│   ├── check-branch.sh      #   分支保护: 禁止在基础分支直接提交
+│   ├── check-docs-links.sh  #   staged .md 相对链接存在性检查
+│   ├── check-security.sh    #   cargo audit + deny (SKIP_SECURITY 逃生门)
+│   └── commit-msg           #   Conventional Commits 提交说明校验
+├── deny.toml            # cargo deny 策略 (许可证/来源)
+├── rust-toolchain.toml  # 工具链 (stable, 自动切换)
+├── rustfmt.toml         # rustfmt 配置 (4 空格)
+├── .editorconfig        # 编辑器格式
+└── .github/
+    ├── README.md        # 说明文档
+    ├── ISSUE_TEMPLATE/  # Issue 类型模板 (feat/fix/refactor/test/docs/chore/perf)
+    │   ├── feat.yml
+    │   ├── fix.yml
+    │   ├── …
+    │   └── config.yml # 禁用空白 Issue
+    ├── PULL_REQUEST_TEMPLATE.md # PR 描述模板 (含 Closes #)
+    ├── actions/
+    │   └── prepare/action.yml    # composite action: checkout + rust + cargo update aidb
+    └── workflows/               # GitHub Actions
+        ├── ci.yml               # 主 CI (test-cluster → stress/slow; e2e 暂不入 CI)
+        ├── security.yml         # 安全扫描 (audit + deny)
+        ├── docs-link-check.yml  # 文档外链检查 (lychee)
+        └── issue-lint.yml       # 提醒 PR 关联 GitHub Issue
 ```
 
-1. 需要 sibling 布局: `../aidb` (path 依赖). CI 会 checkout 同名分支的 AiDb 并 link.
-2. `./install-hooks.sh` 安装 pre-commit (可选, 推荐).
-3. `git commit` 前: `cargo fmt --check` → clippy `--features cluster`.
-4. 测试在 CI 跑, hook 不跑 `cargo test`.
-
-### 本地 hook 门禁
-
-`pre-commit` 在 fmt / clippy 之前先跑两个硬性检查:
-
-- 分支保护: `hooks/check-branch.sh` 禁止在基础分支 (`new/main`, `main`) 直接提交, 提示先开功能分支; 如需强行提交可用 `git commit --no-verify` 逃生.
-- 文档链接检查: `hooks/check-docs-links.sh` 校验 staged `.md` 的相对链接指向真实存在的本地文件; 越出仓库的 `../` 跨仓链接 (sibling 布局) 跳过.
-
-## CI 流程
-
-```mermaid
-flowchart TB
-    push[push/PR] --> TC[test-cluster]
-    TC --> TS[test-server-stress]
-    TC --> TSL[test-commands-slow]
-    TC --> E2E[e2e]
-```
-
-| Job | 说明 |
-|-----|------|
-| `test-cluster` | link aidb → fmt → clippy (cluster) → 常规 test (`--test-threads=1`) |
-| `test-server-stress` | `--test server -- --ignored` (TCP 压测) |
-| `test-commands-slow` | `--test commands -- --ignored` (TTL 慢测) |
-| `e2e` | release 构建 + `e2e/test_cluster_*.sh` + `pytest e2e/` (需 redis-cli) |
-| `docs-link-check` | lychee 检查 markdown 外链 (仅 `**/*.md` 变更触发) |
-
-后三个 job 均 `needs: test-cluster`. 同一分支新 push 会 cancel 未完成的旧 run.
-
-`docs-link-check` 是独立于 `ci.yml` 的 workflow: lychee 排除 `file://` 本地链接与私有地址, 本地/跨仓相对链接由 pre-commit hook 负责.
-
-## 安全扫描
-
-```mermaid
-flowchart LR
-    push[push/PR/定时] --> A[audit]
-    push --> D[deny]
-```
-
-`security.yml`: `cargo audit` (CVE) + `cargo deny check` (许可证/依赖策略, 见 `deny.toml`). 与 CI 并行, 互不阻塞.
-
-## 相关文件
-
-| 文件 | 作用 |
-|------|------|
-| `.editorconfig` / `rustfmt.toml` | 格式 (Rust 4 空格) |
-| `rust-toolchain.toml` | 工具链 |
-| `deny.toml` | deny 策略 |
-| `hooks/pre-commit` | 本地 hook |
-| `workflows/ci.yml` | 主 CI |
-| `workflows/security.yml` | 安全扫描 |
-| `workflows/docs-link-check.yml` | 文档链接检查 (独立 workflow) |
+| 层级     | 文件                                                             | 作用                                                      |
+| ------ | ---------------------------------------------------------------- | ----------------------------------------------------------|
+| Local  | `[rust-toolchain.toml](../rust-toolchain.toml)`                  | 工具链 (stable, 进入仓库自动切换)                             |
+| Local  | `[.editorconfig](../.editorconfig)`                              | 编辑器格式                                                  |
+| Local  | `[rustfmt.toml](../rustfmt.toml)`                                | rustfmt 配置 (4 空格)                                       |
+| Local  | `[install-hooks.sh](../install-hooks.sh)`                        | 安装本地 hooks (软链到 `.git/hooks/`)                        |
+| Local  | `[hooks/pre-commit](../hooks/pre-commit)`                        | commit 门禁入口, 按序执行分支保护 → 链接 → aidb 解析 → fmt/clippy → security |
+| Local  | `[hooks/check-branch.sh](../hooks/check-branch.sh)`              | 分支保护: 禁止在基础分支直接提交                                 |
+| Local  | `[hooks/check-docs-links.sh](../hooks/check-docs-links.sh)`      | staged `.md` 相对链接存在性检查                               |
+| Local  | `[hooks/check-security.sh](../hooks/check-security.sh)`          | `cargo audit` + `cargo deny` (支持 `SKIP_SECURITY` 逃生门)   |
+| Local  | `[deny.toml](../deny.toml)`                                      | cargo deny 策略 (许可证/来源)                                |
+| Local  | `[hooks/commit-msg](../hooks/commit-msg)`                        | Conventional Commits 提交说明校验                            |
+| GitHub | `[ISSUE_TEMPLATE/feat.yml](ISSUE_TEMPLATE/feat.yml)`             | Issue 模板: 新功能                                          |
+| GitHub | `[ISSUE_TEMPLATE/fix.yml](ISSUE_TEMPLATE/fix.yml)`               | Issue 模板: bug 修复                                        |
+| GitHub | `[ISSUE_TEMPLATE/refactor.yml](ISSUE_TEMPLATE/refactor.yml)`     | Issue 模板: 重构                                            |
+| GitHub | `[ISSUE_TEMPLATE/test.yml](ISSUE_TEMPLATE/test.yml)`             | Issue 模板: 测试                                            |
+| GitHub | `[ISSUE_TEMPLATE/docs.yml](ISSUE_TEMPLATE/docs.yml)`             | Issue 模板: 文档                                            |
+| GitHub | `[ISSUE_TEMPLATE/chore.yml](ISSUE_TEMPLATE/chore.yml)`           | Issue 模板: 杂项                                            |
+| GitHub | `[ISSUE_TEMPLATE/perf.yml](ISSUE_TEMPLATE/perf.yml)`             | Issue 模板: 性能                                            |
+| GitHub | `[ISSUE_TEMPLATE/config.yml](ISSUE_TEMPLATE/config.yml)`         | 禁用空白 Issue                                              |
+| GitHub | `[PULL_REQUEST_TEMPLATE.md](PULL_REQUEST_TEMPLATE.md)`           | PR 描述模板                                                 |
+| GitHub | `[actions/prepare/action.yml](actions/prepare/action.yml)`       | composite action: checkout + rust toolchain + `cargo update -p aidb` (各 job 复用) |
+| GitHub | `[workflows/ci.yml](workflows/ci.yml)`                           | 主 CI (test-cluster → stress/slow, compression 并行; e2e 暂不入 CI) |
+| GitHub | `[workflows/security.yml](workflows/security.yml)`               | 安全扫描 (audit + deny, push/PR/定时)                        |
+| GitHub | `[workflows/docs-link-check.yml](workflows/docs-link-check.yml)` | 文档外链检查 (lychee, push/PR 含 `.md`)                      |
+| GitHub | `[workflows/issue-lint.yml](workflows/issue-lint.yml)`           | 提醒 PR 关联 GitHub Issue (PR opened/edited)                |

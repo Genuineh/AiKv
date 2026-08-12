@@ -20,7 +20,7 @@ AiKv 是用 Rust 实现的 **Redis RESP 兼容 KV 服务** (bin + lib). 对外�
 
 **分工原则**: Redis 协议与命令在 AiKv; LSM 写路径、Raft 状态机、slot 表与 gRPC 在 AiDb. AiKv 侧 **拓扑 tick** 刷新 leader 路由缓存与 gossip metrics; `CLUSTER NODES` 读 MetaRaft; 故障判定走 MetaRaft, 非 Redis 16379 gossip 共识.
 
-本地开发需 sibling 布局 `../aidb`; CI checkout 同名分支 AiDb 并 link.
+本地开发经 `~/.cargo/config.toml` `[patch]` 用本地 aidb; CI 走 git 依赖 (branch `new/main`).
 
 ## 系统分层
 
@@ -257,7 +257,7 @@ MetaRaft/MultiRaft/Router 实现见 [aidb cluster.md](../aidb/docs/modules/03-cl
 
 ## 与 AiDb 的分工 (嵌入关系)
 
-AiKv 通过 `Cargo.toml` `aidb = { path = "../aidb" }` 依赖 AiDb:
+AiKv 通过 `Cargo.toml` git 依赖 (本地 `[patch]` 可覆盖为 path) 依赖 AiDb:
 
 1. **单机**: `AiDbEngine::open` 包装 `DB`; 用户 key 编码 `{db_index}:{user_key}`; 同步 I/O 经 `spawn_blocking`.
 2. **集群**: `main::init_cluster` 启动 MetaRaft/MultiRaft; `ClusterDataAdapter` 将已分配 slot 的写路由到数据面 Raft; MOVED/ASK 与 CLUSTER 子命令留在 aikv `cluster/`.
