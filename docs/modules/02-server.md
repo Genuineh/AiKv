@@ -2,260 +2,106 @@
 name: aikv-server
 depends_on:
   - aikv-protocol
-description: AiKv TCP 服务端 — Listener 接受循环、Connection 读/pipeline 循环、HELLO 协商、adapt_for_protocol、CommandRouter 分发、ATOM 事务. 改 src/server/{listener,connection,config}、排查连接生命周期、pipeline、线上协议协商或 max_clients/shutdown 时读本文.
+description: AiKv Server 运行时与连接管理 — TCP Listener、Connection 读写循环、HELLO 协议协商、ATOM 事务 (MULTI/EXEC/WATCH)、MONITOR 广播与 max_clients 门控. 修改 src/server/{listener,connection,config} 时查阅.
 ---
 
-# AiKv Server (TCP 连接层)
+# AiKv Server (服务运行时与连接管理)
 
 ## 何时读本文
 
-- 改 `server/{listener,connection,config}` 或 TCP 读写循环、pipeline、连接级命令分发
-- 排查 HELLO 协商、`protocol_negotiated` 门控、响应 null 线格式 (`$-1` vs `_`)、fatal 协议断连
-- 排查 MONITOR 模式、ATOM 事务 (MULTI/EXEC/WATCH)、`max_clients` 拒绝连接
-- **不覆盖**: RESP 帧语法 / parser limits → [protocol.md](01-protocol.md); 命令实现 → [commands-core.md](04-commands-core.md) / [commands-extended.md](05-commands-extended.md); MOVED/ASK 路由 → [cluster.md](06-cluster.md); slowlog/latency/INFO/metrics 数据结构 → [observability.md](07-observability.md)
+- 修改 `src/server/{listener.rs, connection.rs, config.rs, mod.rs}` 源码;
+- 排查 TCP 连接建立/关闭、Pipeline 批读、`HELLO` 协议协商、ATOM 事务原子性、MONITOR 模式、`max_clients` 拒绝与优雅停机;
+- **不覆盖**: RESP 帧流式解析与 Limits 校验 → [protocol.md](01-protocol.md);
+- **不覆盖**: 命令具体业务分发与 KeyLock 并发锁 → [commands-core.md](04-commands-core.md) / [commands-extended.md](05-commands-extended.md);
+- **不覆盖**: 集群 MOVED/ASK 重定向 → [cluster.md](06-cluster.md);
+- **不覆盖**: 可观测性组件 (INFO, Slowlog, Latency, OTel 指标) → [observability.md](07-observability.md).
+
+---
 
 ## 代码地图
 
-| 路径 | 职责 | 入口 |
-|------|------|------|
-| `server/mod.rs` | 模块根; re-export | `Server`, `Connection`, `ServerSharedState`, `ConnectionConfig` |
-| `server/listener.rs` | TCP accept; shutdown; max_clients gate | `Server::run`, `run_with_listener` |
-| `server/connection.rs` | 单连接读写、pipeline、分发、HELLO、响应编码、ATOM/MONITOR | `Connection::handle`, `run`, `process_value`, `adapt_for_protocol` |
-| `server/config.rs` | 连接配置 + 进程共享状态 | `ConnectionConfig`, `ServerSharedState::new_with_backup_dir`, `router()` |
-| `main.rs` (~L621–699) | 构造 `ServerSharedState`; 可选 Metrics 后台任务; `Server::run` | 非 server 模块正文, 启动关联 |
-| `src/error.rs` | 类型化错误: Io / Protocol / Command / Storage / Config / Cluster | `Error`, `Result` |
+| 文件路径 | 模块核心职责 | 公共接口与核心入口 |
+| :--- | :--- | :--- |
+| [`src/server/mod.rs`](../../src/server/mod.rs) | Server 模块根; 子模块组织与类型导出 | `Server`, `Connection`, `ServerSharedState` |
+| [`src/server/listener.rs`](../../src/server/listener.rs) | TCP Server accept 循环、`max_clients` 并发门控与优雅停机联动 | `Server::run`, `Server::run_with_listener` |
+| [`src/server/connection.rs`](../../src/server/connection.rs) | 单连接状态机、Pipeline 读写循环、内联命令、`HELLO` 协商与 ATOM 事务 | `Connection::handle`, `Connection::process_command` |
+| [`src/server/config.rs`](../../src/server/config.rs) | 服务器全局共享状态 (`ServerSharedState`) 与每连接配置定义 | `ServerSharedState`, `ConnectionConfig` |
 
-同目录 **不归本文正文**: `slowlog.rs`, `latency.rs`, `info.rs`, `info_catalog.rs`, `metrics.rs`, `metrics_server.rs`, `process_metrics.rs`, `otel.rs`, `otel_metrics.rs` → [observability.md](07-observability.md).
+---
 
-公共 re-export (`lib.rs`): `pub mod server`; `Server`, `Connection`, `ServerSharedState` 等.
+## 关键 Invariants (勿破坏规则)
 
-## 关键 invariant (勿破坏)
+- **每连接独立 Task**: 每个客户端连接通过 `tokio::spawn(Connection::handle)` 派发至独立异步任务处理, 连接级状态 (`current_db`, `parser`, `tx_state`, `cluster_state`) 绝对隔离, 不跨连接共享.
+- **Pipeline 紧凑循环**: 单次从 TCP 读取数据后调用 `parser.feed()`, 随后在内层循环中连续调用 `parse() -> process_command() -> write_response()`, 直至返回 `Ok(None)`, 充分压榨 Pipeline 性能.
+- **Buffer 溢出断连**: 当接收数据与缓冲区现有数据之和超过 `max_buffer_size` (64 MiB) 时, 直接中断连接循环并关闭 Socket, 不向客户端写错误响应.
+- **协议协商与 Null 适配 (`adapt_for_protocol`)**:
+  - 内部业务层统一生成 RESP3 AST (如 `RespValue::Null`);
+  - 默认状态下 `protocol_negotiated = false`, 此时 `adapt_for_protocol` 自动将 `Null` / `NullArray` 转换为 RESP2 兼容的 `$-1` / `*-1` 线格式;
+  - 仅当客户端主动发送 `HELLO 3` 成功协商后, 才输出原生的 RESP3 `_\r\n` Null 格式.
+- **内联命令短路**: `PING`, `ECHO`, `HELLO`, `QUIT`, `MONITOR`, `ATOM.*` 等轻量命令直接在 `Connection` 内部处理, 避免经过 `CommandRouter` 与 KeyLock, 降低热路径调度延迟.
+- **并发连接门控 (`max_clients`)**:
+  - `ServerSharedState` 维护活跃连接数计数器;
+  - 当活跃连接数达到 `--max-clients` 上限时, `listener.accept()` 立即主动关闭新连接 (`drop(stream)`), 防止连接耗尽引发系统级崩溃.
+- **CommandRouter 延迟初始化**: `ServerSharedState::router()` 通过 `OnceLock` 在首次需要时惰性构建 `CommandRouter`.
 
-- **每连接一 task**: accept 后 `tokio::spawn(Connection::handle)`; 连接状态 (`current_db`, `parser`, `tx_state`) 不跨连接共享.
-- **Pipeline 内层循环**: 单次 `read` 后 `feed`, 然后 `loop { parse_frame → process_value }` 直到 `Ok(None)`; 与 [protocol.md](01-protocol.md) 单帧语义一致.
-- **Buffer 超限断连**: `parser.buffer_len() + n > max_buffer_size()` 时直接 break, 不写 ERR.
-- **Fatal vs recoverable**: `is_fatal_protocol` (depth / too large / buffer size / line too long) → 断连; 其它 `Protocol` → `write_error` 后继续.
-- **命令请求形态**: 顶层须为 `Array`; 命令名与参数须为 `BulkString` (`process_value` 校验).
-- **HELLO 门控线格式**: 默认 `ProtocolVersion::Resp3`, 但 `protocol_negotiated = false` 直到客户端发 `HELLO 2|3`; 仅协商 Resp3 后 `adapt_for_protocol` 才把 `$-1`/`*-1` 转为 `_`.
-- **Router 懒加载**: `ServerSharedState::router()` 用 `OnceLock` 首次调用时建 `CommandRouter`.
-- **Observability 钩子**: 经 Router 的命令 (非内联列表) 成功后写 latency/slowlog/metrics; 详情见 [observability.md](07-observability.md).
+---
 
-## 数据流
-
-### 进程启动 → 首连接
+## 连接生命周期与 Pipeline 架构
 
 ```mermaid
 sequenceDiagram
-  participant M as main
-  participant S as ServerSharedState
-  participant L as Server
-  participant C as Connection
-  M->>S: new_with_backup_dir
-  M->>L: Server::run(bind, state)
-  L->>L: accept + try_register_connection
-  L->>C: spawn Connection::handle
-  C->>C: alloc_client_id / register_client / run
+    participant Client as TCP Client
+    participant Listener as TcpListener (Server)
+    participant State as ServerSharedState
+    participant Conn as Connection Task
+    participant Parser as RespParser
+    participant Router as CommandRouter
+
+    Listener->>State: try_register_connection()
+    alt 超过 max_clients
+        State-->>Listener: false
+        Listener->>Client: drop(stream) 立即拒绝
+    else 允许连接
+        State-->>Listener: true
+        Listener->>Conn: tokio::spawn(Connection::handle)
+    end
+
+    loop 读-解析-写循环
+        Client->>Conn: TCP 数据到达 (最大 16KB read_buf)
+        Conn->>Parser: parser.feed(&buf)
+        loop Pipeline 内层解析
+            Conn->>Parser: parser.parse()
+            alt Ok(Some(frame))
+                Conn->>Conn: 校验顶层为 Array
+                alt 内联命令 (PING/HELLO/ATOM等)
+                    Conn->>Conn: 内部快速执行并生成响应
+                else 普通命令
+                    Conn->>Router: dispatch_command(args)
+                    Router-->>Conn: RespValue 响应
+                end
+                Conn->>Conn: adapt_for_protocol()
+                Conn->>Client: TCP 发送响应字节帧
+            else Ok(None)
+                Note over Conn: 数据不足, 退出内层循环等待更多 TCP 数据
+            else Err(fatal)
+                Note over Conn: 致命协议错误, 立即退出连接
+            end
+        end
+    end
+    Conn->>State: on_disconnect() (减少连接数)
 ```
 
-### 单连接读-解析-写 (pipeline)
+---
 
-```mermaid
-flowchart TD
-  R[read_buf 4096B] --> F{buffer + n > max_buffer?}
-  F -->|是| X[断连]
-  F -->|否| FEED[parser.feed]
-  FEED --> P[parse_frame]
-  P -->|None| R
-  P -->|Some| PV[process_value]
-  P -->|fatal Err| X
-  P -->|recoverable Err| ERR[write_error]
-  PV --> PC[process_command]
-  PC -->|内联 / ATOM / cluster conn| H[connection 内处理]
-  PC -->|其它| RT[router.execute_with_client]
-  H --> WR[adapt_for_protocol → serialize → write]
-  RT --> WR
-  WR --> P
-  ERR --> P
-```
+## ATOM 事务处理机制 (MULTI / EXEC / WATCH)
 
-## 关键类型与 API
+AiKv 在 `Connection` 内部维护 `TransactionState`:
 
-### `ConnectionConfig`
-
-```rust
-pub struct ConnectionConfig {
-    pub read_timeout: Option<Duration>,   // 默认 Some(60s)
-    pub idle_timeout: Option<Duration>,  // 默认 Some(300s)
-    pub max_clients: usize,               // 默认 10000; 0 = 不限制
-}
-```
-
-测试 helpers 常设 timeout 为 `None` (`tests/modules/server/helpers.rs`).
-
-### `ServerSharedState`
-
-进程级 `Arc` 共享: `storage`, `metrics`, `slow_query_log`, `latency_stats`, `config_map`, `clients`, `monitor_tx`, `shutdown`, `key_versions` (WATCH), `router` (`OnceLock`).
-
-| 方法 | 用途 |
-|------|------|
-| `router()` | 懒初始化 `CommandRouter` |
-| `try_register_connection()` | max_clients 检查; 拒绝时 `on_rejected_connection` |
-| `alloc_client_id` / `register_client` / `unregister_client` | CLIENT LIST 数据源 |
-| `increment_key_version` / `get_key_version` | ATOM WATCH 冲突检测 |
-| `refresh_runtime_metrics()` | `[monitoring]` 后台 15s tick |
-
-### `Connection`
-
-每连接持有: `RespParser`, `protocol_version`, `protocol_negotiated`, `current_db`, `client_id`, `mode` (Normal/Monitor), `tx_state`, `[cluster] cluster_state`.
-
-入口:
-
-```rust
-Connection::handle(stream, remote, state: Arc<ServerSharedState>).await
-// 内部: run() → process_value → process_command
-```
-
-### `CommandRouter::execute_with_client` (调用方视角)
-
-```rust
-router().execute_with_client(
-    cmd, args,
-    &mut self.current_db,
-    Some(self.client_id),
-    self.protocol_version,
-    #[cfg(feature = "cluster")] Some(&self.cluster_state),
-).await
-```
-
-集群 MOVED/ASK/CROSSSLOT 在 Router 内; 连接级 ASKING/READONLY/READWRITE 在 `process_command` 内.
-
-## 连接内联命令
-
-| 命令 | 处理位置 | 备注 |
-|------|----------|------|
-| `PING` | `cmd_ping` | 无参 → `+PONG`; 一参 → bulk 回显 |
-| `ECHO` | `cmd_echo` | 恰好一参 |
-| `HELLO` | `cmd_hello` | 见下节 |
-| `QUIT` | `cmd_quit` | `+OK` 后 `quit = true` |
-| `MONITOR` | `cmd_monitor` | `+OK` 后进入 Monitor 模式 |
-| `MULTI` / `ATOM.MULTI` 等 | ATOM 事务 | 见下节 |
-| `[cluster] ASKING` / `READONLY` / `READWRITE` | `process_command` | 改 `ClusterConnectionState`; 不进 Router |
-
-其余命令 → Router. `SHUTDOWN` 成功后 connection 设 `quit = true`.
-
-## HELLO 与 `adapt_for_protocol`
-
-### HELLO 语义
-
-| 客户端 | 行为 |
-|--------|------|
-| `HELLO` (无参) | 返回 `hello_map`; **不**改 `protocol_version`; **不**设 `protocol_negotiated` |
-| `HELLO 2` / `HELLO 3` | 设置版本 + `protocol_negotiated = true`; 返回 `hello_map` |
-| 非法版本 | `-ERR invalid protocol version` |
-
-`hello_map`: Resp3 → `Map` (key 均为 BulkString, `proto`/`id` 为 Integer); Resp2 → flat `Array`. 含 `server`, `version`, `proto`, `id`, `mode`, `role`; `[cluster]` 时 mode/role 读集群状态.
-
-### `adapt_for_protocol`
-
-仅在 `protocol_negotiated && protocol_version == Resp3` 时:
-
-- `BulkString(None)` / `Array(None)` → `Null` (`_`)
-- 递归处理 `Array`, `Map`, `Set`, `Push`, `Attribute`
-
-未协商的 Resp3 默认连接仍发 `$-1`/`*-1`, 避免破坏 RESP2 客户端 (及 redis-py RESP3 解析兼容).
-
-编码路径: `write_response` → `encode` → `adapt_for_protocol(value).serialize()`.
-
-## ATOM 事务 (AiKv 扩展)
-
-连接级 `TransactionState`: `in_multi`, `tx_queue`, `watched_keys`.
-
-| 命令 | 行为 |
-|------|------|
-| `MULTI` / `ATOM.MULTI` | 进入 multi; 清空队列 |
-| 非事务命令 (multi 中) | 入队, 回复 `+QUEUED` |
-| `EXEC` / `ATOM.EXEC` (multi 中) | WATCH 冲突 → null bulk; 否则顺序 `execute_with_client`, 返回 Array |
-| `EXEC` + JSON arg (无 multi) | `cmd_atom_exec_json_batch`: DUMP/RESTORE 快照回滚; **非 Redis 标准** |
-| `WATCH` / `UNWATCH` | 记录/清除 key 版本 (`ServerSharedState.key_versions`) |
-| `DISCARD` | 重置事务状态 |
-
-写命令成功后 `track_command_keys` 递增 key 版本.
-
-## MONITOR 模式
-
-1. `MONITOR` → `+OK`, `mode = Monitor`, 订阅 `state.monitor_tx`
-2. `run_monitor_loop`: `select!` 读客户端 (仅处理 `QUIT`) + 收 broadcast 行写 socket
-3. 正常模式下 `broadcast_monitor` 向 `monitor_tx` 发送 `"timestamp [db N] \"CMD\" \"arg\"...\r\n"` (MONITOR 命令本身不广播)
-
-Monitor 模式 **不支持 RESET** (oldmain 有; 当前仅 QUIT).
-
-## 常见任务
-
-### 调试 pipeline 无响应
-
-1. 确认客户端一次 send 多帧或 TCP_NODELAY
-2. 在 connection 看 `parse_frame`: `Ok(None)` 表示等更多数据
-3. 查 buffer 是否触顶 `max_buffer_size` 导致静默断连
-4. 参考 `tests/modules/server/tcp.rs::test_tcp_pipeline`
-
-### 调试 HELLO / null 线格式
-
-1. 未发 `HELLO 3` 时 GET 缺失 key 应见 `$-1`, 不是 `_`
-2. `HELLO 3` 后同场景应见 `_\r\n`
-3. 参考 `test_tcp_hello_resp3`, `test_tcp_hello_version_switch_in_pipeline`
-
-### 调试 max_clients 拒绝
-
-1. `ConnectionConfig.max_clients` + `main --max-clients`
-2. 超限: listener drop stream, `on_rejected_connection`
-3. 参考 `tests/modules/server/observability.rs::test_maxclients_rejection_metrics`
-
-### 新增连接级命令 (不进 Router)
-
-1. 在 `process_command` match 加分支 (或 ATOM 相关)
-2. 若需改连接态, 勿经 Router
-3. 在 `tests/modules/server/tcp.rs` 加集成测试
-
-### 修改 observability 记录范围
-
-1. 改 `should_track_observability` 排除列表
-2. 数据结构 / SLOWLOG 命令 → [observability.md](07-observability.md)
-
-## 配置与 feature flags
-
-| 项 | 位置 | 说明 |
-| --- | --- | --- |
-| `read_timeout` / `idle_timeout` | `ConnectionConfig` | CLI 未单独暴露; main 用 `Default` |
-| `max_clients` | `ConnectionConfig` + CLI `--max-clients` | 0 = 不限 |
-| `shutdown` | `ServerSharedState.shutdown` | `CancellationToken`; listener select 退出 |
-| `feature = "cluster"` | `connection.rs` | `cluster_state`; ASKING/READONLY/READWRITE; HELLO mode/role |
-| `feature = "monitoring"` | `main.rs` | Metrics HTTP + `refresh_runtime_metrics` 后台任务 (非 listener 本体) |
-
-## 测试
-
-```bash
-cargo test --test server -- --test-threads=1
-# 33 passed; 2 ignored (slow send / large pipeline stress)
-
-cargo test --test server -- --ignored --test-threads=1   # 可选压测
-```
-
-| 文件 | 覆盖 |
-|------|------|
-| `tests/modules/server/tcp.rs` | PING/ECHO/HELLO/pipeline/MONITOR/路由命令 E2E |
-| `tests/modules/server/listen.rs` | accept |
-| `tests/modules/server/helpers.rs` | `start_server` 测试夹具 |
-| `tests/modules/server/observability.rs` | 连接 metrics / maxclients (跨 observability 边界) |
-| `connection.rs` `mod tests` | `hello_map` 格式, JSON batch helpers |
-
-## 已知限制
-
-- **AiKv 扩展**: `ATOM.*` 别名、`EXEC <json>` 无 MULTI 批量 (DUMP/RESTORE 回滚); 非 Redis 官方 MULTI 文档的一一对应说明.
-- **MONITOR**: 无 RESET; 无 monitor 客户端注册计数 (oldmain `MonitorBroadcaster` 已移除).
-- **内联命令**: 不支持非数组 `PING\r\n` telnet 格式.
-- **PING/ECHO**: 在 connection 内联 (oldmain 在 command 层); 行为等价.
-- **write_response**: 无 `flush()`; 依赖 tokio 缓冲 (与 oldmain 差异, 无已知问题).
-
-## 待核实
-
-- 无.
+1. **`WATCH <key>`**: 查询被监听 Key 的当前版本号并存入 `watched_keys` 字典;
+2. **`MULTI`**: 设置 `in_multi = true`, 开启事务收集模式;
+3. **入队阶段**: 在 `in_multi = true` 期间, 除 `EXEC`, `DISCARD`, `WATCH`, `UNWATCH` 外的命令均被放入 `tx_queue`, 立即返回 `+QUEUED`;
+4. **`EXEC`**:
+   - 检查 `watched_keys` 中的 Key 是否被外部并发写入修改;
+   - 若发生冲突, 清空事务队列并返回 `RespValue::NullArray` (`*-1\r\n`);
+   - 若未发生冲突, 提取队列中所有 Key 统一按字典序获取 `KeyLock`, 通过 `WriteBatch` 原子落盘并返回各命令的执行结果数组;
+5. **`DISCARD`**: 清空 `tx_queue` 与 `watched_keys`, 重置 `in_multi = false`, 返回 `+OK`.

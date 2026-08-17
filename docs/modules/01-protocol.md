@@ -1,177 +1,96 @@
 ---
 name: aikv-protocol
-description: AiKv RESP2/RESP3 编解码 — RespValue、RespParser feed/parse、serialize、解析 limits、可恢复错误. 改 src/protocol/*、排查 RESP 帧解析/编码、pipeline 缓冲, 或 ProtocolVersion 类型时读本文.
+description: AiKv RESP2/RESP3 编解码与流式解析 — RespValue、RespParser feed/parse、RespEncoder serialize、解析 limits、可恢复与致命协议错误. 修改 src/protocol/*、排查 RESP 分帧/编码、Pipeline 缓冲或 ProtocolVersion 类型时查阅.
 ---
 
 # AiKv Protocol (RESP 编解码)
 
 ## 何时读本文
 
-- 改 `protocol/{types,parser,encoder}` 或 `RespParser` / `RespValue` 公共 API
-- 排查 RESP 帧解析失败、编码 roundtrip、buffer 超限、嵌套深度错误
-- **不覆盖**: TCP 读写循环 / HELLO 协商 / null 线格式转换 → [server.md](02-server.md); 命令参数拆解 → [commands-core.md](04-commands-core.md)
+- 修改 `src/protocol/{types.rs, parser.rs, encoder.rs, mod.rs}` 或 `RespParser` / `RespValue` 协议 API;
+- 排查 RESP 帧流式解析失败、序列化编码 Roundtrip、缓冲区超限、嵌套深度错误或协议兼容性异常;
+- **不覆盖**: TCP 连接读写循环、`HELLO` 协议协商、Null 线格式自适应 → [server.md](02-server.md);
+- **不覆盖**: 命令参数拆解与业务执行 → [commands-core.md](04-commands-core.md).
+
+---
 
 ## 代码地图
 
-| 路径 | 职责 | 入口 |
-|------|------|------|
-| `protocol/mod.rs` | 模块根; re-export | `RespParser`, `RespValue`, `ProtocolVersion` |
-| `protocol/types.rs` | RESP 值 AST; 协议版本枚举 | `RespValue`, `ProtocolVersion` |
-| `protocol/parser.rs` | 流式解析; limits; recoverable 策略 | `RespParser::new`, `with_limits`, `feed`, `parse` |
-| `protocol/encoder.rs` | 值 → 字节帧 | `RespValue::serialize` |
+| 文件路径 | 模块核心职责 | 公共接口与核心入口 |
+| :--- | :--- | :--- |
+| [`src/protocol/mod.rs`](../../src/protocol/mod.rs) | 协议模块根; 统一 re-export 协议核心类型与断连判定函数 | `RespParser`, `RespValue`, `ProtocolVersion`, `is_fatal_protocol` |
+| [`src/protocol/types.rs`](../../src/protocol/types.rs) | RESP2 与 RESP3 17 种值类型 AST 定义及协议版本枚举 | `RespValue`, `ProtocolVersion` |
+| [`src/protocol/parser.rs`](../../src/protocol/parser.rs) | 流式帧解析器、缓冲区生命周期、防御性 Limits 校验与错误恢复 | `RespParser::new`, `feed`, `parse`, `is_fatal_protocol` |
+| [`src/protocol/encoder.rs`](../../src/protocol/encoder.rs) | 不可变 AST 序列化为 RESP 字节帧 (二进制安全) | `RespValue::serialize`, `encode_into` |
 
-公共 re-export (`lib.rs`): `protocol` 模块同上.
+---
 
-解析错误类型: `crate::error::Error::Protocol(String)`.
+## 关键 Invariants (勿破坏规则)
 
-## 关键 invariant (勿破坏)
+- **单帧消费语义**: 每次调用 `parse()` 至多从 buffer 头部消费 **一个** 完整顶层 `RespValue`; Pipeline 流式处理由调用方在连接循环中连续调用 `parse()` 实现.
+- **数据不足不消费**: 接收数据不足以构成完整帧时, 必须返回 `Ok(None)`, 内部 Cursor 自动回退至帧头, 缓冲区保留完整数据待后续 `feed`.
+- **可恢复错误 (`is_recoverable`)**:
+  - `unknown type marker`: 自动跳过整行数据 (消费至第一个 `\n`, 若无 `\n` 则清空 buffer), 避免对垃圾输入逐字节报错;
+  - 其他可恢复错误跳过 1 字节并返回 `Err(Protocol)`, 上层服务可向客户端写 `-ERR` 并继续处理后续帧.
+- **不可恢复致命错误 (`is_fatal_protocol`)**:
+  - 包括解析深度超限 (`max_parse_depth`)、Buffer 超限 (`max_buffer_size`)、行长度超限 (`max_line_len`)、数据超大及损坏长度格式;
+  - 遇到致命错误时 **不前进 Buffer**, 上层服务识别后必须**立即断开 TCP 连接**, 防止恶意死循环刷屏.
+- **防御性 Limits (不可由客户端动态调优)**:
 
-- **单帧语义**: 每次 `parse()` 至多消费 buffer 头部 **一个** 完整顶层 `RespValue`; pipeline 由调用方循环 `parse()` (见 [server.md](02-server.md)).
-- **不完整不消费**: 数据不足 → `Ok(None)`, cursor 回退, buffer 保留待 `feed`.
-- **可恢复错误**: `is_recoverable` 命中时返回 `Err`, 调用方可写 ERR 响应并继续 (fatal 判定在 server). 其中 `unknown type marker` 跳过**整行** (消费到第一个 `\n`, 无 `\n` 则消费整个 buffer), 其余错误跳过 1 字节; 避免对垃圾输入逐字节报错.
-- **不可恢复错误**: 非 recoverable 的错误 (depth / too large / length 类 / malformed) 不 advance buffer; 由 `is_fatal_protocol` (parser 单一来源, server 复用) 判定, server 收到后**断连**, 避免对同一 buffer 死循环写错误.
-- **默认 limits**: 见下表; 生产路径 `RespParser::new()` 使用默认值.
-- **命令请求形态**: AiKv 期望顶层 `Array` of bulk strings; 由 `server::process_value` 校验, parser 不 enforce.
+| 限制配置项 | 常量默认值 | 超限错误信息 / 行为 |
+| :--- | :--- | :--- |
+| `max_bulk_len` | `512 MiB` (536,870,912 B) | `Protocol("bulk string too large")` |
+| `max_buffer_size` | `64 MiB` (67,108,864 B) | Server 在 `feed` 前预检并主动断开连接 |
+| `max_parse_depth` | `128` 级 | `Protocol("parse depth exceeded")` |
+| `max_array_len` | `4 MiB` 元素 (4,194,304) | `Protocol("array/map/set/push/attribute too large")` |
+| `max_line_len` | `1 MiB` (1,048,576 B) | `Protocol("line too long")` |
 
-### 默认 limits
+---
 
-| 字段 | 默认值 | 超限错误 |
-|------|--------|----------|
-| `max_bulk_len` | 512 MiB | `bulk string too large` |
-| `max_buffer_size` | 64 MiB | server 在 `feed` 前检查并断连 |
-| `max_parse_depth` | 128 | `parse depth exceeded` |
-| `max_array_len` | 4 MiB 元素 | `array/map/set/push/attribute too large` |
-| `max_line_len` | 1 MiB | `line too long` |
+## 协议类型与帧格式
 
-## 数据流
+AiKv 支持 RESP2 与 RESP3 全类型编解码:
+
+| 类型标记符 | RESP 类型 | RespValue 变体 | 编码示例 |
+| :---: | :--- | :--- | :--- |
+| `+` | Simple String | `SimpleString(String)` | `+OK\r\n` |
+| `-` | Simple Error | `Error(String)` | `-ERR unknown command\r\n` |
+| `:` | Integer | `Integer(i64)` | `:1000\r\n` |
+| `$` | Bulk String | `BulkString(Option<Bytes>)` | `$5\r\nhello\r\n` / `$-1\r\n` |
+| `*` | Array | `Array(Option<Vec<RespValue>>)` | `*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n` |
+| `_` | Null (RESP3) | `Null` | `_\r\n` |
+| `#` | Boolean (RESP3) | `Boolean(bool)` | `#t\r\n` / `#f\r\n` |
+| `,` | Double (RESP3) | `Double(f64)` | `,3.14\r\n` / `,inf\r\n` |
+| `(` | Big Number (RESP3) | `BigNumber(String)` | `(3492890328409238509324850943850943825024385\r\n` |
+| `!` | Bulk Error (RESP3) | `BulkError(String)` | `!21\r\nSYNTAX invalid syntax\r\n` |
+| `=` | Verbatim String | `VerbatimString { format, data }` | `=15\r\ntxt:Some string\r\n` |
+| `%` | Map (RESP3) | `Map(Vec<(K, V)>)` | `%1\r\n+key\r\n:1\r\n` |
+| `~` | Set (RESP3) | `Set(Vec<RespValue>)` | `~2\r\n+a\r\n+b\r\n` |
+| `>` | Push (RESP3) | `Push(Vec<RespValue>)` | `>2\r\n+message\r\n+channel\r\n` |
+| `\|` | Attribute (RESP3) | `Attribute { attributes, data }` | `\|1\r\n+ttl\r\n:3600\r\n+OK\r\n` |
+| `$?` | Streamed String | `StreamedString(Vec<Bytes>)` | `$?\r\n;4\r\npart\r\n;0\r\n` |
+
+---
+
+## 数据流与 Pipeline
 
 ```mermaid
-flowchart LR
-  TCP[TCP bytes] --> F[RespParser::feed]
-  F --> P[RespParser::parse]
-  P -->|Ok Some| V[RespValue]
-  P -->|Ok None| W[等待更多数据]
-  P -->|Err recoverable| S[skip 1 byte]
-  V --> E[RespValue::serialize]
-  E --> OUT[Bytes 帧]
+flowchart TD
+    TCP[TCP 字节流到达] --> Feed[RespParser::feed 追加至 BytesMut]
+    Feed --> ParseLoop{调用 RespParser::parse}
+    
+    ParseLoop -->|Ok Some RespValue| Success[分发完整帧至业务调度]
+    Success --> Serialize[RespValue::serialize]
+    Serialize --> TCPOut[TCP 发送响应字节帧]
+    
+    ParseLoop -->|Ok None| WaitMore[数据不完整: Cursor 回退, 等待后续 TCP read]
+    
+    ParseLoop -->|Err is_recoverable| RecErr[跳步恢复: 记录错误, 返回 ERR 并继续解析后续数据]
+    RecErr --> TCPOut
+    
+    ParseLoop -->|Err is_fatal_protocol| FatalErr[致命协议错误: 不前进 Buffer, 主动断开连接]
 ```
 
-Pipeline (协议层视角): 连续帧留在同一 `BytesMut`; 每次 `parse()` 成功后 buffer 已 `advance`, 剩余字节留给下一帧.
+### Pipeline 处理机制
 
-## 关键类型与 API
-
-### `RespValue`
-
-RESP2 + RESP3 共 17 变体. 命令层最常用: `SimpleString`, `Error`, `Integer`, `BulkString`, `Array`, `Null`, `Map`.
-
-| marker | 变体 | 备注 |
-|--------|------|------|
-| `+` | `SimpleString` | |
-| `-` | `Error` | |
-| `:` | `Integer` | |
-| `$` | `BulkString` | `None` = `$-1` |
-| `*` | `Array` | `None` = `*-1` |
-| `_` | `Null` | RESP3 |
-| `#` | `Boolean` | |
-| `,` | `Double` | nan/inf/-inf/-0 特判 |
-| `(` | `BigNumber` | |
-| `!` | `BulkError` | |
-| `=` | `VerbatimString` | `format` 须 3 字符 + `:` + data |
-| `%` | `Map` | |
-| `~` | `Set` | |
-| `>` | `Push` | |
-| `\|` | `Attribute` | attrs + `data` |
-| `$?`…`;0` | `StreamedString` | 多块 bulk |
-
-载荷用 `bytes::Bytes`, bulk string 二进制安全.
-
-### `ProtocolVersion`
-
-```rust
-pub enum ProtocolVersion { Resp2, Resp3 }  // Default = Resp3
-```
-
-- 定义在 `protocol/types.rs`; 默认 **Resp3**
-- `HELLO` 协商、`protocol_negotiated` 门控、响应 null 线格式 (`$-1` vs `_`) 在 [server.md](02-server.md), 不在本模块
-
-### `RespParser`
-
-```rust
-impl RespParser {
-    pub fn new() -> Self;
-    pub fn with_limits(max_bulk_len, max_buffer_size, max_parse_depth,
-                       max_array_len, max_line_len) -> Self;
-    pub fn feed(&mut self, data: &[u8]);
-    pub fn buffer_len(&self) -> usize;
-    pub fn max_buffer_size(&self) -> usize;
-    pub fn parse(&mut self) -> Result<Option<RespValue>>;
-}
-```
-
-`parse()` 返回语义:
-
-| 结果 | 含义 |
-|------|------|
-| `Ok(Some(v))` | 完整帧已解析并消费 |
-| `Ok(None)` | 需更多字节 |
-| `Err(e)` recoverable | 已 skip 1 字节, 可重试 |
-| `Err(e)` fatal | buffer 未前进, 应断连 |
-
-## 常见任务
-
-### 调试 RESP roundtrip
-
-1. 构造 `RespValue`
-2. `let bytes = value.serialize()`
-3. `parser.feed(&bytes)` → `parser.parse()?`
-4. `assert_eq!(parsed, value)` 且 `parser.buffer_len() == 0`
-
-参考 `tests/modules/resp/parser.rs` 中 `roundtrip()` helper.
-
-### 复现 pipeline 解析
-
-```rust
-let mut parser = RespParser::new();
-parser.feed(b"+PONG\r\n+PONG\r\n");
-assert_eq!(parser.parse()?.unwrap(), RespValue::SimpleString("PONG".into()));
-assert_eq!(parser.parse()?.unwrap(), RespValue::SimpleString("PONG".into()));
-assert!(parser.parse()?.is_none());
-```
-
-### 调低 limits 写边界测试
-
-用 `RespParser::with_limits(...)` 注入小阈值, 见 `test_parse_depth_limit`, `test_parse_bulk_string_too_large` 等.
-
-### 新增 RESP3 变体编解码
-
-1. 在 `types.rs` 加枚举变体
-2. `parser.rs` `parse_value` match 加分支 + 私有解析函数
-3. `encoder.rs` `encode_into` 加分支
-4. 在 `tests/modules/resp/{types,parser}.rs` 加 golden + roundtrip
-
-## 配置与 feature flags
-
-| 项 | 位置 | 说明 |
-| --- | --- | --- |
-| 解析 limits | `parser.rs` 常量 + `with_limits` | 无运行时配置; 默认见上表 |
-| feature flags | — | protocol 模块无 `cfg(feature)` |
-
-## 测试
-
-```bash
-cargo test --test resp           # types + parser (66)
-cargo test --test resp parser    # 仅 parser (37)
-cargo test --test resp types     # 仅 golden encode (29)
-```
-
-集成: `tests/modules/server/tcp.rs` 覆盖 HELLO/PING pipeline (属 server, 非本模块单元测试).
-
-## 已知限制
-
-- 顶层孤立 `;` chunk marker 返回 `unexpected streamed chunk marker` (须在 `$?` streamed string 上下文内).
-- `StreamedString` / `Attribute` / `Push` 已编解码, 命令层未必使用.
-- `ProtocolVersion` 不影响 `serialize()` 输出; 版本相关线格式适配在 server `adapt_for_protocol`.
-
-## 待核实
-
-- 无.
+客户端连续发送多条命令时, 多个 RESP 帧滞留在同一个 `BytesMut` 缓冲区中. `Connection::handle` 在单次 `read` 后调用 `feed`, 随后通过内层循环连续执行 `parse()`, 直到返回 `Ok(None)` 为止, 实现零系统调用延迟的 Pipeline 批处理.

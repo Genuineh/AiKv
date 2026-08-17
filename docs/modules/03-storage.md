@@ -2,246 +2,101 @@
 name: aikv-storage
 depends_on:
   - aidb-engine
-description: AiKv 存储层 — KvStorage trait、MemoryEngine、StorageAdapter/KvStorageAdapter、AiDbEngine、ClusterDataAdapter、StoredValue/TTL/DUMP 编码. 改 src/storage/*、排查 memory 与 aidb 引擎路径差异、TTL 过期、持久化桥接 (flush/checkpoint), 或集群数据面 Raft 写时读本文.
+description: AiKv 存储适配层 — KvStorage Trait、MemoryEngine、AiDbEngine、ClusterDataAdapter (Raft 批处理)、Subkey 扁平化编码、StoredValue/TTL 与 DUMP 编解码. 修改 src/storage/* 时查阅.
 ---
 
-# AiKv Storage (存储层)
+# AiKv Storage (存储适配层)
 
 ## 何时读本文
 
-- 改 `src/storage/*` 或排查 memory / aidb 引擎、TTL、多 DB、`StoredValue` 编解码
-- 理解命令层如何持有 `Arc<dyn KvStorage>` (见 [commands-core.md](04-commands-core.md))
-- 排查 cluster 模式下 **数据面** 写是否经 Raft (IMPORTING / slot 已分配)
-- **不覆盖**: AiDb LSM 内核 (WAL/MemTable/SSTable) → [aidb engine.md](../../../aidb/docs/modules/01-engine.md) / [engine-storage.md](../../../aidb/docs/modules/02-engine-storage.md)
-- **不覆盖**: MetaRaft/MultiRaft/Router → [aidb cluster.md](../../../aidb/docs/modules/03-cluster.md)
-- **不覆盖**: MOVED/ASK / CLUSTER 子命令 → [cluster.md](06-cluster.md) (步 11)
-- **不覆盖**: SAVE/BGSAVE/RESTORE 命令语义 → [commands-extended.md](05-commands-extended.md); INFO/metrics 渲染 → [observability.md](07-observability.md)
+- 修改 `src/storage/{adapter.rs, cluster_adapter.rs, aidb.rs, memory.rs, subkey.rs, dump.rs, ttl_filter.rs, types.rs, mod.rs}` 源码;
+- 排查 `KvStorage` 接口行为、内存引擎 (`MemoryEngine`) 与持久化引擎 (`AiDbEngine`) 路径差异;
+- 排查 Subkey 扁平化编码、TTL 惰性过期机制、DUMP/RESTORE 编解码;
+- 排查集群模式下数据面写操作的 MultiRaft 批处理 (`ClusterDataAdapter` / `propose_group`);
+- **不覆盖**: 底层 LSM 存储引擎 (WAL/MemTable/SSTable/Compaction) → [AiDb Engine 文档](../../../aidb/docs/modules/01-engine.md);
+- **不覆盖**: MetaRaft 控制面拓扑与 Slot 迁移状态机 → [AiDb Cluster 文档](../../../aidb/docs/modules/03-cluster.md);
+- **不覆盖**: 集群 MOVED/ASK 重定向与 CLUSTER 命令 → [cluster.md](06-cluster.md);
+- **不覆盖**: 命令具体业务实现 → [commands-core.md](04-commands-core.md).
 
-## 架构一览
-
-命令层只依赖 **`KvStorage`** (多 DB、typed value、TTL). 底层持久化/集群走 **两层扁平 KV**:
-
-```mermaid
-flowchart TB
-  CMD["command/*\nArc<dyn KvStorage>"]
-  MEM["MemoryEngine\nimpl KvStorage"]
-  KSA["KvStorageAdapter\nimpl KvStorage"]
-  SA["StorageAdapter"]
-  CLU["ClusterDataAdapter\nfeature cluster"]
-  ADB["AiDbEngine"]
-  CMD --> MEM
-  CMD --> KSA
-  KSA --> SA
-  SA --> CLU
-  CLU --> ADB
-  SA --> ADB
-```
-
-**进程装配** (`main.rs` `build_storage`):
-
-| `--engine` | 链路 | `StorageEngineKind` |
-|------------|------|---------------------|
-| `memory` | `MemoryEngine::with_observation(16, obs)` → 直接 `Arc<dyn KvStorage>` | `Memory` |
-| `aidb` | `AiDbEngine::open` → 可选 `ClusterDataAdapter::new` → `KvStorageAdapter::with_observation` | `AiDb` |
-
-cluster 包装 **仅 aidb 路径**; memory 不经 `StorageAdapter`.
+---
 
 ## 代码地图
 
-| 路径 | 职责 | 入口 |
-|------|------|------|
-| `storage/mod.rs` | 模块根; pub re-export | `KvStorage`, `MemoryEngine`, `AiDbEngine` |
-| `storage/types.rs` | 命令层契约 | `KvStorage`, `StoredValue`, `ValueType`, `WriteOp`, `StorageEngineKind` |
-| `storage/memory.rs` | 内存引擎; 直 impl `KvStorage` | `MemoryEngine::new`, `glob_match` |
-| `storage/adapter.rs` | 扁平 KV → 多 DB 语义 | `StorageAdapter`, `KvStorageAdapter`, `AdapterWriteOp` |
-| `storage/aidb.rs` | sync `aidb::DB` 的 async 包装 | `AiDbEngine::open`, `open_for_testing`, `encode_key` / `decode_key` |
-| `storage/aidb_options.rs` | CLI / 单测 Options 构建 | `server_db_options`, `server_db_options_with_preset`, `DbPreset`, `testing_db_options` |
-| `storage/cluster_adapter.rs` | 数据面 Raft 包装 (`#[cfg(feature = "cluster")]`) | `ClusterDataAdapter::new` |
-| `storage/dump.rs` | 内部 DUMP 格式 | `encode` / `decode`, `DUMP_VERSION` |
-| `storage/subkey.rs` | Subkey 编码: 大 Hash/Set 的 field/member 独立存储 | `encode_hash_field_key`, `encode_set_member_key`, `decode_subkey` |
-| `storage/ttl_filter.rs` | TTL 过期 entry 的 compaction 过滤 (接入 aidb `CompactionFilter`) | `TtlExpireFilter` |
-| `storage/observation.rs` | 过期 key 计数 (INFO/metrics) | `StorageObservation` |
-| `main.rs` ~L130–157 | CLI 引擎装配 | `build_storage` |
+| 文件路径 | 模块核心职责 | 公共接口与核心入口 |
+| :--- | :--- | :--- |
+| [`src/storage/mod.rs`](../../src/storage/mod.rs) | 存储模块根; 统一 re-export 核心 Trait、引擎实现与辅助类型 | `KvStorage`, `StorageAdapter`, `AiDbEngine`, `MemoryEngine` |
+| [`src/storage/adapter.rs`](../../src/storage/adapter.rs) | `KvStorageAdapter` Trait 定义与通用的存储层统一调度适配器 | `StorageAdapter`, `AdapterWriteOp` |
+| [`src/storage/types.rs`](../../src/storage/types.rs) | 核心存储 Trait (`KvStorage`)、`StoredValue`、`ValueType` 与 `WriteOp` | `KvStorage`, `StoredValue`, `ValueType`, `WriteOp` |
+| [`src/storage/memory.rs`](../../src/storage/memory.rs) | 纯内存存储实现 (16 个独立 DB 容器, 用于开发与单元测试) | `MemoryEngine` |
+| [`src/storage/aidb.rs`](../../src/storage/aidb.rs) | AiDb LSM 同步存储引擎适配 (基于 `spawn_blocking` 桥接 Tokio) | `AiDbEngine` |
+| [`src/storage/aidb_options.rs`](../../src/storage/aidb_options.rs) | LSM 存储参数预设映射 (`default`, `high-write`, `high-read`) | `server_db_options_with_preset`, `DbPreset` |
+| [`src/storage/cluster_adapter.rs`](../../src/storage/cluster_adapter.rs) | 集群数据面存储适配器: 槽位判断、写批处理 (`Batcher`) 与 Raft propose | `ClusterDataAdapter` (feature = "cluster") |
+| [`src/storage/subkey.rs`](../../src/storage/subkey.rs) | 复杂数据结构 (Hash/List/Set/ZSet) 扁平化 Subkey 前缀编解码 | `encode_data_key`, `encode_meta_key`, `decode_key` |
+| [`src/storage/dump.rs`](../../src/storage/dump.rs) | `DUMP` / `RESTORE` 紧凑 bincode 序列化与版本校验 | `dump_encode`, `dump_decode`, `DUMP_VERSION` |
+| [`src/storage/ttl_filter.rs`](../../src/storage/ttl_filter.rs) | 结合 Compaction Filter 的 TTL 物理清理与惰性删除判定 | `TtlExpireFilter` |
+| [`src/storage/observation.rs`](../../src/storage/observation.rs) | 存储层点查、批写与扫描延迟与吞吐监控统计 | `StorageObservation` |
 
-`ServerSharedState` 持有 `Arc<dyn KvStorage>` (`server/config.rs`); RESTORE 用 `dump_encode`/`decode` (`server/connection.rs`).
+---
 
-## 关键 invariant (勿破坏)
+## 关键 Invariants (勿破坏规则)
 
-- **String `get`/`set`**: `get`/`set` 仅 String; 非 String → `WRONGTYPE`. Hash/List/Set/ZSet 必须 `get_typed`/`set_typed`.
-- **MGET wrong-type**: 对齐 Redis 7 — 非 String 或 missing key 对该位返回 `nil`, 整命令不失败 (与 `GET` 的 WRONGTYPE 不同).
-- **两套 WriteOp**: `storage::WriteOp` (命令/Lua batch) ≠ `AdapterWriteOp` (扁平 KV). 转换在 `KvStorageAdapter::write_batch`.
-- **AiDb key 编码**: 物理 key = `{db_index}:{user_key}` (ASCII). `clear`/`keys`/`scan` 依赖 `db_prefix` + `prefix_end`.
-- **bincode 值**: aidb 路径 blob = `bincode(StoredValue)`; 与 `dump.rs` 同类型, DUMP 多 1 字节 version 前缀.
-- **惰性 TTL**: 读路径遇过期删除; memory/adapter 可 `StorageObservation::record_expired_key`. 物理删除是否真正发起由 `StorageAdapter::allow_lazy_expire_delete` 决定 (默认恒真); `ClusterDataAdapter` 覆盖为仅当本节点是该 key 所在 data group 的 Raft leader 时才允许 —— 只读副本上惰性过期发现的 key 直接跳过物理删除 (副本 `propose_group` 必然 `NotLeader` 失败, 之前会把一次普通 GET 变成硬错误), 留给 leader 或后续写连接清理.
-- **cluster 写路径**: slot 已分配时写 **必须** `propose_group`; **禁止** 写 local fallback (防 SET 成功 GET 空). 仅 `Unallocated` 或未初始化 cluster 写 local.
-- **cluster 读路径**: Assigned / 本地 Migrating group → `get_local`; 否则 `CLUSTERDOWN data group not ready`.
-- **持久化面**: memory 默认 `create_checkpoint` → ERR; aidb 委托 `DB::flush` / `Checkpoint::create`.
+- **`KvStorage` 抽象隔离**: 上层命令处理器仅持有 `Arc<dyn KvStorage>`, 禁止直接向下转型获取具体引擎实例.
+- **单 `DB` 与多库隔离**:
+  - 底层 AiDb 为单实例, 采用 `{db_index}:{user_key}` 前缀区分 Redis 0~15 号逻辑数据库;
+  - `MemoryEngine` 在内部维护 16 个独立内存 Map, 两者上层 API 表现完全一致.
+- **Subkey 编码隔离**:
+  - 元数据键: `{db}:{user_key}` (记录类型标记、版本号与元素数量);
+  - 数据键: `{db}:{user_key}:{field/index}` (记录单字段或元素值);
+  - 集合删除时同时清理元数据与对应前缀的 Subkey 数据键.
+- **集群写必须走 Raft (`ClusterDataAdapter`)**:
+  - 当集群已初始化且 Key 属于已分配 Slot 时, 写操作**必须**经过 `propose_group` 提交 MultiRaft, **严禁**绕过 Raft 回退本地写 (避免 SET 成功后读 Raft 为空);
+  - 仅在单机模式或 Slot 未分配时写入本地存储.
+- **Batcher 批处理参数常量**:
+  - `SET_BATCH_MAX_OPS = 512`: 单批次最大聚合操作数;
+  - `SET_BATCH_MAX_DELAY = 1ms`: 凑批等待时间上限;
+  - `DEFAULT_EAGER_FLUSH = 48`: 达到该阈值时无需等待 1ms, 立即触发异步 Propose.
+- **Leader 专有惰性删除**:
+  - 读路径发现过期 Key 时, 仅当本节点是该 Key 所在 Data Group 的 Raft Leader 时才执行物理删除;
+  - 只读副本 (`READONLY`) 发现过期 Key 仅在内存中返回 Nil, 不触发跨节点写入.
 
-## 数据流
+---
 
-### String SET (aidb 路径)
-
-```mermaid
-sequenceDiagram
-  participant C as command/string
-  participant K as KvStorageAdapter
-  participant S as StorageAdapter
-  participant D as aidb::DB
-
-  C->>K: set(db, key, value)
-  K->>K: StoredValue::string + bincode
-  K->>S: set("db:key", bytes)
-  Note over S: ClusterDataAdapter 可能 propose_group
-  S->>D: spawn_blocking put
-```
-
-### Typed HSET (共用)
+## 存储架构与批处理数据流
 
 ```mermaid
-flowchart LR
-  H[command/hash] --> GT[get_typed / set_typed]
-  GT --> ME{引擎}
-  ME -->|memory| MAP[HashMap StoredValue]
-  ME -->|aidb| BC[bincode → flat KV]
+flowchart TB
+    Cmd[命令层调用 KvStorage] --> Choice{集群模式且已分配 Slot?}
+    
+    Choice -->|否 单机 / 未分配| Local[StorageAdapter]
+    Local --> EngineChoice{引擎类型}
+    EngineChoice -->|memory| Mem[MemoryEngine 内存字典]
+    EngineChoice -->|aidb| Blocking[AiDbEngine spawn_blocking]
+    Blocking --> AiDb[(AiDb LSM DB)]
+    
+    Choice -->|是 集群分配槽位| Cluster[ClusterDataAdapter]
+    Cluster --> Batcher[Batcher 凑批队列]
+    Batcher -->|达到 48 ops 或满 1ms / 512 ops| Propose[aidb MultiRaft propose_group]
+    Propose --> RaftApply[Raft Commit 并 Apply 至数据状态机]
 ```
 
-### Cluster 写 (已分配 slot)
+---
 
-```mermaid
-flowchart LR
-  W[StorageAdapter::set] --> RW[route_write]
-  RW --> PG[propose_group_with_retry]
-  PG --> SM[MultiRaft apply → group SM]
-  RW -->|Unallocated only| LOC[local AiDbEngine]
-```
+## 数据编码规则
 
-## 关键类型与 API
-
-### `StoredValue` / `ValueType`
-
-- `StoredValue { value, expires_at }` — `expires_at`: Unix ms, `None` = 永不过期
-- `ValueType`: String / Hash / List / Set / ZSet (`Serialize`)
-- `as_*` / `as_*_mut` 类型不符 → `Error::Command(WRONGTYPE)`
-- `TTL_NO_EXPIRY` (-1): 存储层 sentinel; 命令层映射 Redis `-1`
-
-### `KvStorage` (命令层面, 节选)
-
-| 类别 | 方法 |
-|------|------|
-| String KV | `get`, `set`, `set_with_ttl`, `delete`, `exists`, `mget`, `mset` |
-| Typed | `get_typed`, `set_typed` |
-| 批量 | `write_batch(db, Vec<(key, WriteOp)>)` |
-| 键空间 | `keys`, `scan`, `len`, `keyspace_stats`, `clear`, `clear_all` |
-| TTL | `expire`, `expire_at`, `ttl`, `persist` |
-| DB | `db_count`, `swap_db`, `rename_key`, `copy_key`, `random_key` |
-| 引擎 | `engine_kind`, `flush_engine`, `create_checkpoint`, `close_engine`, `memory_usage_bytes`, `db_key_counts` |
-
-默认 `engine_kind` = Memory; memory 不覆盖 checkpoint/flush.
-
-### `StorageAdapter` (扁平 KV)
-
-`get` / `set` / `delete` / `exists` / `write_batch` / `scan_prefix` / `delete_range` / `len` / `clear` / `flush` / `create_checkpoint` / `close` / `engine_kind` / `approximate_memory_bytes`.
-
-实现: `AiDbEngine`; cluster 模式下外层 `ClusterDataAdapter` 再包一层.
-
-**集群写路径 (SET)**: `ClusterDataAdapter` 按 data group 串行 batcher — `try_recv` 凑批后 `propose_group` (Raft). 参数见 `cluster_adapter.rs`: `SET_BATCH_MAX_DELAY`, `eager_flush` (构造时传入), `SET_BATCH_MAX_OPS`. 压测见 [`aifactory/benchmark/README.md`](../../../aifactory/benchmark/README.md).
-
-### `AiDbEngine` key 工具
+### 1. `StoredValue` 内存与持久化结构
 
 ```rust
-// 物理 key
-AiDbEngine::encode_key(db, user_key)   // b"0:mykey"
-AiDbEngine::decode_key(encoded)        // Option<(db, user_key)>
-AiDbEngine::prefix_end(prefix)         // range scan 上界
+pub struct StoredValue {
+    pub value_type: ValueType,
+    pub expire_at: Option<u64>, // 绝对毫秒时间戳, None 表示永不过期
+    pub data: Bytes,            // 二进制载荷
+}
 ```
 
-`open(path)`: 生产 preset (`server_db_options`, 对齐 `Options::default()` — **默认 `CompressionType::Snap` 块压缩**, 需 aidb `compression` feature; aifactory Dockerfile 已默认启用); `open_for_testing()` 供单测; `open_with_options` 可显式传入. CLI `--aidb-preset` / 环境变量 `AIKV_AIDB_PRESET` (`default`\|`high-write`\|`high-read`, 默认 `default`) 选择 preset, 仅 `high-read` 关闭压缩 (`CompressionType::None`); 详见 [`aidb_options.rs`](../../src/storage/aidb_options.rs). CLI 经 `--sync-wal` 控制 fsync. 所有 DB 操作为 `spawn_blocking`.
+### 2. Subkey 编码规范
 
-> 2026-07-02 前 aidb 存在 SSTable 压缩 block CRC 损坏的 P0 bug (启用 Snap/Lz4 且 SST ≥ 2 个 data block 时读取报 `Corruption`), 已在 aidb 侧修复 (见 [aidb CHANGELOG](../../../aidb/CHANGELOG.md)); 使用 `default`/`high-write` preset 前必须用修复后的 aidb 重新构建 aikv 镜像.
-
-### DUMP (内部格式, 非 Redis)
-
-```shell
-[ u8 version=0 ][ bincode(StoredValue) ]
-```
-
-RESTORE 校验 version; 失败 → `ERR DUMP payload version or checksum error`.
-
-## 常见任务
-
-### 新增/修改 KvStorage 方法
-
-1. 在 `types.rs` trait 定义; 评估 memory 与 `KvStorageAdapter` **双实现**
-2. 若涉及 flat KV, 评估是否扩展 `StorageAdapter` + `AiDbEngine` + `ClusterDataAdapter`
-3. 在 `tests/modules/storage/compat.rs` 补 memory vs aidb 一致性 (若适用)
-4. 命令层在 [commands-core.md](04-commands-core.md) 对应 handler 调用
-
-### 调试 memory vs aidb 行为不一致
-
-1. 跑 `cargo test --test storage compat -- --test-threads=1`
-2. 确认走哪条路径: `engine_kind()` 或 CLI `--engine`
-3. 对比是否经 bincode / key 编码 (adapter 专有)
-
-### 调试 aidb 重启后数据丢失
-
-1. 确认 `--engine aidb --data-dir` 指向持久目录
-2. 查 `AiDbEngine::open` 是否同一 path
-3. cluster 模式: 用户数据在 **group SM**, 不单靠 local `AiDbEngine` 单库
-4. LSM 恢复细节 → [aidb engine.md](../../../aidb/docs/modules/01-engine.md)
-
-### 调试 cluster 写成功读为空
-
-1. 确认 `CLUSTER_STATE_MGR` 已初始化且 slot Assigned
-2. 查 `ClusterDataAdapter::should_use_local_engine` — 已分配 slot **不应** fallback local
-3. 查 `route_write` / IMPORTING 是否写到 target group
-4. 控制面/MOVED → [cluster.md](06-cluster.md); Raft → [aidb cluster.md](../../../aidb/docs/modules/03-cluster.md)
-
-### 调试 TTL / keyspace stats
-
-1. 过期为惰性: `ttl`/`get_typed` 触发删除
-2. `keyspace_stats` 只计未过期 key; `avg_ttl` 来自 `compute_avg_ttl_ms`
-3. `StorageObservation` 计数在 INFO/metrics drain — [observability.md](07-observability.md)
-
-## 配置与 feature flags
-
-| 项 | 位置 | 说明 |
-|----|------|------|
-| `--engine memory\|aidb` | `main.rs` | 选择装配链 |
-| `--data-dir` | `main.rs` | aidb 必填 |
-| `--sync-wal` | `main.rs` | aidb 每条写后 fsync (默认 false) |
-| `--aidb-preset` / `AIKV_AIDB_PRESET` | `main.rs`, `aidb_options.rs` | `default`(Snap压缩)\|`high-write`(Snap压缩)\|`high-read`(不压缩); 默认 `default` |
-| `feature = "compression"` | `Cargo.toml` → `aidb/compression` | 启用 Snap/LZ4 块压缩; aifactory Dockerfile 默认开启 |
-| `feature = "cluster"` | `cluster_adapter.rs`, `main.rs` | 插入 `ClusterDataAdapter` |
-| `DB_COUNT` (=16) | `types.rs` | 逻辑 DB 数量 |
-| `StorageObservation` | `main.rs` → engine | 可选注入, 两路径均支持 |
-
-## 测试
-
-```bash
-cd aikv
-cargo test --test storage -- --test-threads=1
-cargo test --test storage compat -- --test-threads=1
-cargo test --test storage memory aidb types -- --test-threads=1
-```
-
-| 套件 | 路径 | 重点 |
-|------|------|------|
-| memory | `tests/modules/storage/memory.rs` | TTL, rename, scan, WRONGTYPE |
-| aidb | `tests/modules/storage/aidb.rs` | encode_key, adapter 读写 |
-| compat | `tests/modules/storage/compat.rs` | **双引擎行为一致** |
-| prod_options | `tests/modules/storage/prod_options.rs` | **生产 Options** (B1.3) |
-| dump | `storage/dump.rs` unit | version + roundtrip |
-| cluster checkpoint | `cluster_adapter.rs` unit | `checkpoint_group_storages` |
-
-## 已知限制
-
-- **`scan` / `keys` (aidb 路径)**: `scan_prefix` 后 **全量 sort**, O(n) 内存; 大 keyspace 慎用.
-- **Memory `write_batch`**: 顺序 await, **非原子**; AiDb 路径单 `WriteBatch` 原子.
-- **AiDb 单库多 DB**: 非 oldmain 的 16 独立 `DB` 目录; 靠 key 前缀隔离.
-- **DUMP/RESTORE**: AiKv 内部格式, **不兼容** Redis DUMP.
-- **`glob_match`**: 仅 `*`/`?`; 无 `[abc]` 字符类.
-- **`random_key`**: memory 用 `rand`; adapter 用 `unix_nanos % len` — 分布不同.
-
-## 待核实
-
-(无 storage 层 open 条目)
+- **String / JSON**: 直接写入 `{db}:{key}` 作为完整 `StoredValue`;
+- **Hash**: 
+  - 元数据: `{db}:{key}` -> `StoredValue { type: Hash, data: field_count }`
+  - 字段数据: `{db}:{key}\x00f\x00{field}` -> `StoredValue { type: String, data: field_val }`
+- **List / Set / ZSet**: 类似 Hash, 使用专有子前缀分隔符进行编码.

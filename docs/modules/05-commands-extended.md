@@ -2,256 +2,91 @@
 name: aikv-commands-extended
 depends_on:
   - aikv-commands-core
-description: AiKv 扩展 Redis 命令 — JSON/JSONPath、Lua EVAL/SCRIPT、BlockingRegistry、MIGRATE TCP 恢复、SAVE/BGSAVE/SHUTDOWN、服务端管理 (INFO/CONFIG/CLIENT/COMMAND/OBJECT). 改 src/command/{json,jsonpath,script,blocking,migrate,persistence,server}、router 扩展分发, 排查 JSONPath/Lua 沙箱/MIGRATE/checkpoint, 或阻塞等待/通知集成时读本文.
+description: AiKv 扩展 Redis 命令 — JSON/JSONPath 引擎、Lua EVAL/SCRIPT 沙箱、BlockingRegistry 阻塞队列 (BLPOP/BRPOP)、MIGRATE 槽位数据网络同步与服务端管理命令 (INFO/CONFIG/CLIENT/COMMAND/SAVE). 修改 src/command/{json,jsonpath,script,blocking,migrate,persistence,server} 时查阅.
 ---
 
 # AiKv Commands Extended (扩展命令层)
 
 ## 何时读本文
 
-- 改 `src/command/{json,jsonpath,jsonpath_util,script,blocking,migrate,persistence,server}` 或 `router.rs` 中 extended match / `dispatch_object|config|client`
-- 新增/修改 JSON.*、EVAL/SCRIPT、SAVE/BGSAVE、INFO/CONFIG/CLIENT/COMMAND、MIGRATE 网络传输
-- 排查 JSONPath filter、Lua `redis.call`、脚本沙箱/超时、BGSAVE/checkpoint、阻塞唤醒
-- **不覆盖**: String~ZSet/Key/DB handler、KeyLock 机制 → [commands-core.md](04-commands-core.md)
-- **不覆盖**: ATOM.MULTI/EXEC/WATCH → [server.md](02-server.md) (`connection.rs`)
-- **不覆盖**: MOVED/ASK、CLUSTER 子命令 → [cluster.md](06-cluster.md)
-- **不覆盖**: slowlog 环形缓冲、latency 直方图、InfoRenderer 字段、Prometheus → [observability.md](07-observability.md)
+- 修改 `src/command/{json.rs, jsonpath.rs, jsonpath_util.rs, script.rs, script/, blocking.rs, migrate.rs, persistence.rs, server.rs}` 源码;
+- 新增或修改 JSON.*, Lua 脚本 (`EVAL` / `EVALSHA` / `SCRIPT`), 阻塞列表/ZSet (`BLPOP` / `BRPOP` / `BZPOPMIN`), MIGRATE 槽位数据同步, 或服务端管理命令 (`INFO` / `CONFIG` / `CLIENT` / `SAVE`);
+- 排查 JSONPath 表达式求值异常、Lua 沙箱超时与 `redis.call` 写入回滚、阻塞队列假死或漏唤醒、MIGRATE 迁移同步失败;
+- **不覆盖**: 核心数据结构命令与 `KeyLock` 基础机制 → [commands-core.md](04-commands-core.md);
+- **不覆盖**: ATOM 事务处理 (`MULTI` / `EXEC`) → [server.md](02-server.md);
+- **不覆盖**: 集群 MOVED/ASK 路由与 CLUSTER 子命令 → [cluster.md](06-cluster.md);
+- **不覆盖**: Slowlog 环形缓冲、Latency 直方图与 OTel 监控管道 → [observability.md](07-observability.md).
 
-## 架构一览
-
-```mermaid
-flowchart TB
-  Conn["Connection"]
-  R["CommandRouter\nexecute_inner"]
-  J["JsonCommands"]
-  S["ScriptCommands"]
-  SC["ServerCommands"]
-  PC["PersistenceCommands"]
-  BR["BlockingRegistry::global()"]
-  KV["Arc dyn KvStorage"]
-  SS["ServerSharedState"]
-
-  Conn --> R
-  R --> J
-  R --> S
-  R --> SC
-  R --> PC
-  J --> KV
-  S --> KV
-  SC --> SS
-  SC --> KV
-  PC --> SS
-  PC --> KV
-  ListZset["list.rs / zset.rs handlers"] -.->|notify| BR
-  KeyM["key.rs migrate"] --> MigTCP["migrate::send_restore"]
-```
-
-**装配** (见 [commands-core.md](04-commands-core.md)):
-
-| 构造 | extended 能力 |
-|------|----------------|
-| `CommandRouter::new(storage)` | JSON + Lua; **无** INFO/SAVE (`require_server` → ERR) |
-| `CommandRouter::new_with_shared(storage, shared)` | + `ServerCommands` + `PersistenceCommands` + JSON/Lua metrics |
+---
 
 ## 代码地图
 
-| 路径 | 职责 | 入口 |
-|------|------|------|
-| `command/json.rs` | 12 条 `JSON.*` | `JsonCommands::{json_set, json_get, json_mget, …}` |
-| `command/jsonpath.rs` | JSONPath extract/set/delete/incr/append | `JsonPathEngine` |
-| `command/jsonpath_util.rs` | 表达式拆分、JSON 比较 | `split_top_level`, `json_compare` |
-| `command/script.rs` | EVAL / EVALSHA / SCRIPT | `ScriptCommands::{eval, evalsha, script}` |
-| `command/script/cache.rs` | SCRIPT LOAD LRU 缓存 | `ScriptCache` (max 256) |
-| `command/script/sandbox.rs` | mlua 沙箱 | `new_sandbox_lua` |
-| `command/script/execute.rs` | `redis.call` / `redis.pcall` | `redis_call_async` |
-| `command/script/json_exec.rs` | Lua 内 JSON 子集 | `exec_json_*` |
-| `command/script/transaction.rs` | 脚本写缓冲 + commit | `ScriptTransaction::commit` |
-| `command/script/convert.rs` | Lua ↔ RESP | `lua_to_resp`, `pcall_error_table` |
-| `command/blocking.rs` | 阻塞等待基础设施 | `BlockingRegistry::{register, notify, evict_expired}`; `start_background_eviction` |
-| `command/migrate.rs` | MIGRATE 目标 TCP 客户端 | `send_restore`, `RestoreTarget` |
-| `command/persistence.rs` | SAVE / BGSAVE / LASTSAVE / SHUTDOWN | `PersistenceCommands` |
-| `command/server.rs` | INFO / TIME / CONFIG / CLIENT / COMMAND / SLOWLOG / LATENCY | `ServerCommands` |
-| `command/router.rs` | extended match; `dispatch_object/config/client` | `require_server`, `require_persistence` |
-| `command/key.rs` | MIGRATE **编排** (DUMP → TCP) | `KeyCommands::migrate` |
+| 文件路径 | 模块核心职责 | 公共接口与核心入口 |
+| :--- | :--- | :--- |
+| [`src/command/json.rs`](../../src/command/json.rs) | RedisJSON 兼容命令处理器 (JSON.GET, JSON.SET, JSON.DEL, JSON.TYPE 等) | `json::dispatch` |
+| [`src/command/jsonpath.rs`](../../src/command/jsonpath.rs) | JSONPath 语法解析器与 AST 求值引擎 (支持 `$` 根路径、属性递归与切片) | `JsonPath::parse`, `JsonPath::eval` |
+| [`src/command/jsonpath_util.rs`](../../src/command/jsonpath_util.rs) | JSON 与 RESP 之间的类型转换辅助工具 | `json_to_resp`, `resp_to_json` |
+| [`src/command/script.rs`](../../src/command/script.rs) | Lua 脚本命令入口 (`EVAL`, `EVALSHA`, `SCRIPT LOAD`, `SCRIPT EXISTS`, `SCRIPT FLUSH`) | `script::dispatch` |
+| [`src/command/script/`](../../src/command/script/) | Lua 5.4 沙箱执行环境、`redis.call` 桥接与 `ScriptTransaction` 批处理 | `ScriptEngine`, `ScriptTransaction` |
+| [`src/command/blocking.rs`](../../src/command/blocking.rs) | `BlockingRegistry` 阻塞等待队列、超时管理与跨连接键写入唤醒机制 | `BlockingRegistry`, `block_on_keys`, `notify_keys` |
+| [`src/command/migrate.rs`](../../src/command/migrate.rs) | `MIGRATE` / `RESTORE` 命令, 槽位迁移数据网络传输与原子导入 | `migrate::dispatch` |
+| [`src/command/persistence.rs`](../../src/command/persistence.rs) | 持久化管理命令 (`SAVE`, `BGSAVE`, `LASTSAVE`, `SHUTDOWN`) | `persistence::dispatch` |
+| [`src/command/server.rs`](../../src/command/server.rs) | 管理与反射命令 (`INFO`, `CONFIG`, `CLIENT`, `COMMAND`, `OBJECT`, `SLOWLOG`, `LATENCY`) | `server::dispatch` |
 
-## 关键 invariant (勿破坏)
+---
 
-- **JSON 存 String KV**: `storage.get/set/set_with_ttl` (非 typed 写路径); 文档为 `serde_json::Value` 序列化 bytes.
-- **JSON TTL 写回**: 子路径修改走 `write_back_json` — 先 `get_typed` 取 `expires_at`, 再 `set` / `set_with_ttl`.
-- **JSON.MSET**: `key_lock.lock_keys_sorted` 覆盖 batch 内全部 key.
-- **JSONPath 根**: `$` 与 `.` 等价; filter `[?(@…)]` 裸 `@` 表示数组元素本身.
-- **Lua 原子性**: 脚本内写操作进 `ScriptTransaction`; 成功结束后 **单次** `commit` 落盘; 失败 drop buffer.
-- **Lua KEYS 校验**: `redis.call/pcall` 访问的 key 须在 EVAL 声明 KEYS 集合内.
-- **Lua 缓存**: 仅 `SCRIPT LOAD` 写入 LRU; **EVAL 不**自动缓存.
-- **pcall 错误**: 返回 `{err="…"}` 表 (非 oldmain 的 `Nil`).
-- **BlockingRegistry**: 超时返回 **nil Array** (`RespValue::Array(None)`), 非 nil bulk.
-- **MIGRATE payload**: 与 [commands-core.md](04-commands-core.md) DUMP 相同 — `[u8 version=0][bincode(StoredValue)]`.
-- **持久化**: SAVE/BGSAVE/SHUTDOWN SAVE 仅 `StorageEngineKind::AiDb`; memory → ERR.
-- **INFO**: 仅委托 `InfoRenderer`; 不在此 module 维护字段清单.
+## 关键 Invariants (勿破坏规则)
 
-## 数据流
+- **JSON 存储与 JSONPath 原语**:
+  - 全量 JSON 文档以合法 UTF-8 字符串保存在 `StoredValue { value_type: ValueType::String, .. }` 中;
+  - `JSON.SET` 针对不存在的 Key 创建新文档, 针对已有文档根据 Path 局部修改;
+  - `JSON.GET` 支持多 Path 查询, 返回标准格式化 JSON 字符串.
+- **Lua 沙箱与原子事务提交 (`ScriptTransaction`)**:
+  - 采用 `mlua` 运行独立 Lua 5.4 虚拟机, 裁剪 `os`, `io`, `debug` 等不安全库;
+  - `EVAL` 执行前必须提取所有参数 Key, 并调用 `KeyLock::lock_keys_sorted_with_timeout(keys, 30s)` 获取锁;
+  - `redis.call` 写操作收集在 `ScriptTransaction` 的 `WriteBatch` 中, 脚本成功时原子提交, 抛出异常或超时时丢弃修改实现回滚.
+- **`BlockingRegistry` 唤醒机制**:
+  - 当客户端执行 `BLPOP`, `BRPOP`, `BZPOPMIN` 等命令且目标 Key 为空时, 将连接注册至 `BlockingRegistry` 对应 Key 的等待通道中, 挂起当前 Task;
+  - 任何写命令 (如 `LPUSH`, `RPUSH`, `ZADD`) 成功写入后, 必须调用 `BlockingRegistry::notify_keys(&[key])` 唤醒等待队列头部的连接.
+- **持久化 Checkpoint 映射**:
+  - `SAVE`: 同步执行 MemTable Flush 并调用底层 AiDb `DB::create_checkpoint()`, 成功后返回 `+OK`;
+  - `BGSAVE`: 异步 `tokio::task::spawn_blocking` 执行 Checkpoint, 成功后更新 `LASTSAVE` 时间戳, 避免阻塞主处理流程;
+  - `MemoryEngine` 模式下执行 `SAVE` / `BGSAVE` 必须明确报错 `ERR Persistence not supported on memory engine`.
 
-### JSON.SET (子路径)
+---
+
+## 扩展命令执行与阻塞唤醒流程
 
 ```mermaid
-sequenceDiagram
-  participant R as Router
-  participant J as JsonCommands
-  participant L as KeyLock
-  participant P as JsonPathEngine
-  participant K as KvStorage
+flowchart TD
+    subgraph BlockingFlow [Blocking 阻塞与唤醒交互]
+        ClientA[Client A: BLPOP key 10] --> CheckEmpty{key 存在且非空?}
+        CheckEmpty -->|否| RegWait[注册至 BlockingRegistry 并在 oneshot 挂起]
+        ClientB[Client B: LPUSH key "val"] --> WriteStore[写入底层存储]
+        WriteStore --> Notify[BlockingRegistry::notify_keys("key")]
+        Notify --> RegWait
+        RegWait --> Wakeup[Client A 唤醒并消费元素]
+        Wakeup --> OutA[返回 [key, val]]
+    end
 
-  R->>J: json_set(db, args)
-  J->>L: lock(key)
-  J->>K: get / exists
-  J->>P: set(json_doc, path, value)
-  J->>K: write_back_json or set_with_ttl
-  J-->>R: OK / nil
+    subgraph LuaFlow [Lua 脚本原子执行流程]
+        EvalReq[EVAL script 2 k1 k2 arg1] --> LockKeys[KeyLock 字典序锁定 [k1, k2] 30s 超时]
+        LockKeys --> Sandbox[Lua 5.4 沙箱加载脚本与参数]
+        Sandbox --> ExecLoop[执行 Lua 字节码]
+        ExecLoop -->|redis.call| TxBatch[ScriptTransaction 收集 WriteBatch]
+        ExecLoop -->|执行成功| Commit[原子 Commit 至 KvStorage 并释放锁]
+        ExecLoop -->|执行失败 / 超时| Rollback[丢弃 WriteBatch 释放锁并报错]
+    end
 ```
 
-### Lua EVAL
+---
 
-```mermaid
-sequenceDiagram
-  participant S as ScriptCommands
-  participant L as KeyLock
-  participant VM as mlua
-  participant E as execute.rs
-  participant T as ScriptTransaction
-  participant K as KvStorage
+## 核心扩展命令一览
 
-  S->>L: lock_keys_sorted_with_timeout(KEYS, 30s)
-  S->>VM: sandbox + hook timeout
-  S->>VM: load(script)
-  VM->>E: redis.call(...)
-  E->>T: buffer ops
-  VM-->>S: LuaValue
-  S->>T: commit(K)
-  S-->>S: lua_to_resp
-```
-
-### BlockingRegistry (机制; handler 在 core)
-
-1. **Wait**: `list`/`zset` handler 先非阻塞 pop; 失败 → `register(key, timeout)` + poll `try_recv` (10ms).
-2. **Wake**: `LPUSH`/`RPUSH`/`ZADD` 成功后 `notify(key, OK)`.
-3. **Timeout**: `timeout=0` → 立即 nil Array; `timeout<0` → 300s 上限.
-4. **Evict**: `main.rs` 启动 1s tick 后台 task 调 `evict_expired()` — 清理超时 dead waiter 与 notify 后空槽 (不依赖 `monitoring` feature).
-
-### MIGRATE
-
-1. `key.rs::migrate` 解析 host/port/key/dest_db/timeout + COPY/REPLACE/AUTH/AUTH2/KEYS.
-2. `KEYS` 子命令: 先收集 key 列表 (遇 trailing COPY/REPLACE/AUTH/AUTH2 停止), 再与单 key 路径共用 RESTORE 逻辑; 非 COPY → 源端 `delete`.
-3. 单 key: `get_typed` → `dump_encode` → `migrate::send_restore` → 非 COPY 时 `delete`.
-4. TCP: 可选 AUTH (password) 或 AUTH2 → `AUTH username password` → 非 0 库 SELECT → `#[cfg(cluster)] ASKING` → RESTORE.
-
-### SAVE / BGSAVE
-
-1. `ensure_persistent_engine()`.
-2. `flush_engine()` → `create_checkpoint(shared.backup_dir)`.
-3. SAVE: 同步; BGSAVE: CAS `bgsave_in_progress` + `tokio::spawn`; 成功 `record_save_success()`.
-
-## JSON 命令
-
-| 命令 | 写 | KeyLock | 要点 |
-|------|:--:|:-------:|------|
-| JSON.GET | | | path 默认 `$`; 无 key → nil bulk |
-| JSON.MGET | | | `key [key ...] path`; 缺 key/path → null; wrong-type → WRONGTYPE |
-| JSON.SET | ✓ | ✓ | NX/XX/XE/TTL; 根路径 `$`/`.` |
-| JSON.DEL | ✓ | ✓ | 根路径 delete key; 子路径 path delete |
-| JSON.TYPE / STRLEN / ARRLEN / OBJLEN | | | 只读; path 可选 |
-| JSON.NUMINCRBY | ✓ | ✓ | path incr |
-| JSON.ARRAPPEND | ✓ | ✓ | |
-| JSON.UPDATE | ✓ | ✓ | wherePath + 多 path/value; 可选 NN |
-| JSON.MSET | ✓ | sorted multi | triplets: key path value |
-
-JSONPath 能力 (`jsonpath.rs`): `$`, `.`, `$.field`, `$[N]`, `[*]`, 多字段、`[?(@…)]` filter; `jsonpath_util` 提供比较/拆分.
-
-## Lua / SCRIPT
-
-| 项 | 值 / 行为 |
-|----|-----------|
-| 默认超时 | 5s (`DEFAULT_SCRIPT_TIMEOUT`) |
-| **KeyLock 等待超时** | **30s** (`lock_keys_sorted_with_timeout`; 对齐 oldmain) |
-| 内存上限 | 128MB (`DEFAULT_MEMORY_LIMIT`) |
-| 沙箱 StdLib | TABLE, STRING, MATH, UTF8; Nil: load/require/rawget/rawset/… |
-| SCRIPT LOAD | SHA1 hex; LRU 256 |
-| SCRIPT EXISTS / FLUSH | 标准语义 |
-| SCRIPT KILL | 恒 NOTBUSY (stub, 无运行中脚本跟踪) |
-
-**`redis.call` 支持子集** (`execute.rs`, 按域): String (GET/SET/INCR*/APPEND/STRLEN…), Hash, List, Set, ZSet 常用读写, EXPIRE, JSON.* (10 条 via `json_exec`, 含 JSON.MGET).
-
-## Server 命令 (handler + router dispatch)
-
-| 命令 | 实现 | 说明 |
-|------|------|------|
-| INFO | `ServerCommands::info` → `InfoRenderer` | section 可选; 字段 → observability |
-| TIME | `time` | Unix sec + micros |
-| CONFIG GET/SET | `config_get/set` | `shared.config_map`; `slowlog-*` 联动; `appendonly` SET → ERR |
-| CONFIG REWRITE/RESETSTAT | `router.dispatch_config` | OK no-op |
-| CLIENT LIST/SETNAME/GETNAME | `client_*` | `shared.clients` |
-| COMMAND * | `command` | 读 `registry` |
-| SLOWLOG * | `slowlog` | 读 `shared.slow_query_log` |
-| LATENCY * | `latency` | 读 `shared.latency_stats`; RESP2/3 格式分支 |
-| OBJECT * | `router.dispatch_object` | ENCODING 按 `ValueType`; REFCOUNT/IDLETIME/FREQ **stub** |
-
-## CommandRouter 扩展分支 (索引)
-
-`execute_inner` match: `JSON.*` (12), `EVAL`/`EVALSHA`/`SCRIPT`, `INFO`/`TIME`/`CONFIG`/`CLIENT`/`SLOWLOG`/`LATENCY`/`COMMAND`, `SAVE`/`BGSAVE`/`LASTSAVE`/`SHUTDOWN`, `MIGRATE` → `key_cmds`. `CLUSTER` → cluster (步 11).
-
-## 常见任务
-
-### 新增 JSON.* 命令
-
-1. `registry.rs` + `router.rs` match.
-2. `JsonCommands` 方法; 写路径 `KeyLock` + `write_back_json` 模式.
-3. 若需 JSONPath → `JsonPathEngine` 扩展.
-4. 测试 `tests/modules/command/json.rs`.
-
-### 扩展 Lua redis.call 子集
-
-1. `execute.rs` match + handler; 同步 `command_key_indices` (KEYS 校验).
-2. 写操作走 `ScriptTransaction`; 读走 `txn.get/get_value`.
-3. 测试 `tests/modules/command/script.rs`.
-
-### 排查 BGSAVE 失败
-
-1. 确认 `--engine aidb` (`engine_kind == AiDb`).
-2. 查 `shared.bgsave_in_progress` 是否卡住.
-3. 日志 target `persist` / span `bgsave_checkpoint`.
-4. checkpoint 路径 `shared.backup_dir`.
-
-### 排查 BLPOP 永不返回
-
-1. handler 在 [commands-core.md](04-commands-core.md) `list.rs`; 本章查 `BlockingRegistry`.
-2. 确认写侧是否 `notify` (LPUSH/ZADD).
-
-## 配置与 feature flags
-
-| 项 | 位置 | 说明 |
-|----|------|------|
-| `backup_dir` | `ServerSharedState` | SAVE/BGSAVE checkpoint 目标 |
-| `bgsave_in_progress` | `ServerSharedState` | BGSAVE 互斥 |
-| `feature cluster` | `migrate.rs` | RESTORE 前 ASKING; MIGRATE 路由豁免见 cluster |
-| `ServerMetrics` | JSON/Lua `with_metrics` | `on_json_command`, `on_lua_command` |
-
-## 测试
-
-```bash
-cd aikv
-cargo test --test commands
-# extended: tests/modules/command/{json,script,persistence,server,key}.rs
-# INFO golden: tests/modules/command/info_golden.rs, info_alignment.rs
-# L2: tests/modules/server/tcp.rs
-```
-
-## 已知限制
-
-- **JSON**: 全文档 RMW, 无 RedisJSON 内存优化; 非 String key → WRONGTYPE/解析失败.
-- **Lua**: 无 SCRIPT KILL; 命令子集小于 Redis.
-- **Lua pcall**: Redis `{err}` 表 (非 oldmain Nil).
-- **BGSAVE 重入**: 第二次返回 **ERR** (非 oldmain SimpleString OK).
-- **SHUTDOWN**: 仅 Default/SAVE/NOSAVE; 未知 mode → ERR.
-- **OBJECT**: REFCOUNT/IDLETIME/FREQ 固定 stub.
-- **SAVE 日志**: 同步 SAVE 成功事件名 `bgsave.complete` (target `persist`).
-
-## 待核实
+| 命令分组 | 支持的核心命令 |
+| :--- | :--- |
+| **JSON** | `JSON.SET`, `JSON.GET`, `JSON.DEL`, `JSON.TYPE`, `JSON.NUMINCRBY`, `JSON.NUMMULTBY`, `JSON.STRAPPEND`, `JSON.STRLEN`, `JSON.ARRAPPEND`, `JSON.ARRINDEX`, `JSON.ARRINSERT`, `JSON.ARRLEN`, `JSON.ARRPOP`, `JSON.ARRTRIM`, `JSON.OBJKEYS`, `JSON.OBJLEN`, `JSON.TOGGLE`, `JSON.CLEAR`, `JSON.MGET` |
+| **Scripting** | `EVAL`, `EVALSHA`, `SCRIPT LOAD`, `SCRIPT EXISTS`, `SCRIPT FLUSH`, `SCRIPT HELP` |
+| **Blocking** | `BLPOP`, `BRPOP`, `BLMOVE`, `BLMPOP`, `BZPOPMIN`, `BZPOPMAX`, `BZMPOP` |
+| **Cluster & Sync** | `MIGRATE`, `RESTORE`, `DUMP` |
+| **Server & Admin** | `INFO`, `CONFIG GET`, `CONFIG SET`, `CLIENT LIST`, `CLIENT SETNAME`, `CLIENT GETNAME`, `CLIENT ID`, `CLIENT KILL`, `COMMAND`, `COMMAND COUNT`, `COMMAND DOCS`, `COMMAND GETKEYS`, `COMMAND INFO`, `COMMAND LIST`, `OBJECT ENCODING`, `OBJECT REFCOUNT`, `OBJECT IDLETIME`, `OBJECT FREQ`, `SLOWLOG GET`, `SLOWLOG LEN`, `SLOWLOG RESET`, `LATENCY LATEST`, `LATENCY HISTORY`, `LATENCY RESET`, `SAVE`, `BGSAVE`, `LASTSAVE`, `SHUTDOWN`, `TIME` |

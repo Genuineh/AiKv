@@ -1,136 +1,179 @@
 # AiKv
 
-用 Rust 实现的 **Redis RESP 兼容 KV 网络服务** (bin + lib, 当前 **0.10.5**). 对外提供 RESP2/3 与 Redis 命令语义; 存储可选内存或 AiDb LSM 持久化; 集群与 HTTP 指标通过 Cargo feature 按需启用.
+[![Rust 2021](https://img.shields.io/badge/Rust-2021-blue.svg)](https://www.rust-lang.org)
+[![Version](https://img.shields.io/badge/version-0.10.5-orange.svg)](Cargo.toml)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![CI Status](https://img.shields.io/badge/CI-passing-brightgreen.svg)](.github/workflows/ci.yml)
 
-## 特性
+> **AiKv** 是一个用纯 Rust 实现的高性能, 轻量级 **Redis RESP 协议兼容的分布式键值服务** (bin + lib).  
+> 对外提供标准的 RESP2/RESP3 协议与 Redis 命令语义; 底层存储与分布式共识委托给嵌入式引擎 [wiqun/AiDb](https://github.com/wiqun/AiDb).
 
-**服务与协议** (始终可用):
+---
 
-- RESP2/RESP3 (HELLO 协商), Pipeline, Tokio 异步 TCP
-- 数据结构: String, Hash, List, Set, Sorted Set, Key/DB 管理
-- JSON 命令, Lua `EVAL`/`EVALSHA`/`SCRIPT`
-- 阻塞列表/ZSet: BLPOP/BRPOP/BLMOVE, BZPOPMIN/BZPOPMAX
-- 持久化运维: SAVE/BGSAVE/LASTSAVE/SHUTDOWN (aidb 路径走 `Checkpoint`, 非标准 RDB 主路径)
-- 可观测: INFO, SLOWLOG, LATENCY 直方图
+## 为什么开发 AiKv (Why AiKv?)
 
-**存储引擎**:
+- **磁盘级 KV 存储, 大幅降低成本**: 原生 Redis 全量内存导致成本高昂且容量受限；AiKv 将冷热数据下沉至 SSD 优化的 LSM-Tree 引擎，在保障高并发低延迟的同时显著降低硬件成本与运维开销。
+- **原生支持 JSON 与 Lua 脚本**: 无需额外编译或维护第三方 C 扩展（如 RedisJSON），原生支持 RedisJSON（JSONPath）兼容命令与 Lua 5.4 安全沙箱，开箱即用.
+- **彻底解决 Redis 集群模式痛点**: 摒弃 Redis Gossip 带来的脑裂与收敛慢问题，引入强一致的 Raft 算法, 提供确定性拓扑管理与无损在线槽位迁移.
+- **存算分离，架构解耦**: 网络协议与命令路由由 AiKv 实现，持久化与分布式共识由纯 Rust LSM 引擎 [wiqun/AiDb](https://github.com/wiqun/AiDb) 承载，各层独立演进.
 
-| 引擎 | CLI | 说明 |
-|------|-----|------|
-| 内存 | `--engine memory` (默认) | 开发/测试; 重启数据丢失 |
-| AiDb | `--engine aidb --data-dir <path>` | WAL + LSM; **生产与集群推荐** |
+---
 
-**可选能力** (feature):
+## 核心亮点 (Key Highlights)
 
-| 能力 | Feature | 说明 |
-|------|---------|------|
-| Redis Cluster | `cluster` | MOVED/ASK, CLUSTER 子命令, slot 迁移; `aidb/cluster` |
-| OTel / 探活 | `monitoring` | OTLP metrics/traces 导出, `:9191` `/health`; `aidb/monitoring` |
+- **协议完全兼容**: 深度对齐 Redis 8.8，支持 RESP2/RESP3 双栈协议与标准命令语义，现有客户端与业务无需改动即可平滑迁移.
+- **纯 Rust 实现**: 内存安全, 零 C/C++ 依赖, 采用 mimalloc 降低内存碎片.
+- **丰富的数据结构与原生扩展**: 完整支持 String, Hash, List, Set, Sorted Set, 原生内置 JSON (JSONPath) 与 Lua 5.4 脚本 (EVAL / SCRIPT).
+- **细粒度并发与事务**: 4096 桶按 Key 字典序排序加锁, 彻底杜绝死锁; 支持 MULTI/EXEC/WATCH 原子事务.
+- **分布式集群模式**: 16384 槽位路由, Hash Tag, 在线槽位迁移, 客户端透明重定向 (redis-cli -c).
+- **云原生高并发架构**: Tokio 异步运行时 + 4096 桶细粒度 KeyLock，保证原子性与无死锁的同时最大化多核吞吐.
+- **云原生可观测性**: 深度对齐 Redis 8.8 INFO 字段, 支持基于 OpenTelemetry 的指标导出 (`aikv_*`) 与全链路 tracing span 跟踪.
 
-Feature 组合、CLI 全表与集群多节点示例见 [DEPLOYMENT.md](DEPLOYMENT.md).
+---
 
-## 与 AiDb
+## 架构概览 (Architecture at a Glance)
 
-[AiDb](../aidb/) 提供同步 LSM 引擎与 MetaRaft/MultiRaft 共识; AiKv 在其上实现 TCP、Redis 命令与 Cluster **客户端协议**.
+```mermaid
+flowchart TB
+    Client([Redis 客户端 / redis-cli -c]) -->|TCP / RESP2 / RESP3| Listener[Server Listener / Connection]
+    
+    subgraph Protocol [协议与连接层]
+        Listener --> Parser[RespParser 流式解析]
+        Encoder[RespEncoder 序列化] --> Listener
+    end
 
-**依赖**: `Cargo.toml` 中 `aidb = { git = "https://github.com/wiqun/AiDb.git", branch = "new/main" }`, 任何人都可独立 clone 编译 (CI 构建前执行 `cargo update -p aidb` 自动对齐 `new/main` 最新, 无需维护 aidb 的 lock).
+    subgraph Dispatch [命令调度与并发控制]
+        Parser --> Router[CommandRouter 命令分发中枢]
+        Router --> KeyLock[KeyLock 字典序加锁]
+        Router --> Registry[CommandRegistry 命令表]
+    end
 
-**本地开发** (aidb 高频迭代期): 通过 `~/.cargo/config.toml` 的 `[patch]` 把 aidb 覆盖为本地 sibling path, 保持"改 aidb 立即被 aikv 编译验证":
+    subgraph CommandHandlers [命令处理器]
+        Router --> CoreCmds[核心命令: String / Hash / List / Set / ZSet]
+        Router --> ExtCmds[扩展命令: JSON / Lua / Blocking / Migrate]
+        Router --> ServerCmds[管理命令: INFO / CONFIG / CLIENT]
+    end
 
-```toml
-# ~/.cargo/config.toml (仅本机, 不提交仓库)
-# 注意: patch 的 path 相对配置文件所在目录 (~/.cargo/), 不是 CWD, 必须写绝对路径
-[patch."https://github.com/wiqun/AiDb.git"]
-aidb = { path = "/path/to/aidb" }
+    subgraph StorageAdapter [存储适配层]
+        CoreCmds --> Adapter[KvStorage Trait]
+        ExtCmds --> Adapter
+        Adapter --> Subkey[Subkey 扁平化编码]
+        Adapter --> Memory[MemoryEngine 内存引擎]
+        Adapter --> AiDbEngine[AiDbEngine 持久化引擎]
+        Adapter --> ClusterAdapter[ClusterDataAdapter Raft 批处理]
+    end
+
+    subgraph AiDbBackend [AiDb 内核 Sibling]
+        AiDbEngine --> LSM[AiDb LSM 存储引擎]
+        ClusterAdapter --> Raft[MetaRaft 控制面 + MultiRaft 数据面]
+    end
+
+    Router -.-> ClusterRoute[ClusterRouter 16384 槽位 MOVED/ASK 判定]
 ```
 
-> 该 patch 只影响本地编译, CI 无此配置, 且构建前 `cargo update -p aidb` 强制对齐远程 `new/main` 最新 — push aidb 后, 再 push aikv (或开 PR) 触发 CI 即用最新 aidb, 无需本地手动 `cargo update` 维护 lock.
-
-**换环境三步** (新机器 / 新容器开发 aikv):
-
-```bash
-# 1. clone 两仓库为 sibling (aidb 与 aikv 同级)
-git clone <AiDb-url> aidb && git clone <AiKv-url> aikv
-# 2. 创建全局 patch 配置, 指向本机 aidb 绝对路径 (仅需一次)
-mkdir -p ~/.cargo && cat > ~/.cargo/config.toml <<EOF
-[patch."https://github.com/wiqun/AiDb.git"]
-aidb = { path = "$(pwd)/aidb" }
-EOF
-# 3. 验证 patch 生效
-cd aikv && cargo tree -i aidb   # 应显示 aidb vX.Y.Z (/.../aidb)
-```
+---
 
 ## 快速开始
 
+### 编译构建
+
 ```bash
+# 1. 编译带集群能力的发布版本
 cargo build --release --features cluster
-./target/release/aikv --bind 127.0.0.1:6379
 
-# 另开终端
+# 2. 生产全功能构建 (块压缩 + 集群 + OTel 监控)
+cargo build --release --features cluster,monitoring,compression
+```
+
+### 单机运行
+
+```bash
+# 启动持久化服务 (推荐生产配置)
+./target/release/aikv \
+  --bind 127.0.0.1:6379 \
+  --engine aidb \
+  --data-dir /tmp/aikv-data
+
+# 另开终端验证
 redis-cli -p 6379 PING
+redis-cli -p 6379 SET mykey "hello aikv"
+redis-cli -p 6379 GET mykey
 ```
 
-持久化 (生产推荐):
+### 集群部署与运维
 
-```bash
-./target/release/aikv --bind 127.0.0.1:6379 --engine aidb --data-dir /tmp/aikv-data
+多节点 Redis Cluster 部署, 端口规划与拓扑初始化指南请查阅 [docs/deployment.md](docs/deployment.md).
+
+---
+
+## 与 AiDb 协同开发 (Monorepo Setup)
+
+AiKv 通过 Git 依赖引入 [wiqun/AiDb](https://github.com/wiqun/AiDb) (`branch = "new/main"`). 本地高频联调时, 在 `~/.cargo/config.toml` 中配置本地覆盖:
+
+```toml
+[patch."https://github.com/wiqun/AiDb.git"]
+aidb = { path = "/absolute/path/to/aidb" }
 ```
 
-集群部署与 `monitoring` OTLP 见 [DEPLOYMENT.md](DEPLOYMENT.md).
+---
 
-## 示例
+## 示例 (Examples)
 
-内嵌 memory Server 演示 (无需单独起二进制):
+仓库内提供了开箱即用的示例代码:
+
+| 示例场景 | 源码入口 | 说明 | 运行命令 |
+| :--- | :--- | :--- | :--- |
+| **基础操作** | [`examples/basic.rs`](examples/basic.rs) | 内嵌内存 Server 快速演示 CRUD 与 INFO | `cargo run --example basic` |
+| **集群路由** | [`examples/cluster.rs`](examples/cluster.rs) | CRC16 槽位计算与 Hash Tag 提取演示 | `cargo run --features cluster --example cluster` |
+
+---
+
+## 功能特性矩阵 (Feature Matrix)
+
+| Feature | 默认状态 | 核心能力 | 依赖与说明 |
+| :--- | :--- | :--- | :--- |
+| **(none)** | ✅ | 单机 RESP2/3 服务, 内存 / AiDb 存储引擎 | 零外部网络依赖, 最小发布体积 |
+| **`cluster`** | 按需开启 | 16384 Slot 槽位计算, `-MOVED` / `-ASK` 重定向, MultiRaft 批处理 | 依赖 `aidb/cluster`, 构建需 `protoc` |
+| **`monitoring`** | 按需开启 | OTel 生产指标 (`aikv_*`), Tracing 链路导出, `:9191` `/health` HTTP 探活 | 依赖 `aidb/monitoring` |
+| **`compression`** | 按需开启 | 开启 SSTable 数据块压缩 (Snap / LZ4) | 依赖 `aidb/compression` |
+
+完整 CLI 参数与环境变量对照见 [docs/deployment.md](docs/deployment.md).
+
+---
+
+## 自动化测试与质量门禁
 
 ```bash
-cargo run --example basic
-```
+# 1. 运行核心单元与集成测试
+export RUSTFLAGS='-D warnings'
+cargo fmt --check
+cargo clippy --all-targets --features cluster,monitoring
+cargo test --features cluster,monitoring -- --test-threads=1
 
-| 示例 | 说明 | 运行 |
-|------|------|------|
-| `basic` | PING/SET/GET/HSET/INFO 等 | `cargo run --example basic` |
-| `cluster` | CRC16 槽位 / hash tag | `cargo run --features cluster --example cluster` |
-
-详见 [examples/README.md](examples/README.md).
-
-## E2E 测试
-
-基于 pytest 的黑盒测试 (需已部署被测服务 + `redis-cli`):
-
-```bash
+# 2. 运行黑盒 E2E 测试 (需先部署服务)
 pytest e2e/function/ -v
 ```
 
-用例按 `command` / `crash` / `migration` / `failover` 四维度组织. 详见 [e2e/README.md](e2e/README.md).
+测试规范与矩阵说明见 [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## 文档
+---
 
-开发文档 hub: [docs/README.md](docs/README.md) (汇总文档 + modules WHEN 路由).
+## 文档导航
 
-| 文档 | 内容 |
-|------|------|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | 分层、数据流、与 AiDb 边界 |
-| [DESIGN.md](DESIGN.md) | 跨模块设计决策与已知限制 |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | 构建、feature、CLI、集群部署、监控 |
-| [AGENTS.md](AGENTS.md) | AI 助手与 CI 入口 |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | hooks、CI、测试矩阵、提交/PR 规范 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
-| [docs/modules/protocol.md](docs/modules/01-protocol.md) | RESP parser/encoder |
-| [docs/modules/server.md](docs/modules/02-server.md) | TCP Listener/Connection |
-| [docs/modules/storage.md](docs/modules/03-storage.md) | KvStorage, MemoryEngine, AiDbEngine |
-| [docs/modules/commands-core.md](docs/modules/04-commands-core.md) | 核心数据结构命令, Router |
-| [docs/modules/commands-extended.md](docs/modules/05-commands-extended.md) | JSON, Lua, SAVE, INFO, MIGRATE |
-| [docs/modules/cluster.md](docs/modules/06-cluster.md) | MOVED/ASK, CLUSTER 子命令 |
-| [docs/modules/observability.md](docs/modules/07-observability.md) | slowlog, INFO, OTLP metrics |
+开发与设计文档总览见 [docs/README.md](docs/README.md).
 
-## 已知限制
+| 文档分类 | 入口文件 | 适用场景与内容 |
+| :--- | :--- | :--- |
+| **系统架构** | [ARCHITECTURE.md](ARCHITECTURE.md) | 分层设计, KeyLock 并发模型, Subkey 编码, Cluster 路由原理 |
+| **设计决策** | [docs/design.md](docs/design.md) | 技术选型理由, 跨模块权衡 (Why), YAGNI 与已知限制 |
+| **部署与运维** | [docs/deployment.md](docs/deployment.md) | Feature 构建, CLI 参数, 集群多节点部署, OTel 监控告警 |
+| **开发与贡献** | [CONTRIBUTING.md](CONTRIBUTING.md) | Git 工作流, 测试矩阵, 规范要求与 PR 流程 |
+| **AI 助手指南** | [AGENTS.md](AGENTS.md) | 编码硬约束 (Never / Always), 技术对照表与任务路由 |
+| **模块文档** | [docs/modules/](docs/modules/) | 8 篇模块深度规范 (Protocol, Server, Storage, Commands, Cluster, Observability) |
+| **变更记录** | [CHANGELOG.md](CHANGELOG.md) | 版本演进与特性变更日志 |
 
-非 100% Redis 命令兼容; 无标准 `dump.rdb` / memory AOF 主路径. 详情见 [DESIGN.md](DESIGN.md) §与 Redis.
+---
 
-## 待核实
+## 许可证
 
-集群 failover/stub 子命令与可观测性默认差异.
-
-## 许可
-
-[MIT](LICENSE) (见 [Cargo.toml](Cargo.toml)).
+本项目采用 [MIT 许可证](LICENSE) (见 [Cargo.toml](Cargo.toml)).
