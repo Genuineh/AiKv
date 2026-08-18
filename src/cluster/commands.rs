@@ -820,18 +820,15 @@ pub fn cluster_myshardid() -> Result<String, String> {
 // CLUSTER COUNTKEYSINSLOT
 // ---------------------------------------------------------------------------
 #[tracing::instrument(name = "cmd_cluster_count_keys_in_slot", skip_all)]
-pub fn cluster_count_keys_in_slot(slot: u16) -> Result<i64, String> {
+pub async fn cluster_count_keys_in_slot(slot: u16) -> Result<i64, String> {
     let mgr = match CLUSTER_STATE_MGR.get() {
         Some(m) => m,
         None => return Err("CLUSTERDOWN Cluster not initialized".to_string()),
     };
-    let handle = match tokio::runtime::Handle::try_current() {
-        Ok(h) => h,
-        Err(_) => return Err("ERR no async runtime".to_string()),
-    };
     let mut total = 0i64;
-    for gid in mgr.multi_raft.get_groups().read().keys() {
-        if let Ok(keys) = handle.block_on(mgr.multi_raft.scan_keys(*gid, None)) {
+    let gids: Vec<_> = mgr.multi_raft.get_groups().read().keys().copied().collect();
+    for gid in gids {
+        if let Ok(keys) = mgr.multi_raft.scan_keys(gid, None).await {
             total += keys
                 .iter()
                 .filter(|k| aidb::cluster::router::key_to_slot(k) == slot)
@@ -845,21 +842,18 @@ pub fn cluster_count_keys_in_slot(slot: u16) -> Result<i64, String> {
 // CLUSTER GETKEYSINSLOT
 // ---------------------------------------------------------------------------
 #[tracing::instrument(name = "cmd_cluster_get_keys_in_slot", skip_all)]
-pub fn cluster_get_keys_in_slot(slot: u16, count: usize) -> Result<Vec<Vec<u8>>, String> {
+pub async fn cluster_get_keys_in_slot(slot: u16, count: usize) -> Result<Vec<Vec<u8>>, String> {
     let mgr = match CLUSTER_STATE_MGR.get() {
         Some(m) => m,
         None => return Err("CLUSTERDOWN Cluster not initialized".to_string()),
     };
-    let handle = match tokio::runtime::Handle::try_current() {
-        Ok(h) => h,
-        Err(_) => return Err("ERR no async runtime".to_string()),
-    };
     let mut keys = Vec::new();
-    for gid in mgr.multi_raft.get_groups().read().keys() {
+    let gids: Vec<_> = mgr.multi_raft.get_groups().read().keys().copied().collect();
+    for gid in gids {
         if keys.len() >= count {
             break;
         }
-        if let Ok(found) = handle.block_on(mgr.multi_raft.scan_keys(*gid, None)) {
+        if let Ok(found) = mgr.multi_raft.scan_keys(gid, None).await {
             for k in found {
                 if aidb::cluster::router::key_to_slot(&k) == slot {
                     keys.push(k);
@@ -1928,7 +1922,9 @@ pub async fn dispatch_cluster(
                 .get(1)
                 .and_then(|a| parse_int(a))
                 .ok_or_else(|| Error::Command("ERR invalid slot".into()))?;
-            let count = cluster_count_keys_in_slot(slot).map_err(Error::Command)?;
+            let count = cluster_count_keys_in_slot(slot)
+                .await
+                .map_err(Error::Command)?;
             Ok(RespValue::Integer(count))
         }
         Some("getkeysinslot") | Some("GETKEYSINSLOT") => {
@@ -1940,7 +1936,9 @@ pub async fn dispatch_cluster(
                 .get(2)
                 .and_then(|a| parse_int(a))
                 .ok_or_else(|| Error::Command("ERR invalid count".into()))?;
-            let keys = cluster_get_keys_in_slot(slot, count).map_err(Error::Command)?;
+            let keys = cluster_get_keys_in_slot(slot, count)
+                .await
+                .map_err(Error::Command)?;
             Ok(RespValue::Array(Some(
                 keys.into_iter()
                     .map(|k| RespValue::BulkString(Some(Bytes::from(k))))

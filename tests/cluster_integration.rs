@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, LazyLock};
 
+use bytes::Bytes;
 use parking_lot::RwLock;
 
 use aidb::cluster::meta_types::{default_slot_table, SlotStatus};
@@ -16,6 +17,7 @@ use aikv::cluster::announce::AnnounceResolver;
 use aikv::cluster::state::{
     ClusterStateManager, ReplicationRole, CLUSTER_STATE_MGR, DEFAULT_DATA_PORT_OFFSET,
 };
+use aikv::protocol::RespValue;
 
 static RT: LazyLock<tokio::runtime::Runtime> =
     LazyLock::new(|| tokio::runtime::Runtime::new().unwrap());
@@ -70,6 +72,43 @@ async fn create_cluster_mgr() -> ClusterStateManager {
     .await
     .unwrap();
     meta_raft.set_slot_table(table);
+
+    // 注册一个真实数据 group 到 groups map, 使 COUNTKEYSINSLOT / GETKEYSINSLOT
+    // 的 `for gid in gids` 循环体真正执行 (覆盖 block_on panic 路径):
+    // OpenRaftNode::new 需要 `use_wal: true`, `Options::for_testing()` 已满足.
+    // scan_keys 因未注册 storages 会立即返回 `group not found locally` Err,
+    // 不影响本 harness 其余用例.
+    let data_db = aidb::DB::open(
+        std::env::temp_dir().join(format!("cluster_int_data_{}", std::process::id())),
+        aidb::config::Options::for_testing(),
+    )
+    .unwrap();
+    let data_net_factory = aidb::cluster::RaftNetworkClientFactory::new(1, 1, 30, 65536);
+    let data_node = aidb::cluster::OpenRaftNode::new(
+        aidb::cluster::RaftNodeConfig {
+            node_id: 1,
+            group_id: 1,
+            election_timeout_min: 2000,
+            election_timeout_max: 4000,
+            heartbeat_interval: 100,
+            max_payload_entries: 100,
+            snapshot_logs_since_last: 1000,
+            max_entry_size: 8192,
+            rpc_timeout_ms: 500,
+            grpc_max_message_size: 65536,
+            snapshot_size_threshold: None,
+            linearizable_read: false,
+            log_committer_config: None,
+        },
+        data_db,
+        data_net_factory,
+    )
+    .await
+    .unwrap();
+    multi_raft
+        .get_groups()
+        .write()
+        .insert(1, Arc::new(data_node));
 
     ClusterStateManager {
         router,
@@ -205,4 +244,45 @@ fn cluster_keyslot_basic() {
         .parse()
         .unwrap();
     assert!(slot < 16384);
+}
+
+/// COUNTKEYSINSLOT 在 tokio worker 上调用 `Handle::block_on` 会 panic 断连.
+/// 期望: 返回 Integer, 不断开. 草稿: `2026-08-14-fix-cluster-countkeysinslot-panic.md`
+#[test]
+fn cluster_countkeysinslot_does_not_panic_inside_runtime() {
+    ensure_cluster_state();
+    let args = [
+        Bytes::from_static(b"COUNTKEYSINSLOT"),
+        Bytes::from_static(b"0"),
+    ];
+    let resp = block_on(aikv::cluster::dispatch_cluster(
+        Some("COUNTKEYSINSLOT"),
+        &args,
+    ))
+    .expect("COUNTKEYSINSLOT must not panic or error on initialized cluster");
+    assert!(
+        matches!(resp, RespValue::Integer(_)),
+        "expected Integer, got {resp:?}"
+    );
+}
+
+/// GETKEYSINSLOT 同源: 禁止在 async 上下文 `block_on`.
+/// 草稿: `2026-08-14-fix-cluster-countkeysinslot-panic.md`
+#[test]
+fn cluster_getkeysinslot_does_not_panic_inside_runtime() {
+    ensure_cluster_state();
+    let args = [
+        Bytes::from_static(b"GETKEYSINSLOT"),
+        Bytes::from_static(b"0"),
+        Bytes::from_static(b"10"),
+    ];
+    let resp = block_on(aikv::cluster::dispatch_cluster(
+        Some("GETKEYSINSLOT"),
+        &args,
+    ))
+    .expect("GETKEYSINSLOT must not panic");
+    assert!(
+        matches!(resp, RespValue::Array(_)),
+        "expected Array, got {resp:?}"
+    );
 }

@@ -50,18 +50,18 @@ fn cluster_myshardid_uninitialized() {
     );
 }
 
-#[test]
-fn cluster_count_keys_in_slot_uninitialized() {
-    let err = cluster_count_keys_in_slot(0).unwrap_err();
+#[tokio::test]
+async fn cluster_count_keys_in_slot_uninitialized() {
+    let err = cluster_count_keys_in_slot(0).await.unwrap_err();
     assert!(
         err.contains("CLUSTERDOWN"),
         "expected CLUSTERDOWN, got: {err}"
     );
 }
 
-#[test]
-fn cluster_get_keys_in_slot_uninitialized() {
-    let err = cluster_get_keys_in_slot(0, 10).unwrap_err();
+#[tokio::test]
+async fn cluster_get_keys_in_slot_uninitialized() {
+    let err = cluster_get_keys_in_slot(0, 10).await.unwrap_err();
     assert!(
         err.contains("CLUSTERDOWN"),
         "expected CLUSTERDOWN, got: {err}"
