@@ -45,7 +45,7 @@ impl ConfigAutoSave {
         self.interval
     }
 
-    #[instrument(name = "config_auto_save_tick", skip(self))]
+    #[instrument(level = "debug", name = "config_auto_save_tick", skip(self))]
     fn tick(&self) {
         let current_version = self.meta_raft.get_cluster_meta().version;
         let last_version = *self.last_saved_version.read();

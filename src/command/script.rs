@@ -101,7 +101,7 @@ impl ScriptCommands {
         format!("{:x}", hasher.finalize())
     }
 
-    #[instrument(name = "cmd_eval", skip(self, args), fields(cmd.name = "EVAL"))]
+    #[instrument(level = "debug", name = "cmd_eval", skip(self, args), fields(cmd.name = "EVAL"))]
     pub async fn eval(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_min_args("EVAL", args, 2)?;
         let script = String::from_utf8_lossy(&args[0]).into_owned();
@@ -111,7 +111,7 @@ impl ScriptCommands {
         result
     }
 
-    #[instrument(name = "cmd_evalsha", skip(self, args), fields(cmd.name = "EVALSHA"))]
+    #[instrument(level = "debug", name = "cmd_evalsha", skip(self, args), fields(cmd.name = "EVALSHA"))]
     pub async fn evalsha(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_min_args("EVALSHA", args, 2)?;
         let sha1 = String::from_utf8_lossy(&args[0]).to_string();
@@ -139,7 +139,7 @@ impl ScriptCommands {
         }
     }
 
-    #[instrument(name = "cmd_script_load", skip(self, args), fields(cmd.name = "SCRIPT LOAD"))]
+    #[instrument(level = "debug", name = "cmd_script_load", skip(self, args), fields(cmd.name = "SCRIPT LOAD"))]
     async fn script_load(&self, args: &[Bytes]) -> Result<RespValue> {
         router::require_min_args("SCRIPT LOAD", args, 1)?;
         let script = String::from_utf8_lossy(&args[0]).into_owned();

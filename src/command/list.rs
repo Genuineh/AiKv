@@ -65,7 +65,7 @@ impl ListCommands {
         }
     }
 
-    #[instrument(name = "cmd_list", skip(self, args), fields(cmd.name = "LPUSH"))]
+    #[instrument(level = "debug", name = "cmd_list", skip(self, args), fields(cmd.name = "LPUSH"))]
     pub async fn lpush(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_min_args("LPUSH", args, 2)?;
         self.push(db, &args[0], &args[1..], true).await
@@ -242,7 +242,7 @@ impl ListCommands {
         Ok(router::integer(removed as i64))
     }
 
-    #[instrument(name = "cmd_list", skip(self, args), fields(cmd.name = "LINSERT"))]
+    #[instrument(level = "debug", name = "cmd_list", skip(self, args), fields(cmd.name = "LINSERT"))]
     pub async fn linsert(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("LINSERT", args, 4)?;
         let key = &args[0];
@@ -272,7 +272,7 @@ impl ListCommands {
         Ok(router::integer(len))
     }
 
-    #[instrument(name = "cmd_list", skip(self, args), fields(cmd.name = "LMOVE"))]
+    #[instrument(level = "debug", name = "cmd_list", skip(self, args), fields(cmd.name = "LMOVE"))]
     pub async fn lmove(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("LMOVE", args, 4)?;
         let source = &args[0];
@@ -335,7 +335,7 @@ impl ListCommands {
         Ok(router::bulk(element))
     }
 
-    #[instrument(name = "cmd_list", skip(self, args), fields(cmd.name = "LPOS"))]
+    #[instrument(level = "debug", name = "cmd_list", skip(self, args), fields(cmd.name = "LPOS"))]
     pub async fn lpos(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_min_args("LPOS", args, 2)?;
         let key = &args[0];

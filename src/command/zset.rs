@@ -66,7 +66,7 @@ impl ZSetCommands {
         }
     }
 
-    #[instrument(name = "cmd_zset", skip(self, args), fields(cmd.name = "ZADD"))]
+    #[instrument(level = "debug", name = "cmd_zset", skip(self, args), fields(cmd.name = "ZADD"))]
     pub async fn zadd(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_min_args("ZADD", args, 3)?;
         if !(args.len() - 1).is_multiple_of(2) {

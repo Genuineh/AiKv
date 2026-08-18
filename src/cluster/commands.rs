@@ -101,7 +101,7 @@ fn bytes_to_str(bytes: &[u8]) -> std::result::Result<&str, Error> {
 // ---------------------------------------------------------------------------
 // CLUSTER KEYSLOT
 // ---------------------------------------------------------------------------
-#[tracing::instrument(name = "cmd_cluster_keyslot", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_keyslot", skip_all)]
 pub fn cluster_keyslot(key: &[u8]) -> Result<String, String> {
     let slot = key_to_slot(key);
     Ok(slot.to_string())
@@ -110,7 +110,7 @@ pub fn cluster_keyslot(key: &[u8]) -> Result<String, String> {
 // ---------------------------------------------------------------------------
 // CLUSTER MYID
 // ---------------------------------------------------------------------------
-#[tracing::instrument(name = "cmd_cluster_myid", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_myid", skip_all)]
 pub fn cluster_myid() -> Result<String, String> {
     let mgr = CLUSTER_STATE_MGR
         .get()
@@ -195,7 +195,7 @@ where
     "ok"
 }
 
-#[tracing::instrument(name = "cmd_cluster_info", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_info", skip_all)]
 pub fn cluster_info() -> Result<String, String> {
     let mgr = CLUSTER_STATE_MGR
         .get()
@@ -411,7 +411,7 @@ pub(crate) fn cluster_node_role_label(
     }
 }
 
-#[tracing::instrument(name = "cmd_cluster_nodes", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_nodes", skip_all)]
 pub fn cluster_nodes() -> Result<String, String> {
     let mgr = CLUSTER_STATE_MGR
         .get()
@@ -594,7 +594,7 @@ fn resolve_endpoint(mgr: &ClusterStateManager, node_id: u64) -> Option<NodeEndpo
     })
 }
 
-#[tracing::instrument(name = "cmd_cluster_slots", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_slots", skip_all)]
 pub fn cluster_slots() -> Result<Vec<SlotRangeInfo>, String> {
     let mgr = CLUSTER_STATE_MGR
         .get()
@@ -716,7 +716,7 @@ pub fn cluster_slots() -> Result<Vec<SlotRangeInfo>, String> {
 // ---------------------------------------------------------------------------
 // CLUSTER SHARDS (Redis 7.0+)
 // ---------------------------------------------------------------------------
-#[tracing::instrument(name = "cmd_cluster_shards", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_shards", skip_all)]
 pub fn cluster_shards() -> Result<RespValue, String> {
     let mgr = CLUSTER_STATE_MGR
         .get()
@@ -802,7 +802,7 @@ pub fn cluster_shards() -> Result<RespValue, String> {
 // ---------------------------------------------------------------------------
 // CLUSTER MYSHARDID
 // ---------------------------------------------------------------------------
-#[tracing::instrument(name = "cmd_cluster_myshardid", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_myshardid", skip_all)]
 pub fn cluster_myshardid() -> Result<String, String> {
     let mgr = CLUSTER_STATE_MGR
         .get()
@@ -819,7 +819,7 @@ pub fn cluster_myshardid() -> Result<String, String> {
 // ---------------------------------------------------------------------------
 // CLUSTER COUNTKEYSINSLOT
 // ---------------------------------------------------------------------------
-#[tracing::instrument(name = "cmd_cluster_count_keys_in_slot", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_count_keys_in_slot", skip_all)]
 pub async fn cluster_count_keys_in_slot(slot: u16) -> Result<i64, String> {
     let mgr = match CLUSTER_STATE_MGR.get() {
         Some(m) => m,
@@ -841,7 +841,7 @@ pub async fn cluster_count_keys_in_slot(slot: u16) -> Result<i64, String> {
 // ---------------------------------------------------------------------------
 // CLUSTER GETKEYSINSLOT
 // ---------------------------------------------------------------------------
-#[tracing::instrument(name = "cmd_cluster_get_keys_in_slot", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_get_keys_in_slot", skip_all)]
 pub async fn cluster_get_keys_in_slot(slot: u16, count: usize) -> Result<Vec<Vec<u8>>, String> {
     let mgr = match CLUSTER_STATE_MGR.get() {
         Some(m) => m,
@@ -892,7 +892,7 @@ pub fn parse_cluster_node_id(raw: &str) -> Result<u64, String> {
 // ---------------------------------------------------------------------------
 // CLUSTER MEET
 // ---------------------------------------------------------------------------
-#[tracing::instrument(name = "cmd_cluster_meet", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_meet", skip_all)]
 pub async fn cluster_meet(
     addr: &str,
     port: u16,
@@ -943,7 +943,7 @@ pub async fn cluster_meet(
 // ---------------------------------------------------------------------------
 // CLUSTER FORGET
 // ---------------------------------------------------------------------------
-#[tracing::instrument(name = "cmd_cluster_forget", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_forget", skip_all)]
 pub async fn cluster_forget(hex_node_id: &str, force: bool) -> Result<String, String> {
     let mgr = CLUSTER_STATE_MGR
         .get()
@@ -1036,7 +1036,7 @@ pub fn save_nodes_conf(
     Ok(())
 }
 
-#[tracing::instrument(name = "cmd_cluster_saveconfig", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_saveconfig", skip_all)]
 fn cluster_saveconfig() -> Result<String, String> {
     let mgr = CLUSTER_STATE_MGR
         .get()
@@ -1052,7 +1052,7 @@ fn cluster_saveconfig() -> Result<String, String> {
 // ---------------------------------------------------------------------------
 // CLUSTER ADDSLOTS
 // ---------------------------------------------------------------------------
-#[tracing::instrument(name = "cmd_cluster_add_slots", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_add_slots", skip_all)]
 pub async fn cluster_add_slots(
     slots: &[u16],
     target_node_id: Option<u64>,
@@ -1139,7 +1139,7 @@ pub async fn cluster_add_slots(
 // ---------------------------------------------------------------------------
 // CLUSTER DELSLOTS
 // ---------------------------------------------------------------------------
-#[tracing::instrument(name = "cmd_cluster_del_slots", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_del_slots", skip_all)]
 pub async fn cluster_del_slots(slots: &[u16]) -> Result<String, String> {
     let mgr = CLUSTER_STATE_MGR
         .get()
@@ -1156,7 +1156,7 @@ pub async fn cluster_del_slots(slots: &[u16]) -> Result<String, String> {
 // ---------------------------------------------------------------------------
 // CLUSTER SETSLOT
 // ---------------------------------------------------------------------------
-#[tracing::instrument(name = "cmd_cluster_set_slot", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_set_slot", skip_all)]
 pub async fn cluster_set_slot(
     slot: u16,
     sub: &str,
@@ -1238,7 +1238,7 @@ pub async fn cluster_set_slot(
 // ---------------------------------------------------------------------------
 // CLUSTER FAILOVER
 // ---------------------------------------------------------------------------
-#[tracing::instrument(name = "cmd_cluster_failover", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_failover", skip_all)]
 pub async fn cluster_failover(mode: &str) -> Result<String, String> {
     let mgr = CLUSTER_STATE_MGR
         .get()
@@ -1280,7 +1280,7 @@ pub async fn cluster_failover(mode: &str) -> Result<String, String> {
 // 设置本节点为指定 primary 的副本 (仅元数据层面).
 // 实际的 MultiRaft 成员变更受限于 group 在本地才可操作,
 // 当前版本 replicas 不服务数据读取, 这是已知限制.
-#[tracing::instrument(name = "cmd_cluster_replicate", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_replicate", skip_all)]
 pub async fn cluster_replicate(primary_id: u64) -> Result<String, String> {
     let mgr = CLUSTER_STATE_MGR
         .get()
@@ -1667,7 +1667,7 @@ pub async fn cluster_del_replica(primary_id: u64, replica_id: u64) -> Result<Str
 // ---------------------------------------------------------------------------
 // CLUSTER REPLICAS
 // ---------------------------------------------------------------------------
-#[tracing::instrument(name = "cmd_cluster_replicas", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_replicas", skip_all)]
 pub fn cluster_replicas(node_id: u64) -> Result<Vec<String>, String> {
     let mgr = CLUSTER_STATE_MGR
         .get()
@@ -1735,7 +1735,7 @@ async fn run_pending_migration_to_completion(
     Ok(())
 }
 
-#[tracing::instrument(name = "cmd_cluster_rebalance", skip_all)]
+#[tracing::instrument(level = "debug", name = "cmd_cluster_rebalance", skip_all)]
 pub async fn cluster_rebalance() -> Result<String, String> {
     let mgr = CLUSTER_STATE_MGR
         .get()
@@ -1845,7 +1845,7 @@ pub async fn cluster_rebalance() -> Result<String, String> {
 // ---------------------------------------------------------------------------
 /// CLUSTER 子命令分发器. 所有 CLUSTER 子命令统一入口,
 /// 避免 execute_inner 的 match 进一步膨胀.
-#[tracing::instrument(name = "cmd_cluster", skip_all, fields(sub = sub))]
+#[tracing::instrument(level = "debug", name = "cmd_cluster", skip_all, fields(sub = sub))]
 pub async fn dispatch_cluster(
     sub: Option<&str>,
     args: &[Bytes],

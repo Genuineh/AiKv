@@ -35,7 +35,7 @@ impl ServerCommands {
         Self { storage, shared }
     }
 
-    #[instrument(name = "cmd_server", skip(self, args), fields(cmd.name = "INFO"))]
+    #[instrument(level = "debug", name = "cmd_server", skip(self, args), fields(cmd.name = "INFO"))]
     pub async fn info(&self, _current_db: usize, args: &[Bytes]) -> Result<RespValue> {
         let sections: Vec<String> = args
             .iter()
@@ -46,7 +46,7 @@ impl ServerCommands {
         Ok(router::bulk(out.into_bytes()))
     }
 
-    #[instrument(name = "cmd_server", skip(self, args), fields(cmd.name = "TIME"))]
+    #[instrument(level = "debug", name = "cmd_server", skip(self, args), fields(cmd.name = "TIME"))]
     pub async fn time(&self, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("TIME", args, 0)?;
         let now = std::time::SystemTime::now()
@@ -60,7 +60,7 @@ impl ServerCommands {
         ])))
     }
 
-    #[instrument(name = "cmd_server", skip(self, args), fields(cmd.name = "CONFIG GET"))]
+    #[instrument(level = "debug", name = "cmd_server", skip(self, args), fields(cmd.name = "CONFIG GET"))]
     pub async fn config_get(&self, args: &[Bytes]) -> Result<RespValue> {
         router::require_min_args("CONFIG GET", args, 2)?;
         let param = String::from_utf8_lossy(&args[1]);
@@ -100,7 +100,7 @@ impl ServerCommands {
         }
     }
 
-    #[instrument(name = "cmd_server", skip(self, args), fields(cmd.name = "CONFIG SET"))]
+    #[instrument(level = "debug", name = "cmd_server", skip(self, args), fields(cmd.name = "CONFIG SET"))]
     pub async fn config_set(&self, args: &[Bytes]) -> Result<RespValue> {
         router::require_min_args("CONFIG SET", args, 3)?;
         let param = String::from_utf8_lossy(&args[1]).to_string();
@@ -135,7 +135,7 @@ impl ServerCommands {
         Ok(router::ok())
     }
 
-    #[instrument(name = "cmd_server", skip(self, args), fields(cmd.name = "SLOWLOG"))]
+    #[instrument(level = "debug", name = "cmd_server", skip(self, args), fields(cmd.name = "SLOWLOG"))]
     pub async fn slowlog(&self, args: &[Bytes]) -> Result<RespValue> {
         if args.is_empty() {
             return Err(router::wrong_args("SLOWLOG", ""));
@@ -173,7 +173,7 @@ impl ServerCommands {
         }
     }
 
-    #[instrument(name = "cmd_server", skip(self, args), fields(cmd.name = "COMMAND"))]
+    #[instrument(level = "debug", name = "cmd_server", skip(self, args), fields(cmd.name = "COMMAND"))]
     pub async fn command(&self, args: &[Bytes]) -> Result<RespValue> {
         if args.is_empty() {
             let items: Vec<RespValue> = registry::all_commands()
@@ -232,7 +232,7 @@ impl ServerCommands {
         }
     }
 
-    #[instrument(name = "cmd_server", skip(self, args), fields(cmd.name = "LATENCY"))]
+    #[instrument(level = "debug", name = "cmd_server", skip(self, args), fields(cmd.name = "LATENCY"))]
     pub async fn latency(&self, args: &[Bytes], proto: ProtocolVersion) -> Result<RespValue> {
         if args.is_empty() {
             return Err(router::wrong_args("LATENCY", ""));
@@ -324,7 +324,7 @@ impl ServerCommands {
         }
     }
 
-    #[instrument(name = "cmd_server", skip(self, args), fields(cmd.name = "CLIENT LIST"))]
+    #[instrument(level = "debug", name = "cmd_server", skip(self, args), fields(cmd.name = "CLIENT LIST"))]
     pub async fn client_list(&self, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("CLIENT LIST", args, 1)?;
         let clients = self.shared.clients.read();
@@ -339,7 +339,7 @@ impl ServerCommands {
         Ok(router::bulk(lines.join("\n").into_bytes()))
     }
 
-    #[instrument(name = "cmd_server", skip(self, args), fields(cmd.name = "CLIENT SETNAME"))]
+    #[instrument(level = "debug", name = "cmd_server", skip(self, args), fields(cmd.name = "CLIENT SETNAME"))]
     pub async fn client_setname(&self, id: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("CLIENT SETNAME", args, 2)?;
         let name = String::from_utf8_lossy(&args[1]).to_string();
@@ -347,7 +347,7 @@ impl ServerCommands {
         Ok(router::ok())
     }
 
-    #[instrument(name = "cmd_server", skip(self, args), fields(cmd.name = "CLIENT GETNAME"))]
+    #[instrument(level = "debug", name = "cmd_server", skip(self, args), fields(cmd.name = "CLIENT GETNAME"))]
     pub async fn client_getname(&self, id: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("CLIENT GETNAME", args, 1)?;
         let clients = self.shared.clients.read();

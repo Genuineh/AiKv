@@ -129,6 +129,7 @@ impl JsonCommands {
     }
 
     #[instrument(
+    level = "debug",
     name = "cmd_json_get",
     skip(self, args),
     fields(cmd.name = "JSON.GET", key = tracing::field::Empty, path = tracing::field::Empty)
@@ -161,6 +162,7 @@ impl JsonCommands {
     }
 
     #[instrument(
+    level = "debug",
     name = "cmd_json_mget",
     skip(self, args),
     fields(cmd.name = "JSON.MGET", key_count = tracing::field::Empty, path = tracing::field::Empty)
@@ -203,6 +205,7 @@ impl JsonCommands {
     }
 
     #[instrument(
+    level = "debug",
     name = "cmd_json_set",
     skip(self, args),
     fields(cmd.name = "JSON.SET", key = tracing::field::Empty, path = tracing::field::Empty)
@@ -316,6 +319,7 @@ impl JsonCommands {
     }
 
     #[instrument(
+    level = "debug",
     name = "cmd_json_del",
     skip(self, args),
     fields(cmd.name = "JSON.DEL", key = tracing::field::Empty, path = tracing::field::Empty)
@@ -355,6 +359,7 @@ impl JsonCommands {
     }
 
     #[instrument(
+    level = "debug",
     name = "cmd_json_type",
     skip(self, args),
     fields(cmd.name = "JSON.TYPE", key = tracing::field::Empty, path = tracing::field::Empty)
@@ -389,6 +394,7 @@ impl JsonCommands {
     }
 
     #[instrument(
+    level = "debug",
     name = "cmd_json_strlen",
     skip(self, args),
     fields(cmd.name = "JSON.STRLEN", key = tracing::field::Empty, path = tracing::field::Empty)
@@ -431,6 +437,7 @@ impl JsonCommands {
     }
 
     #[instrument(
+    level = "debug",
     name = "cmd_json_arrlen",
     skip(self, args),
     fields(
@@ -474,6 +481,7 @@ impl JsonCommands {
     }
 
     #[instrument(
+    level = "debug",
     name = "cmd_json_objlen",
     skip(self, args),
     fields(cmd.name = "JSON.OBJLEN", key = tracing::field::Empty, path = tracing::field::Empty)
@@ -511,6 +519,7 @@ impl JsonCommands {
     }
 
     #[instrument(
+    level = "debug",
     name = "cmd_json_numincrby",
     skip(self, args),
     fields(cmd.name = "JSON.NUMINCRBY", key = tracing::field::Empty, path = tracing::field::Empty)
@@ -567,6 +576,7 @@ impl JsonCommands {
     }
 
     #[instrument(
+    level = "debug",
     name = "cmd_json_arrappend",
     skip(self, args),
     fields(cmd.name = "JSON.ARRAPPEND", key = tracing::field::Empty, path = tracing::field::Empty)
@@ -623,6 +633,7 @@ impl JsonCommands {
     }
 
     #[instrument(
+    level = "debug",
     name = "cmd_json_update",
     skip(self, args),
     fields(
@@ -704,6 +715,7 @@ impl JsonCommands {
     }
 
     #[instrument(
+    level = "debug",
     name = "cmd_json_mset",
     skip(self, args),
     fields(cmd.name = "JSON.MSET", key_count = tracing::field::Empty)

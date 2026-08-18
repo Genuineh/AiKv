@@ -35,7 +35,7 @@ impl Server {
               }
               accept_result = listener.accept() => {
                 let (stream, remote) = accept_result?;
-                tracing::info!(%remote, "kv.accept");
+                tracing::debug!(%remote, "kv.accept");
                 let state = Arc::clone(&state);
                 if !state.try_register_connection() {
                   tracing::warn!(%remote, "connection rejected: maxclients reached");

@@ -30,7 +30,7 @@ impl PersistenceCommands {
         Ok(())
     }
 
-    #[instrument(name = "cmd_save", skip(self))]
+    #[instrument(level = "debug", name = "cmd_save", skip(self))]
     pub async fn save(&self) -> Result<RespValue> {
         self.ensure_persistent_engine()?;
         self.storage.flush_engine().await?;
@@ -41,7 +41,7 @@ impl PersistenceCommands {
         Ok(router::ok())
     }
 
-    #[instrument(name = "cmd_bgsave", skip(self))]
+    #[instrument(level = "debug", name = "cmd_bgsave", skip(self))]
     pub async fn bgsave(&self) -> Result<RespValue> {
         self.ensure_persistent_engine()?;
         if self
@@ -97,7 +97,7 @@ impl PersistenceCommands {
         Ok(RespValue::SimpleString("Background saving started".into()))
     }
 
-    #[instrument(name = "cmd_lastsave", skip(self))]
+    #[instrument(level = "debug", name = "cmd_lastsave", skip(self))]
     pub async fn lastsave(&self) -> Result<RespValue> {
         let ts = if self.storage.engine_kind() == StorageEngineKind::AiDb {
             self.shared.last_save_time() as i64
@@ -107,7 +107,7 @@ impl PersistenceCommands {
         Ok(router::integer(ts))
     }
 
-    #[instrument(name = "cmd_shutdown", skip(self, args))]
+    #[instrument(level = "debug", name = "cmd_shutdown", skip(self, args))]
     pub async fn shutdown(&self, args: &[Bytes]) -> Result<RespValue> {
         let mode = parse_shutdown_mode(args)?;
         match self.storage.engine_kind() {

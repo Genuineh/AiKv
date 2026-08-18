@@ -39,7 +39,7 @@ impl KeyCommands {
         &self.storage
     }
 
-    #[instrument(name = "cmd_keys", skip(self, args), fields(cmd.name = "EXPIRE", key_count = 1))]
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "EXPIRE", key_count = 1))]
     pub async fn expire(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("EXPIRE", args, 2)?;
         let secs = parse_i64(&args[1])?;
@@ -102,14 +102,14 @@ impl KeyCommands {
         Ok(router::integer(i64::from(ok)))
     }
 
-    #[instrument(name = "cmd_keys", skip(self, args), fields(cmd.name = "KEYS"))]
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "KEYS"))]
     pub async fn keys(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("KEYS", args, 1)?;
         let matched = self.storage.keys(db, &args[0]).await?;
         Ok(array_of_bulk(matched))
     }
 
-    #[instrument(name = "cmd_keys", skip(self, args), fields(cmd.name = "SCAN"))]
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "SCAN"))]
     pub async fn scan(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_min_args("SCAN", args, 1)?;
         let cursor = parse_u64(&args[0])?;
@@ -148,7 +148,7 @@ impl KeyCommands {
         }
     }
 
-    #[instrument(name = "cmd_keys", skip(self, args), fields(cmd.name = "RENAME"))]
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "RENAME"))]
     pub async fn rename(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("RENAME", args, 2)?;
         let key = &args[0];
@@ -179,7 +179,7 @@ impl KeyCommands {
         Ok(router::integer(i64::from(ok)))
     }
 
-    #[instrument(name = "cmd_keys", skip(self, args), fields(cmd.name = "TYPE"))]
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "TYPE"))]
     pub async fn type_cmd(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("TYPE", args, 1)?;
         match self.storage.get_typed(db, &args[0]).await? {
@@ -188,7 +188,7 @@ impl KeyCommands {
         }
     }
 
-    #[instrument(name = "cmd_keys", skip(self, args), fields(cmd.name = "COPY"))]
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "COPY"))]
     pub async fn copy(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_min_args("COPY", args, 2)?;
         let src_key = &args[0];
@@ -217,7 +217,7 @@ impl KeyCommands {
         Ok(router::integer(i64::from(copied)))
     }
 
-    #[instrument(name = "cmd_keys", skip(self, args), fields(cmd.name = "EXPIRETIME"))]
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "EXPIRETIME"))]
     pub async fn expiretime(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("EXPIRETIME", args, 1)?;
         Ok(router::integer(map_expiretime(
@@ -225,7 +225,7 @@ impl KeyCommands {
         )))
     }
 
-    #[instrument(name = "cmd_keys", skip(self, args), fields(cmd.name = "PEXPIRETIME"))]
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "PEXPIRETIME"))]
     pub async fn pexpiretime(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("PEXPIRETIME", args, 1)?;
         Ok(router::integer(map_pexpiretime(
@@ -234,7 +234,7 @@ impl KeyCommands {
     }
 
     /// DUMP — AiKv 内部格式 `[version: u8=0][bincode(StoredValue)]`, 非 Redis 兼容.
-    #[instrument(name = "cmd_keys", skip(self, args), fields(cmd.name = "DUMP"))]
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "DUMP"))]
     pub async fn dump(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("DUMP", args, 1)?;
         match self.storage.get_typed(db, &args[0]).await? {
@@ -246,7 +246,7 @@ impl KeyCommands {
         }
     }
 
-    #[instrument(name = "cmd_keys", skip(self, args), fields(cmd.name = "RESTORE"))]
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "RESTORE"))]
     pub async fn restore(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_min_args("RESTORE", args, 3)?;
         let key = &args[0];
@@ -296,7 +296,7 @@ impl KeyCommands {
         Ok(router::ok())
     }
 
-    #[instrument(name = "cmd_keys", skip(self, args), fields(cmd.name = "MIGRATE"))]
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "MIGRATE"))]
     pub async fn migrate(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_min_args("MIGRATE", args, 5)?;
         let host =
