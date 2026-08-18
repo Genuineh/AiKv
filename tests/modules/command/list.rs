@@ -262,3 +262,67 @@ async fn test_lpos_rank_zero() {
         .unwrap_err();
     assert!(err.to_string().contains("RANK can't be zero"));
 }
+
+/// timeout=0 必须无限阻塞, 直到另一任务 LPUSH. 负数必须 `ERR timeout is negative`.
+/// 草稿: `2026-08-14-fix-blpop-timeout-zero.md`
+#[tokio::test]
+async fn blpop_zero_blocks_until_lpush() {
+    let r = std::sync::Arc::new(router());
+    let r_wait = r.clone();
+    let waiter = tokio::spawn(async move {
+        let mut db = 0;
+        r_wait
+            .execute("BLPOP", &[b("blq"), b("0")], &mut db)
+            .await
+            .unwrap()
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    assert!(
+        !waiter.is_finished(),
+        "BLPOP 0 on empty list must still be blocked"
+    );
+    let mut db = 0;
+    r.execute("LPUSH", &[b("blq"), b("hello")], &mut db)
+        .await
+        .unwrap();
+    let resp = tokio::time::timeout(std::time::Duration::from_secs(2), waiter)
+        .await
+        .expect("BLPOP 0 should be woken by LPUSH")
+        .unwrap();
+    match resp {
+        RespValue::Array(Some(items)) => {
+            assert_eq!(items.len(), 2);
+            assert_eq!(items[0], RespValue::BulkString(Some(b("blq"))));
+            assert_eq!(items[1], RespValue::BulkString(Some(b("hello"))));
+        }
+        other => panic!("expected array [blq, hello], got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn blpop_negative_timeout_is_error() {
+    let r = router();
+    let mut db = 0;
+    let err = r
+        .execute("BLPOP", &[b("blq"), b("-1")], &mut db)
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("ERR timeout is negative"),
+        "got {err}"
+    );
+}
+
+#[tokio::test]
+async fn blpop_nan_timeout_is_error() {
+    let r = router();
+    let mut db = 0;
+    let err = r
+        .execute("BLPOP", &[b("blq"), b("nan")], &mut db)
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("ERR timeout is negative"),
+        "got {err}"
+    );
+}

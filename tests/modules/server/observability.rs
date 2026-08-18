@@ -783,7 +783,7 @@ async fn blocked_clients_multi_key_blpop_counts_one_client() {
 }
 
 #[tokio::test]
-async fn blocked_clients_zero_timeout_does_not_block() {
+async fn blocked_clients_short_timeout_unblocks() {
     use bytes::Bytes;
     use std::sync::Arc;
 
@@ -800,7 +800,7 @@ async fn blocked_clients_zero_timeout_does_not_block() {
     let mut db = 0;
 
     router
-        .execute("BLPOP", &[b("missing"), b("0")], &mut db)
+        .execute("BLPOP", &[b("missing"), b("0.05")], &mut db)
         .await
         .unwrap();
     assert_eq!(shared.metrics().blocked_clients(), 0);

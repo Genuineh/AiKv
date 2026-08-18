@@ -553,13 +553,11 @@ impl ZSetCommands {
                 }
             }
         }
-        if timeout_s == 0.0 {
-            return Ok(blocking::nil_blocking_response());
-        }
-        let dur = if timeout_s > 0.0 {
-            Duration::from_secs_f64(timeout_s)
+        let infinite = timeout_s == 0.0;
+        let dur = if infinite {
+            Duration::from_secs(60 * 60 * 24 * 365)
         } else {
-            Duration::from_secs(300)
+            Duration::from_secs_f64(timeout_s)
         };
         let _blocked = BlockedClientGuard::enter(&self.metrics);
         let registry = BlockingRegistry::global();
@@ -568,7 +566,7 @@ impl ZSetCommands {
             .iter()
             .map(|k| registry.register(k.to_vec(), dur))
             .collect();
-        while Instant::now() < deadline {
+        while infinite || Instant::now() < deadline {
             for recv in &mut rx {
                 match recv.try_recv() {
                     Ok(_) | Err(oneshot::error::TryRecvError::Closed) => {

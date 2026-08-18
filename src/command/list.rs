@@ -15,8 +15,8 @@
 //! ```text
 //! try_pop_any 非阻塞尝试 (遍历 keys, 取首个非空 list)
 //!   ├─ 命中 → 返回 [key, element]
-//!   ├─ timeout=0 → nil Array (立即返回)
-//!   ├─ timeout<0 → 300s 上限
+//!   ├─ timeout=0 → 无限阻塞 (Redis 8.8)
+//!   ├─ timeout<0 → ERR timeout is negative
 //!   └─ 否则 BlockingRegistry::register(key, dur) + 10ms 轮询 try_recv;
 //!        写侧 LPUSH/RPUSH 成功后 notify(key, OK) 唤醒
 //! ```
@@ -405,8 +405,13 @@ impl ListCommands {
     pub(crate) fn parse_timeout_secs(b: &Bytes) -> Result<f64> {
         let s = std::str::from_utf8(b)
             .map_err(|_| Error::Command("ERR timeout is not a float".into()))?;
-        s.parse::<f64>()
-            .map_err(|_| Error::Command("ERR timeout is not a float".into()))
+        let n = s
+            .parse::<f64>()
+            .map_err(|_| Error::Command("ERR timeout is not a float".into()))?;
+        if n < 0.0 || n.is_nan() {
+            return Err(Error::Command("ERR timeout is negative".into()));
+        }
+        Ok(n)
     }
 
     /// Non-blocking: try to pop from first non-empty key. Returns None if all empty.
@@ -471,14 +476,11 @@ impl ListCommands {
             return Ok(result);
         }
 
-        if timeout_secs == 0.0 {
-            return Ok(blocking::nil_blocking_response());
-        }
-
-        let dur = if timeout_secs > 0.0 {
-            Duration::from_secs_f64(timeout_secs)
+        let infinite = timeout_secs == 0.0;
+        let dur = if infinite {
+            Duration::from_secs(60 * 60 * 24 * 365)
         } else {
-            Duration::from_secs(300)
+            Duration::from_secs_f64(timeout_secs)
         };
 
         let _blocked = BlockedClientGuard::enter(&self.metrics);
@@ -490,7 +492,7 @@ impl ListCommands {
             .collect();
 
         let deadline = Instant::now() + dur;
-        while Instant::now() < deadline {
+        while infinite || Instant::now() < deadline {
             for rx in &mut receivers {
                 match rx.try_recv() {
                     Ok(_) | Err(oneshot::error::TryRecvError::Closed) => {
@@ -529,14 +531,11 @@ impl ListCommands {
             return Ok(immediate);
         }
 
-        if timeout == 0.0 {
-            return Ok(blocking::nil_blocking_response());
-        }
-
-        let dur = if timeout > 0.0 {
-            Duration::from_secs_f64(timeout)
+        let infinite = timeout == 0.0;
+        let dur = if infinite {
+            Duration::from_secs(60 * 60 * 24 * 365)
         } else {
-            Duration::from_secs(300)
+            Duration::from_secs_f64(timeout)
         };
 
         let _blocked = BlockedClientGuard::enter(&self.metrics);
@@ -544,7 +543,7 @@ impl ListCommands {
         let registry = BlockingRegistry::global();
         let deadline = Instant::now() + dur;
 
-        while Instant::now() < deadline {
+        while infinite || Instant::now() < deadline {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 return Ok(blocking::nil_blocking_response());
