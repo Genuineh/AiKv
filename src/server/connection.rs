@@ -93,8 +93,8 @@ pub struct Connection {
     parser: RespParser,
     state: Arc<ServerSharedState>,
     protocol_version: ProtocolVersion,
-    /// 客户端是否通过 HELLO 命令显式协商过协议版本。
-    /// 仅在协商后才会按 RESP3 格式编码 null（`_` 替代 `$-1`）。
+    /// 客户端是否通过 HELLO 命令显式协商过协议版本.
+    /// 仅在协商后才会按 RESP3 格式编码 null(`_` 替代 `$-1`).
     protocol_negotiated: bool,
     last_active: Instant,
     client_id: usize,
@@ -953,7 +953,7 @@ impl Connection {
         Ok(())
     }
 
-    /// 在 MULTI 模式中，将命令排入队列（不立即执行）
+    /// 在 MULTI 模式中,将命令排入队列(不立即执行)
     async fn cmd_atom_enqueue(&mut self, cmd: &str, args: &[Bytes]) -> Result<()> {
         self.tx_state
             .tx_queue
@@ -962,7 +962,7 @@ impl Connection {
             .await
     }
 
-    /// 为写命令跟踪 key 版本（WATCH 冲突检测用）
+    /// 为写命令跟踪 key 版本(WATCH 冲突检测用)
     fn track_command_keys(&self, cmd: &str, args: &[Bytes]) {
         let Some(info) = command::lookup(cmd) else {
             return;
@@ -1027,7 +1027,7 @@ impl Connection {
     }
 
     /// 递归检查 RespValue 树中是否包含 RESP2 风格的 null
-    /// (BulkString(None) 或 Array(None))，用于免克隆短路 (F-034)。
+    /// (BulkString(None) 或 Array(None)),用于免克隆短路 (F-034).
     fn contains_resp_null(value: &RespValue) -> bool {
         match value {
             RespValue::BulkString(None) | RespValue::Array(None) => true,
@@ -1050,9 +1050,9 @@ impl Connection {
     /// RESP3 模式下将 RESP2 风格的 null 表示转为 RESP3 原生 Null.
     /// redis-py 8.0 的 RESP3 解析器对 `$-1\r\n` / `*-1\r\n` 处理有兼容性问题,
     /// 需使用 RESP3 原生 `_\r\n` (Null) 替代.
-    /// RESP3 模式下将 RESP2 风格的 null 表示转为 RESP3 原生 Null。
-    /// redis-py 8.0 的 RESP3 解析器对 `$-1\r\n` / `*-1\r\n` 处理有兼容性问题，
-    /// 需使用 RESP3 原生 `_\r\n` (Null) 替代。
+    /// RESP3 模式下将 RESP2 风格的 null 表示转为 RESP3 原生 Null.
+    /// redis-py 8.0 的 RESP3 解析器对 `$-1\r\n` / `*-1\r\n` 处理有兼容性问题,
+    /// 需使用 RESP3 原生 `_\r\n` (Null) 替代.
     fn adapt_null_to_resp3(&self, value: &RespValue) -> RespValue {
         match value {
             RespValue::BulkString(None) | RespValue::Array(None) => RespValue::Null,

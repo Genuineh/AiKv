@@ -50,7 +50,7 @@ fn filter_subject_field(left_raw: &str) -> &str {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct JsonPathEngine;
 
-/// 从 JSON 节点按路径提取值，支持点号分隔的字段路径和数组索引。
+/// 从 JSON 节点按路径提取值,支持点号分隔的字段路径和数组索引.
 fn traverse_path(item: &JsonValue, field: &str) -> JsonValue {
     if field.is_empty() {
         return item.clone();

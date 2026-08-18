@@ -132,7 +132,7 @@ impl Default for ServerMetrics {
 }
 
 impl ServerMetrics {
-    /// 关联 OTel 指标实例 (仅在 monitoring feature 下生效)。
+    /// 关联 OTel 指标实例 (仅在 monitoring feature 下生效).
     #[cfg(feature = "monitoring")]
     pub fn with_otel(mut self, otel: Arc<super::otel_metrics::OtelMetrics>) -> Self {
         self.otel = Some(otel);
@@ -261,7 +261,7 @@ impl ServerMetrics {
         }
     }
 
-    /// 设置 uptime 秒数 (仅 monitoring feature)。
+    /// 设置 uptime 秒数 (仅 monitoring feature).
     #[cfg(not(feature = "monitoring"))]
     pub fn set_uptime_secs(&self, _secs: u64) {}
 
@@ -319,7 +319,7 @@ impl ServerMetrics {
         self.uptime_secs.store(secs, Ordering::Relaxed);
     }
 
-    /// 设置当前内存使用量 (仅 monitoring feature)。
+    /// 设置当前内存使用量 (仅 monitoring feature).
     #[cfg(feature = "monitoring")]
     pub fn set_memory_bytes(&self, current: u64) {
         self.used_memory_bytes.store(current, Ordering::Relaxed);
@@ -330,19 +330,19 @@ impl ServerMetrics {
         }
     }
 
-    /// 记录过期 key 驱逐 (仅 monitoring feature)。
+    /// 记录过期 key 驱逐 (仅 monitoring feature).
     #[cfg(feature = "monitoring")]
     pub fn on_expired_key(&self) {
         self.expired_keys.fetch_add(1, Ordering::Relaxed);
     }
 
-    /// 记录被拒绝的连接 (仅 monitoring feature)。
+    /// 记录被拒绝的连接 (仅 monitoring feature).
     #[cfg(feature = "monitoring")]
     pub fn on_rejected_connection(&self) {
         self.rejected_connections.fetch_add(1, Ordering::Relaxed);
     }
 
-    /// 批量记录过期 key 驱逐 (仅 monitoring feature)。
+    /// 批量记录过期 key 驱逐 (仅 monitoring feature).
     #[cfg(feature = "monitoring")]
     pub fn record_expired_keys(&self, count: u64) {
         if count == 0 {
@@ -435,13 +435,13 @@ impl ServerMetrics {
         self.slowlog_commands_time_ms_max.load(Ordering::Relaxed)
     }
 
-    /// 更新逻辑 DB key 数量 (仅 monitoring feature)。
+    /// 更新逻辑 DB key 数量 (仅 monitoring feature).
     #[cfg(feature = "monitoring")]
     pub fn set_db_key_count(&self, db: usize, count: u64) {
         self.db_key_counts.insert(db, count);
     }
 
-    /// 记录网络入站字节。
+    /// 记录网络入站字节.
     #[cfg(feature = "monitoring")]
     pub fn on_net_input_bytes(&self, bytes: u64) {
         if bytes == 0 {
@@ -450,7 +450,7 @@ impl ServerMetrics {
         self.net_input_bytes.fetch_add(bytes, Ordering::Relaxed);
     }
 
-    /// 刷新进程 RSS / CPU / 磁盘 IO 指标 (仅 monitoring feature)。
+    /// 刷新进程 RSS / CPU / 磁盘 IO 指标 (仅 monitoring feature).
     #[cfg(feature = "monitoring")]
     pub fn refresh_process_metrics(&self) {
         let Some(ref otel) = self.otel else {
@@ -506,7 +506,7 @@ impl ServerMetrics {
         }
     }
 
-    /// 记录网络出站字节。
+    /// 记录网络出站字节.
     #[cfg(feature = "monitoring")]
     pub fn on_net_output_bytes(&self, bytes: u64) {
         if bytes == 0 {
@@ -525,7 +525,7 @@ impl ServerMetrics {
         self.on_command("GOSSIP.tick", true);
     }
 
-    /// 记录 failover 事件 (仅 cluster feature)。
+    /// 记录 failover 事件 (仅 cluster feature).
     pub fn on_failover(&self) {
         self.on_command("CLUSTER.failover", true);
     }

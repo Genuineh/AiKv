@@ -4,3 +4,5 @@
 |------|------|------|------|
 | 基本 CRUD | `basic.rs` | PING/SET/GET/HSET/INCR/DEL/INFO/QUIT 等常用命令 | `cargo run --example basic` |
 | 集群路由 | `cluster.rs` | CRC16 槽位计算 / hash tag 提取 | `cargo run --features cluster --example cluster` |
+
+`basic` 会连本机 aikv 做一组 CRUD 后退出. `cluster` 只演示槽位计算, 不启动节点.

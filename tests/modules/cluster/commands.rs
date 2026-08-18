@@ -1,5 +1,5 @@
 // CLUSTER 命令格式测试 (L1).
-// 测试在不初始化集群状态时的错误响应。
+// 测试在不初始化集群状态时的错误响应.
 #![cfg(feature = "cluster")]
 
 use aikv::cluster::*;

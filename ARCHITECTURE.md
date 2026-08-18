@@ -156,7 +156,7 @@ flowchart TD
     LockCheck -->|只读命令| ReadExec[并发执行 / 共享读]
     LockCheck -->|写命令 / Lua| KeyLockMgr[KeyLock 管理器]
     
-    subgraph KeyLockMgr [KeyLock 1024 分桶加锁]
+    subgraph KeyLockMgr [KeyLock 4096 分桶加锁]
         Sort[1. 提取所有涉及的 Key 并去重] --> Sorter[2. 严格按 Key 字典序升序排序]
         Sorter --> Buckets[3. 依次对对应 Bucket tokio::Mutex 加锁]
         Buckets --> Exec[4. 执行命令业务逻辑]

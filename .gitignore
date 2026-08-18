@@ -4,3 +4,4 @@
 .venv-e2e/
 **/__pycache__/
 .pytest_cache/
+.worktrees/

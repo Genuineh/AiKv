@@ -31,14 +31,14 @@ async fn test_tcp_hello_resp2() {
     let mut stream = connect(addr).await;
     write_cmd(&mut stream, &[b"HELLO", b"2"]).await;
     let resp = read_response(&mut stream).await;
-    // RESP2 HELLO 返回 flat array，交替 key-value 对
+    // RESP2 HELLO 返回 flat array,交替 key-value 对
     let mut parser = RespParser::new();
     parser.feed(&resp);
     let value = parser.parse().unwrap().expect("hello response");
     let aikv::protocol::RespValue::Array(Some(items)) = value else {
         panic!("RESP2 HELLO 应返回 flat array，非 RESP3 Map");
     };
-    // items 交替排列: [k1, v1, k2, v2, ...]，至少 4 对 (8 项)
+    // items 交替排列: [k1, v1, k2, v2, ...],至少 4 对 (8 项)
     assert!(items.len() >= 8, "RESP2 HELLO 响应至少包含 4 对 key-value");
     assert_eq!(items.len() % 2, 0, "key-value 应对称");
 }
@@ -374,7 +374,7 @@ async fn test_tcp_json_expire() {
     sleep(Duration::from_secs(2)).await;
     write_cmd(&mut stream, &[b"JSON.GET", b"jexp", b"$"]).await;
     let resp = read_response(&mut stream).await;
-    // 裸 TCP 未发送 HELLO，协议未协商，null 仍为 RESP2 格式 `$-1\r\n`
+    // 裸 TCP 未发送 HELLO,协议未协商,null 仍为 RESP2 格式 `$-1\r\n`
     assert_eq!(resp, b"$-1\r\n");
 }
 

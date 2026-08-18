@@ -1,6 +1,6 @@
 //! 阻塞命令基础设施 (BLPOP/BRPOP/BLMOVE/BZPOPMIN/BZPOPMAX)
 //!
-//! key 上无等待者时 notify 开销为一次 DashMap 查找。
+//! key 上无等待者时 notify 开销为一次 DashMap 查找.
 
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -51,7 +51,7 @@ impl BlockingRegistry {
         }
     }
 
-    /// 注册阻塞等待。返回 oneshot::Receiver。
+    /// 注册阻塞等待.返回 oneshot::Receiver.
     pub fn register(&self, key: Vec<u8>, timeout: Duration) -> oneshot::Receiver<RespValue> {
         let (tx, rx) = oneshot::channel();
         let pending = PendingRequest {

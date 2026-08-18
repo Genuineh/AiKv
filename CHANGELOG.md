@@ -11,4 +11,8 @@
 
 ### Changed
 
+- 全面重构并优化项目核心文档与模块文档体系
+- 统一贡献指南结构并全面规范化 Markdown 文档与标点
+- 移除模块文档 frontmatter 中非标准的 `depends_on` 字段
+
 ### Fixed

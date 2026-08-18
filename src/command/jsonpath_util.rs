@@ -1,4 +1,4 @@
-//! JSONPath 公用工具函数: 表达式拆分、比较。
+//! JSONPath 公用工具函数: 表达式拆分、比较.
 
 use serde_json::Value as JsonValue;
 

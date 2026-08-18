@@ -21,7 +21,7 @@ fn parse_response(data: &[u8]) -> RespValue {
         .expect("incomplete response")
 }
 
-/// 在同一个连接上发送多个命令，返回所有响应字节
+/// 在同一个连接上发送多个命令,返回所有响应字节
 struct TestConn {
     stream: TcpStream,
 }
@@ -33,7 +33,7 @@ impl TestConn {
             .expect("connect timeout")
             .expect("connect failed");
         let mut this = Self { stream };
-        // 裸 TCP 测试未协商协议版本，显式切换到 RESP2 以保持测试断言兼容
+        // 裸 TCP 测试未协商协议版本,显式切换到 RESP2 以保持测试断言兼容
         let hello_resp = this.send("HELLO", &["2"]).await;
         assert!(
             hello_resp.starts_with(b"*"),

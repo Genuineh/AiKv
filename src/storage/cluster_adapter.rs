@@ -494,7 +494,7 @@ async fn run_set_batcher(
         let mut items = Vec::with_capacity(SET_BATCH_MAX_OPS);
         items.push(first);
 
-        // 第一阶段：快速非阻塞拉取
+        // 第一阶段:快速非阻塞拉取
         while items.len() < SET_BATCH_MAX_OPS {
             match rx.try_recv() {
                 Ok(item) => items.push(item),
@@ -503,7 +503,7 @@ async fn run_set_batcher(
             }
         }
 
-        // 第二阶段：防单打微退避 (仅在 items 数量小于 MIN_BATCH_TARGET 时触发 50us 避震)
+        // 第二阶段:防单打微退避 (仅在 items 数量小于 MIN_BATCH_TARGET 时触发 50us 避震)
         if items.len() < MIN_BATCH_TARGET {
             tokio::time::sleep(Duration::from_micros(MAX_MICRO_WAIT_US)).await;
             while items.len() < SET_BATCH_MAX_OPS {

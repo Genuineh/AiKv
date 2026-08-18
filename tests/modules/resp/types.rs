@@ -240,7 +240,7 @@ fn test_resp3_streamed_string_encode() {
 /// 验证默认协议版本为 RESP3
 #[test]
 fn test_protocol_version_default() {
-    // 默认协议版本为 RESP3，新连接无需 HELLO 3 即可使用 RESP3 类型
+    // 默认协议版本为 RESP3,新连接无需 HELLO 3 即可使用 RESP3 类型
     assert_eq!(ProtocolVersion::default(), ProtocolVersion::Resp3);
     assert_eq!(ProtocolVersion::Resp2.as_u8(), 2);
     assert_eq!(ProtocolVersion::Resp3.as_u8(), 3);

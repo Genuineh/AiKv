@@ -125,7 +125,7 @@ async fn test_metrics_health_endpoint() {
         "expected /metrics removed: {body}"
     );
 }
-/// 验证关键 tracing span 名称与文档规范一致。
+/// 验证关键 tracing span 名称与文档规范一致.
 #[test]
 fn test_span_naming() {
     // 项目根目录 (cargo test 的 CARGO_MANIFEST_DIR 指向 AiKv)
@@ -281,7 +281,7 @@ fn instrument_attr_before(content: &str, anchor: &str) -> Option<String> {
     Some(attr[..=end].to_string())
 }
 
-/// 递归搜索文件中是否包含指定字符串。
+/// 递归搜索文件中是否包含指定字符串.
 fn walk_grep(dir: &std::path::Path, pattern: &str) -> Result<bool, std::io::Error> {
     if !dir.is_dir() {
         return Ok(false);

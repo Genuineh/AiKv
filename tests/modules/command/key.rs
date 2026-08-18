@@ -751,7 +751,7 @@ async fn test_migrate_keys_copy() {
 
 // ── SCAN 游标一致性测试 ────────────────────────────────────────────────────────
 
-/// 辅助：执行 SCAN 一次，返回 (next_cursor_bytes, keys)
+/// 辅助:执行 SCAN 一次,返回 (next_cursor_bytes, keys)
 async fn scan_once(
     r: &aikv::command::CommandRouter,
     db: &mut usize,
@@ -792,7 +792,7 @@ async fn scan_once(
     (next_cursor.clone(), keys)
 }
 
-/// 插入 20 个 key, 用 SCAN COUNT 5 分页扫描, 验证不重复、不漏。
+/// 插入 20 个 key, 用 SCAN COUNT 5 分页扫描, 验证不重复、不漏.
 #[tokio::test]
 async fn test_scan_full_pagination() {
     let r = router();
@@ -824,7 +824,7 @@ async fn test_scan_full_pagination() {
     );
 }
 
-/// 拿到 cursor1 后中途插入新 key, 继续扫描, 验证不 panic。
+/// 拿到 cursor1 后中途插入新 key, 继续扫描, 验证不 panic.
 #[tokio::test]
 async fn test_scan_insert_mid_scan() {
     let r = router();
@@ -835,7 +835,7 @@ async fn test_scan_insert_mid_scan() {
             .unwrap();
     }
 
-    // 第一次扫描，拿到 cursor1（COUNT 3 保证不一次性扫完）
+    // 第一次扫描,拿到 cursor1(COUNT 3 保证不一次性扫完)
     let (cursor1, _first_keys) = scan_once(&r, &mut db, b"0", 3).await;
 
     // 中途插入新 key
@@ -843,7 +843,7 @@ async fn test_scan_insert_mid_scan() {
         .await
         .unwrap();
 
-    // 用 cursor1 继续扫描，验证不 panic
+    // 用 cursor1 继续扫描,验证不 panic
     if cursor1.as_ref() != b"0" {
         let mut cursor = cursor1.to_vec();
         loop {
@@ -854,10 +854,10 @@ async fn test_scan_insert_mid_scan() {
             cursor = next_cursor.to_vec();
         }
     }
-    // 能走到这里说明没有 panic，测试通过
+    // 能走到这里说明没有 panic,测试通过
 }
 
-/// 拿到 cursor1 后中途删除一个已扫 key, 继续扫描, 验证不 panic、无重复。
+/// 拿到 cursor1 后中途删除一个已扫 key, 继续扫描, 验证不 panic、无重复.
 #[tokio::test]
 async fn test_scan_delete_mid_scan() {
     let r = router();
@@ -871,12 +871,12 @@ async fn test_scan_delete_mid_scan() {
     // 第一次扫描
     let (cursor1, first_keys) = scan_once(&r, &mut db, b"0", 3).await;
 
-    // 删除第一批里的第一个 key（如果有）
+    // 删除第一批里的第一个 key(如果有)
     if let Some(k) = first_keys.first() {
         r.execute("DEL", &[b(k)], &mut db).await.unwrap();
     }
 
-    // 继续用 cursor1 扫完，收集剩余 key
+    // 继续用 cursor1 扫完,收集剩余 key
     let mut seen: HashSet<String> = first_keys.into_iter().collect();
     if cursor1.as_ref() != b"0" {
         let mut cursor = cursor1.to_vec();
@@ -892,12 +892,12 @@ async fn test_scan_delete_mid_scan() {
             cursor = next_cursor.to_vec();
         }
     }
-    // 能走到这里说明没有 panic 且无重复，测试通过
+    // 能走到这里说明没有 panic 且无重复,测试通过
 }
 
 // ── TTL 毫秒级真实过期测试 ────────────────────────────────────────────────────
 
-/// SET key PX 100, 等待 200ms, 验证 GET 返回 nil（key 已过期）。
+/// SET key PX 100, 等待 200ms, 验证 GET 返回 nil(key 已过期).
 #[tokio::test]
 #[ignore = "slow: real PX expiry wait (~200ms)"]
 async fn test_px_expiry_real_wait() {
@@ -913,7 +913,7 @@ async fn test_px_expiry_real_wait() {
     assert_nil(r.execute("GET", &[b("px_key")], &mut db).await.unwrap());
 }
 
-/// PEXPIREAT 设置过去时间戳, 验证 key 立即过期。
+/// PEXPIREAT 设置过去时间戳, 验证 key 立即过期.
 #[tokio::test]
 async fn test_pexpireat_past_timestamp() {
     let r = router();
@@ -921,14 +921,14 @@ async fn test_pexpireat_past_timestamp() {
     r.execute("SET", &[b("peat_key"), b("v")], &mut db)
         .await
         .unwrap();
-    // 使用过去的时间戳（1 ms）
+    // 使用过去的时间戳(1 ms)
     r.execute("PEXPIREAT", &[b("peat_key"), b("1")], &mut db)
         .await
         .unwrap();
     assert_nil(r.execute("GET", &[b("peat_key")], &mut db).await.unwrap());
 }
 
-/// PTTL 返回合理的剩余毫秒数（> 0 且 <= 设置值）。
+/// PTTL 返回合理的剩余毫秒数(> 0 且 <= 设置值).
 #[tokio::test]
 async fn test_pttl_reasonable_value() {
     let r = router();
@@ -946,7 +946,7 @@ async fn test_pttl_reasonable_value() {
     assert!(pttl > 0 && pttl <= 5000, "PTTL out of range: {pttl}");
 }
 
-/// SET key PX 300, PTTL 验证 > 0 且 <= 300。
+/// SET key PX 300, PTTL 验证 > 0 且 <= 300.
 #[tokio::test]
 async fn test_set_px_then_pttl() {
     let r = router();

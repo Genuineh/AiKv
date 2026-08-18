@@ -33,8 +33,8 @@ pub enum RespValue {
     StreamedString(Vec<Bytes>),
 }
 
-/// 协议版本, 默认 RESP3。
-/// 客户端可通过 `HELLO 2` 回退到 RESP2 兼容模式。
+/// 协议版本, 默认 RESP3.
+/// 客户端可通过 `HELLO 2` 回退到 RESP2 兼容模式.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ProtocolVersion {
     Resp2,
