@@ -5,7 +5,7 @@
 验证本机视角 cluster_state 正确报 fail, 被隔离节点读写返回 CLUSTERDOWN,
 多数派侧不受影响且完成选主, 网络恢复后集群自愈并追平最新值.
 
-前置条件: docker 集群 (aifactory/scripts/up-cluster.sh --replicas 2),
+前置条件: Docker 集群部署 (单分片副本数 >= 2),
 每分片 >=3 节点 (否则多数派侧无法选出新 leader, 测试前置预检断言失败).
 """
 
@@ -86,7 +86,7 @@ def test_network_partition_fast_fail(svc):
             shard = (master_port, shard_ports)
             break
     assert shard is not None, (
-        "无 >=3 节点的分片 (REPLICAS>=2 是多数派选主前提, 请用 up-cluster.sh --replicas 2)"
+        "无 >=3 节点的分片 (单分片副本数需 >=2 以满足多数派选主前提)"
     )
     master_port, shard_ports = shard
     assert len(shard_ports) >= 3, f"分片节点数 {len(shard_ports)} < 3, 无法保证多数派选主"

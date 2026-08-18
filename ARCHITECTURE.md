@@ -1,7 +1,7 @@
 # AiKv 架构设计
 
 > **AiKv** 是用 Rust 实现的高性能、轻量级 **Redis RESP 协议兼容的分布式键值服务** (bin + lib).  
-> 对外提供标准的 RESP2/RESP3 协议、Redis 命令语义与 Redis Cluster 客户端重定向协议; 对内**不实现**底层 LSM 存储与 Raft 算法, 持久化与分布式共识委托给纯 Rust 嵌入式存储库 [AiDb](https://github.com/wiqun/AiDb).
+> 对外提供标准的 RESP2/RESP3 协议、Redis 命令语义与 Redis Cluster 客户端重定向协议; 对内**不实现**底层 LSM 存储与 Raft 算法, 持久化与分布式共识委托给纯 Rust 嵌入式存储库 [wiqun/AiDb](https://github.com/wiqun/AiDb).
 
 日常修改各子系统代码时, 优先查阅 [docs/modules/](docs/modules/) 模块文档. 本文提供系统定位边界、分层拓扑、源码映射、并发锁模型与核心请求数据流总览.
 
@@ -16,7 +16,7 @@ AiKv 与底层存储内核 AiDb 保持清晰的上下游分工与职责分离:
 | **产品形态** | 独立网络服务端 (bin + lib), 基于 Tokio 异步运行时 | 纯嵌入式 lib crate, 纯**同步**阻塞 API |
 | **协议与线格式** | RESP2 / RESP3 (HELLO 协商), Pipeline, 二进制安全 BulkString | 无网络层, 纯 Rust 结构体与字节切片 |
 | **数据结构映射** | Redis 复杂类型 (`StoredValue`) 到底层 KV 的 Subkey 扁平化映射 | 单一扁平字节 Keyspace (`[u8] -> [u8]`) |
-| **并发锁模型** | 细粒度 `KeyLock` (1024 桶按 Key 字典序排序加锁防死锁) | 写锁保护的 Sequence 分配与 SkipMap 无锁并发 |
+| **并发锁模型** | 细粒度 `KeyLock` (4096 桶按 Key 字典序排序加锁防死锁) | 写锁保护的 Sequence 分配与 SkipMap 无锁并发 |
 | **集群客户端交互** | 计算 16384 槽位, 返回 `-MOVED` / `-ASK`, 支持 `ASKING` / `READONLY` | MetaRaft 拓扑状态机、MultiRaft 数据分片与 gRPC 传输 |
 | **数据面写入** | `ClusterDataAdapter` (批处理合并、EagerFlush 异步 propose) | MultiRaft Log 追加、Commit 与状态机 Apply |
 | **持久化运维** | `SAVE` / `BGSAVE` 指令映射至 AiDb Checkpoint 快照 | LSM WAL 重放、MemTable 落盘与一致性硬链接 Checkpoint |
@@ -38,7 +38,7 @@ flowchart TB
 
     subgraph RouterLayer [2. 命令调度与并发控制层 — command]
         Parser --> Router[CommandRouter 命令分发中枢]
-        Router --> KeyLock[KeyLock 1024 桶字典序加锁]
+        Router --> KeyLock[KeyLock 4096 桶字典序加锁]
         Router --> Registry[CommandRegistry 命令元数据与 Flags]
         Router -.-> ClusterRoute[ClusterRouter 16384 槽位 MOVED/ASK 判定]
     end

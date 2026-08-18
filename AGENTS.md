@@ -32,7 +32,7 @@
 | :--- | :--- | :--- | :--- |
 | **RESP 协议栈** | 自研 `src/protocol/` (RESP2/3 双栈, Pipeline) | Redis RESP 规范 / resp-rs | **未采用 resp-rs**; 流式解析限制 512MB bulk / 64MB buffer / 128 深度; **不支持 Telnet 内联非数组命令** |
 | **数据结构映射** | `StoredValue` + Subkey 扁平化前缀 | Kvrocks (Redis-on-LSM) | 存储引擎是 AiDb 自研 LSM (非 Kvrocks/RocksDB 直用); Hash/List 等采用 Subkey 降低写放大 |
-| **并发锁模型** | `KeyLock` (1024 桶 + 字典序排序加锁) | Redis 单线程 / 全局锁 | 多 Key 与 Lua 事务按字节序升序加锁, 设 30s 超时; 读写锁隔离 |
+| **并发锁模型** | `KeyLock` (4096 桶 + 字典序排序加锁) | Redis 单线程 / 全局锁 | 多 Key 与 Lua 事务按字节序升序加锁, 设 30s 超时; 读写锁隔离 |
 | **集群路由** | 16384 Slot, CRC16, `{...}` Hash Tag, MOVED/ASK | Redis Cluster Spec | **无服务端透明转发**; 命令统计仅在实际执行节点累加; 客户端需 `redis-cli -c` |
 | **集群共识** | 委托 AiDb MetaRaft (控制面) + MultiRaft (数据面) | Redis 16379 Gossip | **拓扑与故障转移权威判定走 MetaRaft**, 非 Gossip 投票; AiKv Gossip 仅用于轻量 Leader 缓存刷新 |
 | **可观测性** | INFO 对齐 Redis 8.8; 生产指标 OTLP `aikv_*` | Redis INFO / redis_exporter | `ServerMetrics` 为 INFO 唯一真源; OTel 为其镜像; HTTP `:9191` 仅提供 `/health` 探活 |

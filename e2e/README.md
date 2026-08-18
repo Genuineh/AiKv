@@ -1,12 +1,11 @@
 # AiKv E2E Tests (Python / pytest)
 
-黑盒客户端验收：**用例仅连接已部署的被测服务**（单机或集群拓扑均可），不直接控制进程生命周期。  
-部署操作由 `console` 环境条 / [`aifactory/scripts`](../../aifactory/scripts/) (`up-single.sh`, `up-cluster.sh`) / [`aifactory/benchmark/aikv`](../../aifactory/benchmark/aikv/) 对照压测 compose 或手动 `cargo run` 完成。
+黑盒客户端验收: **用例仅连接已部署的被测服务** (单机或集群拓扑均可), 不直接控制进程生命周期.
 
 ## 环境前置
 
-- 已部署并就绪的 AiKv 服务（单机或集群），地址端口可知
-- `redis-cli` 工具已安装在系统 `PATH` 中（自动门禁检查）
+- 已部署并就绪的 AiKv 服务 (单机或集群), 地址端口可知
+- `redis-cli` 工具已安装在系统 `PATH` 中 (自动门禁检查)
 - 使用 [uv](https://github.com/astral-sh/uv) 管理 Python 虚拟环境
 
 ## 环境搭建 (uv)
@@ -19,26 +18,26 @@ uv pip install -r e2e/requirements.txt --python .venv-e2e
 
 ## 环境配置 (.env)
 
-`aikv/e2e` 支持本地配置文件解耦。可通过复制 `.env.example` 生成本地 `.env` 文件：
+`aikv/e2e` 支持本地配置文件解耦. 可通过复制 `.env.example` 生成本地 `.env` 文件:
 
 ```bash
 cp e2e/.env.example e2e/.env
 ```
 
-`svc` 节点的被测服务地址解析优先级如下：
-1. **进程环境变量**（如终端显示执行 `AIKV_PORT=6380 pytest` 或 console 自动注入）
-2. **本地 `e2e/.env` 文件**（持久化记录常用测试节点地址）
+`svc` 节点的被测服务地址解析优先级如下:
+1. **进程环境变量** (如终端显示执行 `AIKV_PORT=6380 pytest` 或 console 自动注入)
+2. **本地 `e2e/.env` 文件** (持久化记录常用测试节点地址)
 3. **默认回退值** (`127.0.0.1:6379`)
 
 ## 测试运行
 
-直接运行 pytest（自动读取 `.env` 或默认连 127.0.0.1:6379）：
+直接运行 pytest (自动读取 `.env` 或默认连 127.0.0.1:6379):
 
 ```bash
 pytest e2e/function/ -v
 ```
 
-或显式指定地址覆盖运行：
+或显式指定地址覆盖运行:
 
 ```bash
 AIKV_HOST=127.0.0.1 AIKV_PORT=6379 \
@@ -47,7 +46,7 @@ AIKV_HOST=127.0.0.1 AIKV_PORT=6379 \
 
 ## 功能测试划分 (`e2e/function/`)
 
-测试用例按 4 个核心维度结构化划分子目录：
+测试用例按 4 个核心维度结构化划分子目录:
 
 | 维度目录 | 说明 | 包含脚本 |
 |---|---|---|
@@ -60,16 +59,16 @@ AIKV_HOST=127.0.0.1 AIKV_PORT=6379 \
 
 | Fixture | 含义 |
 |---------|------|
-| `svc` | 唯一入口：连接 `AIKV_HOST`/`AIKV_PORT`，在交付用例前自动执行 `FLUSHALL` 前置清库 |
+| `svc` | 唯一入口: 连接 `AIKV_HOST`/`AIKV_PORT`, 在交付用例前自动执行 `FLUSHALL` 前置清库 |
 
 ### console 编写规范与示例
 
-所有测试脚本均遵循 console 元数据标准规范 (`# @component` / `# @title` / docstring)：
+所有测试脚本均遵循 console 元数据标准规范 (`# @component` / `# @title` / docstring):
 
 | 用途 | 语法/位置 |
 |------|------|
 | 树-文件中文名 | 文件头部 `# @title …` |
-| 详情-文件说明 | 模块 docstring（Markdown 渲染） |
+| 详情-文件说明 | 模块 docstring (Markdown 渲染) |
 | 树/详情-用例标题 | 函数上方 `# @title …` |
 | Map 组件关联 | `# @component aikv-server` |
 
@@ -97,7 +96,7 @@ def test_set_get(svc):
 
 ## 目录布局
 
-```text
+```shell
 e2e/
 ├── harness/        # 底层测试脚手架 (Node, RedisClient, ClusterNodes)
 ├── conftest.py     # 全局入口 (前置自动 FLUSHALL 清库)

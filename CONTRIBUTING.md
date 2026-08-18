@@ -26,16 +26,17 @@ flowchart LR
 本项目固定使用 **Rust stable** (含 `clippy` 与 `rustfmt`), 由 [`rust-toolchain.toml`](rust-toolchain.toml) 声明.  
 进入仓库目录后 `rustup` 会自动切换为对应版本, 可通过 `rustup show` 确认.
 
-### 系统依赖与 Protoc
+### 系统依赖
 
 - **Linux / macOS**: 推荐开发环境 (CI 运行在 `ubuntu-latest`).
 - **protoc (Protobuf 编译器)**: 编译 `cluster` 特性时生成 Raft gRPC 协议桩代码需要.
-  ```bash
-  # Ubuntu / Debian
-  sudo apt-get install -y protobuf-compiler
-  # macOS
-  brew install protobuf
-  ```
+
+```bash
+# Ubuntu / Debian
+sudo apt-get install -y protobuf-compiler
+# macOS
+brew install protobuf
+```
 
 ### AiDb 依赖与本地 Patch
 
@@ -49,9 +50,9 @@ aidb = { path = "/absolute/path/to/aidb" }
 
 ---
 
-## 2. 配置 Git 钩子与安全门禁
+## 2. 配置 Git 钩子
 
-克隆仓库后建议立即安装本地 Git 钩子:
+建议在克隆仓库后立即安装本地 Git 钩子, 将质量与规范门禁前置到本地提交阶段:
 
 ```bash
 ./install-hooks.sh   # 软链接 hooks/* → .git/hooks/
@@ -59,24 +60,27 @@ aidb = { path = "/absolute/path/to/aidb" }
 
 ### 钩子职责说明
 
-- [`hooks/pre-commit`](hooks/pre-commit): 在 `git commit` 时自动执行:
-  1. 分支保护 ([`hooks/check-branch.sh`](hooks/check-branch.sh)): 禁止直接在 `main` / `new/main` 提交代码
+- [`hooks/pre-commit`](hooks/pre-commit): 在 `git commit` 时依次执行:
+  1. 分支保护 ([`hooks/check-branch.sh`](hooks/check-branch.sh)): 禁止直接在 `main` / `new/main` 分支提交
   2. 文档链接检查 ([`hooks/check-docs-links.sh`](hooks/check-docs-links.sh)): 检查暂存区 `.md` 文件的相对链接与死链
   3. 依赖解析检查: 验证 `aidb` 依赖解析正常
   4. 代码格式检查: `cargo fmt --check`
-  5. 静态分析检查: `RUSTFLAGS='-D warnings' cargo clippy --all-targets --all-features`
+  5. 静态分析检查: `RUSTFLAGS='-D warnings' cargo clippy --all-targets --features cluster,monitoring`
   6. 安全扫描 ([`hooks/check-security.sh`](hooks/check-security.sh)): `cargo audit` 与 `cargo deny check`
 - [`hooks/commit-msg`](hooks/commit-msg): 校验提交说明是否遵循 Conventional Commits 规范 (如 `feat:`, `fix:`, `chore:` 等).
 
-> **说明**: Git hook 默认**不执行** `cargo test`, 测试由开发者本地手动或 CI 运行.
+> **说明**: Git hook 默认 **不执行** `cargo test`, 测试由开发者本地手动或 CI 运行.
 
 ### Security 检查与逃生门
 
-遇到已知依赖上游未修复漏洞时, 可使用环境变量临时跳过安全扫描:
+`pre-commit` 中的 `cargo audit` 与 `cargo deny check` 基于 `Cargo.lock` 全量扫描依赖. 
+若遇到已知依赖漏洞需等待上游修复时, 可使用逃生门临时跳过安全扫描:
 
 ```bash
 SKIP_SECURITY=1 git commit -m "..."   # 仅跳过 security, fmt 与 clippy 仍正常执行
 ```
+
+若本地未安装对应工具, 钩子会自动跳过并提示安装命令 (`cargo install cargo-audit --locked` / `cargo install cargo-deny --locked`).
 
 ---
 
@@ -85,6 +89,7 @@ SKIP_SECURITY=1 git commit -m "..."   # 仅跳过 security, fmt 与 clippy 仍�
 ### GitHub Issues 驱动
 
 所有新功能、bug 修复、重构或文档改动均须与 GitHub Issue 关联:
+
 1. 先创建 GitHub Issue (按场景选用模板: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`).
 2. 明确 Issue 的需求、复现步骤或验收条件后再开始编码.
 
@@ -100,9 +105,12 @@ SKIP_SECURITY=1 git commit -m "..."   # 仅跳过 security, fmt 与 clippy 仍�
 
 ---
 
-## 4. 本地验证与测试矩阵
+## 4. 本地编码与测试矩阵
 
-### 4.1 本地快速门禁
+在本地提交或推送前, 请确保代码通过以下校验与测试. 
+集成测试与集群相关用例 **必须** 使用 `--test-threads=1`, 避免端口和数据目录冲突.
+
+### 核心快速门禁 (推荐推送前必跑)
 
 ```bash
 export RUSTFLAGS='-D warnings'
@@ -111,9 +119,7 @@ cargo clippy --all-targets --features cluster,monitoring
 cargo test --workspace --features cluster,monitoring -- --test-threads=1
 ```
 
-> **注意**: 集成测试必须添加 `--test-threads=1`, 避免端口和数据目录冲突.
-
-### 4.2 专项测试与慢测
+### 专项测试与慢测
 
 ```bash
 # 慢测与压力测试
@@ -125,7 +131,7 @@ cargo test --test stress_ttl --features cluster -- --ignored --test-threads=1
 cargo test --features compression --lib storage::aidb_options
 ```
 
-### 4.3 E2E 黑盒验收测试
+### E2E 黑盒验收测试
 
 基于 pytest 的黑盒验收测试套件 (需先启动待测服务):
 
@@ -133,20 +139,93 @@ cargo test --features compression --lib storage::aidb_options
 pytest e2e/function/ -v
 ```
 
+### 回归测试 (Bugfix 必带)
+
+所有 **bugfix PR** (`fix:`, 修 Issue, 行为修正) **必须** 附带可复现回归测试:
+
+- **落点**: [`tests/`](tests/) 对应模块的集成测试或单测.
+- **注释规范**: 测试函数正上方必须包含中文 `///` 注释, 清晰说明 bug 现象、期望行为以及关联的 Issue 编号.
+- **纯文档变更豁免**: 纯 `docs:` 变更或纯文档 Issue 可豁免回归测试.
+
+### 慢测与压测 (`#[ignore]`)
+
+默认 `cargo test` 会跳过标记为 `#[ignore]` 的耗时用例. 新增慢测或压力测试时:
+
+- **规范**: 必须使用 `#[ignore = "slow: <原因>"]` 或 `#[ignore = "stress: <原因>"]`, **禁止裸** `#[ignore]`.
+- **运行慢测**:
+```bash
+cargo test --features cluster -- --ignored --test-threads=1
+```
+
+> 详细的模块架构与测试约定详见 [`ARCHITECTURE.md`](ARCHITECTURE.md) 与 [`docs/README.md`](docs/README.md).
+
 ---
 
-## 5. 文档同步规范 (硬性要求)
+## 5. 提交规范
 
-- **修改公共 API 或命令语义**: 必须同步更新 [`docs/modules/`](docs/modules/) 对应的模块文档;
-- **修改架构或配置**: 必须同步更新 [ARCHITECTURE.md](ARCHITECTURE.md) 与 [docs/deployment.md](docs/deployment.md);
-- **Bug 修复 (`fix:`)**: 必须在同一 PR 附带回归测试, commit 消息必须引用 Issue (`Fixes #NN`);
-- **相对路径引用**: 所有文档间链接必须采用有效的相对路径, 通过 `hooks/check-docs-links.sh` 检查.
+提交说明遵循 Conventional Commits 格式, 统一使用中文描述变更目的:
+
+```md
+<type>: <中文简短描述>
+
+[可选的详细说明段落]
+
+Fixes #<Issue编号>
+```
+
+### 支持的 Type 列表
+
+- `feat`: 新增功能特性
+- `fix`: 修补缺陷与 bug
+- `refactor`: 代码重构 (不改变外部行为与 API)
+- `test`: 新增或修改测试用例
+- `docs`: 文档增补与修改
+- `chore`: 构建配置、依赖更新、辅助工具等杂项
+- `perf`: 性能优化
+
+### 提交示例
+
+```
+fix(protocol): 修复批量解析时缓冲区边界溢出问题
+
+当流式接收到超长 bulk string 时, 状态机跳步未正确清空已消费字节, 导致二次读取解析失败.
+
+Fixes #45
+```
 
 ---
 
-## 6. PR 提交与代码审查 (Code Review)
+## 6. 文档同步要求
 
-1. **推送分支**: 将工作分支推送到远程仓库;
-2. **创建 PR**: 目标分支指定为 `new/main`, 关联对应 Issue;
-3. **CI 门禁全绿**: 确保 GitHub Actions 中的 `ci.yml` 与 `security.yml` 全部通过;
-4. **审查与合并**: 经过 Maintainer Code Review 通过后, 以 **Squash and merge** 方式合并回 `new/main`.
+代码与文档保持一致是工程质量的重要一环. 修改涉及公共 API、命令语义、CLI 参数、架构或模块边界时, 必须同步更新相关文档:
+
+1. **修改公共 API、命令语义或 CLI 参数** → 同步更新 [`docs/modules/`](docs/modules/) 对应模块文档与 [`README.md`](README.md)
+2. **修改架构、核心机制或配置项** → 同步更新 [`ARCHITECTURE.md`](ARCHITECTURE.md) 与 [`docs/deployment.md`](docs/deployment.md)
+3. **修改设计决策与技术权衡** → 同步更新 [`docs/design.md`](docs/design.md)
+4. **面向用户的重大变更** → 在 [`CHANGELOG.md`](CHANGELOG.md) 的 `[Unreleased]` 小节登记
+
+> 若本次改动纯属内部微调且对文档无任何影响, 请在 PR 描述中显式注明「文档无需变更」.
+
+---
+
+## 7. PR 提交流程与自检清单
+
+### PR 提交步骤
+
+1. 将本地分支推送到远程, 并创建 Pull Request (目标分支为 `new/main`).
+2. PR 标题对齐 Commit 规范 (`type: 中文描述`).
+3. PR 描述首行附带 `Closes #<Issue编号>`, 以便 PR 合并后 GitHub 自动关闭关联 Issue.
+
+### PR 提交前自检清单
+
+- [ ] 代码已通过 `cargo fmt --check` (或已运行 `./install-hooks.sh`)
+- [ ] Clippy 检查无任何 warning (`RUSTFLAGS='-D warnings' cargo clippy --all-targets --features cluster,monitoring`)
+- [ ] 核心测试与集成测试通过 (`cargo test --workspace --features cluster,monitoring -- --test-threads=1`)
+- [ ] 若改动涉及 E2E 功能: 本地 `pytest e2e/function/ -v` 验证通过
+- [ ] 若为 bug 修复: 已在同一 PR 内附带回归测试, 且用例附有清晰的中文 `///` 注释
+- [ ] 若修改了 slow/stress 用例: `cargo test --features cluster -- --ignored --test-threads=1` 验证通过
+- [ ] 相关文档已同步更新, 或在 PR 描述中已注明「文档无需变更」
+
+### CI 门禁
+
+PR 提交后将自动触发 GitHub Actions CI 检查. 所有流水线 (Lint、Test、Security、Docs Link Check) 全绿且 Maintainer Review 通过后, 方可以 **Squash and merge** 方式合并回 `new/main`. 详细的 CI Job 编排与说明见 [`.github/README.md`](.github/README.md).
