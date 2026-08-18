@@ -1,7 +1,5 @@
 ---
 name: aikv-storage
-depends_on:
-  - aidb-engine
 description: AiKv 存储适配层 — KvStorage Trait、MemoryEngine、AiDbEngine、ClusterDataAdapter (Raft 批处理)、Subkey 扁平化编码、StoredValue/TTL 与 DUMP 编解码. 修改 src/storage/* 时查阅.
 ---
 

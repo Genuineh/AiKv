@@ -1,7 +1,5 @@
 ---
 name: aikv-observability-reference
-depends_on:
-  - aikv-observability
 description: AiKv OTel aikv_* 指标目录与 INFO 字段对照表. 查询指标名、标签, 或 aikv 可观测性的 INFO↔PromQL 映射时查阅.
 ---
 

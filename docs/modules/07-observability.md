@@ -1,7 +1,5 @@
 ---
 name: aikv-observability
-depends_on:
-  - aikv-server
 description: AiKv 可观测性架构 — SlowQueryLog 慢查询、LatencyStats 直方图、ServerMetrics 内存真源、InfoRenderer 11 节渲染与 OTel/OTLP 监控导出. 修改 src/server/{slowlog,latency,info,metrics,otel_metrics} 时查阅.
 ---
 

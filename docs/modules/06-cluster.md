@@ -1,8 +1,5 @@
 ---
 name: aikv-cluster
-depends_on:
-  - aikv-storage
-  - aidb-cluster
 description: AiKv Redis Cluster 协议层 — 16384 槽位 CRC16 计算、MOVED/ASK 重定向、CLUSTER 子命令、ASKING/READONLY 标志、Slot 迁移与与 AiDb MetaRaft 拓扑同步. 修改 src/cluster/* 时查阅.
 ---
 

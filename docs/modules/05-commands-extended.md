@@ -1,7 +1,5 @@
 ---
 name: aikv-commands-extended
-depends_on:
-  - aikv-commands-core
 description: AiKv 扩展 Redis 命令 — JSON/JSONPath 引擎、Lua EVAL/SCRIPT 沙箱、BlockingRegistry 阻塞队列 (BLPOP/BRPOP)、MIGRATE 槽位数据网络同步与服务端管理命令 (INFO/CONFIG/CLIENT/COMMAND/SAVE). 修改 src/command/{json,jsonpath,script,blocking,migrate,persistence,server} 时查阅.
 ---
 

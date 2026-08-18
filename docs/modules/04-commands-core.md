@@ -1,7 +1,5 @@
 ---
 name: aikv-commands-core
-depends_on:
-  - aikv-storage
 description: AiKv 核心 Redis 命令 — String/Hash/List/Set/ZSet/Key/Database 处理器、CommandRouter 分发中枢、CommandRegistry 元数据表与 KeyLock 并发锁. 修改 src/command/{string,hash,list,set,zset,key,database,registry,router} 时查阅.
 ---
 

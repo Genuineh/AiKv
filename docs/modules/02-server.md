@@ -1,7 +1,5 @@
 ---
 name: aikv-server
-depends_on:
-  - aikv-protocol
 description: AiKv Server 运行时与连接管理 — TCP Listener、Connection 读写循环、HELLO 协议协商、ATOM 事务 (MULTI/EXEC/WATCH)、MONITOR 广播与 max_clients 门控. 修改 src/server/{listener,connection,config} 时查阅.
 ---
 
