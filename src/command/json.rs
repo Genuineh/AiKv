@@ -16,7 +16,7 @@
 //!
 //! - JSON 存 String KV: 子路径修改用 `write_back_json` 保留原 TTL; 全新 key 直接 `set`.
 //! - JSON.MSET: 对 batch 内全部 key 取 `key_lock.lock_keys_sorted` (去重 + 字典序).
-//! - 路径缺省 `$`; JSONPath 根 `$` 与 `.` 等价 (见 `jsonpath.rs`).
+//! - 路径缺省 `$`; JSONPath 根 `$` 与 `.` 等价 (见 `jsonpath/`).
 //! - 全文档 RMW: 无 RedisJSON 级内存优化, 大文档每次修改全量重读重写.
 
 use std::sync::Arc;

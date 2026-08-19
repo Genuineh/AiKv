@@ -7,7 +7,7 @@ description: AiKv Redis Cluster 协议层 — 16384 槽位 CRC16 计算、MOVED/
 
 ## 何时读本文
 
-- 修改 `src/cluster/{router.rs, routing_key.rs, state.rs, gossip.rs, replication.rs, connection.rs, commands.rs, announce.rs, config_auto_save.rs, mod.rs}` 源码;
+- 修改 `src/cluster/{router.rs, routing_key.rs, state.rs, gossip.rs, replication.rs, connection.rs, commands/, announce.rs, config_auto_save.rs, mod.rs}` 源码;
 - 排查 16384 槽位计算、`{...}` Hash Tag 提取、`-MOVED` / `-ASK` 客户端重定向逻辑;
 - 排查 `CLUSTER` 系列子命令 (`NODES`, `SLOTS`, `SHARDS`, `SETSLOT`, `MEET`, `FAILOVER` 等) 实现;
 - 排查连接级 `ASKING` 与 `READONLY` 读副本标志、Slot 在线迁移状态机;
@@ -27,7 +27,7 @@ description: AiKv Redis Cluster 协议层 — 16384 槽位 CRC16 计算、MOVED/
 | [`src/cluster/state.rs`](../../src/cluster/state.rs) | `ClusterStateManager` 拓扑缓存、Leader 路由快照与全局单例管理 | `ClusterStateManager`, `CLUSTER_STATE_MGR` |
 | [`src/cluster/gossip.rs`](../../src/cluster/gossip.rs) | 节点间轻量拓扑 tick、Leader 路由缓存刷新与 Gossip 监控指标采集 | `start_gossip_task` |
 | [`src/cluster/replication.rs`](../../src/cluster/replication.rs) | 主从复制状态维护、`READONLY` / `READWRITE` 副本读门控 | `ReplicationState` |
-| [`src/cluster/commands.rs`](../../src/cluster/commands.rs) | `CLUSTER` 族全量子命令统一分发与处理 | `dispatch_cluster` |
+| [`src/cluster/commands/`](../../src/cluster/commands/) | `dispatch_cluster` + 子模块 `topology` / `membership` / `slots` / `group` / `migration` | `dispatch_cluster` |
 | [`src/cluster/announce.rs`](../../src/cluster/announce.rs) | 容器 / NAT 外部客户端通告地址解析器 (`AIKV_CLIENT_ADDR`) | `AnnounceResolver`, `AnnounceMode` |
 | [`src/cluster/config_auto_save.rs`](../../src/cluster/config_auto_save.rs) | 集群节点状态与拓扑变更自动持久化 | `ConfigAutoSave` |
 

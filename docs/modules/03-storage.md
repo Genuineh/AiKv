@@ -7,7 +7,7 @@ description: AiKv 存储适配层 — KvStorage Trait、MemoryEngine、AiDbEngin
 
 ## 何时读本文
 
-- 修改 `src/storage/{adapter.rs, cluster_adapter.rs, aidb.rs, memory.rs, subkey.rs, dump.rs, ttl_filter.rs, types.rs, mod.rs}` 源码;
+- 修改 `src/storage/{adapter.rs, cluster_adapter.rs, cluster_batcher.rs, aidb.rs, memory.rs, subkey.rs, dump.rs, ttl_filter.rs, types.rs, mod.rs}` 源码;
 - 排查 `KvStorage` 接口行为、内存引擎 (`MemoryEngine`) 与持久化引擎 (`AiDbEngine`) 路径差异;
 - 排查 Subkey 扁平化编码、TTL 惰性过期机制、DUMP/RESTORE 编解码;
 - 排查集群模式下数据面写操作的 MultiRaft 批处理 (`ClusterDataAdapter` / `propose_group`);
@@ -29,6 +29,7 @@ description: AiKv 存储适配层 — KvStorage Trait、MemoryEngine、AiDbEngin
 | [`src/storage/aidb.rs`](../../src/storage/aidb.rs) | AiDb LSM 同步存储引擎适配 (基于 `spawn_blocking` 桥接 Tokio) | `AiDbEngine` |
 | [`src/storage/aidb_options.rs`](../../src/storage/aidb_options.rs) | LSM 存储参数预设映射 (`default`, `high-write`, `high-read`) | `server_db_options_with_preset`, `DbPreset` |
 | [`src/storage/cluster_adapter.rs`](../../src/storage/cluster_adapter.rs) | 集群数据面存储适配器: 槽位判断、写批处理 (`Batcher`) 与 Raft propose | `ClusterDataAdapter` (feature = "cluster") |
+| [`src/storage/cluster_batcher.rs`](../../src/storage/cluster_batcher.rs) | `GroupSetBatcher` 写凑批 actor; 入口仍是 `ClusterDataAdapter` | `GroupSetBatcher` (feature = "cluster") |
 | [`src/storage/subkey.rs`](../../src/storage/subkey.rs) | 复杂数据结构 (Hash/List/Set/ZSet) 扁平化 Subkey 前缀编解码 | `encode_data_key`, `encode_meta_key`, `decode_key` |
 | [`src/storage/dump.rs`](../../src/storage/dump.rs) | `DUMP` / `RESTORE` 紧凑 bincode 序列化与版本校验 | `dump_encode`, `dump_decode`, `DUMP_VERSION` |
 | [`src/storage/ttl_filter.rs`](../../src/storage/ttl_filter.rs) | 结合 Compaction Filter 的 TTL 物理清理与惰性删除判定 | `TtlExpireFilter` |

@@ -15,14 +15,13 @@
 //!   (`allow_lazy_expire_delete` 覆盖, 经 `is_local_group_leader` 判断); 只读副本上
 //!   惰性过期发现的 key 直接跳过物理删除, 留给 leader 或后续写连接清理.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use tokio::sync::{mpsc, oneshot};
 
 use aidb::cluster::router::key_to_slot;
 use aidb::cluster::{
@@ -31,6 +30,7 @@ use aidb::cluster::{
 use aidb::error::ClusterError as AidbClusterError;
 use aidb::Checkpoint;
 
+use super::cluster_batcher::{submit_write_op, GroupSetBatcher};
 use crate::cluster::router::{migration_phase_for_slot, MigrationRoutePhase, TRYAGAIN_MIGRATION};
 use crate::cluster::state::{ClusterStateManager, CLUSTER_STATE_MGR};
 use crate::error::{Error, Result};
@@ -41,10 +41,6 @@ use crate::storage::types::StorageEngineKind;
 const GROUP_READY_MAX_ATTEMPTS: u32 = 20;
 const GROUP_READY_RETRY_DELAY: Duration = Duration::from_millis(250);
 const ERR_DATA_GROUP_NOT_READY: &str = "CLUSTERDOWN data group not ready";
-const SET_BATCH_MAX_OPS: usize = 512;
-/// 凑批等待上限. 1ms 平衡吞吐与延迟: 集群 50c 负载下 items 到达快, 等 1ms 足矣.
-#[allow(dead_code)]
-const SET_BATCH_MAX_DELAY: Duration = Duration::from_millis(1);
 
 /// F-056-A1 读路由结果: `Single` 为老路径 (本地 group 直读, 无需合并);
 /// `Merge` 为 Frozen/Copying 期合并读, 需依次查 target tombstone → target
@@ -75,22 +71,6 @@ pub struct ClusterDataAdapter {
     local: Arc<dyn StorageAdapter>,
     set_batchers: Mutex<HashMap<u64, Arc<GroupSetBatcher>>>,
     eager_flush: usize,
-}
-
-struct GroupSetBatcher {
-    tx: mpsc::Sender<WriteBatchItem>,
-}
-
-enum WriteBatchItem {
-    Put {
-        key: Vec<u8>,
-        value: Vec<u8>,
-        ack: oneshot::Sender<std::result::Result<(), String>>,
-    },
-    Delete {
-        key: Vec<u8>,
-        ack: oneshot::Sender<std::result::Result<(), String>>,
-    },
 }
 
 impl ClusterDataAdapter {
@@ -330,13 +310,13 @@ impl ClusterDataAdapter {
         }))
     }
 
-    fn map_err<E: std::fmt::Display>(e: E) -> Error {
+    pub(super) fn map_err<E: std::fmt::Display>(e: E) -> Error {
         Error::Cluster(crate::error::ClusterError::Aidb(
             AidbClusterError::Internal(e.to_string()),
         ))
     }
 
-    fn check_response(resp: Response) -> Result<()> {
+    pub(super) fn check_response(resp: Response) -> Result<()> {
         match resp {
             Response::Error(msg) => Err(Error::Cluster(crate::error::ClusterError::Aidb(
                 AidbClusterError::Internal(msg),
@@ -385,7 +365,7 @@ impl ClusterDataAdapter {
         }
     }
 
-    async fn propose_group_with_retry(
+    pub(super) async fn propose_group_with_retry(
         mgr: &ClusterStateManager,
         gid: u64,
         request: Request,
@@ -407,163 +387,6 @@ impl ClusterDataAdapter {
             }
         }
         Err(last_err)
-    }
-
-    fn get_or_spawn_set_batcher(
-        &self,
-        mgr: Arc<ClusterStateManager>,
-        gid: u64,
-    ) -> Arc<GroupSetBatcher> {
-        let mut batchers = self.set_batchers.lock();
-        if let Some(existing) = batchers.get(&gid) {
-            return existing.clone();
-        }
-
-        let (tx, rx) = mpsc::channel(4096);
-        let batcher = Arc::new(GroupSetBatcher { tx });
-        tokio::spawn(run_set_batcher(mgr, gid, rx, self.eager_flush));
-        batchers.insert(gid, batcher.clone());
-        batcher
-    }
-
-    /// 统一写批入口: 将 PUT 或 DELETE 请求发送到对应 group 的 batcher.
-    ///
-    /// DELETE 会先检查 key 是否存在 (短路优化), 不存在则直接返回 `Ok(false)` 跳过 propose.
-    /// 存在时发送到 batcher, 与其他 DELETE/PUT 聚合后单次 propose.
-    async fn submit_write_op(
-        &self,
-        mgr: Arc<ClusterStateManager>,
-        gid: u64,
-        key: Vec<u8>,
-        value: Option<Vec<u8>>,
-    ) -> Result<bool> {
-        // DELETE 短路: key 不存在则跳过 propose
-        if value.is_none() {
-            let existed = mgr
-                .multi_raft
-                .get_local(gid, &key)
-                .await
-                .map_err(|e| {
-                    tracing::warn!(gid = gid, error = %e, "get_local failed in delete");
-                    ClusterDataAdapter::map_err(e)
-                })?
-                .is_some();
-            if !existed {
-                return Ok(false);
-            }
-        }
-
-        let batcher = self.get_or_spawn_set_batcher(mgr, gid);
-        let (ack, wait) = oneshot::channel();
-        let item = match value {
-            Some(v) => WriteBatchItem::Put { key, value: v, ack },
-            None => WriteBatchItem::Delete { key, ack },
-        };
-        batcher.tx.send(item).await.map_err(|_| {
-            Error::Cluster(crate::error::ClusterError::Aidb(
-                AidbClusterError::Internal("data group write batcher stopped".into()),
-            ))
-        })?;
-        wait.await
-            .map_err(|_| {
-                Error::Cluster(crate::error::ClusterError::Aidb(
-                    AidbClusterError::Internal("data group write batcher dropped response".into()),
-                ))
-            })?
-            .map_err(|e| {
-                Error::Cluster(crate::error::ClusterError::Aidb(
-                    AidbClusterError::Internal(e.to_string()),
-                ))
-            })?;
-        Ok(true)
-    }
-}
-
-const MIN_BATCH_TARGET: usize = 16;
-const MAX_MICRO_WAIT_US: u64 = 50;
-
-async fn run_set_batcher(
-    mgr: Arc<ClusterStateManager>,
-    gid: u64,
-    mut rx: mpsc::Receiver<WriteBatchItem>,
-    _eager_flush: usize,
-) {
-    while let Some(first) = rx.recv().await {
-        let t_start = Instant::now();
-
-        let mut items = Vec::with_capacity(SET_BATCH_MAX_OPS);
-        items.push(first);
-
-        // 第一阶段:快速非阻塞拉取
-        while items.len() < SET_BATCH_MAX_OPS {
-            match rx.try_recv() {
-                Ok(item) => items.push(item),
-                Err(mpsc::error::TryRecvError::Empty) => break,
-                Err(mpsc::error::TryRecvError::Disconnected) => break,
-            }
-        }
-
-        // 第二阶段:防单打微退避 (仅在 items 数量小于 MIN_BATCH_TARGET 时触发 50us 避震)
-        if items.len() < MIN_BATCH_TARGET {
-            tokio::time::sleep(Duration::from_micros(MAX_MICRO_WAIT_US)).await;
-            while items.len() < SET_BATCH_MAX_OPS {
-                match rx.try_recv() {
-                    Ok(item) => items.push(item),
-                    Err(mpsc::error::TryRecvError::Empty) => break,
-                    Err(mpsc::error::TryRecvError::Disconnected) => break,
-                }
-            }
-        }
-
-        let wait_us = t_start.elapsed().as_micros();
-
-        // Build ThinWriteBatch with dedup:
-        // PUT 去重 (重复 key 只保留最后一个), DELETE 不去重.
-        let mut tb = ThinWriteBatch::new();
-        let item_count = items.len();
-        let mut acks: Vec<_> = Vec::with_capacity(item_count);
-        let mut seen: HashSet<Vec<u8>> = HashSet::new();
-
-        for item in items.into_iter().rev() {
-            match item {
-                WriteBatchItem::Put { key, value, ack } => {
-                    if seen.insert(key.clone()) {
-                        tb.put(key, value);
-                    }
-                    acks.push(ack);
-                }
-                WriteBatchItem::Delete { key, ack } => {
-                    // DELETE 不去重: 每条都写入, 确保删除语义正确.
-                    tb.delete(key);
-                    acks.push(ack);
-                }
-            }
-        }
-        acks.reverse();
-
-        let t_propose = Instant::now();
-        let result =
-            ClusterDataAdapter::propose_group_with_retry(&mgr, gid, Request::WriteBatch(tb))
-                .await
-                .and_then(ClusterDataAdapter::check_response)
-                .map_err(|e| e.to_string());
-
-        let propose_us = t_propose.elapsed().as_micros();
-        let total_us = t_start.elapsed().as_micros();
-
-        tracing::info!(
-            target: "perf",
-            gid = gid,
-            op_count = item_count,
-            wait_us,
-            propose_us,
-            total_us,
-            "batcher_batch_done"
-        );
-
-        for ack in acks {
-            let _ = ack.send(result.clone());
-        }
     }
 }
 
@@ -637,7 +460,15 @@ impl StorageAdapter for ClusterDataAdapter {
                 Self::check_response(resp)
             }
             Some((mgr, WriteRoute::Plain(gid))) => {
-                self.submit_write_op(mgr, gid, key, Some(value)).await?;
+                submit_write_op(
+                    &self.set_batchers,
+                    self.eager_flush,
+                    mgr,
+                    gid,
+                    key,
+                    Some(value),
+                )
+                .await?;
                 Ok(())
             }
             None if Self::should_use_local_engine(&key) => self.local.set(key, value).await,
@@ -671,7 +502,9 @@ impl StorageAdapter for ClusterDataAdapter {
                 Self::check_response(resp)?;
                 Ok(existed)
             }
-            Some((mgr, WriteRoute::Plain(gid))) => self.submit_write_op(mgr, gid, key, None).await,
+            Some((mgr, WriteRoute::Plain(gid))) => {
+                submit_write_op(&self.set_batchers, self.eager_flush, mgr, gid, key, None).await
+            }
             None if Self::should_use_local_engine(&key) => self.local.delete(key).await,
             None => Err(Self::data_group_not_ready_err()),
         }

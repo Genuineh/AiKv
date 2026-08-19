@@ -102,6 +102,7 @@ aikv/src/
 │   ├── aidb.rs          # AiDbEngine 持久化引擎适配 (spawn_blocking)
 │   ├── aidb_options.rs  # LSM 预设映射 (default, high-write, high-read)
 │   ├── cluster_adapter.rs # ClusterDataAdapter 与 Batcher 异步 propose
+│   ├── cluster_batcher.rs # GroupSetBatcher 写凑批 actor
 │   ├── subkey.rs        # Subkey 扁平化前缀编解码
 │   ├── types.rs         # StoredValue, ValueType, SubkeyData
 │   ├── dump.rs          # DUMP / RESTORE 紧凑 bincode 编解码
@@ -119,7 +120,7 @@ aikv/src/
 │   ├── key.rs           # Key 通用操作 (EXPIRE, TTL, TYPE, DEL, EXISTS)
 │   ├── database.rs      # DB 管理命令 (SELECT, FLUSHDB, DBSIZE)
 │   ├── json.rs          # RedisJSON 兼容命令 (JSON.GET, JSON.SET 等)
-│   ├── jsonpath.rs      # JSONPath 查询与修改引擎
+│   ├── jsonpath/        # JSONPath 查询与修改引擎
 │   ├── jsonpath_util.rs # JSONPath 辅助解析
 │   ├── script.rs        # Lua EVAL / EVALSHA / SCRIPT 命令
 │   ├── script/          # Lua 沙箱引擎与 ScriptTransaction
@@ -136,7 +137,7 @@ aikv/src/
     ├── gossip.rs        # 节点间轻量拓扑 tick 与指标采集
     ├── replication.rs   # 主从复制状态与 READONLY 读副本
     ├── connection.rs    # 集群节点间连接池
-    ├── commands.rs      # CLUSTER 系列子命令 (NODES, SLOTS, SHARDS 等)
+    ├── commands/        # CLUSTER 系列子命令 (NODES, SLOTS, SHARDS 等)
     ├── announce.rs      # NAT / 容器外部可达地址通告解析
     ├── config_auto_save.rs # 集群节点配置自动保存
     └── mod.rs

@@ -7,7 +7,7 @@ description: AiKv 扩展 Redis 命令 — JSON/JSONPath 引擎、Lua EVAL/SCRIPT
 
 ## 何时读本文
 
-- 修改 `src/command/{json.rs, jsonpath.rs, jsonpath_util.rs, script.rs, script/, blocking.rs, migrate.rs, persistence.rs, server.rs}` 源码;
+- 修改 `src/command/{json.rs, jsonpath/, jsonpath_util.rs, script.rs, script/, blocking.rs, migrate.rs, persistence.rs, server.rs}` 源码;
 - 新增或修改 JSON.*, Lua 脚本 (`EVAL` / `EVALSHA` / `SCRIPT`), 阻塞列表/ZSet (`BLPOP` / `BRPOP` / `BZPOPMIN`), MIGRATE 槽位数据同步, 或服务端管理命令 (`INFO` / `CONFIG` / `CLIENT` / `SAVE`);
 - 排查 JSONPath 表达式求值异常、Lua 沙箱超时与 `redis.call` 写入回滚、阻塞队列假死或漏唤醒、MIGRATE 迁移同步失败;
 - **不覆盖**: 核心数据结构命令与 `KeyLock` 基础机制 → [commands-core.md](04-commands-core.md);
@@ -22,7 +22,7 @@ description: AiKv 扩展 Redis 命令 — JSON/JSONPath 引擎、Lua EVAL/SCRIPT
 | 文件路径 | 模块核心职责 | 公共接口与核心入口 |
 | :--- | :--- | :--- |
 | [`src/command/json.rs`](../../src/command/json.rs) | RedisJSON 兼容命令处理器 (JSON.GET, JSON.SET, JSON.DEL, JSON.TYPE 等) | `json::dispatch` |
-| [`src/command/jsonpath.rs`](../../src/command/jsonpath.rs) | JSONPath 语法解析器与 AST 求值引擎 (支持 `$` 根路径、属性递归与切片) | `JsonPath::parse`, `JsonPath::eval` |
+| [`src/command/jsonpath/`](../../src/command/jsonpath/) | JSONPath 语法解析器与 AST 求值引擎 (支持 `$` 根路径、属性递归与切片) | `JsonPathEngine` (`extract` / `set` / `delete` / `incr` / `append` / `split_path_parts`) |
 | [`src/command/jsonpath_util.rs`](../../src/command/jsonpath_util.rs) | JSON 与 RESP 之间的类型转换辅助工具 | `json_to_resp`, `resp_to_json` |
 | [`src/command/script.rs`](../../src/command/script.rs) | Lua 脚本命令入口 (`EVAL`, `EVALSHA`, `SCRIPT LOAD`, `SCRIPT EXISTS`, `SCRIPT FLUSH`) | `script::dispatch` |
 | [`src/command/script/`](../../src/command/script/) | Lua 5.4 沙箱执行环境、`redis.call` 桥接与 `ScriptTransaction` 批处理 | `ScriptEngine`, `ScriptTransaction` |
