@@ -1,13 +1,13 @@
 ---
 name: aikv-commands-core
-description: AiKv 核心 Redis 命令 — String/Hash/List/Set/ZSet/Key/Database 处理器、CommandRouter 分发中枢、CommandRegistry 元数据表与 KeyLock 并发锁. 修改 src/command/{string,hash,list,set,zset,key,database,registry,router/} 时查阅.
+description: AiKv 核心 Redis 命令 — String/Hash/List/Set/ZSet/Key/Database 处理器、CommandRouter 分发中枢、CommandRegistry 元数据表与 KeyLock 并发锁. 修改 src/command/{string,hash,list,set,zset/,key,database,registry,router/} 时查阅.
 ---
 
 # AiKv Commands Core (核心命令层)
 
 ## 何时读本文
 
-- 修改 `src/command/{router/, registry.rs, string.rs, hash.rs, list.rs, set.rs, zset.rs, key.rs, database.rs, scan_util.rs}` 源码;
+- 修改 `src/command/{router/, registry.rs, string.rs, hash.rs, list.rs, set.rs, zset/, key.rs, database.rs, scan_util.rs}` 源码;
 - 新增或修改 String, Hash, List, Set, Sorted Set, Key 或 Database 相关 Redis 命令;
 - 排查 WRONGTYPE 报错、命令注册表与路由分发不一致、`COMMAND GETKEYS` 提取错误、并发写数据竞争与死锁;
 - **不覆盖**: `KvStorage` 接口与底层 Subkey 编码规则 → [storage.md](03-storage.md);
@@ -27,7 +27,7 @@ description: AiKv 核心 Redis 命令 — String/Hash/List/Set/ZSet/Key/Database
 | [`src/command/hash.rs`](../../src/command/hash.rs) | Hash 系列命令 (HGET, HSET, HDEL, HGETALL, HINCRBY, HEXISTS 等) | `hash::dispatch` |
 | [`src/command/list.rs`](../../src/command/list.rs) | List 系列命令 (LPUSH, RPUSH, LPOP, RPOP, LRANGE, LLEN, LINDEX 等) | `list::dispatch` |
 | [`src/command/set.rs`](../../src/command/set.rs) | Set 系列命令 (SADD, SREM, SMEMBERS, SISMEMBER, SCARD, SINTER 等) | `set::dispatch` |
-| [`src/command/zset.rs`](../../src/command/zset.rs) | Sorted Set 系列命令 (ZADD, ZREM, ZRANGE, ZSCORE, ZCARD, ZINCRBY 等) | `zset::dispatch` |
+| [`src/command/zset/`](../../src/command/zset/) | Sorted Set 系列命令 (ZADD, ZREM, ZRANGE, ZSCORE, ZCARD, ZINCRBY 等) | `zset::dispatch` |
 | [`src/command/key.rs`](../../src/command/key.rs) | Key 通用命令 (DEL, EXISTS, TYPE, EXPIRE, PEXPIRE, TTL, PTTL, PERSIST) | `key::dispatch` |
 | [`src/command/database.rs`](../../src/command/database.rs) | DB 管理命令 (SELECT, FLUSHDB, FLUSHALL, DBSIZE, SWAPDB) | `database::dispatch` |
 | [`src/command/scan_util.rs`](../../src/command/scan_util.rs) | SCAN / HSCAN / SSCAN / ZSCAN 游标编码与前缀迭代器辅助 | `encode_cursor`, `decode_cursor` |

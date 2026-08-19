@@ -116,7 +116,7 @@ aikv/src/
 │   ├── hash.rs          # Hash 系列命令处理器
 │   ├── list.rs          # List 系列命令处理器
 │   ├── set.rs           # Set 系列命令处理器
-│   ├── zset.rs          # Sorted Set 系列命令处理器
+│   ├── zset/            # Sorted Set 系列命令处理器
 │   ├── key.rs           # Key 通用操作 (EXPIRE, TTL, TYPE, DEL, EXISTS)
 │   ├── database.rs      # DB 管理命令 (SELECT, FLUSHDB, DBSIZE)
 │   ├── json.rs          # RedisJSON 兼容命令 (JSON.GET, JSON.SET 等)

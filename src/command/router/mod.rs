@@ -30,7 +30,7 @@
 //! - metrics 仅 `new_with_shared` 装配; `new` (测试路径) 无 INFO/SAVE,
 //!   `require_server` / `require_persistence` 返回 ERR.
 //!
-//! 各域 handler 见 `string.rs` / `hash.rs` / `list.rs` / `set.rs` / `zset.rs` / `key.rs`;
+//! 各域 handler 见 `string.rs` / `hash.rs` / `list.rs` / `set.rs` / `zset/` / `key.rs`;
 //! extended (JSON/Lua/Server/Persistence) 语义见 `docs/modules/05-commands-extended.md`,
 //! 类型分轨与空容器删除等核心约束见 `docs/modules/04-commands-core.md`.
 
