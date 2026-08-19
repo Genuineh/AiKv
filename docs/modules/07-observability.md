@@ -1,13 +1,13 @@
 ---
 name: aikv-observability
-description: AiKv 可观测性架构 — SlowQueryLog 慢查询、LatencyStats 直方图、ServerMetrics 内存真源、InfoRenderer 11 节渲染与 OTel/OTLP 监控导出. 修改 src/server/{slowlog,latency,info,metrics,otel_metrics} 时查阅.
+description: AiKv 可观测性架构 — SlowQueryLog 慢查询、LatencyStats 直方图、ServerMetrics 内存真源、InfoRenderer 11 节渲染与 OTel/OTLP 监控导出. 修改 src/server/{slowlog,latency,info,metrics,otel_metrics/} 时查阅.
 ---
 
 # AiKv Observability (可观测性架构)
 
 ## 何时读本文
 
-- 修改 `src/server/{slowlog.rs, latency.rs, info.rs, info_catalog.rs, metrics.rs, metrics_server.rs, otel.rs, otel_metrics.rs, process_metrics.rs}` 或 `src/storage/observation.rs` 源码;
+- 修改 `src/server/{slowlog.rs, latency.rs, info.rs, info_catalog.rs, metrics.rs, metrics_server.rs, otel.rs, otel_metrics/, process_metrics.rs}` 或 `src/storage/observation.rs` 源码;
 - 排查 Redis `INFO` 命令输出、`SLOWLOG` 环形缓冲、`LATENCY` 延迟尖刺统计;
 - 排查 OpenTelemetry (`aikv_*`) 指标管道、Tracing Span 层次与 OTLP gRPC 导出;
 - **不覆盖**: TCP 连接管理与内联命令分发 → [server.md](02-server.md);
@@ -27,7 +27,7 @@ description: AiKv 可观测性架构 — SlowQueryLog 慢查询、LatencyStats �
 | [`src/server/slowlog.rs`](../../src/server/slowlog.rs) | `SlowQueryLog` 环形缓冲区 (支持 `SLOWLOG GET/LEN/RESET`) | `SlowQueryLog::record`, `get_entries` |
 | [`src/server/latency.rs`](../../src/server/latency.rs) | `LatencyStats` 延迟尖刺事件采样与直方图统计 | `LatencyStats::record_event`, `get_latest` |
 | [`src/server/otel.rs`](../../src/server/otel.rs) | OpenTelemetry TracerProvider 与 MeterProvider 初始化及资源绑定 | `init_tracer`, `init_meter` |
-| [`src/server/otel_metrics.rs`](../../src/server/otel_metrics.rs) | `aikv_*` 全部 OTel Counter, Gauge, Histogram 指标声明与更新 | `OtelMetrics`, `refresh_runtime_metrics` |
+| [`src/server/otel_metrics/`](../../src/server/otel_metrics/) | `aikv_*` 全部 OTel Counter, Gauge, Histogram 指标声明与更新 | `OtelMetrics`, `refresh_runtime_metrics` |
 | [`src/server/process_metrics.rs`](../../src/server/process_metrics.rs) | 进程级 CPU 时间、内存 RSS、Peak RSS 与文件描述符采集 | `collect_process_metrics` |
 | [`src/server/metrics_server.rs`](../../src/server/metrics_server.rs) | 独立 HTTP 探活服务 (`/health` 与 `/`, feature = "monitoring") | `MetricsServer::run` |
 

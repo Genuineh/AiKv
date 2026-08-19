@@ -91,7 +91,7 @@ aikv/src/
 │   ├── metrics.rs       # ServerMetrics 原子内存计数器
 │   ├── metrics_server.rs # HTTP /health 探活服务 (feature = "monitoring")
 │   ├── otel.rs          # OpenTelemetry Tracer / Meter 初始化
-│   ├── otel_metrics.rs  # aikv_* OTel 生产指标定义
+│   ├── otel_metrics/    # aikv_* OTel 生产指标定义
 │   ├── process_metrics.rs # CPU / RSS 进程指标采集
 │   ├── slowlog.rs       # SlowQueryLog 慢查询环形缓冲
 │   ├── latency.rs       # LatencyStats 延迟尖刺统计

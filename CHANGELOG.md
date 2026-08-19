@@ -11,6 +11,7 @@
 
 ### Changed
 
+- 拆分 `src/server/otel_metrics.rs` 为 `otel_metrics/{mod,helpers,testutil}.rs`
 - 拆分 `src/command/zset.rs` 为 `zset/{mod,helpers}.rs`
 - 拆分 `src/command/script/execute.rs` 为 `execute/{mod,string,hash,list,set,zset}.rs`
 - 拆分 `src/command/router.rs` 为 `router/{mod,keylock,stats}.rs`
