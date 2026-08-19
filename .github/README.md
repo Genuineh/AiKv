@@ -49,6 +49,8 @@ aikv/
 │   ├── check-security.sh    #   cargo audit + deny
 │   └── commit-msg           #   Conventional Commits 提交说明校验
 ├── deny.toml            # cargo deny 策略 (许可证/来源)
+├── .cargo/
+│   └── audit.toml       # cargo-audit ignore (bincode / Issue #77)
 ├── rust-toolchain.toml  # 工具链 (stable, 自动切换)
 ├── rustfmt.toml         # rustfmt 配置 (4 空格)
 ├── .editorconfig        # 编辑器格式
@@ -61,7 +63,7 @@ aikv/
     │   └── config.yml # 禁用空白 Issue
     ├── PULL_REQUEST_TEMPLATE.md # PR 描述模板 (含 Closes #)
     ├── actions/
-    │   └── prepare/action.yml    # composite action: checkout + rust + cargo update aidb
+    │   └── prepare/action.yml    # composite: rust + protoc + cargo update aidb (workflow 须先 checkout)
     └── workflows/               # GitHub Actions
         ├── ci.yml               # 主 CI (test-cluster → stress/slow; e2e 暂不入 CI)
         ├── security.yml         # 安全扫描 (audit + deny)
@@ -80,6 +82,7 @@ aikv/
 | Local  | `[hooks/check-docs-links.sh](../hooks/check-docs-links.sh)`      | staged `.md` 相对链接存在性检查                               |
 | Local  | `[hooks/check-security.sh](../hooks/check-security.sh)`          | `cargo audit` + `cargo deny`   |
 | Local  | `[deny.toml](../deny.toml)`                                      | cargo deny 策略 (许可证/来源)                                |
+| Local  | `[.cargo/audit.toml](../.cargo/audit.toml)`                      | cargo-audit 独立 ignore (目前仅 bincode RUSTSEC-2025-0141)   |
 | Local  | `[hooks/commit-msg](../hooks/commit-msg)`                        | Conventional Commits 提交说明校验                            |
 | GitHub | `[ISSUE_TEMPLATE/feat.yml](ISSUE_TEMPLATE/feat.yml)`             | Issue 模板: 新功能                                          |
 | GitHub | `[ISSUE_TEMPLATE/fix.yml](ISSUE_TEMPLATE/fix.yml)`               | Issue 模板: bug 修复                                        |
@@ -90,7 +93,7 @@ aikv/
 | GitHub | `[ISSUE_TEMPLATE/perf.yml](ISSUE_TEMPLATE/perf.yml)`             | Issue 模板: 性能                                            |
 | GitHub | `[ISSUE_TEMPLATE/config.yml](ISSUE_TEMPLATE/config.yml)`         | 禁用空白 Issue                                              |
 | GitHub | `[PULL_REQUEST_TEMPLATE.md](PULL_REQUEST_TEMPLATE.md)`           | PR 描述模板                                                 |
-| GitHub | `[actions/prepare/action.yml](actions/prepare/action.yml)`       | composite action: checkout + rust toolchain + `cargo update -p aidb` (各 job 复用) |
+| GitHub | `[actions/prepare/action.yml](actions/prepare/action.yml)`       | rust + protoc + `cargo update -p aidb`; 各 job 须先 `actions/checkout` |
 | GitHub | `[workflows/ci.yml](workflows/ci.yml)`                           | 主 CI (test-cluster → stress/slow, compression 并行; e2e 暂不入 CI) |
 | GitHub | `[workflows/security.yml](workflows/security.yml)`               | 安全扫描 (audit + deny, push/PR/定时)                        |
 | GitHub | `[workflows/docs-link-check.yml](workflows/docs-link-check.yml)` | 文档外链检查 (lychee, push/PR 含 `.md`)                      |
