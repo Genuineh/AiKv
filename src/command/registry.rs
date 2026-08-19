@@ -1,5 +1,5 @@
 //! 全量命令元数据表 (~131+ 条, 含 JSON/Lua/Server/Cluster 条目), 供 COMMAND 子命令、
-//! ATOM WATCH 键追踪与写命令判定、cluster 路由等消费 (见 `router.rs` / `server.rs`).
+//! ATOM WATCH 键追踪与写命令判定、cluster 路由等消费 (见 `router/` / `server.rs`).
 //!
 //! # 数据模型
 //!
@@ -19,7 +19,7 @@
 //!
 //! # Invariant
 //!
-//! - registry ↔ router 双维护: 新增命令必须同时更新 `COMMAND_TABLE` 与 `router.rs`
+//! - registry ↔ router 双维护: 新增命令必须同时更新 `COMMAND_TABLE` 与 `router/mod.rs`
 //!   `execute_inner` 的 match (或子 dispatch), 否则表内命中但路由漏分发.
 
 use std::collections::HashMap;

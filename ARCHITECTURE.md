@@ -110,7 +110,7 @@ aikv/src/
 │   ├── observation.rs   # 存储层延迟与吞吐监控统计
 │   └── mod.rs
 ├── command/             # 命令路由、并发控制与业务处理器
-│   ├── router.rs        # CommandRouter 分发中枢与 KeyLock 调度
+│   ├── router/          # CommandRouter 分发中枢与 KeyLock 调度
 │   ├── registry.rs      # CommandRegistry 元数据表与 CommandFlags
 │   ├── string.rs        # String 系列命令处理器
 │   ├── hash.rs          # Hash 系列命令处理器

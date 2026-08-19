@@ -34,14 +34,10 @@
 //! extended (JSON/Lua/Server/Persistence) 语义见 `docs/modules/05-commands-extended.md`,
 //! 类型分轨与空容器删除等核心约束见 `docs/modules/04-commands-core.md`.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use tokio::sync::Mutex;
 use tracing::{instrument, Instrument};
 
 use crate::command::{
@@ -52,111 +48,16 @@ use crate::protocol::{ProtocolVersion, RespValue};
 use crate::server::{ServerMetrics, ServerSharedState};
 use crate::storage::KvStorage;
 
-/// 分桶 key 写锁桶数. 碰撞率 = 并发数 / 桶数.
-const KEY_LOCK_BUCKETS: usize = 4096;
+mod keylock;
+mod stats;
 
-/// 分桶 key 写锁 (Hash / SET NX/XX / INCR 等)
-pub struct KeyLock {
-    locks: Vec<Mutex<()>>,
-}
-
-impl KeyLock {
-    pub fn new(buckets: usize) -> Self {
-        let buckets = buckets.max(1);
-        Self {
-            locks: (0..buckets).map(|_| Mutex::new(())).collect(),
-        }
-    }
-
-    pub async fn lock(&self, key: &[u8]) -> tokio::sync::MutexGuard<'_, ()> {
-        let idx = hash_key(key) % self.locks.len();
-        self.locks[idx].lock().await
-    }
-
-    /// 按 key 字节序加锁; 同一 key 只锁一次 (避免 Mutex 重入死锁)
-    pub async fn lock_two(
-        &self,
-        a: &[u8],
-        b: &[u8],
-    ) -> (
-        tokio::sync::MutexGuard<'_, ()>,
-        Option<tokio::sync::MutexGuard<'_, ()>>,
-    ) {
-        if a == b {
-            return (self.lock(a).await, None);
-        }
-        if a < b {
-            let ga = self.lock(a).await;
-            let gb = self.lock(b).await;
-            (ga, Some(gb))
-        } else {
-            let gb = self.lock(b).await;
-            let ga = self.lock(a).await;
-            (ga, Some(gb))
-        }
-    }
-
-    /// 多 key 字典序加锁 (去重); Drop 时逆序释放
-    pub async fn lock_keys_sorted<'a>(&'a self, keys: &[&[u8]]) -> KeyLocksGuard<'a> {
-        let mut unique: Vec<&[u8]> = keys.to_vec();
-        unique.sort();
-        unique.dedup();
-        let mut guards = Vec::with_capacity(unique.len());
-        for k in unique {
-            guards.push(self.lock(k).await);
-        }
-        KeyLocksGuard { locks: guards }
-    }
-
-    /// 多 key 字典序加锁, 带总超时; 超时或部分失败时已持有锁随 guard drop 释放.
-    pub async fn lock_keys_sorted_with_timeout<'a>(
-        &'a self,
-        keys: &[&[u8]],
-        timeout: Duration,
-    ) -> Result<KeyLocksGuard<'a>> {
-        let mut unique: Vec<&[u8]> = keys.to_vec();
-        unique.sort();
-        unique.dedup();
-        if unique.is_empty() {
-            return Ok(KeyLocksGuard { locks: Vec::new() });
-        }
-
-        let deadline = Instant::now() + timeout;
-        let mut guards = Vec::with_capacity(unique.len());
-        for k in unique {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Err(script_lock_timeout_err(timeout));
-            }
-            match tokio::time::timeout(remaining, self.lock(k)).await {
-                Ok(guard) => guards.push(guard),
-                Err(_) => return Err(script_lock_timeout_err(timeout)),
-            }
-        }
-        Ok(KeyLocksGuard { locks: guards })
-    }
-}
-
-fn script_lock_timeout_err(timeout: Duration) -> Error {
-    Error::Command(format!("ERR Lock acquisition timeout after {timeout:?}"))
-}
-
-/// 多 key 锁 RAII guard; Vec 逆序 drop 释放锁
-pub struct KeyLocksGuard<'a> {
-    locks: Vec<tokio::sync::MutexGuard<'a, ()>>,
-}
-
-impl Drop for KeyLocksGuard<'_> {
-    fn drop(&mut self) {
-        while self.locks.pop().is_some() {}
-    }
-}
-
-fn hash_key(key: &[u8]) -> usize {
-    let mut h = DefaultHasher::new();
-    key.hash(&mut h);
-    h.finish() as usize
-}
+use keylock::KEY_LOCK_BUCKETS;
+pub use keylock::{KeyLock, KeyLocksGuard};
+#[cfg(feature = "monitoring")]
+use stats::record_command_span_status;
+#[cfg(feature = "cluster")]
+use stats::{classify_command, is_multi_key_cmd};
+use stats::{record_command_outcome, record_keyspace_lookup};
 
 pub struct CommandRouter {
     storage: Arc<dyn KvStorage>,
@@ -825,91 +726,4 @@ pub(crate) fn integer(n: i64) -> RespValue {
 
 pub(crate) fn wrongtype() -> Error {
     Error::Command(crate::storage::types::WRONGTYPE.into())
-}
-
-fn record_keyspace_lookup(metrics: &Option<Arc<ServerMetrics>>, hit: bool) {
-    let Some(metrics) = metrics else {
-        return;
-    };
-    if hit {
-        metrics.on_keyspace_hit();
-    } else {
-        metrics.on_keyspace_miss();
-    }
-}
-
-fn record_command_outcome(
-    metrics: &Option<Arc<ServerMetrics>>,
-    cmd: &str,
-    result: &Result<RespValue>,
-) {
-    let Some(metrics) = metrics else {
-        return;
-    };
-    metrics.on_command(cmd, result.is_ok());
-    if let Err(err) = result {
-        if let Some(msg) = error_message_for_stats(err) {
-            metrics.on_error_stat(msg);
-        }
-    }
-}
-
-fn error_message_for_stats(err: &Error) -> Option<&str> {
-    match err {
-        Error::Command(msg) | Error::Protocol(msg) | Error::Storage(msg) | Error::Config(msg) => {
-            Some(msg.as_str())
-        }
-        Error::Io(_) => None,
-        #[cfg(feature = "cluster")]
-        Error::Cluster(_) => None,
-    }
-}
-
-#[cfg(feature = "monitoring")]
-fn record_command_span_status(result: &Result<RespValue>) {
-    if result.is_ok() {
-        return;
-    }
-    let span = tracing::Span::current();
-    span.record("otel.status_code", "ERROR");
-    if let Some(err) = result.as_ref().err() {
-        span.record("otel.status_message", tracing::field::display(err));
-        tracing::event!(
-            parent: &span,
-            tracing::Level::ERROR,
-            exception.type = std::any::type_name::<Error>(),
-            exception.message = %err,
-            "command failed"
-        );
-    }
-}
-
-#[cfg(feature = "cluster")]
-fn is_multi_key_cmd(cmd: &str) -> bool {
-    matches!(
-        cmd.to_ascii_lowercase().as_str(),
-        "mget"
-            | "mset"
-            | "del"
-            | "exists"
-            | "unlink"
-            | "touch"
-            | "mexecute"
-            | "rpop"
-            | "blpop"
-            | "brpop"
-    )
-}
-
-#[cfg(feature = "cluster")]
-fn classify_command(cmd: &str) -> crate::cluster::router::CommandType {
-    match cmd.to_ascii_lowercase().as_str() {
-        "get" | "exists" | "hget" | "hgetall" | "hkeys" | "hvals" | "hlen" | "hexists"
-        | "lrange" | "lindex" | "llen" | "smembers" | "scard" | "sismember" | "zrange"
-        | "zcard" | "zscore" | "zrank" | "type" | "ttl" | "pttl" | "strlen" | "getbit"
-        | "getrange" | "mget" | "json.get" | "json.mget" => {
-            crate::cluster::router::CommandType::Read
-        }
-        _ => crate::cluster::router::CommandType::Write,
-    }
 }

@@ -1,13 +1,13 @@
 ---
 name: aikv-commands-core
-description: AiKv 核心 Redis 命令 — String/Hash/List/Set/ZSet/Key/Database 处理器、CommandRouter 分发中枢、CommandRegistry 元数据表与 KeyLock 并发锁. 修改 src/command/{string,hash,list,set,zset,key,database,registry,router} 时查阅.
+description: AiKv 核心 Redis 命令 — String/Hash/List/Set/ZSet/Key/Database 处理器、CommandRouter 分发中枢、CommandRegistry 元数据表与 KeyLock 并发锁. 修改 src/command/{string,hash,list,set,zset,key,database,registry,router/} 时查阅.
 ---
 
 # AiKv Commands Core (核心命令层)
 
 ## 何时读本文
 
-- 修改 `src/command/{router.rs, registry.rs, string.rs, hash.rs, list.rs, set.rs, zset.rs, key.rs, database.rs, scan_util.rs}` 源码;
+- 修改 `src/command/{router/, registry.rs, string.rs, hash.rs, list.rs, set.rs, zset.rs, key.rs, database.rs, scan_util.rs}` 源码;
 - 新增或修改 String, Hash, List, Set, Sorted Set, Key 或 Database 相关 Redis 命令;
 - 排查 WRONGTYPE 报错、命令注册表与路由分发不一致、`COMMAND GETKEYS` 提取错误、并发写数据竞争与死锁;
 - **不覆盖**: `KvStorage` 接口与底层 Subkey 编码规则 → [storage.md](03-storage.md);
@@ -21,7 +21,7 @@ description: AiKv 核心 Redis 命令 — String/Hash/List/Set/ZSet/Key/Database
 | 文件路径 | 模块核心职责 | 公共接口与核心入口 |
 | :--- | :--- | :--- |
 | [`src/command/mod.rs`](../../src/command/mod.rs) | 命令模块根; 子模块组织与对外导出 | `CommandRouter`, `CommandRegistry` |
-| [`src/command/router.rs`](../../src/command/router.rs) | `CommandRouter` 分发中枢、4096 桶 `KeyLock` 写锁与 metrics 埋点 | `CommandRouter::execute_with_client`, `execute_inner` |
+| [`src/command/router/`](../../src/command/router/) | `CommandRouter` 分发中枢、4096 桶 `KeyLock` 写锁与 metrics 埋点 | `CommandRouter::execute_with_client`, `execute_inner` |
 | [`src/command/registry.rs`](../../src/command/registry.rs) | Redis 命令元数据表 (`COMMAND_TABLE`)、`CommandFlags` 与参数规则 | `CommandRegistry::lookup`, `CommandFlags` |
 | [`src/command/string.rs`](../../src/command/string.rs) | String 系列命令 (GET, SET, MGET, MSET, INCR, INCRBYFLOAT, GETRANGE 等) | `string::dispatch` |
 | [`src/command/hash.rs`](../../src/command/hash.rs) | Hash 系列命令 (HGET, HSET, HDEL, HGETALL, HINCRBY, HEXISTS 等) | `hash::dispatch` |
@@ -42,8 +42,8 @@ description: AiKv 核心 Redis 命令 — String/Hash/List/Set/ZSet/Key/Database
   - **双 Key 命令**: `KeyLock::lock_two(k1, k2)` 按照 Key 字节序比较升序获取锁 (如 RENAME, COPY, LMOVE, SMOVE);
   - **多 Key / Lua 事务**: `KeyLock::lock_keys_sorted(keys)` 自动去重并按字典序升序排序加锁, 彻底杜绝并发死锁.
 - **双维护一致性约束 (Registry ↔ Router)**:
-  - 新增命令必须**同时更新** `registry.rs` 中的 `COMMAND_TABLE` 和 `router.rs` 中的 `execute_inner` (或子领域 dispatch match);
-  - 严禁在 `registry.rs` 中声明但在 `router.rs` 中遗漏分发, 避免出现 `COMMAND` 命令可查但执行报未知命令的 Bug.
+  - 新增命令必须**同时更新** `registry.rs` 中的 `COMMAND_TABLE` 和 `router/mod.rs` 中的 `execute_inner` (或子领域 dispatch match);
+  - 严禁在 `registry.rs` 中声明但在 `router/` 中遗漏分发, 避免出现 `COMMAND` 命令可查但执行报未知命令的 Bug.
 - **WRONGTYPE 强制校验**:
   - 对已存在的 Key 执行不匹配的数据结构操作时, 必须立即返回 `-WRONGTYPE Operation against a key holding the wrong kind of value\r\n`;
   - 严禁静默覆盖已有不同类型的 Key (除非是 `SET` 强制覆盖).

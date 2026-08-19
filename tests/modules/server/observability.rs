@@ -203,7 +203,7 @@ fn test_hot_path_span_level_debug() {
 
     let hot_paths: &[(&str, &str)] = &[
         // 入口 span (AGENTS.md:66 强制): 每条命令必经
-        ("command/router.rs", "name = \"kv_command\""),
+        ("command/router/mod.rs", "name = \"kv_command\""),
         ("command/string.rs", "name = \"cmd_string\""),
         // 每条命令 I/O 必经路径
         ("server/connection/mod.rs", "name = \"kv_read\""),
