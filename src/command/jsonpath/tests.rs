@@ -39,3 +39,34 @@ fn test_jsonpath_delete_returns_count() {
     assert_eq!(count, 2);
     assert_eq!(doc.as_array().unwrap().len(), 1);
 }
+
+#[test]
+fn test_jsonpath_root_path_returns_whole_document() {
+    let doc = serde_json::json!({"a": 1, "b": [2]});
+    assert_eq!(JsonPathEngine.extract(&doc, "$").unwrap(), doc);
+    assert_eq!(JsonPathEngine.extract(&doc, ".").unwrap(), doc);
+}
+
+#[test]
+fn test_jsonpath_root_array_wildcard() {
+    let doc = serde_json::json!([1, 2, 3]);
+    assert_eq!(JsonPathEngine.extract(&doc, "$[*]").unwrap(), doc);
+}
+
+#[test]
+fn test_jsonpath_incr_numeric_field() {
+    let mut doc = serde_json::json!({"n": 1});
+    let parts = JsonPathEngine::split_path_parts("n");
+    JsonPathEngine.incr(&mut doc, &parts, 2.0).unwrap();
+    assert_eq!(doc["n"], serde_json::json!(3));
+}
+
+#[test]
+fn test_jsonpath_append_to_object_array() {
+    let mut doc = serde_json::json!({"items": [1]});
+    let parts = JsonPathEngine::split_path_parts("items");
+    JsonPathEngine
+        .append(&mut doc, &parts, &[serde_json::json!(2)])
+        .unwrap();
+    assert_eq!(doc["items"], serde_json::json!([1, 2]));
+}

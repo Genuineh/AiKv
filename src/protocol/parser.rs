@@ -701,3 +701,82 @@ fn parse_verbatim_string(
         data: Bytes::copy_from_slice(rest.as_bytes()),
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn incomplete_bulk_then_feed() {
+        let mut p = RespParser::new();
+        p.feed(b"$5\r\nhel");
+        assert_eq!(p.parse().unwrap(), None);
+        p.feed(b"lo\r\n");
+        assert_eq!(
+            p.parse().unwrap(),
+            Some(RespValue::BulkString(Some(Bytes::from_static(b"hello"))))
+        );
+    }
+
+    #[test]
+    fn pipeline_two_frames() {
+        let mut p = RespParser::new();
+        p.feed(b"+OK\r\n:1\r\n");
+        assert_eq!(
+            p.parse().unwrap(),
+            Some(RespValue::SimpleString("OK".into()))
+        );
+        assert_eq!(p.parse().unwrap(), Some(RespValue::Integer(1)));
+        assert_eq!(p.parse().unwrap(), None);
+    }
+
+    #[test]
+    fn serialize_roundtrip() {
+        let values = [
+            RespValue::SimpleString("OK".into()),
+            RespValue::Integer(42),
+            RespValue::BulkString(Some(Bytes::from_static(b"hi"))),
+            RespValue::Array(Some(vec![
+                RespValue::Integer(1),
+                RespValue::SimpleString("x".into()),
+            ])),
+        ];
+        for v in values {
+            let mut p = RespParser::new();
+            p.feed(&v.serialize());
+            assert_eq!(p.parse().unwrap(), Some(v));
+        }
+    }
+
+    #[test]
+    fn unknown_marker_recoverable_then_next_frame() {
+        let mut p = RespParser::new();
+        p.feed(b"Xbad\r\n:2\r\n");
+        let err = p.parse().unwrap_err();
+        assert!(!is_fatal_protocol(&err));
+        assert!(err.to_string().contains("unknown type marker"));
+        assert_eq!(p.parse().unwrap(), Some(RespValue::Integer(2)));
+    }
+
+    #[test]
+    fn nested_depth_exceeded_is_fatal() {
+        let mut p = RespParser::with_limits(1024, 1024, 0, 1024, 1024);
+        let data = b"*1\r\n:1\r\n";
+        p.feed(data);
+        let err = p.parse().unwrap_err();
+        assert!(err.to_string().contains("parse depth exceeded"));
+        assert!(is_fatal_protocol(&err));
+        assert_eq!(p.buffer_len(), data.len());
+    }
+
+    #[test]
+    fn bulk_too_large_is_fatal() {
+        let mut p = RespParser::with_limits(4, 1024, 128, 1024, 1024);
+        let data = b"$10\r\nabcdefghij\r\n";
+        p.feed(data);
+        let err = p.parse().unwrap_err();
+        assert!(err.to_string().contains("bulk string too large"));
+        assert!(is_fatal_protocol(&err));
+        assert_eq!(p.buffer_len(), data.len());
+    }
+}
