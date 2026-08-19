@@ -187,7 +187,7 @@ pub async fn redis_call_async(
     }
 
     run(lua, storage, txn, &command, command_args, throw_error)
-        .instrument(tracing::info_span!("cmd_lua_redis_call", cmd.name = %command))
+        .instrument(tracing::debug_span!("cmd_lua_redis_call", cmd.name = %command))
         .await
 }
 

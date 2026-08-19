@@ -20,3 +20,5 @@
 
 - `CLUSTER COUNTKEYSINSLOT` / `GETKEYSINSLOT` 不再在 tokio 运行时内 `block_on` panic 断连
 - `BLPOP` / `BRPOP` / `BLMOVE` / `BZPOPMIN` / `BZPOPMAX` 对齐 Redis 8.8: `timeout=0` 无限阻塞, 负数 `timeout` 返回 `ERR timeout is negative`
+- Lua `redis.call` 热路径 span `cmd_lua_redis_call` 降为 `debug` 级别
+- 依赖安全: `crossbeam-epoch` 0.9.18 → 0.9.20 (RUSTSEC-2026-0204), `h2` 0.4.15 → 0.4.16 (RUSTSEC-2026-0258 部分), `deny.toml` 豁免 wit-bindgen/hashbrown 构建链重复版本
