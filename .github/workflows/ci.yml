@@ -27,7 +27,8 @@ jobs:
   test-cluster:
     runs-on: ubuntu-latest
     steps:
-      - name: Prepare workspace (checkout + rust)
+      - uses: actions/checkout@v4
+      - name: Prepare workspace (rust + protoc + aidb)
         uses: ./.github/actions/prepare
         with:
           components: clippy, rustfmt
@@ -56,7 +57,8 @@ jobs:
     needs: test-cluster
     runs-on: ubuntu-latest
     steps:
-      - name: Prepare workspace (checkout + rust)
+      - uses: actions/checkout@v4
+      - name: Prepare workspace (rust + protoc + aidb)
         uses: ./.github/actions/prepare
         with:
           cache-save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/new/main' }}
@@ -68,7 +70,8 @@ jobs:
     needs: test-cluster
     runs-on: ubuntu-latest
     steps:
-      - name: Prepare workspace (checkout + rust)
+      - uses: actions/checkout@v4
+      - name: Prepare workspace (rust + protoc + aidb)
         uses: ./.github/actions/prepare
         with:
           cache-save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/new/main' }}
@@ -80,7 +83,8 @@ jobs:
     needs: test-cluster
     runs-on: ubuntu-latest
     steps:
-      - name: Prepare workspace (checkout + rust)
+      - uses: actions/checkout@v4
+      - name: Prepare workspace (rust + protoc + aidb)
         uses: ./.github/actions/prepare
         with:
           cache-save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/new/main' }}
@@ -93,7 +97,8 @@ jobs:
   test-compression:
     runs-on: ubuntu-latest
     steps:
-      - name: Prepare workspace (checkout + rust)
+      - uses: actions/checkout@v4
+      - name: Prepare workspace (rust + protoc + aidb)
         uses: ./.github/actions/prepare
         with:
           cache-save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/new/main' }}

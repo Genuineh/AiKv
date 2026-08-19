@@ -21,9 +21,11 @@
 - 统一贡献指南结构并全面规范化 Markdown 文档与标点
 - 移除模块文档 frontmatter 中非标准的 `depends_on` 字段
 - 命令层 tracing span 统一收敛为 `debug` 级别, 新增 `tests/span_contract.rs` 契约测试
+- GitHub CI: 各 job 先 `actions/checkout`, 再调用 prepare (不再在 composite 内 checkout)
 
 ### Fixed
 
+- 依赖安全: `anyhow` 1.0.102 → 1.0.104 (RUSTSEC-2026-0190); 增加 `.cargo/audit.toml` (bincode ignore)
 - 移除 tonic 0.11 传递依赖 h2 0.3.27 (RUSTSEC-2026-0258); 删除 SKIP_SECURITY 逃生门
 - deny.toml 允许 Zlib (foldhash)
 - `CLUSTER COUNTKEYSINSLOT` / `GETKEYSINSLOT` 不再在 tokio 运行时内 `block_on` panic 断连
