@@ -71,14 +71,9 @@ aidb = { path = "/absolute/path/to/aidb" }
 
 > **说明**: Git hook 默认 **不执行** `cargo test`, 测试由开发者本地手动或 CI 运行.
 
-### Security 检查与逃生门
+### Security 检查
 
-`pre-commit` 中的 `cargo audit` 与 `cargo deny check` 基于 `Cargo.lock` 全量扫描依赖. 
-若遇到已知依赖漏洞需等待上游修复时, 可使用逃生门临时跳过安全扫描:
-
-```bash
-SKIP_SECURITY=1 git commit -m "..."   # 仅跳过 security, fmt 与 clippy 仍正常执行
-```
+`pre-commit` 中的 `cargo audit` 与 `cargo deny check` 基于 `Cargo.lock` 全量扫描依赖.
 
 若本地未安装对应工具, 钩子会自动跳过并提示安装命令 (`cargo install cargo-audit --locked` / `cargo install cargo-deny --locked`).
 

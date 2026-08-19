@@ -26,6 +26,11 @@ runs:
         components: ${{ inputs.components }}
         cache-save-if: ${{ inputs.cache-save-if }}
 
+    # cluster feature 编译 aidb tonic/prost 需要 protoc.
+    - name: Install protoc
+      run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      shell: bash
+
     # 把 aidb git 分支依赖对齐到 new/main 最新 commit.
     - name: Sync aidb to latest (new/main)
       run: cargo update -p aidb

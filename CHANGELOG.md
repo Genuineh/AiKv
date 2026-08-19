@@ -24,6 +24,8 @@
 
 ### Fixed
 
+- 移除 tonic 0.11 传递依赖 h2 0.3.27 (RUSTSEC-2026-0258); 删除 SKIP_SECURITY 逃生门
+- deny.toml 允许 Zlib (foldhash)
 - `CLUSTER COUNTKEYSINSLOT` / `GETKEYSINSLOT` 不再在 tokio 运行时内 `block_on` panic 断连
 - `BLPOP` / `BRPOP` / `BLMOVE` / `BZPOPMIN` / `BZPOPMAX` 对齐 Redis 8.8: `timeout=0` 无限阻塞, 负数 `timeout` 返回 `ERR timeout is negative`
 - Lua `redis.call` 热路径 span `cmd_lua_redis_call` 降为 `debug` 级别
