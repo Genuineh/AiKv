@@ -1,13 +1,13 @@
 ---
 name: aikv-commands-extended
-description: AiKv 扩展 Redis 命令 — JSON/JSONPath 引擎、Lua EVAL/SCRIPT 沙箱、BlockingRegistry 阻塞队列 (BLPOP/BRPOP)、MIGRATE 槽位数据网络同步与服务端管理命令 (INFO/CONFIG/CLIENT/COMMAND/SAVE). 修改 src/command/{json,jsonpath,script,blocking,migrate,persistence,server} 时查阅.
+description: AiKv 扩展 Redis 命令 — JSON/JSONPath 引擎、Lua EVAL/SCRIPT 沙箱、BlockingRegistry 阻塞队列 (BLPOP/BRPOP)、MIGRATE 槽位数据网络同步与服务端管理命令 (INFO/CONFIG/CLIENT/COMMAND/SAVE). 修改 src/command/{json,jsonpath,script,script/execute,blocking,migrate,persistence,server} 时查阅.
 ---
 
 # AiKv Commands Extended (扩展命令层)
 
 ## 何时读本文
 
-- 修改 `src/command/{json.rs, jsonpath/, jsonpath_util.rs, script.rs, script/, blocking.rs, migrate.rs, persistence.rs, server.rs}` 源码;
+- 修改 `src/command/{json.rs, jsonpath/, jsonpath_util.rs, script.rs, script/, script/execute/, blocking.rs, migrate.rs, persistence.rs, server.rs}` 源码;
 - 新增或修改 JSON.*, Lua 脚本 (`EVAL` / `EVALSHA` / `SCRIPT`), 阻塞列表/ZSet (`BLPOP` / `BRPOP` / `BZPOPMIN`), MIGRATE 槽位数据同步, 或服务端管理命令 (`INFO` / `CONFIG` / `CLIENT` / `SAVE`);
 - 排查 JSONPath 表达式求值异常、Lua 沙箱超时与 `redis.call` 写入回滚、阻塞队列假死或漏唤醒、MIGRATE 迁移同步失败;
 - **不覆盖**: 核心数据结构命令与 `KeyLock` 基础机制 → [commands-core.md](04-commands-core.md);
@@ -26,6 +26,7 @@ description: AiKv 扩展 Redis 命令 — JSON/JSONPath 引擎、Lua EVAL/SCRIPT
 | [`src/command/jsonpath_util.rs`](../../src/command/jsonpath_util.rs) | JSON 与 RESP 之间的类型转换辅助工具 | `json_to_resp`, `resp_to_json` |
 | [`src/command/script.rs`](../../src/command/script.rs) | Lua 脚本命令入口 (`EVAL`, `EVALSHA`, `SCRIPT LOAD`, `SCRIPT EXISTS`, `SCRIPT FLUSH`) | `script::dispatch` |
 | [`src/command/script/`](../../src/command/script/) | Lua 5.4 沙箱执行环境、`redis.call` 桥接与 `ScriptTransaction` 批处理 | `ScriptEngine`, `ScriptTransaction` |
+| [`src/command/script/execute/`](../../src/command/script/execute/) | Lua `redis.call` / `redis.pcall` 异步执行: KEYS 校验与按类型 `exec_*` | `redis_call_async` |
 | [`src/command/blocking.rs`](../../src/command/blocking.rs) | `BlockingRegistry` 阻塞等待队列、超时管理与跨连接键写入唤醒机制 | `BlockingRegistry`, `block_on_keys`, `notify_keys` |
 | [`src/command/migrate.rs`](../../src/command/migrate.rs) | `MIGRATE` / `RESTORE` 命令, 槽位迁移数据网络传输与原子导入 | `migrate::dispatch` |
 | [`src/command/persistence.rs`](../../src/command/persistence.rs) | 持久化管理命令 (`SAVE`, `BGSAVE`, `LASTSAVE`, `SHUTDOWN`) | `persistence::dispatch` |

@@ -1,4 +1,4 @@
-//! Lua 脚本内 JSON 命令子集的执行: 由 `execute.rs::dispatch` 按命令名转发, 支持 10 条
+//! Lua 脚本内 JSON 命令子集的执行: 由 `execute::dispatch` 按命令名转发, 支持 10 条
 //! JSON.* 命令 (GET/MGET/SET/DEL/TYPE/STRLEN/ARRLEN/OBJLEN/NUMINCRBY/ARRAPPEND).
 //!
 //! JSON 文档以 `serde_json::Value` 序列化 bytes 存于 String KV (与 `json.rs` 一致).

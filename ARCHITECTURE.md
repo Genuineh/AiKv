@@ -123,7 +123,7 @@ aikv/src/
 │   ├── jsonpath/        # JSONPath 查询与修改引擎
 │   ├── jsonpath_util.rs # JSONPath 辅助解析
 │   ├── script.rs        # Lua EVAL / EVALSHA / SCRIPT 命令
-│   ├── script/          # Lua 沙箱引擎与 ScriptTransaction
+│   ├── script/          # Lua 沙箱, redis.call (execute/), ScriptTransaction
 │   ├── blocking.rs      # BlockingRegistry 阻塞命令等待与唤醒队列
 │   ├── migrate.rs       # MIGRATE 数据槽位网络同步命令
 │   ├── persistence.rs   # SAVE / BGSAVE / LASTSAVE / SHUTDOWN

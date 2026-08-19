@@ -11,6 +11,7 @@
 
 ### Changed
 
+- 拆分 `src/command/script/execute.rs` 为 `execute/{mod,string,hash,list,set,zset}.rs`
 - 拆分 `src/command/router.rs` 为 `router/{mod,keylock,stats}.rs`
 - 拆分 `src/server/connection.rs` 为 `connection/{mod,protocol,monitor,atom}.rs`
 - 拆分超限源文件: `src/cluster/commands/` (按 CLUSTER 子命令), `src/command/jsonpath/` (parser/eval/filter/mutate), `src/storage/cluster_batcher.rs` (写凑批 actor); `tests/cluster_*` 改为薄入口, 测试体迁入 `tests/modules/cluster/`
