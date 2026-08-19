@@ -13,7 +13,7 @@
 //!
 //! - 与解析器对称: `serialize()` 输出可被 `RespParser::parse` 完整恢复 (roundtrip).
 //! - `ProtocolVersion` 不影响 `serialize()` 输出; 版本相关 null 线格式适配
-//!   (`$-1`/`*-1` → `_`) 在 `server/connection.rs::adapt_for_protocol`.
+//!   (`$-1`/`*-1` → `_`) 在 `server/connection/protocol.rs` 的 `encode` / `adapt_null_to_resp3`.
 
 use bytes::{BufMut, Bytes, BytesMut};
 

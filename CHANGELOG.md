@@ -11,6 +11,7 @@
 
 ### Changed
 
+- 拆分 `src/server/connection.rs` 为 `connection/{mod,protocol,monitor,atom}.rs`
 - 拆分超限源文件: `src/cluster/commands/` (按 CLUSTER 子命令), `src/command/jsonpath/` (parser/eval/filter/mutate), `src/storage/cluster_batcher.rs` (写凑批 actor); `tests/cluster_*` 改为薄入口, 测试体迁入 `tests/modules/cluster/`
 - 全面重构并优化项目核心文档与模块文档体系
 - 统一贡献指南结构并全面规范化 Markdown 文档与标点

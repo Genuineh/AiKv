@@ -84,7 +84,7 @@ aikv/src/
 │   └── mod.rs
 ├── server/              # TCP 服务、连接管理与可观测性运行时
 │   ├── listener.rs      # TCP Server accept 循环与 max_clients 门控
-│   ├── connection.rs    # 连接处理、Pipeline 批读、HELLO 握手与 ATOM 事务
+│   ├── connection/      # 连接处理、Pipeline 批读、HELLO 握手与 ATOM 事务
 │   ├── config.rs        # ServerSharedState 与连接配置
 │   ├── info.rs          # Redis 8.8 INFO 11 个 Section 格式化渲染
 │   ├── info_catalog.rs  # INFO ↔ OTel 增量同步字典

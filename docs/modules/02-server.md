@@ -1,13 +1,13 @@
 ---
 name: aikv-server
-description: AiKv Server 运行时与连接管理 — TCP Listener、Connection 读写循环、HELLO 协议协商、ATOM 事务 (MULTI/EXEC/WATCH)、MONITOR 广播与 max_clients 门控. 修改 src/server/{listener,connection,config} 时查阅.
+description: AiKv Server 运行时与连接管理 — TCP Listener、Connection 读写循环、HELLO 协议协商、ATOM 事务 (MULTI/EXEC/WATCH)、MONITOR 广播与 max_clients 门控. 修改 src/server/{listener,connection/,config} 时查阅.
 ---
 
 # AiKv Server (服务运行时与连接管理)
 
 ## 何时读本文
 
-- 修改 `src/server/{listener.rs, connection.rs, config.rs, mod.rs}` 源码;
+- 修改 `src/server/{listener.rs, connection/, config.rs, mod.rs}` 源码;
 - 排查 TCP 连接建立/关闭、Pipeline 批读、`HELLO` 协议协商、ATOM 事务原子性、MONITOR 模式、`max_clients` 拒绝与优雅停机;
 - **不覆盖**: RESP 帧流式解析与 Limits 校验 → [protocol.md](01-protocol.md);
 - **不覆盖**: 命令具体业务分发与 KeyLock 并发锁 → [commands-core.md](04-commands-core.md) / [commands-extended.md](05-commands-extended.md);
@@ -22,7 +22,7 @@ description: AiKv Server 运行时与连接管理 — TCP Listener、Connection 
 | :--- | :--- | :--- |
 | [`src/server/mod.rs`](../../src/server/mod.rs) | Server 模块根; 子模块组织与类型导出 | `Server`, `Connection`, `ServerSharedState` |
 | [`src/server/listener.rs`](../../src/server/listener.rs) | TCP Server accept 循环、`max_clients` 并发门控与优雅停机联动 | `Server::run`, `Server::run_with_listener` |
-| [`src/server/connection.rs`](../../src/server/connection.rs) | 单连接状态机、Pipeline 读写循环、内联命令、`HELLO` 协商与 ATOM 事务 | `Connection::handle`, `Connection::process_command` |
+| [`src/server/connection/`](../../src/server/connection/) | 单连接状态机: Pipeline 循环、内联命令、`HELLO`、ATOM、MONITOR、Null 适配 | `Connection::handle`, `Connection::process_command` |
 | [`src/server/config.rs`](../../src/server/config.rs) | 服务器全局共享状态 (`ServerSharedState`) 与每连接配置定义 | `ServerSharedState`, `ConnectionConfig` |
 
 ---

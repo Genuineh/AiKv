@@ -206,10 +206,10 @@ fn test_hot_path_span_level_debug() {
         ("command/router.rs", "name = \"kv_command\""),
         ("command/string.rs", "name = \"cmd_string\""),
         // 每条命令 I/O 必经路径
-        ("server/connection.rs", "name = \"kv_read\""),
-        ("server/connection.rs", "name = \"kv_parse\""),
-        ("server/connection.rs", "name = \"kv_write\""),
-        ("server/connection.rs", "name = \"kv_encode\""),
+        ("server/connection/mod.rs", "name = \"kv_read\""),
+        ("server/connection/mod.rs", "name = \"kv_parse\""),
+        ("server/connection/protocol.rs", "name = \"kv_write\""),
+        ("server/connection/protocol.rs", "name = \"kv_encode\""),
         // 集群路由决策 (每条命令)
         ("cluster/router.rs", "name = \"kv_cluster_route\""),
         ("cluster/router.rs", "name = \"kv_cluster_cross_slot\""),

@@ -25,7 +25,7 @@
 //! # Invariant
 //!
 //! - 单帧语义: 每次 `parse()` 至多消费一个完整顶层帧; pipeline 由调用方循环 `parse()`
-//!   (见 `server/connection.rs` 的内层循环).
+//!   (见 `server/connection/mod.rs` 的内层循环).
 //! - 不完整不消费: 数据不足 → `Ok(None)`, cursor 回退, buffer 保留待 `feed`.
 //! - 可恢复错误 (`is_recoverable`): `unknown type marker` 跳过整行 (消费到第一个 `\n`,
 //!   无 `\n` 则消费整个 buffer), 其余跳过 1 字节后返回 `Err`; 调用方可写 ERR 响应并继续.
