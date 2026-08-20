@@ -5,7 +5,7 @@
 //!
 //! - 物理 key 编码: `encode_key(db, user_key)` = `{db_index}:{user_key}` (ASCII);
 //!   `decode_key` 反解, `prefix_end` 求范围扫描上界 (`for_each_prefix` 使用).
-//! - 值: 命令层 blob = `bincode(StoredValue)` (与 `storage/dump.rs` 同类型, DUMP 多
+//! - 值: 命令层 blob = `postcard(StoredValue)` (与 `storage/dump.rs` 同类型, DUMP 多
 //!   1 字节 version 前缀).
 //! - `write_batch` 组装 aidb `WriteBatch` 一次提交 (原子); `clear` 亦走批量 delete.
 //! - 持久化: `flush` → `DB::flush`; `create_checkpoint` → `Checkpoint::create`;

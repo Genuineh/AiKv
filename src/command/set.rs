@@ -5,14 +5,14 @@
 //!
 //! ```text
 //! 小 set (≤ 64 members): ValueType::Set(HashSet<member>)
-//!                        bincode 存于 StoredValue
+//!                        postcard 存于 StoredValue
 //! 大 set (> 64 members): ValueType::CollectionHeader { kind: Set, count }
 //!                        member 独立 subkey:
 //!                        {encoded_user_key}\x01S{member_len:2B}{member} → 空值 (仅存在性)
 //! ```
 //!
 //! 写路径: `key_lock.lock(key)` → `load_or_create_set` → 修改 → 超过
-//! `SET_MAX_BINCODE_MEMBERS` (64) 时 `migrate_set_to_subkey`; 删空后 `delete`.
+//! `SET_MAX_INLINE_MEMBERS` (64) 时 `migrate_set_to_subkey`; 删空后 `delete`.
 //! SMOVE 跨源/目标双 key 用 `lock_two`; store 类集合运算读多 key 不加锁.
 //! 类型分轨: `get_typed`/`set_typed`; 非 Set → WRONGTYPE.
 
@@ -31,8 +31,8 @@ use crate::storage::memory::glob_match;
 use crate::storage::subkey;
 use crate::storage::{AiDbEngine, CollectionKind, KvStorage, StoredValue, ValueType};
 
-/// 小集合使用 bincode; 超过此阈值自动切到 subkey 格式.
-const SET_MAX_BINCODE_MEMBERS: usize = 64;
+/// 小集合 inline 编码于 StoredValue; 超过此阈值自动切到 subkey 格式.
+const SET_MAX_INLINE_MEMBERS: usize = 64;
 
 pub struct SetCommands {
     storage: Arc<dyn KvStorage>,
@@ -59,7 +59,7 @@ impl SetCommands {
                         count += 1;
                     }
                 }
-                if set.len() > SET_MAX_BINCODE_MEMBERS {
+                if set.len() > SET_MAX_INLINE_MEMBERS {
                     self.migrate_set_to_subkey(db, key, &stored.expires_at, set)
                         .await?;
                 } else {
@@ -605,7 +605,7 @@ impl SetCommands {
         Ok(Arc::try_unwrap(out).unwrap().into_inner().unwrap())
     }
 
-    /// 将 bincode set 迁移为 subkey 格式.
+    /// 将 inline set 迁移为 subkey 格式.
     async fn migrate_set_to_subkey(
         &self,
         db: usize,

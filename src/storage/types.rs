@@ -322,13 +322,13 @@ pub trait KvStorage: Send + Sync {
 
     // ---- 原始 subkey 访问 (仅持久化引擎) ----
 
-    /// 绕过 bincode 反序列化, 直接读取 subkey 的原始字节.
+    /// 绕过 StoredValue 反序列化, 直接读取 subkey 的原始字节.
     /// 默认返回 None (MemoryEngine 不支持).
     async fn raw_subkey_get(&self, _db: usize, _encoded_key: Vec<u8>) -> Result<Option<Vec<u8>>> {
         Err(Error::Storage("raw subkey access not supported".into()))
     }
 
-    /// 绕过 bincode 序列化, 直接写入 subkey 的原始字节.
+    /// 绕过 StoredValue 序列化, 直接写入 subkey 的原始字节.
     async fn raw_subkey_set(
         &self,
         _db: usize,
@@ -338,12 +338,12 @@ pub trait KvStorage: Send + Sync {
         Err(Error::Storage("raw subkey access not supported".into()))
     }
 
-    /// 绕过 bincode, 直接删除 subkey.
+    /// 绕过 StoredValue 编解码, 直接删除 subkey.
     async fn raw_subkey_delete(&self, _db: usize, _encoded_key: Vec<u8>) -> Result<bool> {
         Err(Error::Storage("raw subkey access not supported".into()))
     }
 
-    /// 绕过 bincode, 扫描 subkey 前缀范围内的所有原始 KV 对.
+    /// 绕过 StoredValue 编解码, 扫描 subkey 前缀范围内的所有原始 KV 对.
     /// 仅持久化引擎实现; MemoryEngine 返回 Err.
     async fn raw_subkey_for_each(
         &self,

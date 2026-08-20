@@ -21,6 +21,7 @@
 - 统一贡献指南结构并全面规范化 Markdown 文档与标点
 - 移除模块文档 frontmatter 中非标准的 `depends_on` 字段
 - 命令层 tracing span 统一收敛为 `debug` 级别, 新增 `tests/span_contract.rs` 契约测试
+- 序列化: `StoredValue` / DUMP 从 `bincode 1.x` 改为 `postcard 1.x`; DUMP 版本 `0` → `1` (开发期不兼容)
 - GitHub CI: 各 job 先 `actions/checkout`, 再调用 prepare (不再在 composite 内 checkout)
 
 ### Fixed

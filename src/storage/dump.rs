@@ -3,13 +3,14 @@
 use crate::error::{Error, Result};
 use crate::storage::StoredValue;
 
-pub const DUMP_VERSION: u8 = 0;
+pub const DUMP_VERSION: u8 = 1;
 
 pub fn encode(value: &StoredValue) -> Result<Vec<u8>> {
     let mut out = Vec::with_capacity(1 + 64);
     out.push(DUMP_VERSION);
-    bincode::serialize_into(&mut out, value)
+    let payload = postcard::to_allocvec(value)
         .map_err(|e| Error::Storage(format!("DUMP encode failed: {e}")))?;
+    out.extend_from_slice(&payload);
     Ok(out)
 }
 
@@ -25,7 +26,7 @@ pub fn decode(payload: &[u8]) -> Result<StoredValue> {
             "ERR DUMP payload version or checksum error".into(),
         ));
     }
-    bincode::deserialize(&payload[1..])
+    postcard::from_bytes(&payload[1..])
         .map_err(|_| Error::Command("ERR DUMP payload version or checksum error".into()))
 }
 
@@ -50,7 +51,9 @@ mod tests {
     /// 验证 DUMP 校验和与版本号前缀校验
     #[test]
     fn test_dump_version_check() {
-        let err = decode(&[1, 0, 1, 2]).unwrap_err();
+        let err = decode(&[0, 0, 1, 2]).unwrap_err();
+        assert!(matches!(err, Error::Command(_)));
+        let err = decode(&[2, 0, 1, 2]).unwrap_err();
         assert!(matches!(err, Error::Command(_)));
         let err = decode(&[]).unwrap_err();
         assert!(matches!(err, Error::Command(_)));

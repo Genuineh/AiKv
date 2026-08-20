@@ -5,14 +5,14 @@
 //!
 //! ```text
 //! 小 hash (≤ 64 fields): ValueType::Hash(HashMap<field, value>)
-//!                        bincode 存于 StoredValue
+//!                        postcard 存于 StoredValue
 //! 大 hash (> 64 fields): ValueType::CollectionHeader { kind: Hash, count }
 //!                        field 独立 subkey:
 //!                        {encoded_user_key}\x01H{field_len:2B}{field} → raw value
 //! ```
 //!
 //! 写路径: `key_lock.lock(key)` → `load_or_create_hash` (兼容两种格式) → 修改 →
-//! 超过 `HASH_MAX_BINCODE_FIELDS` (64) 时 `migrate_hash_to_subkey`; 删空后 `delete`.
+//! 超过 `HASH_MAX_INLINE_FIELDS` (64) 时 `migrate_hash_to_subkey`; 删空后 `delete`.
 //! subkey 读写走 `raw_subkey_*`, 仅持久化引擎支持 (Memory 引擎返回 Err).
 //! 类型分轨: `get_typed`/`set_typed`; 非 Hash → WRONGTYPE.
 
@@ -30,8 +30,8 @@ use crate::storage::memory::glob_match;
 use crate::storage::subkey;
 use crate::storage::{AiDbEngine, CollectionKind, KvStorage, StoredValue, ValueType, WRONGTYPE};
 
-/// 小集合使用 bincode; 超过此阈值自动切到 subkey 格式.
-const HASH_MAX_BINCODE_FIELDS: usize = 64;
+/// 小集合 inline 编码于 StoredValue; 超过此阈值自动切到 subkey 格式.
+const HASH_MAX_INLINE_FIELDS: usize = 64;
 
 pub struct HashCommands {
     storage: Arc<dyn KvStorage>,
@@ -52,7 +52,7 @@ impl HashCommands {
         let _lock = self.key_lock.lock(key).await;
         let mut stored = self.load_or_create_hash(db, key).await?;
 
-        // 区分 bincode / subkey 格式
+        // 区分 inline / subkey 格式
         match &stored.value {
             ValueType::Hash(_) => {
                 let ValueType::Hash(ref mut map) = stored.value else {
@@ -68,7 +68,7 @@ impl HashCommands {
                     map.insert(field, value);
                 }
                 // 超过阈值则转换为 subkey 格式
-                if map.len() > HASH_MAX_BINCODE_FIELDS {
+                if map.len() > HASH_MAX_INLINE_FIELDS {
                     self.migrate_hash_to_subkey(db, key, &stored.expires_at, map)
                         .await?;
                 } else {
@@ -348,7 +348,7 @@ impl HashCommands {
                     return Ok(router::integer(0));
                 }
                 map.insert(args[1].to_vec(), args[2].to_vec());
-                if map.len() > HASH_MAX_BINCODE_FIELDS {
+                if map.len() > HASH_MAX_INLINE_FIELDS {
                     self.migrate_hash_to_subkey(db, key, &stored.expires_at, map)
                         .await?;
                 } else {
@@ -452,7 +452,7 @@ impl HashCommands {
                 }
                 let s = format_hash_float(new_val);
                 map.insert(field, s.as_bytes().to_vec());
-                if map.len() > HASH_MAX_BINCODE_FIELDS {
+                if map.len() > HASH_MAX_INLINE_FIELDS {
                     self.migrate_hash_to_subkey(db, key, &stored.expires_at, map)
                         .await?;
                     return Ok(router::bulk(s.into_bytes()));
@@ -530,7 +530,7 @@ impl HashCommands {
                     }
                 };
                 map.insert(field, new_val.to_string().into_bytes());
-                if map.len() > HASH_MAX_BINCODE_FIELDS {
+                if map.len() > HASH_MAX_INLINE_FIELDS {
                     self.migrate_hash_to_subkey(db, key, &stored.expires_at, map)
                         .await?;
                     return Ok(router::integer(new_val));
@@ -579,7 +579,7 @@ impl HashCommands {
 
     // ---- helpers ----
 
-    /// 读取 hash 的所有 field → value (兼容 bincode 和 subkey).
+    /// 读取 hash 的所有 field → value (兼容 inline 和 subkey).
     async fn load_hash_all_fields(
         &self,
         db: usize,
@@ -682,7 +682,7 @@ impl HashCommands {
         Ok(Arc::try_unwrap(out).unwrap().into_inner().unwrap())
     }
 
-    /// 将 bincode hash map 迁移为 subkey 格式.
+    /// 将 inline hash map 迁移为 subkey 格式.
     async fn migrate_hash_to_subkey(
         &self,
         db: usize,

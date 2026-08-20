@@ -9,7 +9,7 @@
 //! - 键空间: KEYS 直调 `storage.keys` (pattern 走 `glob_match`, 仅 `*`/`?`); SCAN 走
 //!   引擎级游标 (`storage.scan`).
 //! - 双 key 写: RENAME/RENAMENX/COPY 用 `key_lock.lock_two` (字典序, 同 key 不重入).
-//! - DUMP 格式: `[u8 version=0][bincode(StoredValue)]` (非 Redis DUMP); RESTORE 校验
+//! - DUMP 格式: `[u8 version=1][postcard(StoredValue)]` (非 Redis DUMP); RESTORE 校验
 //!   version, 失败 → `ERR DUMP payload version or checksum error`.
 //! - MIGRATE: 本文件编排 — `get_typed` → `dump_encode` → `migrate::send_restore` (TCP) →
 //!   非 COPY 时源端 `delete`; 支持 KEYS/AUTH/AUTH2/REPLACE 等选项.
@@ -233,7 +233,7 @@ impl KeyCommands {
         )))
     }
 
-    /// DUMP — AiKv 内部格式 `[version: u8=0][bincode(StoredValue)]`, 非 Redis 兼容.
+    /// DUMP — AiKv 内部格式 `[version: u8=1][postcard(StoredValue)]`, 非 Redis 兼容.
     #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "DUMP"))]
     pub async fn dump(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("DUMP", args, 1)?;

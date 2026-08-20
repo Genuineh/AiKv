@@ -31,7 +31,7 @@ description: AiKv 存储适配层 — KvStorage Trait、MemoryEngine、AiDbEngin
 | [`src/storage/cluster_adapter.rs`](../../src/storage/cluster_adapter.rs) | 集群数据面存储适配器: 槽位判断、写批处理 (`Batcher`) 与 Raft propose | `ClusterDataAdapter` (feature = "cluster") |
 | [`src/storage/cluster_batcher.rs`](../../src/storage/cluster_batcher.rs) | `GroupSetBatcher` 写凑批 actor; 入口仍是 `ClusterDataAdapter` | `GroupSetBatcher` (feature = "cluster") |
 | [`src/storage/subkey.rs`](../../src/storage/subkey.rs) | 复杂数据结构 (Hash/List/Set/ZSet) 扁平化 Subkey 前缀编解码 | `encode_data_key`, `encode_meta_key`, `decode_key` |
-| [`src/storage/dump.rs`](../../src/storage/dump.rs) | `DUMP` / `RESTORE` 紧凑 bincode 序列化与版本校验 | `dump_encode`, `dump_decode`, `DUMP_VERSION` |
+| [`src/storage/dump.rs`](../../src/storage/dump.rs) | `DUMP` / `RESTORE` 紧凑 postcard 序列化与版本校验 | `dump_encode`, `dump_decode`, `DUMP_VERSION` |
 | [`src/storage/ttl_filter.rs`](../../src/storage/ttl_filter.rs) | 结合 Compaction Filter 的 TTL 物理清理与惰性删除判定 | `TtlExpireFilter` |
 | [`src/storage/observation.rs`](../../src/storage/observation.rs) | 存储层点查、批写与扫描延迟与吞吐监控统计 | `StorageObservation` |
 
@@ -92,7 +92,11 @@ pub struct StoredValue {
 }
 ```
 
-### 2. Subkey 编码规范
+### 2. DUMP / RESTORE 内部格式
+
+`DUMP` / `RESTORE` 使用内部格式 `[u8 version=1][postcard(StoredValue)]`, 非 Redis DUMP 兼容. 开发期无旧 `DUMP_VERSION=0` 载荷兼容义务.
+
+### 3. Subkey 编码规范
 
 - **String / JSON**: 直接写入 `{db}:{key}` 作为完整 `StoredValue`;
 - **Hash**: 

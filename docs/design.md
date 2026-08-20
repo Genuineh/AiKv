@@ -46,7 +46,7 @@ AiKv 定位为纯 Rust **Redis RESP 兼容的高性能分布式 KV 网络服务 
 | 刻意不实现的特性 | 核心考量与替代方案 |
 | :--- | :--- |
 | **Telnet 式非数组内联命令 (`PING\r\n`)** | 仅支持标准 RESP 数组格式命令, 消除解析分支复杂度 |
-| **Redis 官方 RDB/AOF 磁盘格式** | 内部持久化统一走 AiDb Checkpoint 与 LSM WAL, DUMP/RESTORE 采用内部紧凑 bincode 格式 |
+| **Redis 官方 RDB/AOF 磁盘格式** | 内部持久化统一走 AiDb Checkpoint 与 LSM WAL, DUMP/RESTORE 采用内部紧凑 postcard 格式 |
 | **`CONFIG REWRITE` 动态落盘** | 采用只读启动配置 + 环境变量覆盖模型, 避免复杂的运行时配置文件回写竞争 |
 | **Redis 16379 P2P Gossip 故障投票共识** | 集群拓扑与故障转移权威判定统一走 MetaRaft 共识, Gossip 仅用于轻量 Leader 缓存刷新 |
 | **服务端透明命令转发 (Forward Proxy)** | 严格遵循 Redis Cluster 官方规范由客户端重定向 (`redis-cli -c`), 避免服务端双倍跳步与跨网络阻塞 |

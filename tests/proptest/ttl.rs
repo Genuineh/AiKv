@@ -48,7 +48,7 @@ fn prop_ttl_filter_integration() {
                 value: ValueType::String(value_bytes.clone()),
                 expires_at: Some(expires_at),
             };
-            let encoded = bincode::serialize(&stored).unwrap();
+            let encoded = postcard::to_allocvec(&stored).unwrap();
             let decision = filter.filter(0, b"k", &encoded);
             // filter 不 panic 且返回合法决策
             prop_assert!(matches!(
@@ -61,7 +61,7 @@ fn prop_ttl_filter_integration() {
                 value: ValueType::String(value_bytes),
                 expires_at: None,
             };
-            let encoded_no_exp = bincode::serialize(&stored_no_exp).unwrap();
+            let encoded_no_exp = postcard::to_allocvec(&stored_no_exp).unwrap();
             prop_assert_eq!(
                 filter.filter(0, b"k", &encoded_no_exp),
                 FilterDecision::Keep

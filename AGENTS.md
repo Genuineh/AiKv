@@ -13,7 +13,7 @@
 - **禁止绕过 Raft 直接写存储**: 在集群模式下, 分配槽位的写操作必须通过 `ClusterDataAdapter` 进行 Raft 批处理 propose, 严禁绕过共识直接写入底层本地引擎.
 - **禁止热路径高等级 Span**: `kv_command`, `cmd_string` 等请求热路径的 `#[tracing::instrument]` 必须设为 `level = "debug"`, 确保在生产 `RUST_LOG=info` 下零性能损耗.
 - **禁止测试并发污染**: 集成测试与集群测试必须带 `--test-threads=1`, 避免端口与数据目录冲突.
-- **禁止随意修改持久化编码格式**: `StoredValue` 编码、Subkey 扁平化规则与 DUMP 内部 bincode 格式变更属于高风险操作, 须提前评估兼容性.
+- **禁止随意修改持久化编码格式**: `StoredValue` 编码、Subkey 扁平化规则与 DUMP 内部 postcard 格式变更属于高风险操作, 须提前评估兼容性.
 
 ### 🟢 必须遵守 (Always)
 - **指标前缀与单一真源规范**: 生产指标统一使用 `aikv_*` 前缀经 OTLP 导出; `ServerMetrics` 作为 `INFO` 输出与 OTel 镜像的唯一真实数据源, 杜绝双计数.

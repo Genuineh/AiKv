@@ -14,7 +14,7 @@ pub struct TtlExpireFilter;
 
 impl CompactionFilter for TtlExpireFilter {
     fn filter(&self, _level: usize, _key: &[u8], value: &[u8]) -> FilterDecision {
-        let Ok(stored) = bincode::deserialize::<StoredValue>(value) else {
+        let Ok(stored) = postcard::from_bytes::<StoredValue>(value) else {
             // 非 StoredValue 格式 — 可能是 meta key / subkey entry / 损毁数据,
             // 保守保留.
             return FilterDecision::Keep;

@@ -8,7 +8,7 @@
 //! 物理 key: {db_index}:{user_key}          # ASCII, 例 b"0:mykey"
 //!   ├─ db_prefix(db) = encode_key(db, "")  # 每 DB 的扫描前缀
 //!   ├─ prefix_end    = 前缀进位            # 范围扫描上界
-//!   └─ 值: bincode(StoredValue)            # 类型 + expires_at
+//!   └─ 值: postcard(StoredValue)            # 类型 + expires_at
 //! subkey:  {db_index}:{user_key}\x01H|S... # 大 Hash/Set 的 field/member, raw bytes
 //! ```
 //!
@@ -17,7 +17,7 @@
 //! # Invariant
 //!
 //! - 两套 WriteOp: `storage::WriteOp` (命令/Lua batch) ≠ `AdapterWriteOp` (扁平 KV);
-//!   转换在 `KvStorageAdapter::write_batch` (Put → bincode `StoredValue`).
+//!   转换在 `KvStorageAdapter::write_batch` (Put → postcard `StoredValue`).
 //! - AiDb key 编码: 物理 key = `{db_index}:{user_key}` (ASCII); `clear`/`keys`/`scan`
 //!   依赖 `db_prefix` + `prefix_end`.
 //! - String `get`/`set` 仅 String; 非 String → `WRONGTYPE`; Hash/List/Set/ZSet
@@ -31,7 +31,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use bincode;
 
 use crate::error::{Error, Result};
 use crate::storage::memory::glob_match;
@@ -188,11 +187,11 @@ impl KvStorageAdapter {
     }
 
     fn deserialize(bytes: &[u8]) -> Result<StoredValue> {
-        bincode::deserialize(bytes).map_err(|e| Error::Storage(format!("bincode decode: {e}")))
+        postcard::from_bytes(bytes).map_err(|e| Error::Storage(format!("postcard decode: {e}")))
     }
 
     fn serialize(value: &StoredValue) -> Result<Vec<u8>> {
-        bincode::serialize(value).map_err(|e| Error::Storage(format!("bincode encode: {e}")))
+        postcard::to_allocvec(value).map_err(|e| Error::Storage(format!("postcard encode: {e}")))
     }
 
     async fn load_typed(&self, db: usize, key: &[u8]) -> Result<Option<StoredValue>> {
@@ -241,7 +240,7 @@ impl KvStorageAdapter {
                     let Some(user_key) = Self::decode_user_key(&encoded) else {
                         return Ok(());
                     };
-                    // 跳过 subkey entry (非 bincode StoredValue)
+                    // 跳过 subkey entry (非 StoredValue 编码)
                     let Ok(stored) = Self::deserialize(&raw) else {
                         return Ok(());
                     };
@@ -282,7 +281,7 @@ impl KvStorageAdapter {
                     let Some(user_key) = Self::decode_user_key(&encoded) else {
                         return Ok(());
                     };
-                    // 跳过 subkey entry (非 bincode StoredValue)
+                    // 跳过 subkey entry (非 StoredValue 编码)
                     let Ok(stored) = Self::deserialize(&raw) else {
                         return Ok(());
                     };

@@ -3,8 +3,8 @@
 //! # 编码方案
 //!
 //! ```text
-//! Bincode (小集合):  {encoded_user_key}
-//!                     值: bincode(StoredValue)
+//! Inline (小集合):    {encoded_user_key}
+//!                     值: postcard(StoredValue)
 //!
 //! Subkey 元数据:     {encoded_user_key}  (ValueType::CollectionHeader)
 //!

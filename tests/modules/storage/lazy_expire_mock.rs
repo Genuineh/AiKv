@@ -111,7 +111,7 @@ fn expired_value_bytes() -> Vec<u8> {
         value: aikv::storage::types::ValueType::String(b"v".to_vec()),
         expires_at: Some(1), // 1ms since epoch: always in the past.
     };
-    bincode::serialize(&stored).unwrap()
+    postcard::to_allocvec(&stored).unwrap()
 }
 
 #[tokio::test]

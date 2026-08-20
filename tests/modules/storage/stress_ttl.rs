@@ -44,7 +44,7 @@ fn test_concurrent_write_with_ttl_filter() {
                     value: ValueType::String(val.into_bytes()),
                     expires_at,
                 };
-                let encoded = bincode::serialize(&stored).expect("serialize");
+                let encoded = postcard::to_allocvec(&stored).expect("serialize");
                 let _ = db.put(key.as_bytes(), &encoded);
                 i = i.wrapping_add(1);
                 cnt.fetch_add(1, Ordering::Relaxed);

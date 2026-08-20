@@ -105,7 +105,7 @@ aikv/src/
 │   ├── cluster_batcher.rs # GroupSetBatcher 写凑批 actor
 │   ├── subkey.rs        # Subkey 扁平化前缀编解码
 │   ├── types.rs         # StoredValue, ValueType, SubkeyData
-│   ├── dump.rs          # DUMP / RESTORE 紧凑 bincode 编解码
+│   ├── dump.rs          # DUMP / RESTORE 紧凑 postcard 编解码
 │   ├── ttl_filter.rs    # TTL 惰性过期与 Compaction Filter 联动
 │   ├── observation.rs   # 存储层延迟与吞吐监控统计
 │   └── mod.rs

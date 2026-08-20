@@ -50,7 +50,7 @@ aikv/
 │   └── commit-msg           #   Conventional Commits 提交说明校验
 ├── deny.toml            # cargo deny 策略 (许可证/来源)
 ├── .cargo/
-│   └── audit.toml       # cargo-audit ignore (bincode / Issue #77)
+│   └── audit.toml       # cargo-audit ignore (目前为空)
 ├── rust-toolchain.toml  # 工具链 (stable, 自动切换)
 ├── rustfmt.toml         # rustfmt 配置 (4 空格)
 ├── .editorconfig        # 编辑器格式
@@ -82,7 +82,7 @@ aikv/
 | Local  | `[hooks/check-docs-links.sh](../hooks/check-docs-links.sh)`      | staged `.md` 相对链接存在性检查                               |
 | Local  | `[hooks/check-security.sh](../hooks/check-security.sh)`          | `cargo audit` + `cargo deny`   |
 | Local  | `[deny.toml](../deny.toml)`                                      | cargo deny 策略 (许可证/来源)                                |
-| Local  | `[.cargo/audit.toml](../.cargo/audit.toml)`                      | cargo-audit 独立 ignore (目前仅 bincode RUSTSEC-2025-0141)   |
+| Local  | `[.cargo/audit.toml](../.cargo/audit.toml)`                      | cargo-audit 独立 ignore (目前为空)                           |
 | Local  | `[hooks/commit-msg](../hooks/commit-msg)`                        | Conventional Commits 提交说明校验                            |
 | GitHub | `[ISSUE_TEMPLATE/feat.yml](ISSUE_TEMPLATE/feat.yml)`             | Issue 模板: 新功能                                          |
 | GitHub | `[ISSUE_TEMPLATE/fix.yml](ISSUE_TEMPLATE/fix.yml)`               | Issue 模板: bug 修复                                        |

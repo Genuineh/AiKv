@@ -1,5 +1,5 @@
 //! 内存存储引擎 (`MemoryEngine`): 直接实现 `KvStorage`, 不经过 `StorageAdapter` /
-//! bincode / key 前缀编码. 每个逻辑 DB 一个 `RwLock<HashMap<Vec<u8>, StoredValue>>`.
+//! postcard / key 前缀编码. 每个逻辑 DB 一个 `RwLock<HashMap<Vec<u8>, StoredValue>>`.
 //!
 //! # Invariant
 //!
