@@ -14,25 +14,28 @@
 //!     ├─ parser.feed(&buf[..n])
 //!     └─ 内层循环 (pipeline):
 //!          parse_frame
-//!            ├─ Ok(Some) → process_value → process_command → write_response → 继续
-//!            ├─ Ok(None) → break 外层 (等更多数据)
-//!            ├─ Err fatal (is_fatal_protocol) → return Err (断连)
-//!            └─ Err recoverable → write_error → 继续
+//!            ├─ Ok(Some) → process_value → queue_response → (批末或立即命令) flush
+//!            ├─ Ok(None) → break 内层 → flush_responses → 等更多数据
+//!            ├─ Err fatal (is_fatal_protocol) → best-effort flush → return Err (断连)
+//!            └─ Err recoverable → queue_error → 继续 (同批末 flush)
 //!   }
 //!
 //! process_value : 顶层必须是 Array, 命令名与参数必须是 BulkString
 //! process_command: PING/ECHO/HELLO/QUIT/MONITOR/ATOM.* 内联; 其余经 Router
-//! write_response : encode() → (协商后) adapt_for_protocol → serialize → write_all
+//! write_response : queue_response (encode_into → write_buf); 不单独 write_all
+//! flush_responses: write_all(write_buf) + clear; capacity>64KiB 时 shrink 回 8KiB
+//! 立即 flush: QUIT / MONITOR / EXEC / ATOM.EXEC / SHUTDOWN
+//! 阻塞前置 flush: registry flag `blocking` (BLPOP/BRPOP/BLMOVE/BZPOP*) 在 await 前刷出同批响应
 //! ```
 //!
 //! # Invariant
 //!
 //! - 每连接一 task: `tokio::spawn(Connection::handle)`; 连接状态不跨连接共享.
 //! - Pipeline 内层循环: 单次 `read` 后 `feed`, 然后循环 `parse_frame → process_value`
-//!   直到 `Ok(None)` (与 `protocol/parser.rs` 单帧语义一致).
+//!   直到 `Ok(None)`, 批末统一 `flush_responses` (与 `protocol/parser.rs` 单帧语义一致).
 //! - Buffer 超限断连: `buffer_len + n > max_buffer_size()` 时直接 break, 不写 ERR.
 //! - Fatal vs recoverable: `is_fatal_protocol` (depth / too large / buffer size /
-//!   line too long) → 断连; 其它 `Protocol` → `write_error` 后继续.
+//!   line too long) → 断连; 其它 `Protocol` → `queue_error` 后继续.
 //! - HELLO 门控线格式: 默认 `ProtocolVersion::Resp3` 但 `protocol_negotiated = false`
 //!   直到客户端发 `HELLO 2|3`; 仅协商 Resp3 后 `adapt_for_protocol` 才把
 //!   `$-1`/`*-1` 转为 `_` (未协商时保持 RESP2 线格式).
@@ -44,13 +47,14 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::sync::broadcast;
 use tokio::time;
 use tracing::instrument;
 
+use crate::command;
 use crate::error::{Error, Result};
 use crate::protocol::{is_fatal_protocol, ProtocolVersion, RespParser, RespValue};
 use crate::server::config::ServerSharedState;
@@ -94,6 +98,7 @@ pub struct Connection {
     stream: TcpStream,
     remote: SocketAddr,
     parser: RespParser,
+    write_buf: BytesMut,
     state: Arc<ServerSharedState>,
     protocol_version: ProtocolVersion,
     /// 客户端是否通过 HELLO 命令显式协商过协议版本.
@@ -120,6 +125,7 @@ impl Connection {
             stream,
             remote,
             parser: RespParser::new(),
+            write_buf: BytesMut::with_capacity(protocol::DEFAULT_WRITE_BUF_CAPACITY),
             state: state.clone(),
             protocol_version: ProtocolVersion::default(),
             protocol_negotiated: false,
@@ -259,24 +265,42 @@ impl Connection {
             loop {
                 match self.parse_frame().await {
                     Ok(Some(value)) => {
-                        self.process_value(value).await?;
+                        let is_immediate_flush = should_flush_immediately(&value);
+                        // 阻塞命令 await 前必须先刷出同批已排队响应 (Redis 语义)
+                        if is_blocking_command(&value) {
+                            self.flush_responses().await?;
+                        }
+                        if let Err(e) = self.process_value(value).await {
+                            // best-effort: 同批已入队响应尽量先写出; 保留原错误, 忽略 flush 失败
+                            let _ = self.flush_responses().await;
+                            return Err(e);
+                        }
                         tracing::Span::current().record("db_index", self.current_db as i64);
                         self.last_active = Instant::now();
-                        if self.quit {
-                            break;
+                        if is_immediate_flush || self.quit {
+                            self.flush_responses().await?;
+                            if self.quit {
+                                break;
+                            }
                         }
                         if self.mode == ConnectionMode::Monitor {
+                            self.flush_responses().await?;
                             self.run_monitor(&mut buf).await?;
                             return Ok(());
                         }
                     }
                     Ok(None) => break,
-                    Err(e) if is_fatal_protocol(&e) => return Err(e),
+                    Err(e) if is_fatal_protocol(&e) => {
+                        // best-effort: 保留致命协议错误, 忽略 flush 自身 IO 失败
+                        let _ = self.flush_responses().await;
+                        return Err(e);
+                    }
                     Err(e) => {
                         self.write_error(&e).await?;
                     }
                 }
             }
+            self.flush_responses().await?;
         }
         Ok(())
     }
@@ -652,4 +676,32 @@ fn extract_bulk(value: &RespValue) -> Option<Bytes> {
         RespValue::BulkString(None) => Some(Bytes::new()),
         _ => None,
     }
+}
+
+fn should_flush_immediately(frame: &RespValue) -> bool {
+    let Some(cmd) = frame_command_bytes(frame) else {
+        return false;
+    };
+    matches!(
+        cmd.as_slice(),
+        b"QUIT" | b"MONITOR" | b"EXEC" | b"ATOM.EXEC" | b"SHUTDOWN"
+    )
+}
+
+fn is_blocking_command(frame: &RespValue) -> bool {
+    let Some(cmd) = frame_command_bytes(frame) else {
+        return false;
+    };
+    let name = std::str::from_utf8(&cmd).unwrap_or("");
+    command::lookup(name)
+        .map(|info| info.flags.contains(&"blocking"))
+        .unwrap_or(false)
+}
+
+fn frame_command_bytes(frame: &RespValue) -> Option<Vec<u8>> {
+    let RespValue::Array(Some(items)) = frame else {
+        return None;
+    };
+    let cmd_bytes = items.first().and_then(extract_bulk)?;
+    Some(cmd_bytes.to_ascii_uppercase())
 }

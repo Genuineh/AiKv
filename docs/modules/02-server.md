@@ -30,7 +30,7 @@ description: AiKv Server 运行时与连接管理 — TCP Listener、Connection 
 ## 关键 Invariants (勿破坏规则)
 
 - **每连接独立 Task**: 每个客户端连接通过 `tokio::spawn(Connection::handle)` 派发至独立异步任务处理, 连接级状态 (`current_db`, `parser`, `tx_state`, `cluster_state`) 绝对隔离, 不跨连接共享.
-- **Pipeline 紧凑循环**: 单次从 TCP 读取数据后调用 `parser.feed()`, 随后在内层循环中连续调用 `parse() -> process_command() -> write_response()`, 直至返回 `Ok(None)`, 充分压榨 Pipeline 性能.
+- **Pipeline 批量写聚合与缓冲复用**: 单次从 TCP 读取数据后调用 `parser.feed()`, 并在内层循环中连续解析与执行命令, 响应流式写入独占连接缓冲区 `write_buf: BytesMut` (初始 8 KiB), 在批次末尾或遇到立即 flush 命令 (`QUIT`/`MONITOR`/`EXEC`/`ATOM.EXEC`/`SHUTDOWN`) 时统一单次 `write_all` 写出; 带 `blocking` flag 的命令 (如 `BLPOP`) 在 await 前先 flush 同批已排队响应; MONITOR 内 `QUIT` 断连前也必须 flush. 偶发大响应导致容量超过 64 KiB 时在 flush 后自动收缩回 8 KiB, 消除逐命令堆分配与多余系统调用.
 - **Buffer 溢出断连**: 当接收数据与缓冲区现有数据之和超过 `max_buffer_size` (64 MiB) 时, 直接中断连接循环并关闭 Socket, 不向客户端写错误响应.
 - **协议协商与 Null 适配 (`adapt_for_protocol`)**:
   - 内部业务层统一生成 RESP3 AST (如 `RespValue::Null`);
@@ -77,14 +77,20 @@ sequenceDiagram
                     Conn->>Router: dispatch_command(args)
                     Router-->>Conn: RespValue 响应
                 end
-                Conn->>Conn: adapt_for_protocol()
-                Conn->>Client: TCP 发送响应字节帧
+                Conn->>Conn: queue_response (encode_into → write_buf)
+                alt blocking 命令 (BLPOP 等)
+                    Conn->>Client: flush_responses (await 前先写出同批已排队响应)
+                    Conn->>Router: await dispatch (可能阻塞)
+                else 立即 flush 命令 (QUIT/MONITOR/EXEC/...)
+                    Conn->>Client: flush_responses
+                end
             else Ok(None)
-                Note over Conn: 数据不足, 退出内层循环等待更多 TCP 数据
+                Note over Conn: 数据不足, 退出内层循环; 批末 flush_responses 后等待更多 TCP 数据
             else Err(fatal)
-                Note over Conn: 致命协议错误, 立即退出连接
+                Note over Conn: 致命协议错误, best-effort flush 后退出连接
             end
         end
+        Conn->>Client: flush_responses (单次 write_all 聚合写出)
     end
     Conn->>State: on_disconnect() (减少连接数)
 ```

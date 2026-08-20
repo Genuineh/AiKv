@@ -1,6 +1,6 @@
-//! 连接响应编码: 错误包装、TCP 写出、RESP3 null 适配.
+//! 连接响应编码: `queue_response` / `queue_error` 写入 `write_buf`,
+//! `flush_responses` 聚合 `write_all`; RESP3 null 适配.
 
-use bytes::Bytes;
 use tokio::io::AsyncWriteExt;
 use tracing::instrument;
 
@@ -9,8 +9,11 @@ use crate::protocol::{ProtocolVersion, RespValue};
 
 use super::Connection;
 
+pub const DEFAULT_WRITE_BUF_CAPACITY: usize = 8 * 1024;
+pub const MAX_WRITE_BUF_RETAIN_CAPACITY: usize = 64 * 1024;
+
 impl Connection {
-    pub(super) async fn write_error(&mut self, err: &Error) -> Result<()> {
+    pub(super) fn queue_error(&mut self, err: &Error) -> Result<()> {
         let msg = match err {
             Error::Protocol(s) => format!("Protocol error: {s}"),
             Error::Command(s) => s.clone(),
@@ -20,22 +23,12 @@ impl Connection {
             #[cfg(feature = "cluster")]
             Error::Cluster(s) => format!("CLUSTER error: {s}"),
         };
-        self.write_response(RespValue::Error(msg)).await
+        self.queue_response(&RespValue::Error(msg));
+        Ok(())
     }
 
-    #[instrument(
-        level = "debug",
-        name = "kv_write",
-        skip(self, value),
-        fields(response_size)
-    )]
-    pub(super) async fn write_response(&mut self, value: RespValue) -> Result<()> {
-        let bytes = self.encode(&value);
-        tracing::Span::current().record("response_size", bytes.len());
-        self.stream.write_all(&bytes).await?;
-        self.state.metrics().on_net_output_bytes(bytes.len() as u64);
-        tracing::debug!(response_size = bytes.len(), "kv.write.complete");
-        Ok(())
+    pub(super) async fn write_error(&mut self, err: &Error) -> Result<()> {
+        self.queue_error(err)
     }
 
     #[instrument(
@@ -44,15 +37,36 @@ impl Connection {
         skip(self, value),
         fields(value_type)
     )]
-    fn encode(&self, value: &RespValue) -> Bytes {
-        // 仅 RESP3 协商后才做 null 适配, 否则直接序列化 (免克隆, F-034)
-        let bytes = if self.protocol_negotiated && self.protocol_version == ProtocolVersion::Resp3 {
-            self.adapt_null_to_resp3(value).serialize()
+    pub(super) fn queue_response(&mut self, value: &RespValue) {
+        // 仅 RESP3 协商后才做 null 适配, 否则直接流式编码 (免克隆, F-034)
+        if self.protocol_negotiated && self.protocol_version == ProtocolVersion::Resp3 {
+            self.adapt_null_to_resp3(value)
+                .encode_into(&mut self.write_buf);
         } else {
-            value.serialize()
-        };
-        tracing::debug!(encoded_size = bytes.len(), "kv.encode.complete");
-        bytes
+            value.encode_into(&mut self.write_buf);
+        }
+    }
+
+    pub(super) async fn write_response(&mut self, value: RespValue) -> Result<()> {
+        self.queue_response(&value);
+        Ok(())
+    }
+
+    #[instrument(level = "debug", name = "kv_write", skip(self), fields(response_size))]
+    pub(super) async fn flush_responses(&mut self) -> Result<()> {
+        if self.write_buf.is_empty() {
+            return Ok(());
+        }
+        let len = self.write_buf.len();
+        tracing::Span::current().record("response_size", len);
+        self.stream.write_all(&self.write_buf).await?;
+        self.state.metrics().on_net_output_bytes(len as u64);
+        tracing::debug!(response_size = len, "kv.write.complete");
+        self.write_buf.clear();
+        if self.write_buf.capacity() > MAX_WRITE_BUF_RETAIN_CAPACITY {
+            self.write_buf = bytes::BytesMut::with_capacity(DEFAULT_WRITE_BUF_CAPACITY);
+        }
+        Ok(())
     }
 
     /// 递归检查 RespValue 树中是否包含 RESP2 风格的 null
@@ -76,9 +90,6 @@ impl Connection {
         }
     }
 
-    /// RESP3 模式下将 RESP2 风格的 null 表示转为 RESP3 原生 Null.
-    /// redis-py 8.0 的 RESP3 解析器对 `$-1\r\n` / `*-1\r\n` 处理有兼容性问题,
-    /// 需使用 RESP3 原生 `_\r\n` (Null) 替代.
     /// RESP3 模式下将 RESP2 风格的 null 表示转为 RESP3 原生 Null.
     /// redis-py 8.0 的 RESP3 解析器对 `$-1\r\n` / `*-1\r\n` 处理有兼容性问题,
     /// 需使用 RESP3 原生 `_\r\n` (Null) 替代.

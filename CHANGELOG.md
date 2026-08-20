@@ -11,6 +11,7 @@
 
 ### Changed
 
+- 连接层: 公开 `RespValue::encode_into`, 引入每连接 `write_buf` 复用与 Pipeline 批末聚合写 (`flush_responses`); 大响应后 capacity >64 KiB 收缩回 8 KiB
 - 拆分 `src/server/otel_metrics.rs` 为 `otel_metrics/{mod,helpers,testutil}.rs`
 - 拆分 `src/command/zset.rs` 为 `zset/{mod,helpers}.rs`
 - 拆分 `src/command/script/execute.rs` 为 `execute/{mod,string,hash,list,set,zset}.rs`

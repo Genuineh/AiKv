@@ -47,11 +47,17 @@ impl Connection {
                           self.process_monitor_command(value).await?;
                           self.last_active = Instant::now();
                           if self.quit {
+                            // QUIT 的 +OK 经 write_buf 排队, 断连前必须 flush
+                            self.flush_responses().await?;
                             return Ok(());
                           }
                         }
                         Ok(None) => break,
-                        Err(e) if is_fatal_protocol(&e) => return Err(e),
+                        Err(e) if is_fatal_protocol(&e) => {
+                            // best-effort: 保留致命协议错误, 忽略 flush 自身 IO 失败
+                            let _ = self.flush_responses().await;
+                            return Err(e);
+                        }
                         Err(_) => break,
                       }
                     }

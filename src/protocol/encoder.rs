@@ -12,8 +12,9 @@
 //! # Invariant
 //!
 //! - 与解析器对称: `serialize()` 输出可被 `RespParser::parse` 完整恢复 (roundtrip).
-//! - `ProtocolVersion` 不影响 `serialize()` 输出; 版本相关 null 线格式适配
-//!   (`$-1`/`*-1` → `_`) 在 `server/connection/protocol.rs` 的 `encode` / `adapt_null_to_resp3`.
+//! - `ProtocolVersion` 不影响 `serialize()` / `encode_into` 输出; 版本相关 null 线格式适配
+//!   (`$-1`/`*-1` → `_`) 在 `server/connection/protocol.rs` 的 `queue_response` / `adapt_null_to_resp3`.
+//! - `serialize()` 是便利封装: 新建缓冲后调用 `encode_into`; 连接层优先直接 `encode_into`.
 
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -27,7 +28,8 @@ impl RespValue {
         buf.freeze()
     }
 
-    fn encode_into(&self, buf: &mut BytesMut) {
+    /// 将 RespValue 编码追加到提供的缓冲区中 (零新堆分配).
+    pub fn encode_into(&self, buf: &mut BytesMut) {
         match self {
             RespValue::SimpleString(s) => {
                 buf.put_slice(b"+");
@@ -153,5 +155,96 @@ impl RespValue {
                 buf.put_slice(b";0\r\n");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_encode_into_matches_serialize_all_variants() {
+        let variants: Vec<RespValue> = vec![
+            RespValue::SimpleString("OK".into()),
+            RespValue::Error("ERR test".into()),
+            RespValue::Integer(12345),
+            RespValue::BulkString(None),
+            RespValue::BulkString(Some(Bytes::from_static(b"foobar"))),
+            RespValue::Array(None),
+            RespValue::Array(Some(vec![
+                RespValue::Integer(1),
+                RespValue::SimpleString("two".into()),
+            ])),
+            RespValue::Null,
+            RespValue::Boolean(true),
+            RespValue::Boolean(false),
+            RespValue::Double(1.2345),
+            RespValue::Double(f64::NAN),
+            RespValue::Double(f64::INFINITY),
+            RespValue::Double(f64::NEG_INFINITY),
+            RespValue::Double(-0.0),
+            RespValue::Double(0.0),
+            RespValue::BigNumber("3492890328409238509324850943850943825024385".into()),
+            RespValue::BulkError("SYNTAX invalid syntax".into()),
+            RespValue::VerbatimString {
+                format: "txt".into(),
+                data: Bytes::from_static(b"some text\n"),
+            },
+            RespValue::Map(vec![
+                (RespValue::SimpleString("k1".into()), RespValue::Integer(10)),
+                (RespValue::SimpleString("k2".into()), RespValue::Integer(20)),
+            ]),
+            RespValue::Set(vec![
+                RespValue::SimpleString("a".into()),
+                RespValue::SimpleString("b".into()),
+            ]),
+            RespValue::Push(vec![
+                RespValue::SimpleString("message".into()),
+                RespValue::SimpleString("channel".into()),
+            ]),
+            RespValue::Attribute {
+                attributes: vec![(
+                    RespValue::SimpleString("ttl".into()),
+                    RespValue::Integer(3600),
+                )],
+                data: Box::new(RespValue::SimpleString("data".into())),
+            },
+            RespValue::StreamedString(vec![
+                Bytes::from_static(b"chunk1"),
+                Bytes::from_static(b"chunk2"),
+            ]),
+        ];
+
+        for val in &variants {
+            let serialized = val.serialize();
+            let mut buf = BytesMut::with_capacity(128);
+            val.encode_into(&mut buf);
+            assert_eq!(
+                buf.as_ref(),
+                serialized.as_ref(),
+                "Mismatch for variant {:?}",
+                val
+            );
+        }
+    }
+
+    #[test]
+    fn test_encode_into_multi_frame_append() {
+        let mut buf = BytesMut::with_capacity(256);
+        buf.put_slice(b"PREFIX:");
+
+        let frame1 = RespValue::SimpleString("PONG".into());
+        let frame2 = RespValue::Integer(42);
+
+        frame1.encode_into(&mut buf);
+        frame2.encode_into(&mut buf);
+
+        let mut expected = BytesMut::new();
+        expected.put_slice(b"PREFIX:");
+        expected.put_slice(&frame1.serialize());
+        expected.put_slice(&frame2.serialize());
+
+        assert_eq!(buf.as_ref(), expected.as_ref());
+        assert_eq!(buf.as_ref(), b"PREFIX:+PONG\r\n:42\r\n");
     }
 }

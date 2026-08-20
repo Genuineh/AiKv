@@ -273,6 +273,84 @@ async fn test_tcp_monitor() {
     assert!(text.contains("\"mv\""));
 }
 
+/// Pipeline 中阻塞命令前必须先刷出同批已排队响应
+#[tokio::test]
+async fn test_tcp_pipeline_flush_before_blocking_blpop() {
+    let (addr, _handle) = start_server().await;
+    let mut stream = connect(addr).await;
+
+    // SET + PING + BLPOP(空 list, timeout=0.2) 同批发送:
+    // SET/PING 必须在 BLPOP 阻塞等待期间就能被客户端读到
+    let mut pipeline_req = Vec::new();
+    pipeline_req.extend_from_slice(b"*3\r\n$3\r\nSET\r\n$4\r\nblk1\r\n$1\r\nv\r\n");
+    pipeline_req.extend_from_slice(b"*1\r\n$4\r\nPING\r\n");
+    pipeline_req.extend_from_slice(b"*3\r\n$5\r\nBLPOP\r\n$9\r\nempty_blk\r\n$3\r\n0.2\r\n");
+    stream.write_all(&pipeline_req).await.unwrap();
+
+    let mut parser = RespParser::new();
+    let mut responses = Vec::new();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(150);
+    while responses.len() < 2 {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        let mut chunk = vec![0u8; 1024];
+        match tokio::time::timeout(remaining, stream.read(&mut chunk)).await {
+            Ok(Ok(n)) if n > 0 => {
+                parser.feed(&chunk[..n]);
+                while let Ok(Some(resp)) = parser.parse() {
+                    responses.push(resp);
+                }
+            }
+            _ => break,
+        }
+    }
+
+    assert!(
+        responses.len() >= 2,
+        "阻塞前应已写出 SET/PING 响应, 实际只收到 {}",
+        responses.len()
+    );
+    assert_eq!(
+        responses[0],
+        aikv::protocol::RespValue::SimpleString("OK".into())
+    );
+    assert_eq!(
+        responses[1],
+        aikv::protocol::RespValue::SimpleString("PONG".into())
+    );
+
+    // 收完 BLPOP 超时 nil, 避免污染后续测试连接
+    while responses.len() < 3 {
+        let mut chunk = vec![0u8; 1024];
+        let n = tokio::time::timeout(std::time::Duration::from_secs(1), stream.read(&mut chunk))
+            .await
+            .expect("BLPOP 超时响应")
+            .unwrap();
+        if n == 0 {
+            break;
+        }
+        parser.feed(&chunk[..n]);
+        while let Ok(Some(resp)) = parser.parse() {
+            responses.push(resp);
+        }
+    }
+    assert_eq!(responses.len(), 3);
+}
+
+/// MONITOR 内 QUIT 必须先写出 +OK 再断连 (write_buf 聚合路径回归)
+#[tokio::test]
+async fn test_tcp_monitor_quit_flushes_ok() {
+    let (addr, _handle) = start_server().await;
+    let mut monitor = connect(addr).await;
+    write_cmd(&mut monitor, &[b"MONITOR"]).await;
+    assert_eq!(read_response(&mut monitor).await, b"+OK\r\n");
+
+    write_cmd(&mut monitor, &[b"QUIT"]).await;
+    assert_eq!(read_response(&mut monitor).await, b"+OK\r\n");
+}
+
 #[tokio::test]
 async fn test_tcp_lpush_lrange() {
     let (addr, _handle) = start_server().await;
@@ -423,4 +501,92 @@ async fn test_tcp_fatal_protocol_error_closes_connection() {
         "不可恢复协议错误应关闭连接而非堆积错误, got {} bytes",
         resp.len()
     );
+}
+
+/// Pipeline 混合命令 (成功与错误交替) 返回必须严格保持 1:1 顺序
+#[tokio::test]
+async fn test_tcp_pipeline_mixed_success_and_errors_order() {
+    let (addr, _handle) = start_server().await;
+    let mut stream = connect(addr).await;
+
+    // 一次性写入: SET k v -> UNKNOWN_CMD -> GET k -> UNKNOWN2 -> PING
+    let mut pipeline_req = Vec::new();
+    pipeline_req.extend_from_slice(b"*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$5\r\nhello\r\n");
+    pipeline_req.extend_from_slice(b"*1\r\n$11\r\nUNKNOWN_CMD\r\n");
+    pipeline_req.extend_from_slice(b"*2\r\n$3\r\nGET\r\n$1\r\nk\r\n");
+    pipeline_req.extend_from_slice(b"*1\r\n$8\r\nUNKNOWN2\r\n");
+    pipeline_req.extend_from_slice(b"*1\r\n$4\r\nPING\r\n");
+
+    stream.write_all(&pipeline_req).await.unwrap();
+
+    let mut parser = RespParser::new();
+    let mut responses = Vec::new();
+
+    while responses.len() < 5 {
+        let mut chunk = vec![0u8; 1024];
+        let n = stream.read(&mut chunk).await.unwrap();
+        if n == 0 {
+            break;
+        }
+        parser.feed(&chunk[..n]);
+        while let Ok(Some(resp)) = parser.parse() {
+            responses.push(resp);
+        }
+    }
+
+    assert_eq!(responses.len(), 5);
+    assert_eq!(
+        responses[0],
+        aikv::protocol::RespValue::SimpleString("OK".into())
+    );
+    assert!(
+        matches!(&responses[1], aikv::protocol::RespValue::Error(msg) if msg.contains("ERR unknown command"))
+    );
+    assert_eq!(
+        responses[2],
+        aikv::protocol::RespValue::BulkString(Some(bytes::Bytes::from_static(b"hello")))
+    );
+    assert!(
+        matches!(&responses[3], aikv::protocol::RespValue::Error(msg) if msg.contains("ERR unknown command"))
+    );
+    assert_eq!(
+        responses[4],
+        aikv::protocol::RespValue::SimpleString("PONG".into())
+    );
+}
+
+/// 大 Payload (>100 KiB) 响应写出后连接仍可处理后续小命令 (覆盖大写路径)
+#[tokio::test]
+async fn test_tcp_large_payload_then_small_command() {
+    let (addr, _handle) = start_server().await;
+    let mut stream = connect(addr).await;
+
+    let large_val = vec![b'x'; 128 * 1024]; // 128 KiB > MAX_WRITE_BUF_RETAIN_CAPACITY (64 KiB)
+    write_cmd(&mut stream, &[b"SET", b"large_key", &large_val]).await;
+    let resp = read_response(&mut stream).await;
+    assert_eq!(resp, b"+OK\r\n");
+
+    write_cmd(&mut stream, &[b"GET", b"large_key"]).await;
+    let mut parser = RespParser::new();
+    let value = loop {
+        let mut chunk = vec![0u8; 16384];
+        let n = stream.read(&mut chunk).await.unwrap();
+        assert!(n > 0, "GET large_key 连接在读完完整 RESP 帧前关闭");
+        parser.feed(&chunk[..n]);
+        if let Ok(Some(v)) = parser.parse() {
+            break v;
+        }
+    };
+    match value {
+        aikv::protocol::RespValue::BulkString(Some(b)) => {
+            assert_eq!(b.len(), large_val.len());
+            assert!(b.iter().all(|&c| c == b'x'));
+        }
+        other => panic!("期望 BulkString, 得到 {other:?}"),
+    }
+
+    // 完整读完大帧后再发小命令, 验证连接仍可用
+    write_cmd(&mut stream, &[b"PING"]).await;
+    let pong = read_response(&mut stream).await;
+    assert_eq!(pong, b"+PONG\r\n");
 }
