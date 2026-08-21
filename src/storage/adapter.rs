@@ -36,8 +36,8 @@ use crate::error::{Error, Result};
 use crate::storage::memory::glob_match;
 use crate::storage::observation::StorageObservation;
 use crate::storage::types::{
-    now_ms, KeyspaceStats, KvStorage, ScanResult, StorageEngineKind, StoredValue, ValueType,
-    WriteOp, DB_COUNT, TTL_NO_EXPIRY, WRONGTYPE,
+    now_ms, DbKeyCounters, ExpireDecrGate, KeyspaceStats, KvStorage, ScanResult, StorageEngineKind,
+    StoredValue, ValueType, WriteOp, DB_COUNT, TTL_NO_EXPIRY, WRONGTYPE,
 };
 use crate::storage::AiDbEngine;
 
@@ -48,13 +48,20 @@ pub enum AdapterWriteOp {
     Delete { key: Vec<u8> },
 }
 
+/// `write_batch` 成功后的键变更摘要 (inserted=新 key 数, deleted=真实删除数).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WriteBatchStats {
+    pub inserted: u64,
+    pub deleted: u64,
+}
+
 #[async_trait]
 pub trait StorageAdapter: Send + Sync {
     async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>>;
-    async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()>;
+    async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<bool>;
     async fn delete(&self, key: Vec<u8>) -> Result<bool>;
     async fn exists(&self, key: Vec<u8>) -> Result<bool>;
-    async fn write_batch(&self, batch: Vec<AdapterWriteOp>) -> Result<()>;
+    async fn write_batch(&self, batch: Vec<AdapterWriteOp>) -> Result<WriteBatchStats>;
     async fn delete_range(&self, start: Vec<u8>, end: Vec<u8>) -> Result<()>;
     async fn len(&self) -> Result<usize>;
     async fn is_empty(&self) -> Result<bool>;
@@ -131,9 +138,42 @@ pub struct KvStorageAdapter {
     storage: Arc<dyn StorageAdapter>,
     db_count: usize,
     observation: Option<Arc<StorageObservation>>,
+    counters: Arc<DbKeyCounters>,
+    expire_gate: Arc<ExpireDecrGate>,
 }
 
 impl KvStorageAdapter {
+    pub async fn open(
+        storage: Arc<dyn StorageAdapter>,
+        observation: Option<Arc<StorageObservation>>,
+    ) -> Result<Arc<Self>> {
+        Self::open_with_counters(
+            storage,
+            observation,
+            Arc::new(DbKeyCounters::new()),
+            Arc::new(ExpireDecrGate::new()),
+        )
+        .await
+    }
+
+    /// 使用外部提供的计数器与过期扣减门闩 open (便于在 open 前注册 compaction listener).
+    pub async fn open_with_counters(
+        storage: Arc<dyn StorageAdapter>,
+        observation: Option<Arc<StorageObservation>>,
+        counters: Arc<DbKeyCounters>,
+        expire_gate: Arc<ExpireDecrGate>,
+    ) -> Result<Arc<Self>> {
+        let adapter = Arc::new(Self {
+            storage,
+            db_count: DB_COUNT,
+            observation,
+            counters,
+            expire_gate,
+        });
+        adapter.rebuild_counters().await?;
+        Ok(adapter)
+    }
+
     pub fn new(storage: Arc<dyn StorageAdapter>) -> Arc<Self> {
         Self::with_observation(storage, None)
     }
@@ -146,7 +186,42 @@ impl KvStorageAdapter {
             storage,
             db_count: DB_COUNT,
             observation,
+            counters: Arc::new(DbKeyCounters::new()),
+            expire_gate: Arc::new(ExpireDecrGate::new()),
         })
+    }
+
+    /// 重建全部逻辑 DB 的键计数器 (存活未过期 user key; 过期 key `try_claim` 门闩, 不清空).
+    pub async fn rebuild_counters(&self) -> Result<()> {
+        for db in 0..self.db_count {
+            self.claim_expired_logical_keys(db).await?;
+            self.counters
+                .set(db, self.keys_for_db(db, b"").await?.len() as u64);
+        }
+        Ok(())
+    }
+
+    async fn claim_expired_logical_keys(&self, db: usize) -> Result<()> {
+        self.check_db(db)?;
+        let prefix = Self::db_prefix(db);
+        let gate = self.expire_gate.clone();
+        self.storage
+            .for_each_prefix(
+                prefix,
+                Box::new(move |encoded, raw| {
+                    if Self::decode_user_key(&encoded).is_none() {
+                        return Ok(());
+                    }
+                    let Ok(stored) = Self::deserialize(&raw) else {
+                        return Ok(());
+                    };
+                    if stored.is_expired() {
+                        let _ = gate.try_claim(&encoded);
+                    }
+                    Ok(())
+                }),
+            )
+            .await
     }
 
     fn check_db(&self, db: usize) -> Result<()> {
@@ -176,7 +251,7 @@ impl KvStorageAdapter {
         self.storage.get(Self::encode(db, key)).await
     }
 
-    async fn set_raw(&self, db: usize, key: &[u8], bytes: Vec<u8>) -> Result<()> {
+    async fn set_raw(&self, db: usize, key: &[u8], bytes: Vec<u8>) -> Result<bool> {
         self.check_db(db)?;
         self.storage.set(Self::encode(db, key), bytes).await
     }
@@ -220,7 +295,12 @@ impl KvStorageAdapter {
         if !self.storage.allow_lazy_expire_delete(&encoded) {
             return;
         }
-        let _ = self.storage.delete(encoded).await;
+        if let Ok(true) = self.storage.delete(encoded.clone()).await {
+            if self.expire_gate.try_claim(&encoded) {
+                self.counters.decr(db);
+                // 持有至重生 (`set_typed`), 避免 compaction 对 tombstone 再扣.
+            }
+        }
     }
 
     async fn keys_for_db(&self, db: usize, pattern: &[u8]) -> Result<Vec<Vec<u8>>> {
@@ -299,12 +379,29 @@ impl KvStorageAdapter {
     async fn clear_db(&self, db: usize) -> Result<()> {
         self.check_db(db)?;
         let prefix = Self::db_prefix(db);
+        let gate = self.expire_gate.clone();
+        self.storage
+            .for_each_prefix(
+                prefix.clone(),
+                Box::new(move |encoded, raw| {
+                    if Self::decode_user_key(&encoded).is_none() {
+                        return Ok(());
+                    }
+                    if Self::deserialize(&raw).is_ok() {
+                        let _ = gate.try_claim(&encoded);
+                    }
+                    Ok(())
+                }),
+            )
+            .await?;
         let end = AiDbEngine::prefix_end(&prefix).unwrap_or_else(|| {
             let mut max = prefix.clone();
             max.push(0xff);
             max
         });
-        self.storage.delete_range(prefix, end).await
+        self.storage.delete_range(prefix, end).await?;
+        self.counters.reset_db(db);
+        Ok(())
     }
 }
 
@@ -345,7 +442,11 @@ impl KvStorage for KvStorageAdapter {
     }
 
     async fn delete(&self, db: usize, key: &[u8]) -> Result<bool> {
-        self.delete_encoded(db, key).await
+        let deleted = self.delete_encoded(db, key).await?;
+        if deleted && self.expire_gate.try_claim(&Self::encode(db, key)) {
+            self.counters.decr(db);
+        }
+        Ok(deleted)
     }
 
     async fn exists(&self, db: usize, key: &[u8]) -> Result<bool> {
@@ -376,24 +477,52 @@ impl KvStorage for KvStorageAdapter {
     }
 
     async fn write_batch(&self, db: usize, ops: Vec<(Vec<u8>, WriteOp)>) -> Result<()> {
+        self.check_db(db)?;
         let mut batch = Vec::with_capacity(ops.len());
+        let mut deleted_keys: Vec<Vec<u8>> = Vec::new();
+        let mut put_keys: Vec<Vec<u8>> = Vec::new();
         for (key, op) in ops {
             let encoded = Self::encode(db, &key);
             match op {
                 WriteOp::Put(value) => {
                     let stored = StoredValue::string(value);
                     let bytes = Self::serialize(&stored)?;
+                    put_keys.push(encoded.clone());
                     batch.push(AdapterWriteOp::Put {
                         key: encoded,
                         value: bytes,
                     });
                 }
                 WriteOp::Delete => {
+                    deleted_keys.push(encoded.clone());
                     batch.push(AdapterWriteOp::Delete { key: encoded });
                 }
             }
         }
-        self.storage.write_batch(batch).await
+        let stats = match self.storage.write_batch(batch).await {
+            Ok(stats) => stats,
+            Err(e) => {
+                if let Err(rebuild_err) = self.rebuild_counters().await {
+                    tracing::warn!(error = %rebuild_err, "write_batch failed and rebuild_counters also failed");
+                }
+                crate::storage::counter_batch::release_live_puts(
+                    self.storage.as_ref(),
+                    &self.expire_gate,
+                    &put_keys,
+                )
+                .await;
+                return Err(e);
+            }
+        };
+        crate::storage::counter_batch::apply_successful_batch(
+            &self.counters,
+            &self.expire_gate,
+            db,
+            &put_keys,
+            &deleted_keys,
+            stats,
+        );
+        Ok(())
     }
 
     async fn keys(&self, db: usize, pattern: &[u8]) -> Result<Vec<Vec<u8>>> {
@@ -420,7 +549,16 @@ impl KvStorage for KvStorageAdapter {
     }
 
     async fn len(&self, db: usize) -> Result<usize> {
-        Ok(self.keys_for_db(db, b"").await?.len())
+        self.check_db(db)?;
+        Ok(self.counters.get(db) as usize)
+    }
+
+    async fn db_key_counts(&self) -> Result<Vec<usize>> {
+        Ok(self.counters.snapshot())
+    }
+
+    async fn rebuild_key_counts(&self) -> Result<()> {
+        self.rebuild_counters().await
     }
 
     async fn keyspace_stats(&self, db: usize) -> Result<KeyspaceStats> {
@@ -453,6 +591,7 @@ impl KvStorage for KvStorageAdapter {
         for db in 0..self.db_count {
             self.clear_db(db).await?;
         }
+        self.counters.reset_all();
         Ok(())
     }
 
@@ -537,7 +676,13 @@ impl KvStorage for KvStorageAdapter {
 
     async fn set_typed(&self, db: usize, key: &[u8], value: StoredValue) -> Result<()> {
         let bytes = Self::serialize(&value)?;
-        self.set_raw(db, key, bytes).await
+        let inserted = self.set_raw(db, key, bytes).await?;
+        if inserted {
+            self.counters.incr(db);
+        }
+        // 重生: 放开过期代门闩, 允许该 key 下次过期再扣.
+        self.expire_gate.release(&Self::encode(db, key));
+        Ok(())
     }
 
     async fn rename_key(&self, db: usize, old_key: &[u8], new_key: &[u8]) -> Result<()> {
@@ -547,7 +692,7 @@ impl KvStorage for KvStorageAdapter {
         let Some(value) = self.load_typed(db, old_key).await? else {
             return Err(Error::Command("ERR no such key".into()));
         };
-        self.delete_encoded(db, old_key).await?;
+        self.delete(db, old_key).await?;
         self.set_typed(db, new_key, value).await
     }
 
@@ -561,7 +706,7 @@ impl KvStorage for KvStorageAdapter {
         if self.load_typed(db, new_key).await?.is_some() {
             return Ok(false);
         }
-        self.delete_encoded(db, old_key).await?;
+        self.delete(db, old_key).await?;
         self.set_typed(db, new_key, value).await?;
         Ok(true)
     }
@@ -625,7 +770,8 @@ impl KvStorage for KvStorageAdapter {
 
     async fn raw_subkey_set(&self, db: usize, encoded_key: Vec<u8>, value: Vec<u8>) -> Result<()> {
         self.check_db(db)?;
-        self.storage.set(encoded_key, value).await
+        self.storage.set(encoded_key, value).await?;
+        Ok(())
     }
 
     async fn raw_subkey_delete(&self, db: usize, encoded_key: Vec<u8>) -> Result<bool> {

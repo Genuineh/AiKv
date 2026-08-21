@@ -68,20 +68,20 @@ pub(super) async fn submit_write_op(
     key: Vec<u8>,
     value: Option<Vec<u8>>,
 ) -> Result<bool> {
-    // DELETE 短路: key 不存在则跳过 propose
-    if value.is_none() {
-        let existed = mgr
-            .multi_raft
-            .get_local(gid, &key)
-            .await
-            .map_err(|e| {
-                tracing::warn!(gid = gid, error = %e, "get_local failed in delete");
-                ClusterDataAdapter::map_err(e)
-            })?
-            .is_some();
-        if !existed {
-            return Ok(false);
-        }
+    // Plain PUT: 在 propose 前 get_local 判定 insert, 供上层计数; 失败不更新计数.
+    // DELETE: key 不存在则短路跳过 propose.
+    let is_put = value.is_some();
+    let existed = mgr
+        .multi_raft
+        .get_local(gid, &key)
+        .await
+        .map_err(|e| {
+            tracing::warn!(gid = gid, error = %e, "get_local failed in submit_write_op");
+            ClusterDataAdapter::map_err(e)
+        })?
+        .is_some();
+    if !is_put && !existed {
+        return Ok(false);
     }
 
     let batcher = get_or_spawn_set_batcher(batchers, mgr, gid, eager_flush);
@@ -106,7 +106,7 @@ pub(super) async fn submit_write_op(
                 AidbClusterError::Internal(e.to_string()),
             ))
         })?;
-    Ok(true)
+    Ok(if is_put { !existed } else { true })
 }
 
 pub(super) async fn run_set_batcher(

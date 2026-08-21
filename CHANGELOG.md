@@ -11,6 +11,7 @@
 
 ### Changed
 
+- 存储层: 引入内存原子键计数器 `DbKeyCounters` 与冷启动同步 Rebuild, 消除后台 15s 指标任务 (`refresh_runtime_metrics`) 与 `DBSIZE` 命令的全库 SSTable 迭代扫描, 键计数复杂度降为 $O(1)$
 - 连接层: 公开 `RespValue::encode_into`, 引入每连接 `write_buf` 复用与 Pipeline 批末聚合写 (`flush_responses`); 大响应后 capacity >64 KiB 收缩回 8 KiB
 - 拆分 `src/server/otel_metrics.rs` 为 `otel_metrics/{mod,helpers,testutil}.rs`
 - 拆分 `src/command/zset.rs` 为 `zset/{mod,helpers}.rs`

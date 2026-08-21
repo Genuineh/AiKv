@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use tokio::task;
 
 use crate::error::{Error, Result};
-use crate::storage::adapter::{AdapterWriteOp, StorageAdapter};
+use crate::storage::adapter::{AdapterWriteOp, StorageAdapter, WriteBatchStats};
 use crate::storage::types::StorageEngineKind;
 
 /// AiDb 扁平 KV 引擎
@@ -105,17 +105,25 @@ impl StorageAdapter for AiDbEngine {
             .await
     }
 
-    async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+    async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<bool> {
         self.blocking(move |db| {
+            let existed = db
+                .get(&key)
+                .map_err(|e| Error::Storage(e.to_string()))?
+                .is_some();
             db.put(&key, &value)
-                .map_err(|e| Error::Storage(e.to_string()))
+                .map_err(|e| Error::Storage(e.to_string()))?;
+            Ok(!existed)
         })
         .await
     }
 
     async fn delete(&self, key: Vec<u8>) -> Result<bool> {
         self.blocking(move |db| {
-            let existed = db.get(&key).ok().flatten().is_some();
+            let existed = db
+                .get(&key)
+                .map_err(|e| Error::Storage(e.to_string()))?
+                .is_some();
             db.delete(&key).map_err(|e| Error::Storage(e.to_string()))?;
             Ok(existed)
         })
@@ -132,16 +140,49 @@ impl StorageAdapter for AiDbEngine {
         .await
     }
 
-    async fn write_batch(&self, batch: Vec<AdapterWriteOp>) -> Result<()> {
+    async fn write_batch(&self, batch: Vec<AdapterWriteOp>) -> Result<WriteBatchStats> {
         self.blocking(move |db| {
+            use std::collections::HashMap;
+
             let mut wb = WriteBatch::new();
+            let mut pending: HashMap<Vec<u8>, bool> = HashMap::new();
+            let mut inserted = 0u64;
+            let mut deleted = 0u64;
+
             for op in batch {
                 match op {
-                    AdapterWriteOp::Put { key, value } => wb.put(key, value),
-                    AdapterWriteOp::Delete { key } => wb.delete(key),
+                    AdapterWriteOp::Put { key, value } => {
+                        let existed = match pending.get(&key) {
+                            Some(present) => *present,
+                            None => db
+                                .get(&key)
+                                .map_err(|e| Error::Storage(e.to_string()))?
+                                .is_some(),
+                        };
+                        pending.insert(key.clone(), true);
+                        wb.put(key, value);
+                        if !existed {
+                            inserted += 1;
+                        }
+                    }
+                    AdapterWriteOp::Delete { key } => {
+                        let existed = match pending.get(&key) {
+                            Some(present) => *present,
+                            None => db
+                                .get(&key)
+                                .map_err(|e| Error::Storage(e.to_string()))?
+                                .is_some(),
+                        };
+                        pending.insert(key.clone(), false);
+                        wb.delete(key);
+                        if existed {
+                            deleted += 1;
+                        }
+                    }
                 }
             }
-            db.write(&wb).map_err(|e| Error::Storage(e.to_string()))
+            db.write(&wb).map_err(|e| Error::Storage(e.to_string()))?;
+            Ok(WriteBatchStats { inserted, deleted })
         })
         .await
     }

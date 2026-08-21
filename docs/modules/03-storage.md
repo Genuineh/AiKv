@@ -32,7 +32,8 @@ description: AiKv 存储适配层 — KvStorage Trait、MemoryEngine、AiDbEngin
 | [`src/storage/cluster_batcher.rs`](../../src/storage/cluster_batcher.rs) | `GroupSetBatcher` 写凑批 actor; 入口仍是 `ClusterDataAdapter` | `GroupSetBatcher` (feature = "cluster") |
 | [`src/storage/subkey.rs`](../../src/storage/subkey.rs) | 复杂数据结构 (Hash/List/Set/ZSet) 扁平化 Subkey 前缀编解码 | `encode_data_key`, `encode_meta_key`, `decode_key` |
 | [`src/storage/dump.rs`](../../src/storage/dump.rs) | `DUMP` / `RESTORE` 紧凑 postcard 序列化与版本校验 | `dump_encode`, `dump_decode`, `DUMP_VERSION` |
-| [`src/storage/ttl_filter.rs`](../../src/storage/ttl_filter.rs) | 结合 Compaction Filter 的 TTL 物理清理与惰性删除判定 | `TtlExpireFilter` |
+| [`src/storage/ttl_filter.rs`](../../src/storage/ttl_filter.rs) | TTL compaction filter 与 Version 安装后的键计数移除监听 | `TtlExpireFilter`, `DbKeyCounterRemovalListener` |
+| [`src/storage/counter_batch.rs`](../../src/storage/counter_batch.rs) | `write_batch` 成功/失败后的计数增减与 `ExpireDecrGate` 处理 | `apply_successful_batch`, `release_live_puts` |
 | [`src/storage/observation.rs`](../../src/storage/observation.rs) | 存储层点查、批写与扫描延迟与吞吐监控统计 | `StorageObservation` |
 
 ---
@@ -57,6 +58,16 @@ description: AiKv 存储适配层 — KvStorage Trait、MemoryEngine、AiDbEngin
 - **Leader 专有惰性删除**:
   - 读路径发现过期 Key 时, 仅当本节点是该 Key 所在 Data Group 的 Raft Leader 时才执行物理删除;
   - 只读副本 (`READONLY`) 发现过期 Key 仅在内存中返回 Nil, 不触发跨节点写入.
+- **DbKeyCounters 与 O(1) 键计数**:
+  - `KvStorageAdapter` 持有 `DbKeyCounters` (`[AtomicU64; 16]`), 跟踪各 DB 逻辑 user key 数量 (跳过 subkey);
+  - 写路径: `StorageAdapter::set` / `write_batch` 在底层单次判定后返回 insert/delete 摘要, 成功后增减计数 (禁止跨任务 `exists + put`); `write_batch` 对全部 Delete op `try_claim` 门闩, 计数仍用 `stats.deleted` (禁止按删除条数截前缀);
+  - 热路径计数含尚未惰性清理的过期 key; 惰性删除成功时 `decr`;
+  - 冷启动 `open` / `rebuild_counters` 按未过期存活 key 填充, 并可能顺带 lazy 清理;
+  - Compaction: listener 持 `Weak<DB>` 以免与引擎循环引用; Version 安装后仅当 `get==None` 且赢得 `ExpireDecrGate` 时 `decr`; `get` 失败记 warn 且不扣; 惰性删/`DEL` 同样需赢得门闩并持有至 `set_typed` / `write_batch` Put 重生;
+  - 集群: 命令写路径成功后维护计数; `init_cluster` 后先等待本节点 data group 打开, 再 `rebuild_key_counts` (首次 `open` 时 MultiRaft 尚未就绪). group 等待或 rebuild 失败则进程退出, 禁止带着 0 对外服务;
+  - `db_key_counts()` / `DBSIZE` / `len` 为 $O(1)$; **`keyspace_stats` (含 `expires` / `avg_ttl`) 仍为 $O(N)$ 全库扫描**, 且其 keys 统计为未过期存活 key, 可与 `DBSIZE` (含未清理过期) 暂时不一致;
+  - `MemoryEngine` 仍自维护 `len` (含惰性过期过滤语义), 不经 `DbKeyCounters`; 生产路径为 AiDb;
+  - 后台 15s 指标任务直接读取 `db_key_counts()` ($O(1)$), 避免为键数量全库 SSTable 迭代.
 
 ---
 

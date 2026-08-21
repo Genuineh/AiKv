@@ -34,7 +34,7 @@ use super::cluster_batcher::{submit_write_op, GroupSetBatcher};
 use crate::cluster::router::{migration_phase_for_slot, MigrationRoutePhase, TRYAGAIN_MIGRATION};
 use crate::cluster::state::{ClusterStateManager, CLUSTER_STATE_MGR};
 use crate::error::{Error, Result};
-use crate::storage::adapter::{AdapterWriteOp, StorageAdapter};
+use crate::storage::adapter::{AdapterWriteOp, StorageAdapter, WriteBatchStats};
 use crate::storage::aidb::AiDbEngine;
 use crate::storage::types::StorageEngineKind;
 
@@ -446,9 +446,10 @@ impl StorageAdapter for ClusterDataAdapter {
         }
     }
 
-    async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<()> {
+    async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<bool> {
         match Self::route_write(&key)? {
             Some((mgr, WriteRoute::Migration { gid, epoch, .. })) => {
+                let existed = self.exists(key.clone()).await?;
                 let mut ops = ThinWriteBatch::new();
                 ops.put(key, value);
                 let resp = Self::propose_group_with_retry(
@@ -457,7 +458,8 @@ impl StorageAdapter for ClusterDataAdapter {
                     Request::MigrationWrite { epoch, ops },
                 )
                 .await?;
-                Self::check_response(resp)
+                Self::check_response(resp)?;
+                Ok(!existed)
             }
             Some((mgr, WriteRoute::Plain(gid))) => {
                 submit_write_op(
@@ -468,8 +470,7 @@ impl StorageAdapter for ClusterDataAdapter {
                     key,
                     Some(value),
                 )
-                .await?;
-                Ok(())
+                .await
             }
             None if Self::should_use_local_engine(&key) => self.local.set(key, value).await,
             None => Err(Self::data_group_not_ready_err()),
@@ -536,7 +537,36 @@ impl StorageAdapter for ClusterDataAdapter {
         }
     }
 
-    async fn write_batch(&self, batch: Vec<AdapterWriteOp>) -> Result<()> {
+    async fn write_batch(&self, batch: Vec<AdapterWriteOp>) -> Result<WriteBatchStats> {
+        // 先在单次遍历中模拟批内可见性, 得到 inserted/deleted; 仅写成功后由上层应用计数.
+        let mut pending: HashMap<Vec<u8>, bool> = HashMap::new();
+        let mut inserted = 0u64;
+        let mut deleted = 0u64;
+        for op in &batch {
+            match op {
+                AdapterWriteOp::Put { key, .. } => {
+                    let existed = match pending.get(key) {
+                        Some(present) => *present,
+                        None => self.exists(key.clone()).await?,
+                    };
+                    pending.insert(key.clone(), true);
+                    if !existed {
+                        inserted += 1;
+                    }
+                }
+                AdapterWriteOp::Delete { key } => {
+                    let existed = match pending.get(key) {
+                        Some(present) => *present,
+                        None => self.exists(key.clone()).await?,
+                    };
+                    pending.insert(key.clone(), false);
+                    if existed {
+                        deleted += 1;
+                    }
+                }
+            }
+        }
+
         // 按 group 分组后逐组提交, 避免跨 group 的单次提案.
         // F-056-A1: Copying 期写额外按 (gid, epoch) 分组走 MigrationWrite.
         let mut plain_by_group: HashMap<u64, (Arc<ClusterStateManager>, ThinWriteBatch)> =
@@ -585,7 +615,7 @@ impl StorageAdapter for ClusterDataAdapter {
         if !local_ops.is_empty() {
             self.local.write_batch(local_ops).await?;
         }
-        Ok(())
+        Ok(WriteBatchStats { inserted, deleted })
     }
 
     async fn for_each_prefix(

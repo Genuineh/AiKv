@@ -24,6 +24,15 @@
 
 **ValueType**: Redis 数据类型的枚举 (String, List, Set, ZSet, Hash 等).
 
+**DbKeyCounters**: 内存原子键计数器 (`[AtomicU64; 16]`), 跟踪各逻辑 DB 的顶级用户 key 总数, 提供 $O(1)$ 的 `DBSIZE` 与 `db_key_counts()` 统计.
+
+**键计数与过期语义** (三层一致):
+1. **热路径**: 计数含尚未惰性删除的过期 key (对齐 Redis `DBSIZE`); 主动删 / 覆盖写 / 读触发惰性删成功时精确 `decr`.
+2. **冷启动 Rebuild**: `open` 时按「当前未过期存活逻辑 key」扫描填充, 并可能顺带 lazy 清理过期 key.
+3. **Compaction GC**: listener 持 `Weak<DB>`; Version 安装后仅在 `get==None` 且 `ExpireDecrGate` 单飞成功时 `decr`; 惰性删/`DEL` 同样需赢得门闩并持有至 `set_typed` / `write_batch` Put 重生, 避免 tombstone 被再次 notify.
+
+**Rebuild Counters**: 在冷启动 `open` 时对各 DB 执行一次性前缀扫描恢复键计数器, 杜绝生产重启后指标从 0 开始失真.
+
 ## 集群层
 
 **Slot**: 16384 个槽位之一, 通过 CRC16(key) % 16384 计算; 与 Redis Cluster 完全兼容.
