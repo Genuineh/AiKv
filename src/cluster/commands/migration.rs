@@ -185,14 +185,39 @@ pub async fn cluster_rebalance() -> Result<String, String> {
                 .await
                 .map_err(|e| format!("ERR start_migration: {e}"))?;
 
-            run_pending_migration_to_completion(sm, migration_id)
-                .await
-                .map_err(|e| format!("ERR {e}"))?;
+            // Begin 已进 MetaRaft: 拷贝或收尾失败必须 Cancel, 与 SETSLOT MIGRATING 同语义.
+            if let Err(e) = run_pending_migration_to_completion(sm, migration_id).await {
+                let base = if e.starts_with("ERR ") {
+                    e
+                } else {
+                    format!("ERR {e}")
+                };
+                return Err(match sm.cancel_migration().await {
+                    Ok(()) => base,
+                    Err(cancel_err) => {
+                        tracing::warn!(
+                            error = %cancel_err,
+                            "REBALANCE run_pending failed and cancel_migration also failed"
+                        );
+                        format!("{base}; cancel_migration also failed: {cancel_err}")
+                    }
+                });
+            }
 
             // F-056: 完整收尾链, 失败返回 ERR (不得静默跳过).
-            sm.finish_migration()
-                .await
-                .map_err(|e| format!("ERR finish_migration: {e}"))?;
+            if let Err(e) = sm.finish_migration().await {
+                let base = format!("ERR finish_migration: {e}");
+                return Err(match sm.cancel_migration().await {
+                    Ok(()) => base,
+                    Err(cancel_err) => {
+                        tracing::warn!(
+                            error = %cancel_err,
+                            "REBALANCE finish failed and cancel_migration also failed"
+                        );
+                        format!("{base}; cancel_migration also failed: {cancel_err}")
+                    }
+                });
+            }
 
             total_migrated += migrate_slots.len() as u64;
 

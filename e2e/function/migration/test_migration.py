@@ -13,26 +13,60 @@ _CLIENT_PORTS = (6379, 6380, 6381, 7379, 7380, 7381)
 # 目标迁移 slot (落在源分片内, 待迁移到其他分片)
 _TARGET_SLOT = 500
 
-def _exec_setslot(svc, *args):
-    """遍历已知端口找到 MetaRaft Leader, 在 Leader 上执行 CLUSTER SETSLOT.
 
-    MetaRaft Leader 是集群单一节点 (通常为 node 1); 对 follower 执行
-    SETSLOT 会返回 "不是 Leader" 并附 Leader 信息, 这里直接轮询全部端口,
-    不再依赖硬编码地址.
+def _is_metaraft_not_leader(err: Exception) -> bool:
+    """识别可换端口重试的 NotLeader / MOVED / ForwardToLeader / CLUSTERDOWN.
+
+    含数据面 source-leader 要求返回的「不是 Leader」与 MOVED 0.
+    NotLeader 无地址时 map_propose_error 会变成 CLUSTERDOWN, 也应换端口.
+    排除 migration already in progress (那是脏态, 应 CANCEL 而非换端口).
+    """
+    s = str(err)
+    if "migration already" in s:
+        return False
+    return (
+        "不是 Leader" in s
+        or "MOVED 0 " in s
+        or "has to forward request to" in s
+        or "NotLeader" in s
+        or "CLUSTERDOWN" in s
+    )
+
+
+def _exec_setslot_on(svc, port: int, *args):
+    """在指定端口执行 CLUSTER SETSLOT."""
+    r = redis.Redis(host=svc.host, port=port, decode_responses=True)
+    try:
+        return r.execute_command("CLUSTER SETSLOT", *args)
+    finally:
+        r.close()
+
+
+def _exec_setslot(svc, *args):
+    """遍历已知端口找到可执行节点, 返回 (result, port).
+
+    MIGRATING 必须在 source group data Leader 上跑完拷贝并落本地 last_run;
+    随后 STABLE/CANCEL 须打同一端口, 否则 finish 会报 progress not verified.
     """
     last_err = None
     for port in _CLIENT_PORTS:
-        r = redis.Redis(host=svc.host, port=port, decode_responses=True)
         try:
-            res = r.execute_command("CLUSTER SETSLOT", *args)
-            return res
+            res = _exec_setslot_on(svc, port, *args)
+            return res, port
         except redis.ResponseError as e:
             last_err = e
-            if "不是 Leader" not in str(e):
+            if not _is_metaraft_not_leader(e):
                 raise
-        finally:
-            r.close()
-    raise RuntimeError(f"所有节点都非 MetaRaft Leader, 无法执行 SETSLOT: {last_err}")
+    raise RuntimeError(f"所有节点都无法执行 SETSLOT: {last_err}")
+
+
+def _clear_stale_migration(svc) -> None:
+    """若遗留 slots_migrating, 尝试 CANCEL 清掉半截迁移."""
+    c = svc.client()
+    info = c.cluster_info_raw()
+    if "cluster_slots_migrating:0" in info or "cluster_slots_migrating:" not in info:
+        return
+    _exec_setslot(svc, str(_TARGET_SLOT), "CANCEL")
 
 
 def _find_key_in_slot(c, slot: int) -> str:
@@ -126,17 +160,27 @@ def test_slot_migration_and_transfer(svc):
     """验证在线切槽: MIGRATING 自动完成数据拷贝, STABLE 收尾并完成所有权转移.
 
     1. 校验当前被测节点是否处于集群模式 | 若非集群则 Skip
-    2. 校验 slot 500 初始归属 (干净拓扑, 不在其他 master) | 否则 Skip 提示重建
-    3. 探测 slot 500 的测试 Key 并写入 | 写入成功
-    4. 从 CLUSTER NODES 解析不持有 slot 500 的目标 Master | 提取成功
-    5. 在 MetaRaft Leader 上执行 SETSLOT 500 MIGRATING <目标节点> | 返回 OK (数据已自动迁移)
-    6. 在 MetaRaft Leader 上执行 SETSLOT 500 STABLE | 返回 OK (收尾并提交)
-    7. 轮询从目标 Master 直连读取该 Key | 返回原值 (数据已落目标分片)
-    8. 清理测试 Key | 成功
+    2. 若有残留 migrating 槽, 先 CANCEL 清理 | 清不掉则 Skip
+    3. 校验 slot 500 初始归属 (干净拓扑, 不在其他 master) | 否则 Skip 提示重建
+    4. 探测 slot 500 的测试 Key 并写入 | 写入成功
+    5. 从 CLUSTER NODES 解析不持有 slot 500 的目标 Master | 提取成功
+    6. 在 source group data Leader 上执行 SETSLOT 500 MIGRATING <目标节点> | 返回 OK (数据已自动迁移)
+    7. 在同一端口执行 SETSLOT 500 STABLE | 返回 OK (收尾并提交; finish 校验本机 last_run)
+    8. 轮询从目标 Master 直连读取该 Key | 返回原值 (数据已落目标分片)
+    9. 清理测试 Key | 成功
     """
     c = svc.client()
     if not c.cluster:
         pytest.skip("被测服务非集群模式")
+
+    try:
+        _clear_stale_migration(svc)
+    except Exception as e:  # noqa: BLE001
+        pytest.skip(f"无法清理残留 migration: {e}")
+
+    info = c.cluster_info_raw()
+    if "cluster_slots_migrating:0" not in info and "cluster_slots_migrating:" in info:
+        pytest.skip("slots_migrating>0 且 CANCEL 未清干净, 需重建集群")
 
     # 幂等保护: 迁移改变 slot 所有权, 重跑时初始归属已变, 反向迁移
     # (source group 不在 MetaRaft leader 本地) 会失败; 需要重建集群.
@@ -154,10 +198,11 @@ def test_slot_migration_and_transfer(svc):
 
     target_id, target_port = _find_other_master(svc, _TARGET_SLOT)
 
-    res = _exec_setslot(svc, str(_TARGET_SLOT), "MIGRATING", target_id)
+    res, exec_port = _exec_setslot(svc, str(_TARGET_SLOT), "MIGRATING", target_id)
     assert res is True or "OK" in str(res), f"MIGRATING 应返回 OK, 实际: {res!r}"
 
-    res_clean = _exec_setslot(svc, str(_TARGET_SLOT), "STABLE")
+    # STABLE 必须打在同一节点: finish_migration 校验本机 last_run.
+    res_clean = _exec_setslot_on(svc, exec_port, str(_TARGET_SLOT), "STABLE")
     assert res_clean is True or "OK" in str(res_clean), f"STABLE 应返回 OK, 实际: {res_clean!r}"
 
     # 数据已拷贝到目标分片且所有权转移: 轮询直连目标 Master 直到可读

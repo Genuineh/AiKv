@@ -14,9 +14,11 @@
 //!   ├─ slot: ADDSLOTS/DELSLOTS/SETSLOT NODE ── MetaRaft propose
 //!   │        (ADDSLOTS 无 group 时自动 CreateGroup + 升 Voter)
 //!   ├─ 迁移: SETSLOT MIGRATING → start_migration + run_pending_migration
+//!   │        (拷贝失败自动 Cancel, 避免 slots_migrating 残留)
 //!   │        SETSLOT IMPORTING → 本地 importing_slots
 //!   │        SETSLOT STABLE    → finish_migration (freeze→quiesce→final_verify→mark_ready→commit)
-//!   │        REBALANCE         → 贪心搬槽 + run_pending_migration + finish_migration
+//!   │        SETSLOT CANCEL    → cancel_migration (清半截迁移)
+//!   │        REBALANCE         → 贪心搬槽 + run_pending + finish (失败同样 Cancel)
 //!   ├─ failover/replica: FAILOVER → change_group_membership 升主; REPLICATE → 仅本地 role
 //!   └─ propose 出错统一 map_propose_error → MOVED 0 <addr> / CLUSTERDOWN
 //! ```

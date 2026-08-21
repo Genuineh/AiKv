@@ -7,6 +7,7 @@ use crate::protocol::RespValue;
 use super::bytes_to_str;
 use super::map_propose_error;
 use super::migration::run_pending_migration_to_completion;
+use super::parse_cluster_node_id;
 use super::parse_int;
 
 // ---------------------------------------------------------------------------
@@ -132,6 +133,19 @@ pub async fn cluster_set_slot(
                 .router
                 .route_slot(slot)
                 .map_err(|e| format!("ERR {e}"))?;
+            // 数据拷贝必须在 source group 的 data Raft Leader 上执行.
+            // MetaRaft Leader 未必持有该 group — failover 后尤甚.
+            if !mgr.is_local_group_leader(source_gid) {
+                let leader_id = mgr.router.get_group_leader(source_gid);
+                if let Some(lid) = leader_id {
+                    if let Some(addr) = mgr.announce_resolver.redirect_addr(lid, &mgr.router) {
+                        return Err(format!("MOVED 0 {addr}"));
+                    }
+                }
+                return Err(format!(
+                    "不是 Leader (当前 Leader: {leader_id:?}, 地址: None)"
+                ));
+            }
             let meta = mgr.meta_raft.get_cluster_meta();
             let target_gid = meta
                 .groups
@@ -147,9 +161,26 @@ pub async fn cluster_set_slot(
                 .start_migration(source_gid, target_gid, vec![slot])
                 .await
                 .map_err(|e| format!("ERR {e}"))?;
-            run_pending_migration_to_completion(sm, migration_id)
-                .await
-                .map_err(|e| format!("ERR {e}"))?;
+            if let Err(e) = run_pending_migration_to_completion(sm, migration_id).await {
+                // Begin 已进 MetaRaft: 拷贝失败必须 Cancel, 否则 slots_migrating 残留,
+                // 后续 SETSLOT 会报 migration already in progress.
+                let base = if e.starts_with("ERR ") {
+                    e
+                } else {
+                    format!("ERR {e}")
+                };
+                return Err(match sm.cancel_migration().await {
+                    Ok(()) => base,
+                    Err(cancel_err) => {
+                        tracing::warn!(
+                            slot,
+                            error = %cancel_err,
+                            "SETSLOT MIGRATING failed and cancel_migration also failed"
+                        );
+                        format!("{base}; cancel_migration also failed: {cancel_err}")
+                    }
+                });
+            }
             Ok("OK".to_string())
         }
         "IMPORTING" => {
@@ -189,6 +220,20 @@ pub async fn cluster_set_slot(
                     .await
                     .map_err(|e| format!("ERR finish_migration: {e}"))?;
             }
+            Ok("OK".to_string())
+        }
+        "CANCEL" => {
+            mgr.importing_slots.write().remove(&slot);
+            if mgr.meta_raft.get_migration_state().is_none() {
+                return Ok("OK".to_string());
+            }
+            let sm = mgr
+                .slot_migration_manager
+                .as_ref()
+                .ok_or_else(|| "ERR SlotMigrationManager not initialized".to_string())?;
+            sm.cancel_migration()
+                .await
+                .map_err(|e| format!("ERR cancel_migration: {e}"))?;
             Ok("OK".to_string())
         }
         _ => Err("ERR Unknown SETSLOT subcommand".to_string()),
@@ -241,7 +286,10 @@ pub(super) async fn handle_setslot(
         Some(Ok(s)) => s,
         _ => "",
     };
-    let node_id = args.get(3).and_then(|a| parse_int::<u64>(a));
+    let node_id = args
+        .get(3)
+        .and_then(|a| bytes_to_str(a).ok())
+        .and_then(|s| parse_cluster_node_id(s).ok());
     let msg = cluster_set_slot(slot, sub, node_id)
         .await
         .map_err(Error::Command)?;

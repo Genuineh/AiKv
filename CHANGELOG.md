@@ -28,6 +28,8 @@
 
 ### Fixed
 
+- 集群: `SETSLOT MIGRATING` / `REBALANCE` 拷贝或收尾失败自动 `Cancel`, 新增 `SETSLOT CANCEL`; `CLUSTER MEET` 对 ForwardToLeader 类错误退避重试; e2e 识别 NotLeader/CLUSTERDOWN 并在可执行节点上跑 MEET/迁移
+
 - 依赖安全: `anyhow` 1.0.102 → 1.0.104 (RUSTSEC-2026-0190); 增加 `.cargo/audit.toml` (bincode ignore)
 - 移除 tonic 0.11 传递依赖 h2 0.3.27 (RUSTSEC-2026-0258); 删除 SKIP_SECURITY 逃生门
 - deny.toml 允许 Zlib (foldhash)

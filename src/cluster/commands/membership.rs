@@ -52,8 +52,13 @@ pub async fn cluster_meet(
             Err(e) => {
                 let is_not_leader =
                     matches!(&e, AidbError::Cluster(ClusterError::NotLeader { .. }));
+                let msg = e.to_string();
+                // 兼容尚未归一的 ForwardToLeader Display 串.
+                let looks_forward = msg.contains("has to forward request to")
+                    || msg.contains("NotLeader")
+                    || msg.contains("不是 Leader");
                 last_err = map_propose_error(e);
-                if is_not_leader && attempt < 10 {
+                if (is_not_leader || looks_forward) && attempt < 10 {
                     sleep(Duration::from_millis(delay_ms)).await;
                     delay_ms = delay_ms.saturating_mul(2).min(2000);
                     continue;

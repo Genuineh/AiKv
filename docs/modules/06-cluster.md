@@ -91,13 +91,14 @@ flowchart TD
 | `CLUSTER FORGET <node-id>` | 运维写 | 从集群中移除指定节点 |
 | `CLUSTER ADDSLOTS <slot...>` | 运维写 | 将指定 Slot 集合分配给当前节点 |
 | `CLUSTER DELSLOTS <slot...>` | 运维写 | 移除当前节点负责的 Slot |
-| `CLUSTER SETSLOT <slot> MIGRATING <node-id>` | 迁移 | 将槽位标记为向目标节点迁出 |
+| `CLUSTER SETSLOT <slot> MIGRATING <node-id>` | 迁移 | 在 **source group data Leader** 上将槽位标为迁出并拷贝; 非 Leader 返回 MOVED/不是 Leader; 拷贝失败自动 Cancel |
 | `CLUSTER SETSLOT <slot> IMPORTING <node-id>` | 迁移 | 将槽位标记为从源节点迁入 |
 | `CLUSTER SETSLOT <slot> STABLE` | 迁移 | 结束迁移, 槽位进入稳定服务状态 |
+| `CLUSTER SETSLOT <slot> CANCEL` | 迁移 | 取消半截迁移, 槽位回退源归属 |
 | `CLUSTER SETSLOT <slot> NODE <node-id>` | 运维写 | 强制将槽位归属变更至指定节点 |
 | `CLUSTER FAILOVER [FORCE\|TAKEOVER]` | 运维写 | 手动触发从节点晋升为主节点 |
 | `CLUSTER REPLICATE <node-id>` | 运维写 | 配置当前节点作为指定主节点的副本 |
 | `CLUSTER REPLICAS <node-id>` | 只读 | 列出指定主节点下的所有从节点列表 |
-| `CLUSTER REBALANCE` | 运维写 | 触发全局槽位自动负载均衡迁移 |
+| `CLUSTER REBALANCE` | 运维写 | 触发全局槽位自动负载均衡; 单步拷贝/收尾失败自动 Cancel |
 | `CLUSTER CREATEGROUP <group-id>` | 扩展 | 创建新的 MultiRaft 数据分片组 |
 | `CLUSTER GROUPSTATUS [group-id]` | 扩展 | 查询各 MultiRaft 数据组的 Raft 状态与 Leader 节点 |
