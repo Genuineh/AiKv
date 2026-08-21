@@ -394,6 +394,36 @@ async fn test_mset_write_batch_maintains_counters() {
     assert_eq!(storage.len(db).await.unwrap(), scanned.len());
 }
 
+/// 覆盖写 `inserted=false` 时仍须 `expire_gate.release`, 否则门闩卡住无法再次 decr.
+#[tokio::test]
+async fn test_set_typed_overwrite_still_releases_expire_gate() {
+    use std::sync::Arc;
+
+    use aikv::storage::types::{DbKeyCounters, ExpireDecrGate};
+
+    let (_dir, engine) = make_temp_engine();
+    let counters = Arc::new(DbKeyCounters::new());
+    let expire_gate = Arc::new(ExpireDecrGate::new());
+    let storage = KvStorageAdapter::open_with_counters(engine, None, counters, expire_gate.clone())
+        .await
+        .unwrap();
+
+    storage.set(0, b"k", b"v1").await.unwrap();
+    assert_eq!(storage.len(0).await.unwrap(), 1);
+
+    let encoded = AiDbEngine::encode_key(0, b"k");
+    assert!(expire_gate.try_claim(&encoded));
+    assert!(!expire_gate.try_claim(&encoded));
+
+    // 覆盖写: inserted=false, 计数不变, 但仍须 release
+    storage.set(0, b"k", b"v2").await.unwrap();
+    assert_eq!(storage.len(0).await.unwrap(), 1);
+    assert!(
+        expire_gate.try_claim(&encoded),
+        "overwrite must release expire_gate even when inserted=false"
+    );
+}
+
 /// write_batch 混合 Delete: 不存在的 key 不得截前缀认领真实删除的门闩.
 /// 随后模拟 compaction listener 点查 `exists`, 截前缀回退会再扣一次.
 #[tokio::test]

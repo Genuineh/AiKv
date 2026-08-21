@@ -24,10 +24,14 @@
 
 **ValueType**: Redis 数据类型的枚举 (String, List, Set, ZSet, Hash 等).
 
-**DbKeyCounters**: 内存原子键计数器 (`[AtomicU64; 16]`), 跟踪各逻辑 DB 的顶级用户 key 总数, 提供 $O(1)$ 的 `DBSIZE` 与 `db_key_counts()` 统计.
+**DbKeyCounters**: 内存原子键计数器 (`[AtomicU64; 16]`), 跟踪各逻辑 DB 的顶级用户 key 总数, 提供 $O(1)$ 的 `DBSIZE` 与 `db_key_counts()` 统计. 真源在 aikv 侧; 不由 aidb 持久化.
+
+**回传法 (WriteStats)**: 集群 Plain / 迁移 PUT / `write_batch` **禁止** propose 前 `get_local` / `exists` 判定 insert; 存在性由 aidb apply / `DB::put` 融合判定, 经 `Response::WriteStats` 回传 per-op `effects` 后由 aikv 更新 `DbKeyCounters`. 仅支持同版本滚动 (消费者对数据写成功响应 fail-fast 接受 `WriteStats`, 不吞意外变体). DELETE Plain 前置 `get_local` 短路本期保留. Batcher 同 key last-write-wins reverse-dedup; 丢掉的中间 op ack `false`.
+
+**ExpireDecrGate**: 过期 / Compaction 与热路径重生之间的单飞门闩. 写成功后无论 `inserted` 真假均须 `expire_gate.release` (覆盖写也要释放), 避免门闩卡住无法再次 `decr`.
 
 **键计数与过期语义** (三层一致):
-1. **热路径**: 计数含尚未惰性删除的过期 key (对齐 Redis `DBSIZE`); 主动删 / 覆盖写 / 读触发惰性删成功时精确 `decr`.
+1. **热路径**: 计数含尚未惰性删除的过期 key (对齐 Redis `DBSIZE`); 主动删 / 覆盖写 / 读触发惰性删成功时精确 `decr`; SET 成功按 `inserted` `incr`, 且始终 `expire_gate.release`.
 2. **冷启动 Rebuild**: `open` 时按「当前未过期存活逻辑 key」扫描填充, 并可能顺带 lazy 清理过期 key.
 3. **Compaction GC**: listener 持 `Weak<DB>`; Version 安装后仅在 `get==None` 且 `ExpireDecrGate` 单飞成功时 `decr`; 惰性删/`DEL` 同样需赢得门闩并持有至 `set_typed` / `write_batch` Put 重生, 避免 tombstone 被再次 notify.
 

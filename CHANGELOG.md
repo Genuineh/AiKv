@@ -11,6 +11,7 @@
 
 ### Changed
 
+- 存储层 (回传法): 集群 Plain / 迁移 PUT / `write_batch` 去掉 propose 前 `get_local`/`exists`; 消费 aidb `Response::WriteStats` 更新 `DbKeyCounters`; 单机 `AiDbEngine` 直接消费 `put`→`bool` / `EngineWriteStats` / `key_exists`; 写成功后无论 `inserted` 均 `expire_gate.release`; 数据写响应 fail-fast (同版本兼容)
 - 存储层: 引入内存原子键计数器 `DbKeyCounters` 与冷启动同步 Rebuild, 消除后台 15s 指标任务 (`refresh_runtime_metrics`) 与 `DBSIZE` 命令的全库 SSTable 迭代扫描, 键计数复杂度降为 $O(1)$
 - 连接层: 公开 `RespValue::encode_into`, 引入每连接 `write_buf` 复用与 Pipeline 批末聚合写 (`flush_responses`); 大响应后 capacity >64 KiB 收缩回 8 KiB
 - 拆分 `src/server/otel_metrics.rs` 为 `otel_metrics/{mod,helpers,testutil}.rs`
@@ -28,6 +29,7 @@
 
 ### Fixed
 
+- 存储层: `ClusterDataAdapter::write_batch` 改为 propose 后消费 `WriteStats` (不再前置 `exists`); Batcher reverse-dedup 按 key last-write-wins, 修复 Put↔Delete 时序颠倒导致 key 丢失
 - 集群: `SETSLOT MIGRATING` / `REBALANCE` 拷贝或收尾失败自动 `Cancel`, 新增 `SETSLOT CANCEL`; `CLUSTER MEET` 对 ForwardToLeader 类错误退避重试; e2e 识别 NotLeader/CLUSTERDOWN 并在可执行节点上跑 MEET/迁移
 
 - 依赖安全: `anyhow` 1.0.102 → 1.0.104 (RUSTSEC-2026-0190); 增加 `.cargo/audit.toml` (bincode ignore)

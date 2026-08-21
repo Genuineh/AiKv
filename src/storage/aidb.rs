@@ -107,13 +107,8 @@ impl StorageAdapter for AiDbEngine {
 
     async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<bool> {
         self.blocking(move |db| {
-            let existed = db
-                .get(&key)
-                .map_err(|e| Error::Storage(e.to_string()))?
-                .is_some();
             db.put(&key, &value)
-                .map_err(|e| Error::Storage(e.to_string()))?;
-            Ok(!existed)
+                .map_err(|e| Error::Storage(e.to_string()))
         })
         .await
     }
@@ -132,57 +127,30 @@ impl StorageAdapter for AiDbEngine {
 
     async fn exists(&self, key: Vec<u8>) -> Result<bool> {
         self.blocking(move |db| {
-            Ok(db
-                .get(&key)
-                .map_err(|e| Error::Storage(e.to_string()))?
-                .is_some())
+            db.key_exists(&key)
+                .map_err(|e| Error::Storage(e.to_string()))
         })
         .await
     }
 
     async fn write_batch(&self, batch: Vec<AdapterWriteOp>) -> Result<WriteBatchStats> {
         self.blocking(move |db| {
-            use std::collections::HashMap;
-
             let mut wb = WriteBatch::new();
-            let mut pending: HashMap<Vec<u8>, bool> = HashMap::new();
-            let mut inserted = 0u64;
-            let mut deleted = 0u64;
-
             for op in batch {
                 match op {
                     AdapterWriteOp::Put { key, value } => {
-                        let existed = match pending.get(&key) {
-                            Some(present) => *present,
-                            None => db
-                                .get(&key)
-                                .map_err(|e| Error::Storage(e.to_string()))?
-                                .is_some(),
-                        };
-                        pending.insert(key.clone(), true);
                         wb.put(key, value);
-                        if !existed {
-                            inserted += 1;
-                        }
                     }
                     AdapterWriteOp::Delete { key } => {
-                        let existed = match pending.get(&key) {
-                            Some(present) => *present,
-                            None => db
-                                .get(&key)
-                                .map_err(|e| Error::Storage(e.to_string()))?
-                                .is_some(),
-                        };
-                        pending.insert(key.clone(), false);
                         wb.delete(key);
-                        if existed {
-                            deleted += 1;
-                        }
                     }
                 }
             }
-            db.write(&wb).map_err(|e| Error::Storage(e.to_string()))?;
-            Ok(WriteBatchStats { inserted, deleted })
+            let stats = db.write(&wb).map_err(|e| Error::Storage(e.to_string()))?;
+            Ok(WriteBatchStats {
+                inserted: stats.inserted,
+                deleted: stats.deleted,
+            })
         })
         .await
     }
@@ -244,7 +212,7 @@ impl StorageAdapter for AiDbEngine {
                 wb.delete(key);
             }
             if !wb.is_empty() {
-                db.write(&wb).map_err(|e| Error::Storage(e.to_string()))?;
+                let _ = db.write(&wb).map_err(|e| Error::Storage(e.to_string()))?;
             }
             Ok(())
         })

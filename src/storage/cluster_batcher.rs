@@ -27,12 +27,18 @@ pub(super) enum WriteBatchItem {
     Put {
         key: Vec<u8>,
         value: Vec<u8>,
-        ack: oneshot::Sender<std::result::Result<(), String>>,
+        ack: oneshot::Sender<std::result::Result<bool, String>>,
     },
     Delete {
         key: Vec<u8>,
-        ack: oneshot::Sender<std::result::Result<(), String>>,
+        ack: oneshot::Sender<std::result::Result<bool, String>>,
     },
+}
+
+struct AckMap {
+    ack: oneshot::Sender<std::result::Result<bool, String>>,
+    /// `None` = reverse-dedup 丢弃的中间 op → ack `false`
+    effect_index: Option<usize>,
 }
 
 const MIN_BATCH_TARGET: usize = 16;
@@ -58,8 +64,8 @@ pub(super) fn get_or_spawn_set_batcher(
 
 /// 统一写批入口: 将 PUT 或 DELETE 请求发送到对应 group 的 batcher.
 ///
-/// DELETE 会先检查 key 是否存在 (短路优化), 不存在则直接返回 `Ok(false)` 跳过 propose.
-/// 存在时发送到 batcher, 与其他 DELETE/PUT 聚合后单次 propose.
+/// PUT: 不前置 `get_local`, 返回值来自 propose 后的 `WriteStats` (insert 语义).
+/// DELETE: key 不存在则短路跳过 propose, 返回 `Ok(false)`; 否则返回 `WriteStats` 的 deleted.
 pub(super) async fn submit_write_op(
     batchers: &parking_lot::Mutex<HashMap<u64, Arc<GroupSetBatcher>>>,
     eager_flush: usize,
@@ -68,20 +74,20 @@ pub(super) async fn submit_write_op(
     key: Vec<u8>,
     value: Option<Vec<u8>>,
 ) -> Result<bool> {
-    // Plain PUT: 在 propose 前 get_local 判定 insert, 供上层计数; 失败不更新计数.
-    // DELETE: key 不存在则短路跳过 propose.
-    let is_put = value.is_some();
-    let existed = mgr
-        .multi_raft
-        .get_local(gid, &key)
-        .await
-        .map_err(|e| {
-            tracing::warn!(gid = gid, error = %e, "get_local failed in submit_write_op");
-            ClusterDataAdapter::map_err(e)
-        })?
-        .is_some();
-    if !is_put && !existed {
-        return Ok(false);
+    // DELETE: key 不存在则短路跳过 propose. PUT: 禁止前置 get_local.
+    if value.is_none() {
+        let existed = mgr
+            .multi_raft
+            .get_local(gid, &key)
+            .await
+            .map_err(|e| {
+                tracing::warn!(gid = gid, error = %e, "get_local failed in submit_write_op");
+                ClusterDataAdapter::map_err(e)
+            })?
+            .is_some();
+        if !existed {
+            return Ok(false);
+        }
     }
 
     let batcher = get_or_spawn_set_batcher(batchers, mgr, gid, eager_flush);
@@ -105,8 +111,7 @@ pub(super) async fn submit_write_op(
             Error::Cluster(crate::error::ClusterError::Aidb(
                 AidbClusterError::Internal(e.to_string()),
             ))
-        })?;
-    Ok(if is_put { !existed } else { true })
+        })
 }
 
 pub(super) async fn run_set_batcher(
@@ -144,29 +149,28 @@ pub(super) async fn run_set_batcher(
 
         let wait_us = t_start.elapsed().as_micros();
 
-        // Build ThinWriteBatch with dedup:
-        // PUT 去重 (重复 key 只保留最后一个), DELETE 不去重.
-        let mut tb = ThinWriteBatch::new();
+        // Build ThinWriteBatch with LWW reverse-dedup: 同 key 只保留时间序最后一笔.
         let item_count = items.len();
-        let mut acks: Vec<_> = Vec::with_capacity(item_count);
-        let mut seen: HashSet<Vec<u8>> = HashSet::new();
-
-        for item in items.into_iter().rev() {
+        let mut planned = Vec::with_capacity(item_count);
+        let mut acks = Vec::with_capacity(item_count);
+        for item in items {
             match item {
                 WriteBatchItem::Put { key, value, ack } => {
-                    if seen.insert(key.clone()) {
-                        tb.put(key, value);
-                    }
+                    planned.push(PlannedOp::Put { key, value });
                     acks.push(ack);
                 }
                 WriteBatchItem::Delete { key, ack } => {
-                    // DELETE 不去重: 每条都写入, 确保删除语义正确.
-                    tb.delete(key);
+                    planned.push(PlannedOp::Delete { key });
                     acks.push(ack);
                 }
             }
         }
-        acks.reverse();
+        let (tb, effect_indices) = plan_reverse_dedup(planned);
+        let ack_maps: Vec<AckMap> = acks
+            .into_iter()
+            .zip(effect_indices)
+            .map(|(ack, effect_index)| AckMap { ack, effect_index })
+            .collect();
 
         let t_propose = Instant::now();
         let result = super::cluster_adapter::ClusterDataAdapter::propose_group_with_retry(
@@ -175,7 +179,7 @@ pub(super) async fn run_set_batcher(
             Request::WriteBatch(tb),
         )
         .await
-        .and_then(super::cluster_adapter::ClusterDataAdapter::check_response)
+        .and_then(super::cluster_adapter::ClusterDataAdapter::parse_write_stats)
         .map_err(|e| e.to_string());
 
         let propose_us = t_propose.elapsed().as_micros();
@@ -191,8 +195,197 @@ pub(super) async fn run_set_batcher(
             "batcher_batch_done"
         );
 
-        for ack in acks {
-            let _ = ack.send(result.clone());
+        match result {
+            Ok(effects) => {
+                let indices: Vec<Option<usize>> = ack_maps.iter().map(|m| m.effect_index).collect();
+                match map_ack_bools(&indices, &effects) {
+                    Ok(bools) => {
+                        for (m, v) in ack_maps.into_iter().zip(bools) {
+                            let _ = m.ack.send(Ok(v));
+                        }
+                    }
+                    Err(e) => {
+                        for m in ack_maps {
+                            let _ = m.ack.send(Err(e.clone()));
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                for m in ack_maps {
+                    let _ = m.ack.send(Err(e.clone()));
+                }
+            }
         }
+    }
+}
+
+/// reverse-dedup 规划用的轻量 op (与 `WriteBatchItem` 同语义, 无 ack).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum PlannedOp {
+    Put { key: Vec<u8>, value: Vec<u8> },
+    Delete { key: Vec<u8> },
+}
+
+/// reverse + HashSet 按 key 做 last-write-wins: 同 key 只保留时间序最后一笔
+/// (Put 或 Delete). 产出 `ThinWriteBatch` 与每个**时间序** item 对应的 `effects`
+/// 下标 (`None` = 被丢掉的中间 op → ack false).
+pub(super) fn plan_reverse_dedup(items: Vec<PlannedOp>) -> (ThinWriteBatch, Vec<Option<usize>>) {
+    let mut tb = ThinWriteBatch::new();
+    let mut indices_rev = Vec::with_capacity(items.len());
+    let mut seen: HashSet<Vec<u8>> = HashSet::new();
+
+    for item in items.into_iter().rev() {
+        match item {
+            PlannedOp::Put { key, value } => {
+                if seen.insert(key.clone()) {
+                    indices_rev.push(Some(tb.ops.len()));
+                    tb.put(key, value);
+                } else {
+                    indices_rev.push(None);
+                }
+            }
+            PlannedOp::Delete { key } => {
+                if seen.insert(key.clone()) {
+                    indices_rev.push(Some(tb.ops.len()));
+                    tb.delete(key);
+                } else {
+                    indices_rev.push(None);
+                }
+            }
+        }
+    }
+    indices_rev.reverse();
+    (tb, indices_rev)
+}
+
+/// 将 `effects` (与 dedup 后 `tb.ops` 对齐) 映射为各原始 item 的 ack bool.
+pub(super) fn map_ack_bools(
+    effect_indices: &[Option<usize>],
+    effects: &[bool],
+) -> std::result::Result<Vec<bool>, String> {
+    effect_indices
+        .iter()
+        .map(|opt| match opt {
+            None => Ok(false),
+            Some(i) => effects
+                .get(*i)
+                .copied()
+                .ok_or_else(|| format!("effect index {i} out of range (len={})", effects.len())),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aidb::cluster::ThinWriteOp;
+
+    #[test]
+    fn map_acks_deduped_put_gets_inserted_false() {
+        // 时间序: Put(k,v1), Put(k,v2), Put(m,w)
+        // reverse-dedup 后 tb.ops: [Put(m,w), Put(k,v2)]; 丢掉的 Put(k,v1) → false
+        let items = vec![
+            PlannedOp::Put {
+                key: b"k".to_vec(),
+                value: b"v1".to_vec(),
+            },
+            PlannedOp::Put {
+                key: b"k".to_vec(),
+                value: b"v2".to_vec(),
+            },
+            PlannedOp::Put {
+                key: b"m".to_vec(),
+                value: b"w".to_vec(),
+            },
+        ];
+        let (tb, indices) = plan_reverse_dedup(items);
+        assert_eq!(tb.ops.len(), 2);
+        match &tb.ops[0] {
+            ThinWriteOp::Put { key, value } => {
+                assert_eq!(key, b"m");
+                assert_eq!(value, b"w");
+            }
+            other => panic!("ops[0] expected Put(m,w), got {other:?}"),
+        }
+        match &tb.ops[1] {
+            ThinWriteOp::Put { key, value } => {
+                assert_eq!(key, b"k");
+                assert_eq!(value, b"v2");
+            }
+            other => panic!("ops[1] expected Put(k,v2), got {other:?}"),
+        }
+        assert_eq!(indices, vec![None, Some(1), Some(0)]);
+
+        // effects 与 tb.ops 对齐: m 为 insert, k 为 overwrite
+        let effects = vec![true, false];
+        let acks = map_ack_bools(&indices, &effects).expect("map");
+        assert_eq!(acks, vec![false, false, true]);
+    }
+
+    /// Put→Del→Put 必须 LWW 保留最后 Put; 旧实现保留全部 Delete 会变成 Put 后再 Del,
+    /// 净效果 key 缺失.
+    #[test]
+    fn plan_reverse_dedup_put_del_put_keeps_last_put() {
+        let items = vec![
+            PlannedOp::Put {
+                key: b"k".to_vec(),
+                value: b"v1".to_vec(),
+            },
+            PlannedOp::Delete { key: b"k".to_vec() },
+            PlannedOp::Put {
+                key: b"k".to_vec(),
+                value: b"v2".to_vec(),
+            },
+        ];
+        let (tb, indices) = plan_reverse_dedup(items);
+        assert_eq!(tb.ops.len(), 1);
+        match &tb.ops[0] {
+            ThinWriteOp::Put { key, value } => {
+                assert_eq!(key, b"k");
+                assert_eq!(value, b"v2");
+            }
+            other => panic!("expected Put(k,v2), got {other:?}"),
+        }
+        assert_eq!(indices, vec![None, None, Some(0)]);
+        let acks = map_ack_bools(&indices, &[true]).expect("map");
+        assert_eq!(acks, vec![false, false, true]);
+    }
+
+    /// Put→Delete: 最后 Delete 胜出, 中间 Put 丢弃且 ack false.
+    #[test]
+    fn plan_reverse_dedup_put_then_delete_keeps_delete() {
+        let items = vec![
+            PlannedOp::Put {
+                key: b"k".to_vec(),
+                value: b"v1".to_vec(),
+            },
+            PlannedOp::Delete { key: b"k".to_vec() },
+        ];
+        let (tb, indices) = plan_reverse_dedup(items);
+        assert_eq!(tb.ops.len(), 1);
+        assert!(matches!(tb.ops[0], ThinWriteOp::Delete { .. }));
+        assert_eq!(indices, vec![None, Some(0)]);
+        let acks = map_ack_bools(&indices, &[true]).expect("map");
+        assert_eq!(acks, vec![false, true]);
+    }
+
+    /// Delete→Put: 最后 Put 胜出.
+    #[test]
+    fn plan_reverse_dedup_delete_then_put_keeps_put() {
+        let items = vec![
+            PlannedOp::Delete { key: b"k".to_vec() },
+            PlannedOp::Put {
+                key: b"k".to_vec(),
+                value: b"v2".to_vec(),
+            },
+        ];
+        let (tb, indices) = plan_reverse_dedup(items);
+        assert_eq!(tb.ops.len(), 1);
+        match &tb.ops[0] {
+            ThinWriteOp::Put { value, .. } => assert_eq!(value, b"v2"),
+            other => panic!("expected Put, got {other:?}"),
+        }
+        assert_eq!(indices, vec![None, Some(0)]);
     }
 }
