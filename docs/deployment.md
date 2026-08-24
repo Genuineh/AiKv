@@ -57,18 +57,52 @@ cargo build --release --features cluster,monitoring
 
 ---
 
-## 3. 命令行参数与环境变量
+## 3. 配置优先级
 
-### 3.1 命令行参数 (`Args`)
+AiKv 采用四层配置合并, 优先级从低到高: **内置默认值 → TOML 文件 → 环境变量 → CLI**. 每层仅覆盖本层显式设置的字段; `Vec` 类型 (如 `cluster.peers`) 为全量替换, 非追加.
 
-权威定义位于 [`src/main.rs`](../src/main.rs):
+完整 TOML 结构、env 对照表、`ResolvedSettings` API 与 `ConfigWarning` 说明见 [09-config.md](modules/09-config.md).
+
+### 3.1 配置文件发现
+
+1. `--config <path>` 显式指定 (文件必须存在).
+2. 未指定时依次尝试 `./aikv.toml` (cwd) → `/etc/aikv/aikv.toml`.
+3. 均不存在 → 跳过文件层, 行为与纯 CLI 启动一致.
+
+可复制模板: [`examples/aikv.toml.example`](../examples/aikv.toml.example).
+
+### 3.2 环境变量概要
+
+除下表外, 全部 `AIKV_*` 与 TOML 路径一一对应, 详见 [09-config.md § 环境变量映射](modules/09-config.md#环境变量映射).
+
+| 类别 | 代表变量 | 说明 |
+| :--- | :--- | :--- |
+| 服务 | `AIKV_BIND`, `AIKV_MAX_CLIENTS`, `AIKV_ENGINE`, `AIKV_DATA_DIR` | 对应 `[server]` / `[engine]` |
+| 可观测 | `AIKV_JSON_LOG`, `AIKV_METRICS_ADDR`, `AIKV_OTLP_ENDPOINT` | 对应 `[observability]`; OTLP 端点 `OTEL_EXPORTER_OTLP_ENDPOINT` 优先于 `AIKV_OTLP_ENDPOINT` |
+| 集群 | `AIKV_CLUSTER_NODE_ID`, `AIKV_CLUSTER_RPC_ADDR`, `AIKV_CLUSTER_PEERS` | 对应 `[cluster]`; peers 逗号分隔 |
+| 已有 env | `AIKV_CLIENT_ADDR`, `AIKV_CLUSTER_ANNOUNCE_MODE`, `AIKV_LINEARIZABLE_READ` | 名称不变, 纳入 env 层 merge; `AIKV_LINEARIZABLE_READ` 仅 `1`/大小写不敏感的 `true` 为真, 其他值均为假 |
+| 日志 | `RUST_LOG` | 仅 env, 不参与四层 merge struct |
+
+`--print-config` 可将合并后有效配置以 TOML 格式输出到 stdout (然后继续启动), 便于排查优先级.
+
+一般 AiKv 布尔环境变量采用宽松解析, 无法识别或空字符串会跳过并继承下层配置. `AIKV_LINEARIZABLE_READ` 为 legacy 兼容例外: key 存在即覆盖 TOML 层, 只有 `1` 或大小写不敏感的 `true` 表示真, 空字符串、`0`、`false` 及其他值均表示假. 该例外不改变整体 TOML → env → CLI 优先级.
+
+---
+
+## 4. 命令行参数与环境变量
+
+### 4.1 命令行参数 (`Cli`)
+
+权威定义位于 [`src/config/cli.rs`](../src/config/cli.rs), 由 `main.rs` 调用 `config::resolve()`:
 
 | 参数项                           | 默认值                 | 依赖 Feature / 引擎       | 说明                                                  |
 | ----------------------------- | ------------------- | --------------------- | --------------------------------------------------- |
+| `--config`                    | —                   | 始终有效                  | 显式 TOML 配置文件路径                                      |
+| `--print-config`              | `false`             | 始终有效                  | 合并后配置打印到 stdout (TOML), 然后继续启动                      |
 | `--bind`                      | `127.0.0.1:6379`    | 始终有效                  | RESP 客户端 TCP 监听地址 (`host:port`)                     |
 | `--engine`                    | `memory`            | 始终有效                  | 存储引擎类型: `memory` (开发测试) | `aidb` (生产推荐)             |
 | `--data-dir`                  | —                   | `aidb` / `cluster` 必填 | 数据持久化与 WAL 存放根目录                                    |
-| `--sync-wal`                  | `false`             | `aidb` / `cluster`    | 是否每条写操作强制 fsync WAL (强持久, 吞吐下降)                     |
+| `--sync-wal`                  | 未传不覆盖, 最终 `false` | `aidb` / `cluster`    | 裸 flag 开启; 也支持 `--sync-wal=false`; 是否每条写操作强制 fsync WAL (强持久, 吞吐下降) |
 | `--aidb-preset`               | `default`           | `aidb`                | LSM 参数预设: `default` | `high-write` | `high-read`    |
 | `--backup-dir`                | `{data_dir}/backup` | 可选                    | `SAVE` / `BGSAVE` Checkpoint 快照输出目录                 |
 | `--cluster-node-id`           | —                   | `cluster`             | 当前节点的唯一 u64 节点 ID                                   |
@@ -88,25 +122,27 @@ cargo build --release --features cluster,monitoring
 
 > **集群模式启动门控**: 仅当 `--cluster-node-id` **与** `--cluster-rpc-addr` **同时提供** 时才会初始化集群状态机; 仅提供其一将退化为单机模式运行.
 
-### 3.2 环境变量配置
+### 4.2 环境变量配置 (业界惯例与 OTel)
+
+以下变量保留业界惯例名, 不参与 TOML struct; 完整 `AIKV_*` 对照见 [09-config.md](modules/09-config.md).
 
 | 环境变量                          | 默认值       | 作用说明                                                          |
 | ----------------------------- | --------- | ------------------------------------------------------------- |
-| `RUST_LOG`                    | `info`    | Tracing 日志级别过滤指令                                              |
-| `AIKV_JSON_LOG`               | `true`    | 是否以 JSON 格式输出结构化日志 (`true` | `false`)                         |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | 空 (跳过)    | OpenTelemetry Collector gRPC 收集端点 (如 `http://127.0.0.1:4317`) |
-| `OTEL_SERVICE_NAME`           | `aikv`    | OTel Resource 中的服务名称                                          |
-| `OTEL_DEPLOYMENT_ENVIRONMENT` | 空         | OTel Resource 中的部署环境 (`production` / `staging`)               |
-| `AIKV_CLIENT_ADDR`            | 自动推导      | 外部客户端访问该节点实际可达的 `host:port` (用于跨 NAT/容器通告)                    |
-| `AIKV_CLUSTER_ANNOUNCE_MODE`  | `unknown` | 通告模式: `unknown` (动态推导) | `fixed` (固定使用 `AIKV_CLIENT_ADDR`)    |
+| `RUST_LOG`                    | `info`    | Tracing 日志级别过滤指令 (不参与四层 merge)                              |
+| `AIKV_JSON_LOG`               | `true`    | 是否以 JSON 格式输出结构化日志; 亦可写 TOML `observability.json_log`          |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | 空 (跳过)    | OTLP gRPC 端点; 优先于 `AIKV_OTLP_ENDPOINT`                         |
+| `OTEL_SERVICE_NAME`           | `aikv`    | OTel 服务名; 优先于 `AIKV_OTEL_SERVICE_NAME`                        |
+| `OTEL_DEPLOYMENT_ENVIRONMENT` | 空         | 部署环境; 优先于 `AIKV_DEPLOYMENT_ENV`                                |
+| `AIKV_CLIENT_ADDR`            | 自动推导      | 集群客户端通告地址 (对应 `cluster.client_addr`)                         |
+| `AIKV_CLUSTER_ANNOUNCE_MODE`  | `unknown` | 通告模式: `unknown` | `fixed`                                   |
 | `AIKV_OTEL_SAMPLE_RATIO`      | `1.0`     | 链路追踪采样率 (`0.0` ~ `1.0`)                                       |
 
 
 ---
 
-## 4. 单机部署实践
+## 5. 单机部署实践
 
-### 4.1 内存引擎模式 (仅限开发与集成测试)
+### 5.1 内存引擎模式 (仅限开发与集成测试)
 
 ```bash
 cargo run --release --features cluster -- \
@@ -114,7 +150,7 @@ cargo run --release --features cluster -- \
   --engine memory
 ```
 
-### 4.2 AiDb 引擎模式 (单机生产持久化)
+### 5.2 AiDb 引擎模式 (单机生产持久化)
 
 ```bash
 mkdir -p /var/lib/aikv/data
@@ -142,9 +178,9 @@ curl -s http://127.0.0.1:9191/health
 
 ---
 
-## 5. Redis Cluster 分布式集群部署
+## 6. Redis Cluster 分布式集群部署
 
-### 5.1 节点端口角色规划
+### 6.1 节点端口角色规划
 
 每个集群节点在物理机或容器上需要分配 **3 个端口角色**:
 
@@ -156,7 +192,7 @@ curl -s http://127.0.0.1:9191/health
 
 > **约束**: 保证 `rpc_port + offset ≤ 65535`, 全集群所有节点的 `--cluster-data-port-offset` 必须严格一致.
 
-### 5.2 三节点集群启动示例
+### 6.2 三节点集群启动示例
 
 **节点 1 (Bootstrap 引导节点)**:
 
@@ -193,7 +229,7 @@ cargo run --release --features cluster,monitoring -- \
   --metrics-port 9193
 ```
 
-### 5.3 集群拓扑初始化与槽位分配
+### 6.3 集群拓扑初始化与槽位分配
 
 通过标准 `redis-cli` 执行初始化:
 
@@ -215,7 +251,7 @@ redis-cli -p 6381 CLUSTER ADDSLOTS $(seq 10923 16383)
 redis-cli -p 6379 CLUSTER INFO # 应输出 cluster_state:ok
 ```
 
-### 5.4 智能客户端访问 (Smart Client)
+### 6.4 智能客户端访问 (Smart Client)
 
 由于 AiKv 不做服务端透明转发, **客户端必须使用集群模式连接**:
 
@@ -227,9 +263,9 @@ redis-cli -c -p 6379
 
 ---
 
-## 6. 监控与可观测性接入运维
+## 7. 监控与可观测性接入运维
 
-### 6.1 架构与导出机制
+### 7.1 架构与导出机制
 
 ```mermaid
 flowchart LR
@@ -242,9 +278,9 @@ flowchart LR
 1. **编译要求**: 必须启用 `--features monitoring`;
 2. **端点配置**: 设置 `OTEL_EXPORTER_OTLP_ENDPOINT=http://<collector_host>:4317`;
 3. **健康探针**: Kubernetes Liveness / Readiness 探针配置 `http://<aikv_ip>:9191/health`;
-4. **日志输出**: 结构化 JSON 日志通过标准输出由 Fluentbit / Vector 收集至 Loki.
+4. **日志输出**: 结构化 JSON 日志通过标准错误输出由 Fluentbit / Vector 收集至 Loki; 标准输出可专用于 `--print-config` 的 TOML.
 
-### 6.2 关键生产监控告警指标
+### 7.2 关键生产监控告警指标
 
 
 | 告警指标项        | 指标名                                   | 关注阈值与排查建议                         |
@@ -262,7 +298,7 @@ flowchart LR
 
 ---
 
-## 7. 持久化与快照运维
+## 8. 持久化与快照运维
 
 - 持久化仅在 `--engine aidb` 模式下生效;
 - `SAVE` / `BGSAVE` 基于 AiDb 的硬链接 Checkpoint 实现秒级一致性快照, 默认保存在 `{data_dir}/backup/` 目录下;

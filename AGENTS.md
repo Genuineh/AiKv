@@ -85,4 +85,5 @@ pytest e2e/function/ -v
 | **Redis Cluster 协议 / Slot 迁移** | [docs/modules/06-cluster.md](docs/modules/06-cluster.md) | CRC16 `{...}` Hash Tag、MOVED/ASK 重定向、CLUSTER 子命令、与 AiDb MetaRaft 拓扑同步 |
 | **可观测性架构 / INFO / Tracing** | [docs/modules/07-observability.md](docs/modules/07-observability.md) | `SlowQueryLog` 环形缓冲、`LatencyStats`、`InfoRenderer` 渲染、OTel 管道与热路径 `debug` span |
 | **指标字典 / INFO 8.8 对照表** | [docs/modules/08-observability-reference.md](docs/modules/08-observability-reference.md) | `aikv_*` 全部 OTel 指标名与标签、INFO 8.8 全字段对照表与 Stub 标注 |
+| **配置分层 / TOML / env / CLI 优先级** | [docs/modules/09-config.md](docs/modules/09-config.md) | `src/config/` merge 语义、`ResolvedSettings`、`ConfigWarning`、文件发现与测试 seam |
 | **LSM / Raft 内核排查** | [../aidb/AGENTS.md](../aidb/AGENTS.md) | 涉及底层 LSM 存储、WAL 恢复、Compaction 或 Raft 共识故障时跳转查看 |

@@ -10,6 +10,8 @@ use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider};
 use opentelemetry_sdk::Resource;
 
+use crate::config::ResolvedObservability;
+
 static TRACER_PROVIDER: OnceLock<SdkTracerProvider> = OnceLock::new();
 static METER_PROVIDER: OnceLock<SdkMeterProvider> = OnceLock::new();
 
@@ -29,6 +31,12 @@ pub struct OtelInitConfig {
 
 fn env_nonempty(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|v| !v.is_empty())
+}
+
+fn resolve_node_id(env_node_id: Option<&str>, cluster_node_id: Option<u64>) -> Option<u64> {
+    env_node_id
+        .and_then(|value| value.parse::<u64>().ok())
+        .or(cluster_node_id)
 }
 
 /// 解析采样率 (0.0-1.0). 非法输入回退 1.0 (保持全采样, 不静默丢 trace).
@@ -94,7 +102,34 @@ fn build_resource(config: &OtelInitConfig) -> Resource {
     builder.build()
 }
 
-/// 从环境变量与 CLI 解析 OTel 配置.
+/// 从 resolved observability 配置解析 OTel 初始化参数.
+pub fn otel_config_from_settings(
+    obs: &ResolvedObservability,
+    tcp_port: u16,
+    #[cfg(feature = "cluster")] cluster_node_id: Option<u64>,
+    #[cfg(not(feature = "cluster"))] cluster_node_id: Option<u64>,
+) -> Option<OtelInitConfig> {
+    let endpoint = obs.otlp_endpoint.as_ref().filter(|s| !s.is_empty())?;
+    let deployment_environment = obs
+        .deployment_env
+        .clone()
+        .or_else(|| Some("dev".to_string()));
+    let extra_resource_attrs = env_nonempty("OTEL_RESOURCE_ATTRIBUTES")
+        .map(|raw| parse_resource_attributes(&raw))
+        .unwrap_or_default();
+    Some(OtelInitConfig {
+        endpoint: endpoint.clone(),
+        service_name: obs.otel_service_name.clone(),
+        host_label: obs.host_label.clone(),
+        node_id: resolve_node_id(env_nonempty("AIKV_NODE_ID").as_deref(), cluster_node_id),
+        tcp_port,
+        deployment_environment,
+        extra_resource_attrs,
+        sample_ratio: obs.otel_sample_ratio,
+    })
+}
+
+/// 从环境变量与 CLI 解析 OTel 配置 (legacy; main 路径使用 `otel_config_from_settings`).
 pub fn otel_config_from_env(
     tcp_port: u16,
     #[cfg(feature = "cluster")] cluster_node_id: Option<u64>,
@@ -104,9 +139,7 @@ pub fn otel_config_from_env(
         .or_else(|| env_nonempty("AIKV_OTLP_ENDPOINT"))?;
     let service_name = env_nonempty("OTEL_SERVICE_NAME").unwrap_or_else(|| "aikv".to_string());
     let host_label = env_nonempty("AIKV_HOST_LABEL");
-    let node_id = env_nonempty("AIKV_NODE_ID")
-        .and_then(|v| v.parse::<u64>().ok())
-        .or(cluster_node_id);
+    let node_id = resolve_node_id(env_nonempty("AIKV_NODE_ID").as_deref(), cluster_node_id);
     let deployment_environment = env_nonempty("OTEL_DEPLOYMENT_ENVIRONMENT")
         .or_else(|| env_nonempty("AIKV_DEPLOYMENT_ENV"))
         .or_else(|| Some("dev".to_string()));
@@ -208,5 +241,28 @@ pub fn shutdown_otel() {
     }
     if let Some(mp) = METER_PROVIDER.get() {
         let _ = mp.shutdown();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 回归测试: `AIKV_NODE_ID` 缺失时 OTel 应回落到集群节点 ID.
+    #[test]
+    fn node_id_falls_back_to_cluster_node_id() {
+        assert_eq!(resolve_node_id(None, Some(42)), Some(42));
+    }
+
+    /// 回归测试: 有效 `AIKV_NODE_ID` 优先于传入的集群节点 ID.
+    #[test]
+    fn node_id_from_env_takes_precedence() {
+        assert_eq!(resolve_node_id(Some("7"), Some(42)), Some(7));
+    }
+
+    /// 回归测试: 非法 `AIKV_NODE_ID` 不应覆盖有效的集群节点 ID.
+    #[test]
+    fn invalid_env_node_id_falls_back_to_cluster_node_id() {
+        assert_eq!(resolve_node_id(Some("not-a-number"), Some(42)), Some(42));
     }
 }

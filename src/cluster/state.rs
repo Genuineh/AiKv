@@ -22,6 +22,7 @@ use std::sync::OnceLock;
 use parking_lot::RwLock;
 
 use crate::cluster::announce::AnnounceResolver;
+use crate::config::AnnounceMode;
 use aidb::cluster::meta_types::{ClusterMeta, SlotStatus, SlotTable};
 use aidb::cluster::slot_migration::SlotMigrationManager;
 use aidb::cluster::{MembershipCoordinator, MetaRaftNode, MultiRaftNode, Router};
@@ -117,6 +118,7 @@ impl ClusterStateManager {
         meta_raft: std::sync::Arc<MetaRaftNode>,
         multi_raft: std::sync::Arc<MultiRaftNode>,
         node_id: u64,
+        announce_mode: AnnounceMode,
     ) -> Self {
         let mgr = Self {
             router,
@@ -132,7 +134,7 @@ impl ClusterStateManager {
             slot_migration_manager: None,
             data_dir: None,
             data_port_offset: DEFAULT_DATA_PORT_OFFSET,
-            announce_resolver: AnnounceResolver::from_env(),
+            announce_resolver: AnnounceResolver::new(announce_mode),
             importing_slots: parking_lot::RwLock::new(std::collections::HashMap::new()),
             metrics: None,
             _watcher_shutdown: parking_lot::Mutex::new(None),

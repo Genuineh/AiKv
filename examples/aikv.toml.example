@@ -1,0 +1,38 @@
+# AiKv 配置示例 — 复制为 aikv.toml 或指定 --config 路径
+# 完整说明见 docs/modules/09-config.md
+
+# 单机 aidb 生产示例
+[server]
+bind = "0.0.0.0:6379"
+max_clients = 10000
+
+[engine]
+kind = "aidb"              # memory | aidb
+data_dir = "/var/lib/aikv/data"
+sync_wal = false
+aidb_preset = "high-write" # default | high-write | high-read
+# backup_dir = "/var/lib/aikv/backup"  # 可选; 默认 {data_dir}/backup
+
+[observability]
+metrics_addr = "0.0.0.0"
+metrics_port = 9191
+json_log = true
+# otlp_endpoint = "http://127.0.0.1:4317"  # 可选; 亦可用 OTEL_EXPORTER_OTLP_ENDPOINT
+
+# 以下段仅在编译 cluster feature 时解析; 无 feature 时忽略 [cluster] 并 warn
+[cluster]
+node_id = 1
+rpc_addr = "127.0.0.1:16379"
+peers = ["127.0.0.1:16380"]
+raft_election_timeout_min = 1000
+raft_election_timeout_max = 2000
+raft_rpc_timeout_ms = 500
+meta_rpc_timeout_ms = 100
+raft_heartbeat_interval = 300
+lifecycle_tick_ms = 1000
+gossip_interval = 1
+config_auto_save_ms = 2000
+cluster_data_port_offset = 10000
+client_addr = "127.0.0.1:6379"       # 对应 AIKV_CLIENT_ADDR
+announce_mode = "unknown"            # unknown | fixed
+linearizable_read = true             # 对应 AIKV_LINEARIZABLE_READ

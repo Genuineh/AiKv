@@ -87,6 +87,8 @@ cargo build --release --features cluster,monitoring,compression
 
 ### 单机运行
 
+可选: 将 [`examples/aikv.toml.example`](examples/aikv.toml.example) 复制为 `aikv.toml` 放置于工作目录, 或通过 `--config` 指定; 详见 [docs/modules/09-config.md](docs/modules/09-config.md).
+
 ```bash
 # 启动持久化服务 (推荐生产配置)
 ./target/release/aikv \

@@ -1,5 +1,5 @@
 //! MOVED/ASK 客户端地址解析: `AnnounceResolver` 决定 `CLUSTER SLOTS` / MOVED / ASK 中
-//! 向客户端通告的地址形态, `AnnounceMode` 由 env `AIKV_CLUSTER_ANNOUNCE_MODE` 配置.
+//! 向客户端通告的地址形态, `AnnounceMode` 由 resolved config 提供.
 //!
 //! # 职责
 //!
@@ -11,39 +11,11 @@
 //!
 //! - Announce unknown 模式: 客户端见 `:port`; smart client 靠 `redis-cli -c` 或 cluster-aware SDK 跟随 MOVED/ASK.
 //! - `client_addr` 优先于 `rpc_addr`: MOVED / CLUSTER NODES 用 `client_addr`, 未设置时回落 `rpc_addr`.
-//! - mode 仅进程内配置 (env), 不写入 MetaRaft.
+//! - mode 为进程内配置, 不写入 MetaRaft.
 
 use aidb::cluster::Router;
 
-/// 集群客户端地址通告模式 (仅进程配置, 不写入 MetaRaft).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AnnounceMode {
-    /// 使用 MetaRaft `client_addr` 中的 host:port.
-    Fixed,
-    /// `CLUSTER SLOTS` / MOVED 输出空 host, 客户端沿用种子连接地址 (Redis 7).
-    UnknownEndpoint,
-}
-
-impl AnnounceMode {
-    pub fn from_env() -> Self {
-        match std::env::var("AIKV_CLUSTER_ANNOUNCE_MODE")
-            .ok()
-            .as_deref()
-            .map(str::to_ascii_lowercase)
-        {
-            Some(ref s) if s == "fixed" => AnnounceMode::Fixed,
-            Some(ref s) if s == "unknown" => AnnounceMode::UnknownEndpoint,
-            None => AnnounceMode::UnknownEndpoint,
-            Some(other) => {
-                tracing::warn!(
-                  mode = %other,
-                  "unknown AIKV_CLUSTER_ANNOUNCE_MODE, using unknown"
-                );
-                AnnounceMode::UnknownEndpoint
-            }
-        }
-    }
-}
+use crate::config::AnnounceMode;
 
 /// 将 Router 中的 client_addr 转换为客户端可见的 endpoint / MOVED 地址.
 #[derive(Debug, Clone)]
@@ -62,10 +34,6 @@ impl Default for AnnounceResolver {
 impl AnnounceResolver {
     pub fn new(mode: AnnounceMode) -> Self {
         Self { mode }
-    }
-
-    pub fn from_env() -> Self {
-        Self::new(AnnounceMode::from_env())
     }
 
     pub fn mode(&self) -> AnnounceMode {

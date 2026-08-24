@@ -38,6 +38,7 @@
 | [06-cluster.md](modules/06-cluster.md) | `src/cluster/` | 改 Redis Cluster 协议、16384 槽位 CRC16、MOVED/ASK 重定向与拓扑同步 |
 | [07-observability.md](modules/07-observability.md) | `src/server/` | 改 Slowlog、Latency、`InfoRenderer`、OTel 生产指标与 Tracing 架构 |
 | [08-observability-reference.md](modules/08-observability-reference.md) | `src/server/` | 全量 `aikv_*` OTel 指标字典与 Redis 8.8 INFO 字段对齐参考表 |
+| [09-config.md](modules/09-config.md) | `src/config/` | 改 TOML / env / CLI 配置分层、`ResolvedSettings` 与配置文件发现 |
 
 > **依赖顺序**: `protocol` → `server` → `storage` → `commands-core` → `commands-extended`; `cluster` 依赖 `storage` 与 `aidb/cluster`; `observability` 横切各层.
 

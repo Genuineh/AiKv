@@ -9,7 +9,8 @@ pub mod router;
 pub mod routing_key;
 pub mod state;
 
-pub use announce::{AnnounceMode, AnnounceResolver};
+pub use crate::config::AnnounceMode;
+pub use announce::AnnounceResolver;
 
 mod commands;
 pub use commands::*;

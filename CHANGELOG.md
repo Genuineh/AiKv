@@ -9,6 +9,8 @@
 
 ### Added
 
+- 统一配置分层: TOML 文件 (`aikv.toml` / `--config`)、`AIKV_*` 环境变量与 CLI 四层 merge; 新增 `--print-config` 与 `src/config/` 模块 (详见 [09-config.md](docs/modules/09-config.md))
+
 ### Changed
 
 - 存储层 (回传法): 集群 Plain / 迁移 PUT / `write_batch` 去掉 propose 前 `get_local`/`exists`; 消费 aidb `Response::WriteStats` 更新 `DbKeyCounters`; 单机 `AiDbEngine` 直接消费 `put`→`bool` / `EngineWriteStats` / `key_exists`; 写成功后无论 `inserted` 均 `expire_gate.release`; 数据写响应 fail-fast (同版本兼容)
