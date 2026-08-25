@@ -87,7 +87,7 @@ cargo build --release --features cluster,monitoring,compression
 
 ### 单机运行
 
-可选: 将 [`examples/aikv.toml.example`](examples/aikv.toml.example) 复制为 `aikv.toml` 放置于工作目录, 或通过 `--config` 指定; 详见 [docs/modules/09-config.md](docs/modules/09-config.md).
+可选: 将 [`deploy/aikv.toml.example`](deploy/aikv.toml.example) 复制为 `aikv.toml` 放置于工作目录, 或通过 `--config` 指定; 详见 [docs/modules/09-config.md](docs/modules/09-config.md).
 
 ```bash
 # 启动持久化服务 (推荐生产配置)
@@ -101,6 +101,38 @@ redis-cli -p 6379 PING
 redis-cli -p 6379 SET mykey "hello aikv"
 redis-cli -p 6379 GET mykey
 ```
+
+### 容器化部署
+
+仓库 `deploy/` 目录提供一键脚本, 基于 [`deploy/aikv.toml.example`](deploy/aikv.toml.example) 生成运行时配置:
+
+```bash
+# 云端 AiDb new/main 构建
+./deploy/build-image.sh
+./deploy/up-single.sh
+./deploy/status.sh
+./deploy/down.sh
+
+# 本地同层级 ../aidb 构建并启动六节点集群
+./deploy/build-image.sh --local
+./deploy/up-cluster.sh
+./deploy/status.sh cluster
+./deploy/down.sh cluster --purge
+```
+
+默认 Docker 构建固定使用云端 AiDb `new/main`; `--local` 使用 aikv 同层级的
+`../aidb`. Compose 文件只引用预构建镜像, 不负责 build 或 pull; 镜像名默认为
+`aikv:dev`, 可用 `AIKV_IMAGE` 覆盖.
+
+`up-single.sh` 只启动一个容器. `up-cluster.sh` 会生成六份节点配置并启动
+2 个分片、每个分片 1 主 2 从的 Redis Cluster 拓扑. 运行时配置位于
+`deploy/.runtime/`, 默认 `down.sh` 保留 named volumes; 只有显式 `--purge`
+才删除数据卷.
+
+集群宿主机端口依次为客户端 `6379-6384`、MetaRaft `16379-16384`、
+MultiRaft `26379-26384`、Metrics `9191-9196`. 本地客户端入口为
+`redis-cli -c -p 6379`; `MOVED` 地址公布为 `127.0.0.1:<宿主客户端端口>`,
+因此该拓扑面向同一台宿主机上的客户端.
 
 ### 集群部署与运维
 

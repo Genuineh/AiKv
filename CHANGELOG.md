@@ -10,6 +10,7 @@
 ### Added
 
 - 统一配置分层: TOML 文件 (`aikv.toml` / `--config`)、`AIKV_*` 环境变量与 CLI 四层 merge; 新增 `--print-config` 与 `src/config/` 模块 (详见 [09-config.md](docs/modules/09-config.md))
+- 容器化部署: 新增 `deploy/` 目录, 提供单机与 6 节点集群的 Docker Compose 拓扑配置、云端/本地镜像构建脚本 (`build-image.sh`)、启停脚本 (`up-single.sh`, `up-cluster.sh`, `down.sh`) 与状态检查脚本 (`status.sh`)
 
 ### Changed
 

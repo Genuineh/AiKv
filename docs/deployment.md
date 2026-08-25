@@ -69,9 +69,60 @@ AiKv 采用四层配置合并, 优先级从低到高: **内置默认值 → TOML
 2. 未指定时依次尝试 `./aikv.toml` (cwd) → `/etc/aikv/aikv.toml`.
 3. 均不存在 → 跳过文件层, 行为与纯 CLI 启动一致.
 
-可复制模板: [`examples/aikv.toml.example`](../examples/aikv.toml.example).
+可复制模板: [`deploy/aikv.toml.example`](../deploy/aikv.toml.example).
 
-### 3.2 环境变量概要
+### 3.3 容器化部署脚本
+
+`deploy/` 目录提供基于 Docker 的一键部署脚本, 运行时配置由模板复制至 `deploy/.runtime/` (已加入 `.gitignore`):
+
+```bash
+./deploy/build-image.sh
+./deploy/up-single.sh
+./deploy/up-cluster.sh
+./deploy/status.sh
+./deploy/down.sh
+```
+
+- `up-single.sh`: 单机 aidb 模式, 使用 [`deploy/aikv.toml.example`](../deploy/aikv.toml.example) 中的容器路径与 Metrics 端口.
+- `up-cluster.sh`: 启动 **6 个节点** 的 Redis Cluster 拓扑.
+- 集群客户端入口: `redis-cli -c -p 6379` (智能客户端, 自动跟随 `-MOVED` / `-ASK` 重定向).
+
+### 3.4 Docker 镜像来源与 Compose 拓扑
+
+`deploy/Dockerfile` 是默认云端构建, 使用 AiDb `new/main` Git 分支;
+`deploy/Dockerfile.local` 用于本地联调, 从 aikv 同层级的 `../aidb` 构建.
+两者都生成同名 runtime image, 默认 tag 为 `aikv:dev`, 可通过
+`AIKV_IMAGE` 覆盖. Compose 文件只引用已构建镜像, 不执行 build 或 pull.
+
+推荐工作流:
+
+```bash
+./deploy/build-image.sh
+./deploy/up-single.sh
+./deploy/status.sh
+./deploy/down.sh
+
+./deploy/build-image.sh --local
+./deploy/up-cluster.sh
+./deploy/status.sh cluster
+./deploy/down.sh cluster --purge
+```
+
+单机模式使用一个容器, 映射客户端 `6379` 和 Metrics `9191`. 集群模式使用
+六个容器: 两个分片, 每个分片一个 master 和两个 replica. 节点客户端端口为
+`6379-6384`, MetaRaft 为 `16379-16384`, MultiRaft 为 `26379-26384`,
+Metrics 为 `9191-9196`.
+
+启动脚本将基线模板复制到 `deploy/.runtime/`; 集群模式再为每个节点追加
+`[cluster]` 配置. 默认 `down.sh` 停止并移除容器但保留 named volumes,
+只有显式 `--purge` 才删除数据. 如果 single 和 cluster 容器同时存在,
+`down.sh` 必须显式指定模式以避免误删.
+
+集群对外公布的 client 地址固定为 `127.0.0.1:<宿主客户端端口>`. 这是单主机
+部署约定, 本机 `redis-cli -c -p 6379` 可根据 `MOVED` 自动连接其他节点;
+远程主机或独立 Docker 网络中的客户端不能直接使用这些公布地址.
+
+### 3.5 环境变量概要
 
 除下表外, 全部 `AIKV_*` 与 TOML 路径一一对应, 详见 [09-config.md § 环境变量映射](modules/09-config.md#环境变量映射).
 

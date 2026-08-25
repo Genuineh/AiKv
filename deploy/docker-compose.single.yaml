@@ -1,0 +1,18 @@
+services:
+  aikv-single:
+    image: ${AIKV_IMAGE:-aikv:dev}
+    command: ["--config", "/etc/aikv/aikv.toml"]
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+      - "9191:9191"
+    volumes:
+      - type: bind
+        source: ./.runtime/single/aikv.toml
+        target: /etc/aikv/aikv.toml
+        read_only: true
+      - aikv-single-data:/var/lib/aikv/data
+
+volumes:
+  aikv-single-data:
+    name: aikv-single-data
