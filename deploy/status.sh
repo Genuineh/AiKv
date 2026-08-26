@@ -68,20 +68,23 @@ status_single() {
 status_cluster() {
     local running info state known size assigned nodes
     local master_count replica_count
-    local node
+    local node port index
+    local client_ports=(6379 6380 6381 7379 7380 7381)
 
     printf '%s\n' '[cluster]'
     cluster_compose ps -a
     running="$(cluster_compose ps --status running --services)"
-    for node in aikv-node1 aikv-node2 aikv-node3 aikv-node4 aikv-node5 aikv-node6; do
+    for node in aikv-1 aikv-2 aikv-3 aikv-4 aikv-5 aikv-6; do
         if [[ "$running" != *"$node"* ]]; then
             printf 'state: required service %s is not running\n' "$node"
             return 1
         fi
     done
 
-    for node in 1 2 3 4 5 6; do
-        if [[ "$(redis-cli -h 127.0.0.1 -p "$((6378 + node))" -t 1 ping 2>/dev/null || true)" != "PONG" ]]; then
+    for index in "${!client_ports[@]}"; do
+        node=$((index + 1))
+        port="${client_ports[$index]}"
+        if [[ "$(redis-cli -h 127.0.0.1 -p "$port" -t 1 ping 2>/dev/null || true)" != "PONG" ]]; then
             printf 'redis: node%s failed\n' "$node"
             return 1
         fi

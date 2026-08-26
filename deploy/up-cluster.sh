@@ -8,8 +8,10 @@ RUNTIME_ROOT="$SCRIPT_DIR/.runtime/cluster"
 PROJECT_NAME="aikv-cluster"
 STARTUP_TIMEOUT_SECONDS="${AIKV_CLUSTER_TIMEOUT_SECONDS:-120}"
 
-CLIENT_PORTS=(6379 6380 6381 6382 6383 6384)
-NODE_NAMES=(aikv-node1 aikv-node2 aikv-node3 aikv-node4 aikv-node5 aikv-node6)
+CLIENT_PORTS=(6379 6380 6381 7379 7380 7381)
+RPC_PORTS=(16379 16380 16381 17379 17380 17381)
+METRICS_PORTS=(9191 9192 9193 9194 9195 9196)
+NODE_NAMES=(aikv-1 aikv-2 aikv-3 aikv-4 aikv-5 aikv-6)
 
 die() {
     printf 'error: %s\n' "$*" >&2
@@ -41,25 +43,31 @@ redis_command() {
 }
 
 generate_configs() {
-    local node index client_port node_name node_dir
+    local node index client_port rpc_port metrics_port node_name node_dir
     mkdir -p "$RUNTIME_ROOT"
 
     for index in "${!NODE_NAMES[@]}"; do
         node=$((index + 1))
         client_port="${CLIENT_PORTS[$index]}"
+        rpc_port="${RPC_PORTS[$index]}"
+        metrics_port="${METRICS_PORTS[$index]}"
         node_name="${NODE_NAMES[$index]}"
         node_dir="$RUNTIME_ROOT/node$node"
 
         mkdir -p "$node_dir"
         cp "$TEMPLATE" "$node_dir/aikv.toml"
+        sed -i \
+            -e "s|^bind = .*|bind = \"0.0.0.0:$client_port\"|" \
+            -e "s|^metrics_port = .*|metrics_port = $metrics_port|" \
+            "$node_dir/aikv.toml"
         {
             printf '\n[cluster]\n'
             printf 'node_id = %d\n' "$node"
-            printf 'rpc_addr = "%s:16379"\n' "$node_name"
+            printf 'rpc_addr = "%s:%s"\n' "$node_name" "$rpc_port"
             if (( node == 1 )); then
                 printf 'peers = []\n'
             else
-                printf 'peers = ["aikv-node1:16379"]\n'
+                printf 'peers = ["aikv-1:16379"]\n'
             fi
             printf 'cluster_data_port_offset = 10000\n'
             printf 'client_addr = "127.0.0.1:%s"\n' "$client_port"
@@ -161,10 +169,11 @@ wait_for_known_nodes() {
 
 meet_missing_nodes() {
     local nodes="$1"
-    local index port node_name response
+    local index port rpc_port node_name response
 
     for index in "${!CLIENT_PORTS[@]}"; do
         port="${CLIENT_PORTS[$index]}"
+        rpc_port="${RPC_PORTS[$index]}"
         node_name="${NODE_NAMES[$index]}"
         (( index == 0 )) && continue
 
@@ -172,7 +181,7 @@ meet_missing_nodes() {
             continue
         fi
 
-        response="$(redis_command 6379 CLUSTER MEET "$node_name" "$port" 16379 127.0.0.1)"
+        response="$(redis_command 6379 CLUSTER MEET "$node_name" "$port" "$rpc_port" 127.0.0.1)"
         [[ "$response" == "OK" ]] ||
             die "CLUSTER MEET for $node_name returned: $response"
     done
@@ -280,10 +289,10 @@ validate_final_topology() {
     validate_known_nodes "$nodes"
     line="$(node_line "$nodes" 6379)"
     master_id="$(node_id_from_line "$line")"
-    line="$(node_line "$nodes" 6382)"
+    line="$(node_line "$nodes" 7379)"
     shard2_id="$(node_id_from_line "$line")"
 
-    for port in 6379 6382; do
+    for port in 6379 7379; do
         line="$(node_line "$nodes" "$port")"
         flags="$(node_flags_from_line "$line")"
         slots="$(node_slots_from_line "$line")"
@@ -303,7 +312,7 @@ validate_final_topology() {
             die "replica on port $port owns slots"
     done
 
-    for port in 6383 6384; do
+    for port in 7380 7381; do
         line="$(node_line "$nodes" "$port")"
         flags="$(node_flags_from_line "$line")"
         primary="$(node_primary_from_line "$line")"
@@ -331,7 +340,8 @@ validate_final_topology() {
 }
 
 generate_configs
-compose up -d
+# Remove containers from the previous service names before rebinding ports.
+compose up -d --remove-orphans
 wait_for_all_nodes
 
 nodes="$(cluster_nodes)"
@@ -343,22 +353,22 @@ meet_missing_nodes "$nodes"
 nodes="$(wait_for_known_nodes)"
 
 node1_id="$(node_id_from_line "$(node_line "$nodes" 6379)")"
-node4_id="$(node_id_from_line "$(node_line "$nodes" 6382)")"
+node4_id="$(node_id_from_line "$(node_line "$nodes" 7379)")"
 [[ "$node1_id" != "$node4_id" && -n "$node1_id" && -n "$node4_id" ]] ||
     die "could not obtain distinct master node IDs"
 
 replicate_if_needed "$nodes" 6380 "$node1_id"
 replicate_if_needed "$nodes" 6381 "$node1_id"
-replicate_if_needed "$nodes" 6383 "$node4_id"
-replicate_if_needed "$nodes" 6384 "$node4_id"
+replicate_if_needed "$nodes" 7380 "$node4_id"
+replicate_if_needed "$nodes" 7381 "$node4_id"
 
 add_slots_if_needed 6379 "0-8191" 0 8191
-add_slots_if_needed 6382 "8192-16383" 8192 16383
+add_slots_if_needed 7379 "8192-16383" 8192 16383
 
 add_replica_if_needed 6379 6380 "$node1_id"
 add_replica_if_needed 6379 6381 "$node1_id"
-add_replica_if_needed 6382 6383 "$node4_id"
-add_replica_if_needed 6382 6384 "$node4_id"
+add_replica_if_needed 7379 7380 "$node4_id"
+add_replica_if_needed 7379 7381 "$node4_id"
 
 validate_final_topology
 printf 'aikv cluster is ready: 2 masters, 4 replicas, 16384 slots\n'

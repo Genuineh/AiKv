@@ -25,7 +25,8 @@ def _is_metaraft_not_leader(err: Exception) -> bool:
     if "migration already" in s:
         return False
     return (
-        "不是 Leader" in s
+        isinstance(err, redis.exceptions.MovedError)
+        or "不是 Leader" in s
         or "MOVED 0 " in s
         or "has to forward request to" in s
         or "NotLeader" in s

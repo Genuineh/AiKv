@@ -11,8 +11,8 @@ services:
         source: ./.runtime/single/aikv.toml
         target: /etc/aikv/aikv.toml
         read_only: true
-      - aikv-single-data:/var/lib/aikv/data
+      - aikv:/var/lib/aikv/data
 
 volumes:
-  aikv-single-data:
-    name: aikv-single-data
+  aikv:
+    name: aikv

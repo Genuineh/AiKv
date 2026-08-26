@@ -210,18 +210,26 @@ def exec_resp(name: str, *args: str, port: int = 6379) -> str:
 def exec_resp_raw(name: str, payload: str, port: int = 6379) -> str:
     """docker exec 内执行预编码的 RESP 载荷 (支持管道化多命令).
 
-    镜像内无 redis-cli 但有 netcat-openbsd (entrypoint healthcheck 同款),
-    故用 `printf '<RESP>' | nc -w 5 127.0.0.1 <port>` 走回环完成请求.
-    `-w 5` 提供大响应 (CLUSTER SLOTS / CLUSTER INFO / READONLY+GET 管道) 的完整
-    读取窗口, 分区测试期间宿主机负载波动时避免短窗口截断大响应导致 flake;
+    镜像内无 redis-cli 时优先使用 `nc`, 缺少 `nc` 则回退到 Bash `/dev/tcp`,
+    通过回环完成请求. `-w 5` / `timeout 5` 提供大响应
+    (CLUSTER SLOTS / CLUSTER INFO / READONLY+GET 管道) 的完整读取窗口,
+    分区测试期间宿主机负载波动时避免短窗口截断大响应导致 flake;
     断网后 host 端口映射失效, 容器内操作一律走此入口.
     """
     escaped = payload.replace("'", "'\\''")
-    script = f"printf '%s' '{escaped}' | nc -w 5 127.0.0.1 {port}"
+    script = (
+        "if command -v nc >/dev/null 2>&1; then "
+        f"printf '%s' '{escaped}' | nc -w 5 127.0.0.1 {port}; "
+        "else "
+        f"exec 3<>/dev/tcp/127.0.0.1/{port}; "
+        f"printf '%s' '{escaped}' >&3; "
+        "timeout 5 cat <&3; "
+        "fi"
+    )
     # stdout 必须二进制读取 (text=True 的 universal newlines 会把 `\r\n` 归一化掉 `\r`,
     # 破坏 RESP 解析); 本命令不读 stdin, 故无 `-i`.
     proc = subprocess.run(
-        ["docker", "exec", name, "sh", "-c", script],
+        ["docker", "exec", name, "bash", "-c", script],
         capture_output=True,
         check=False,
     )

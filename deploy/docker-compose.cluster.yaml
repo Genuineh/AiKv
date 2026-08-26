@@ -6,8 +6,9 @@ x-aikv-node: &aikv-node
     - aikv-cluster
 
 services:
-  aikv-node1:
+  aikv-1:
     <<: *aikv-node
+    container_name: aikv-1
     ports:
       - "6379:6379"
       - "16379:16379"
@@ -18,92 +19,97 @@ services:
         source: ./.runtime/cluster/node1/aikv.toml
         target: /etc/aikv/aikv.toml
         read_only: true
-      - aikv-cluster-node1-data:/var/lib/aikv/data
+      - aikv1-data:/var/lib/aikv/data
 
-  aikv-node2:
+  aikv-2:
     <<: *aikv-node
+    container_name: aikv-2
     ports:
-      - "6380:6379"
-      - "16380:16379"
-      - "26380:26379"
-      - "9192:9191"
+      - "6380:6380"
+      - "16380:16380"
+      - "26380:26380"
+      - "9192:9192"
     volumes:
       - type: bind
         source: ./.runtime/cluster/node2/aikv.toml
         target: /etc/aikv/aikv.toml
         read_only: true
-      - aikv-cluster-node2-data:/var/lib/aikv/data
+      - aikv2-data:/var/lib/aikv/data
 
-  aikv-node3:
+  aikv-3:
     <<: *aikv-node
+    container_name: aikv-3
     ports:
-      - "6381:6379"
-      - "16381:16379"
-      - "26381:26379"
-      - "9193:9191"
+      - "6381:6381"
+      - "16381:16381"
+      - "26381:26381"
+      - "9193:9193"
     volumes:
       - type: bind
         source: ./.runtime/cluster/node3/aikv.toml
         target: /etc/aikv/aikv.toml
         read_only: true
-      - aikv-cluster-node3-data:/var/lib/aikv/data
+      - aikv3-data:/var/lib/aikv/data
 
-  aikv-node4:
+  aikv-4:
     <<: *aikv-node
+    container_name: aikv-4
     ports:
-      - "6382:6379"
-      - "16382:16379"
-      - "26382:26379"
-      - "9194:9191"
+      - "7379:7379"
+      - "17379:17379"
+      - "27379:27379"
+      - "9194:9194"
     volumes:
       - type: bind
         source: ./.runtime/cluster/node4/aikv.toml
         target: /etc/aikv/aikv.toml
         read_only: true
-      - aikv-cluster-node4-data:/var/lib/aikv/data
+      - aikv4-data:/var/lib/aikv/data
 
-  aikv-node5:
+  aikv-5:
     <<: *aikv-node
+    container_name: aikv-5
     ports:
-      - "6383:6379"
-      - "16383:16379"
-      - "26383:26379"
-      - "9195:9191"
+      - "7380:7380"
+      - "17380:17380"
+      - "27380:27380"
+      - "9195:9195"
     volumes:
       - type: bind
         source: ./.runtime/cluster/node5/aikv.toml
         target: /etc/aikv/aikv.toml
         read_only: true
-      - aikv-cluster-node5-data:/var/lib/aikv/data
+      - aikv5-data:/var/lib/aikv/data
 
-  aikv-node6:
+  aikv-6:
     <<: *aikv-node
+    container_name: aikv-6
     ports:
-      - "6384:6379"
-      - "16384:16379"
-      - "26384:26379"
-      - "9196:9191"
+      - "7381:7381"
+      - "17381:17381"
+      - "27381:27381"
+      - "9196:9196"
     volumes:
       - type: bind
         source: ./.runtime/cluster/node6/aikv.toml
         target: /etc/aikv/aikv.toml
         read_only: true
-      - aikv-cluster-node6-data:/var/lib/aikv/data
+      - aikv6-data:/var/lib/aikv/data
 
 networks:
   aikv-cluster:
     name: aikv-cluster
 
 volumes:
-  aikv-cluster-node1-data:
-    name: aikv-cluster-node1-data
-  aikv-cluster-node2-data:
-    name: aikv-cluster-node2-data
-  aikv-cluster-node3-data:
-    name: aikv-cluster-node3-data
-  aikv-cluster-node4-data:
-    name: aikv-cluster-node4-data
-  aikv-cluster-node5-data:
-    name: aikv-cluster-node5-data
-  aikv-cluster-node6-data:
-    name: aikv-cluster-node6-data
+  aikv1-data:
+    name: aikv1-data
+  aikv2-data:
+    name: aikv2-data
+  aikv3-data:
+    name: aikv3-data
+  aikv4-data:
+    name: aikv4-data
+  aikv5-data:
+    name: aikv5-data
+  aikv6-data:
+    name: aikv6-data

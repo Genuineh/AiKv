@@ -86,11 +86,15 @@ flowchart TD
 唯一的 `node_id`、Docker service RPC 地址、宿主机 client 地址和
 `cluster_data_port_offset = 10000`.
 
-单机使用一个容器, client/Metrics 端口为 `6379/9191`. 集群使用六个容器,
-宿主机 client 端口为 `6379-6384`, Metrics 端口为 `9191-9196`, 容器内每个
-节点仍固定监听 `6379` 和 `9191`. 集群配置的 `announce_mode = "fixed"` 会
-公布 `127.0.0.1:<宿主机 client 端口>`; 本机客户端应使用
-`redis-cli -c -p 6379` 跟随 `MOVED` 重定向.
+单机使用一个容器, client/Metrics 端口为 `6379/9191`, named volume 为 `aikv`.
+集群使用六个容器 `aikv-1` 至 `aikv-6`, 宿主机 client 端口依次为
+`6379`, `6380`, `6381`, `7379`, `7380`, `7381`, Metrics 端口为 `9191-9196`;
+MetaRaft 端口依次为 `16379`, `16380`, `16381`, `17379`, `17380`, `17381`,
+MultiRaft 端口依次为 `26379`, `26380`, `26381`, `27379`, `27380`, `27381`.
+集群数据卷为 `aikv1-data` 至 `aikv6-data`. 容器内每个节点的监听端口与其
+宿主机映射端口一致. 集群配置的 `announce_mode = "fixed"` 会公布
+`127.0.0.1:<宿主机 client 端口>`; 本机客户端应使用 `redis-cli -c -p 6379`
+跟随 `MOVED` 重定向.
 
 ---
 
