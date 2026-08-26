@@ -93,7 +93,7 @@ jobs:
         run: cargo test --features cluster --test stress_ttl -- --ignored --test-threads=1
 
   # compression feature: aidb_options 的 Snap/LZ4 压缩 gate 测试.
-  # 该用例 feature-gated, 默认/--features cluster 不编译, 需显式 --features compression.
+  # compression 已是默认 feature, 普通构建会编译该路径.
   test-compression:
     runs-on: ubuntu-latest
     steps:
@@ -104,6 +104,19 @@ jobs:
           cache-save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/new/main' }}
 
       - name: Test compression (Snap/LZ4 gate)
-        run: cargo test --features compression --lib storage::aidb_options -- --test-threads=1
+        run: cargo test --lib storage::aidb_options -- --test-threads=1
+
+  # 验证显式关闭默认 compression 后, 无压缩 fallback 仍可用.
+  test-no-compression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare workspace (rust + protoc + aidb)
+        uses: ./.github/actions/prepare
+        with:
+          cache-save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/new/main' }}
+
+      - name: Test without compression feature
+        run: cargo test --no-default-features --lib storage::aidb_options -- --test-threads=1
 
  # TODO: 当前 e2ejob 主要为人工执行设计, 暂时从 CI 移除

@@ -122,8 +122,11 @@ cargo test --test server --features cluster -- --ignored --test-threads=1
 cargo test --test commands --features cluster -- --ignored --test-threads=1
 cargo test --test stress_ttl --features cluster -- --ignored --test-threads=1
 
-# 块压缩测试
-cargo test --features compression --lib storage::aidb_options
+# 默认压缩测试
+cargo test --lib storage::aidb_options
+
+# 无压缩兼容测试
+cargo test --no-default-features --lib storage::aidb_options
 ```
 
 ### E2E 黑盒验收测试

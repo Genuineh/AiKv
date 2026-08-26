@@ -37,22 +37,22 @@ aidb = { path = "../aidb" }
 
 | Feature       | 默认状态 | 包含模块与依赖                                              | 适用场景                      |
 | ------------- | ---- | ---------------------------------------------------- | ------------------------- |
-| **(none)**    | ✅    | 极简单机 RESP 服务, 内存/单机 LSM 引擎                           | 最小二进制发布                   |
+| **(none)**    | ❌（需 `--no-default-features`） | 极简单机 RESP 服务, 内存/单机 LSM 引擎                           | 无可选 feature 的最小二进制发布                   |
 | `cluster`     | ❌    | `src/cluster/`, `ClusterDataAdapter`, `aidb/cluster` | Redis Cluster 分布式集群模式     |
 | `monitoring`  | ❌    | `MetricsServer` (`/health` HTTP), OTel 指标/链路         | 生产环境 OTLP 监控接入与健康探活       |
-| `compression` | ❌    | `aidb/compression` (Snap / LZ4 块压缩)                  | 开启 LSM SSTable 块压缩以降低磁盘占用 |
+| `compression` | ✅ 默认开启    | `aidb/compression` (Snap / LZ4 块压缩)                  | 默认使用 Snap; `--no-default-features` 可关闭 |
 
 ### 典型构建组合
 
 ```bash
-# 1. 本地开发与 CI 门禁构建
+# 1. 本地开发与 CI 门禁构建 (默认包含块压缩)
 cargo build --release --features cluster
 
-# 2. 生产环境标准镜像构建 (推荐全功能)
-cargo build --release --features cluster,monitoring,compression
+# 2. 生产环境标准镜像构建 (推荐全功能, 默认包含块压缩)
+cargo build --release --features cluster,monitoring
 
 # 3. 生产环境基础镜像构建 (无块压缩)
-cargo build --release --features cluster,monitoring
+cargo build --release --no-default-features --features cluster,monitoring
 ```
 
 ---
@@ -211,7 +211,7 @@ cargo run --release --features cluster -- \
 ```bash
 mkdir -p /var/lib/aikv/data
 
-cargo run --release --features cluster,monitoring,compression -- \
+cargo run --release --features cluster,monitoring -- \
   --bind 0.0.0.0:6379 \
   --engine aidb \
   --data-dir /var/lib/aikv/data \

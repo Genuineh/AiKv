@@ -81,8 +81,11 @@ flowchart TB
 # 1. 编译带集群能力的发布版本
 cargo build --release --features cluster
 
-# 2. 生产全功能构建 (块压缩 + 集群 + OTel 监控)
-cargo build --release --features cluster,monitoring,compression
+# 2. 生产全功能构建 (默认包含块压缩 + 集群 + OTel 监控)
+cargo build --release --features cluster,monitoring
+
+# 3. 无压缩兼容构建
+cargo build --release --no-default-features --features cluster,monitoring
 ```
 
 ### 单机运行
@@ -170,10 +173,10 @@ aidb = { path = "/absolute/path/to/aidb" }
 
 | Feature | 默认状态 | 核心能力 | 依赖与说明 |
 | :--- | :--- | :--- | :--- |
-| **(none)** | ✅ | 单机 RESP2/3 服务, 内存 / AiDb 存储引擎 | 零外部网络依赖, 最小发布体积 |
+| **(none)** | ❌ (需 `--no-default-features`) | 单机 RESP2/3 服务, 内存 / AiDb 存储引擎 | 无可选 feature 的最小构建 |
 | **`cluster`** | 按需开启 | 16384 Slot 槽位计算, `-MOVED` / `-ASK` 重定向, MultiRaft 批处理 | 依赖 `aidb/cluster`, 构建需 `protoc` |
 | **`monitoring`** | 按需开启 | OTel 生产指标 (`aikv_*`), Tracing 链路导出, `:9191` `/health` HTTP 探活 | 依赖 `aidb/monitoring` |
-| **`compression`** | 按需开启 | 开启 SSTable 数据块压缩 (Snap / LZ4) | 依赖 `aidb/compression` |
+| **`compression`** | ✅ 默认开启 | 开启 SSTable 数据块压缩 (Snap / LZ4) | 依赖 `aidb/compression`; 可用 `--no-default-features` 关闭 |
 
 完整 CLI 参数与环境变量对照见 [docs/deployment.md](docs/deployment.md).
 

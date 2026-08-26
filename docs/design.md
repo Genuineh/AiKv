@@ -30,10 +30,10 @@ AiKv 定位为纯 Rust **Redis RESP 兼容的高性能分布式 KV 网络服务 
 
 | Feature | 默认状态 | 设计理由与启用内容 |
 | :--- | :--- | :--- |
-| **(none)** | ✅ 默认开启 | 极简单机 RESP 服务, 零 tonic / OpenRaft / OTel 传递依赖, 产生最小二进制体积 |
+| **(none)** | ❌（需 `--no-default-features`） | 极简单机 RESP 服务, 不启用任何可选 feature, 产生最小二进制体积 |
 | **`cluster`** | ❌ 默认关闭 | 启用 `src/cluster/`、`ClusterDataAdapter` 与 `aidb/cluster`, 支持 Redis Cluster 协议与分布式 Raft 组 |
 | **`monitoring`** | ❌ 默认关闭 | 启用 `MetricsServer` (`/health` HTTP 服务) 与 OTel 指标/链路跟踪, 生产 OTLP 管道输出 |
-| **`compression`** | ❌ 默认关闭 | 启用 `aidb/compression` (Snap / LZ4 块压缩), 在 SSD 容量敏感型生产环境中按需开启 |
+| **`compression`** | ✅ 默认开启 | 启用 `aidb/compression` (Snap / LZ4 块压缩), 生产默认使用 Snap; `--no-default-features` 可关闭 |
 
 ### 与 Redis 8.8 对齐: 兼容什么, 放弃什么 (YAGNI)?
 
