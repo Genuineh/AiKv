@@ -212,10 +212,9 @@ async fn init_cluster(
         .rpc_addr
         .as_deref()
         .expect("cluster rpc_addr required");
-    let data_dir = settings
-        .data_dir
-        .as_deref()
-        .expect("data_dir required for cluster mode");
+    let Some(data_dir) = settings.data_dir.as_deref() else {
+        return Err("data_dir required for cluster mode".into());
+    };
     let bind_addr = settings.bind;
     let aidb_preset = DbPreset::parse(&settings.aidb_preset).unwrap_or(DbPreset::Default);
 

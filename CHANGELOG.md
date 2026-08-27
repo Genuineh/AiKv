@@ -6,3 +6,7 @@
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/).
 
 ## [Unreleased]
+
+### Fixed
+
+- 集群启用时拒绝 `engine=memory`, 避免 `init_cluster` panic 与绕过 Raft 的内存写入 (`#77`).
