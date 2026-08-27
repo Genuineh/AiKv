@@ -1,9 +1,27 @@
 [package]
 name = "aikv"
-version = "0.10.5"
+version = "1.0.0"
 edition = "2021"
-description = "Redis RESP protocol compatible KV server based on aidb"
+description = "Redis RESP2/RESP3 compatible persistent key-value server powered by AiDb"
 license = "MIT"
+repository = "https://github.com/wiqun/AiKv"
+homepage = "https://github.com/wiqun/AiKv"
+documentation = "https://docs.rs/aikv"
+readme = "README.md"
+keywords = ["database", "redis", "key-value", "raft", "resp"]
+categories = ["database-implementations", "network-programming", "command-line-utilities"]
+exclude = [
+  ".cargo/",
+  ".github/",
+  ".cursor/",
+  ".claude/",
+  "e2e/",
+  "hooks/",
+  "install-hooks.sh",
+  "clippy.toml",
+  "deny.toml",
+  "rustfmt.toml",
+]
 
 [[bin]]
 name = "aikv"
@@ -55,10 +73,7 @@ openraft = { version = "0.10.0-alpha.33", optional = true }
 openraft-rt-tokio = { version = "0.10.0-alpha.33", optional = true }
 
 # AiDb storage engine
-# 开发期用 git 依赖 (可被任何人 clone 编译); 本地通过 ~/.cargo/config.toml 的
-# [patch] 覆盖为 ../aidb 的 path, 保持改 aidb 立即可被 aikv 验证.
-# 见 README.md §与 AiDb 与 CONTRIBUTING.md §aidb 依赖.
-aidb = { git = "https://github.com/wiqun/AiDb.git", branch = "new/main" }
+aidb = "1.0.0"
 
 # Monitoring (optional)
 # Metrics HTTP server (monitoring feature)
@@ -84,4 +99,3 @@ debug         = 1   # line tables for eBPF/Pyroscope flame graphs (不 strip)
 
 [lints.clippy]
 all = "warn"
-

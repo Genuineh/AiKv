@@ -14,19 +14,25 @@ description: AiKv 构建、配置、单机/集群部署与生产运维指南 (Ho
 | 资源维度             | 生产推荐配置                       | 最低运行要求                    | 运维与规划说明                                                 |
 | ---------------- | ---------------------------- | ------------------------- | ------------------------------------------------------- |
 | **Rust 工具链**     | Rust **stable**              | 声明于 `rust-toolchain.toml` | 包含 `clippy` 与 `rustfmt`                                 |
-| **操作系统**         | Linux (kernel ≥ 5.4) / macOS | Linux x86_64 / aarch64    | CI 运行在 `ubuntu-latest`                                  |
+| **操作系统**         | Linux x86_64                  | 其他平台                   | Linux x86_64 正式支持, 其他平台 best-effort                  |
 | **磁盘存储**         | 高性能 NVMe SSD                 | 标准 SSD                    | 持久化模式 (`--engine aidb`) 依赖磁盘顺序与随机 IOPS                  |
 | **内存容量**         | 8 GiB ~ 64 GiB+              | 1 GiB                     | `memory` 引擎全驻留内存; `aidb` 引擎内存由 MemTable 与 BlockCache 决定 |
 | **Protobuf 编译器** | `protoc` (最新 stable)         | 系统包管理器版本                  | 仅编译 `cluster` 特性时生成 Raft gRPC 桩代码需要                     |
 | **网络端口规划**       | 独占 6379, 16379, 26379, 9191  | 见端口角色表                    | 集群模式单节点需规划 3 个互不冲突的通信端口                                 |
 
+### 安全网络边界
+
+AiKv v1 不内建 `AUTH`, `ACL` 或 `TLS`, 所有 RESP 连接默认使用明文 TCP. `RESP`, `MetaRaft` 和 `MultiRaft` 端口不得暴露到不可信网络. 需要跨越信任边界时, 必须使用认证/TLS proxy 或 service mesh, 并限制安全组, 防火墙和网络策略的来源.
+
+示例中的监听地址应仅绑定到 loopback 或受控的私有网络. Metrics 和 health endpoint 也应按部署环境限制访问, 不应因为开启监控而直接暴露到不可信网络.
+
 ### Monorepo 依赖关系与本地 Patch
 
-AiKv 依赖 sibling 存储引擎 `aidb` (分支 `new/main`). 本地协同开发时, 在 `~/.cargo/config.toml` 中配置本地覆盖:
+AiKv 依赖 sibling 存储引擎 `aidb` (crates.io `1.0.0`). 本地协同开发时, 在 `~/.cargo/config.toml` 中配置本地覆盖:
 
 ```toml
-[patch."https://github.com/wiqun/AiDb.git"]
-aidb = { path = "../aidb" }
+[patch.crates-io]
+aidb = { path = "/absolute/path/to/aidb" }
 ```
 
 ---
@@ -89,7 +95,7 @@ AiKv 采用四层配置合并, 优先级从低到高: **内置默认值 → TOML
 
 ### 3.4 Docker 镜像来源与 Compose 拓扑
 
-`deploy/Dockerfile` 是默认云端构建, 使用 AiDb `new/main` Git 分支;
+`deploy/Dockerfile` 是默认 registry 构建, 使用 crates.io 上的 `aidb 1.0.0`;
 `deploy/Dockerfile.local` 用于本地联调, 从 aikv 同层级的 `../aidb` 构建.
 两者都生成同名 runtime image, 默认 tag 为 `aikv:dev`, 可通过
 `AIKV_IMAGE` 覆盖. Compose 文件只引用已构建镜像, 不执行 build 或 pull.
@@ -212,11 +218,11 @@ cargo run --release --features cluster -- \
 mkdir -p /var/lib/aikv/data
 
 cargo run --release --features cluster,monitoring -- \
-  --bind 0.0.0.0:6379 \
+  --bind 127.0.0.1:6379 \
   --engine aidb \
   --data-dir /var/lib/aikv/data \
   --aidb-preset high-write \
-  --metrics-addr 0.0.0.0 \
+  --metrics-addr 127.0.0.1 \
   --metrics-port 9191
 ```
 
@@ -367,3 +373,9 @@ redis-cli -p 6379 BGSAVE
 # 查询最后一次快照成功时间戳
 redis-cli -p 6379 LASTSAVE
 ```
+
+### 8.1 v1 升级边界
+
+从 v1 之前版本升级到 v1.0.0 时, 数据目录, `DUMP`, Raft snapshot 和已有集群均不可原地升级或滚动升级. 不得在同一集群中混用不同版本节点, 也不得直接复用未经验证的旧持久化产物.
+
+请先停止旧部署并保留可恢复备份, 再创建新部署, 按经过验证的迁移或恢复方案导入数据, 最后执行读写和集群健康检查. 若迁移方案不能验证数据完整性, 不应继续升级.

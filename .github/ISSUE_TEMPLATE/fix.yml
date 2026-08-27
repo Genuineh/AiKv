@@ -13,7 +13,7 @@ body:
     attributes:
       label: Version
       description: aikv version or commit SHA
-      placeholder: "0.10.5 or commit abcdef0"
+      placeholder: "1.0.0 or commit abcdef0"
     validations:
       required: true
   - type: textarea

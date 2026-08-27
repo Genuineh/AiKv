@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -11,12 +12,25 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BIN = REPO_ROOT / "target" / "release" / "aikv"
 
 
+def _validate_binary(path: Path, source: str) -> Path:
+    if not path.is_file():
+        raise FileNotFoundError(f"{source} 指向的 binary 不存在或不是文件: {path}")
+    if not os.access(path, os.X_OK):
+        raise PermissionError(f"{source} 指向的 binary 不可执行: {path}")
+    return path.resolve()
+
+
 def ensure_release_binary() -> Path:
-    """若 `target/release/aikv` 已存在则直接用, 否则 `cargo build --release --features cluster`."""
+    """优先使用 `AIKV_BIN`, 否则确认或构建默认 release binary."""
     log = get_logger()
+    env_bin = os.environ.get("AIKV_BIN")
+    if env_bin is not None:
+        return _validate_binary(Path(env_bin), "AIKV_BIN")
+
     if DEFAULT_BIN.is_file():
+        binary = _validate_binary(DEFAULT_BIN, "默认 release binary")
         log.debug("使用已有二进制 %s", DEFAULT_BIN)
-        return DEFAULT_BIN
+        return binary
     log.info("正在构建 release aikv (含 cluster feature)…")
     subprocess.run(
         [
@@ -31,8 +45,4 @@ def ensure_release_binary() -> Path:
         cwd=REPO_ROOT,
         check=True,
     )
-    if not DEFAULT_BIN.is_file():
-        raise FileNotFoundError(
-            f"期望二进制位于 {DEFAULT_BIN}; 请检查 CARGO_TARGET_DIR / 构建输出"
-        )
-    return DEFAULT_BIN
+    return _validate_binary(DEFAULT_BIN, "构建后的 release binary")

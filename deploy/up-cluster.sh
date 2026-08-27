@@ -58,6 +58,7 @@ generate_configs() {
         cp "$TEMPLATE" "$node_dir/aikv.toml"
         sed -i \
             -e "s|^bind = .*|bind = \"0.0.0.0:$client_port\"|" \
+            -e 's|^metrics_addr = .*|metrics_addr = "0.0.0.0"|' \
             -e "s|^metrics_port = .*|metrics_port = $metrics_port|" \
             "$node_dir/aikv.toml"
         {

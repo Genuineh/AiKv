@@ -27,6 +27,10 @@ docker compose version >/dev/null
 
 mkdir -p "$RUNTIME_DIR"
 cp "$SCRIPT_DIR/aikv.toml.example" "$CONFIG_PATH"
+sed -i \
+    -e 's|^bind = .*|bind = "0.0.0.0:6379" # 仅用于容器内监听; 宿主端口映射由 Docker 提供|' \
+    -e 's|^metrics_addr = .*|metrics_addr = "0.0.0.0" # 仅用于容器内监听; 宿主端口映射由 Docker 提供|' \
+    "$CONFIG_PATH"
 
 docker compose \
     -p "$PROJECT_NAME" \

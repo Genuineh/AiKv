@@ -14,6 +14,8 @@ description: AiKv 核心 Redis 命令 — String/Hash/List/Set/ZSet/Key/Database
 - **不覆盖**: JSON / Lua / 阻塞队列 / MIGRATE / 持久化与服务端管理命令 → [commands-extended.md](05-commands-extended.md);
 - **不覆盖**: 集群 MOVED/ASK 重定向判定与 CLUSTER 子命令 → [cluster.md](06-cluster.md).
 
+> **命令清单**: 已实现命令以 [compatibility.md](../compatibility.md) 为准 (与 `all_commands()` 自动核对); 下文仅保留数据结构分组索引.
+
 ---
 
 ## 代码地图
@@ -98,12 +100,14 @@ sequenceDiagram
 
 ## 核心数据结构支持列表
 
-| 数据结构 | 支持的核心命令清单 |
+完整命令名见 [compatibility.md](../compatibility.md). 下表按数据结构分组, 仅列 registry 内已实现命令.
+
+| 数据结构 | 已实现命令 (registry) |
 | :--- | :--- |
-| **String** | `GET`, `SET` (含 EX/PX/NX/XX/GET/KEEPTTL), `MGET`, `MSET`, `MSETNX`, `INCR`, `INCRBY`, `INCRBYFLOAT`, `DECR`, `DECRBY`, `APPEND`, `STRLEN`, `GETRANGE`, `SETRANGE`, `GETSET`, `GETDEL`, `GETEX` |
-| **Hash** | `HGET`, `HSET`, `HMGET`, `HMSET`, `HDEL`, `HEXISTS`, `HLEN`, `HKEYS`, `HVALS`, `HGETALL`, `HINCRBY`, `HINCRBYFLOAT`, `HSETNX`, `HRANDFIELD`, `HSCAN`, `HSTRLEN` |
-| **List** | `LPUSH`, `RPUSH`, `LPUSHX`, `RPUSHX`, `LPOP`, `RPOP`, `LRANGE`, `LLEN`, `LINDEX`, `LSET`, `LTRIM`, `LREM`, `LINSERT`, `LPOS`, `LMOVE`, `RPOPLPUSH` |
-| **Set** | `SADD`, `SREM`, `SMEMBERS`, `SISMEMBER`, `SMISMEMBER`, `SCARD`, `SPOP`, `SRANDMEMBER`, `SINTER`, `SUNION`, `SDIFF`, `SINTERSTORE`, `SUNIONSTORE`, `SDIFFSTORE`, `SSCAN`, `SMOVE` |
-| **ZSet** | `ZADD` (含 NX/XX/GT/LT/CH/INCR), `ZREM`, `ZSCORE`, `ZMSCORE`, `ZCARD`, `ZCOUNT`, `ZRANK`, `ZREVRANK`, `ZRANGE`, `ZREVRANGE`, `ZRANGEBYSCORE`, `ZREVRANGEBYSCORE`, `ZINCRBY`, `ZPOPMIN`, `ZPOPMAX`, `ZSCAN` |
-| **Key** | `DEL`, `EXISTS`, `TYPE`, `EXPIRE`, `PEXPIRE`, `EXPIREAT`, `PEXPIREAT`, `TTL`, `PTTL`, `PERSIST`, `EXPIRETIME`, `PEXPIRETIME`, `RENAME`, `RENAMENX`, `COPY`, `KEYS`, `SCAN`, `RANDOMKEY`, `TOUCH` |
-| **DB** | `SELECT`, `FLUSHDB`, `FLUSHALL`, `DBSIZE`, `SWAPDB` |
+| **String** | `GET`, `SET`, `MGET`, `MSET`, `DEL`, `EXISTS`, `STRLEN`, `GETRANGE`, `SETRANGE`, `SETBIT`, `GETBIT`, `APPEND`, `INCR`, `DECR`, `INCRBY`, `DECRBY`, `INCRBYFLOAT`, `GETDEL`, `GETEX`, `SETNX`, `SETEX`, `PSETEX` |
+| **Hash** | `HSET`, `HMSET`, `HGET`, `HDEL`, `HEXISTS`, `HLEN`, `HKEYS`, `HVALS`, `HGETALL`, `HMGET`, `HSETNX`, `HINCRBY`, `HINCRBYFLOAT`, `HSCAN` |
+| **List** | `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, `LLEN`, `LRANGE`, `LINDEX`, `LSET`, `LREM`, `LTRIM`, `LINSERT`, `LMOVE`, `LPOS`, `BLPOP`, `BRPOP`, `BLMOVE` |
+| **Set** | `SADD`, `SREM`, `SISMEMBER`, `SMEMBERS`, `SCARD`, `SPOP`, `SRANDMEMBER`, `SUNION`, `SINTER`, `SDIFF`, `SUNIONSTORE`, `SINTERSTORE`, `SDIFFSTORE`, `SMOVE`, `SSCAN` |
+| **ZSet** | `ZADD`, `ZREM`, `ZSCORE`, `ZRANK`, `ZREVRANK`, `ZRANGE`, `ZREVRANGE`, `ZRANGEBYSCORE`, `ZREVRANGEBYSCORE`, `ZCARD`, `ZCOUNT`, `ZINCRBY`, `ZSCAN`, `ZPOPMIN`, `ZPOPMAX`, `BZPOPMIN`, `BZPOPMAX`, `ZRANGEBYLEX`, `ZREVRANGEBYLEX`, `ZLEXCOUNT`, `ZINTER`, `ZUNION`, `ZDIFF` |
+| **Key** | `DEL`, `EXISTS`, `TYPE`, `EXPIRE`, `PEXPIRE`, `EXPIREAT`, `PEXPIREAT`, `TTL`, `PTTL`, `PERSIST`, `EXPIRETIME`, `PEXPIRETIME`, `RENAME`, `RENAMENX`, `COPY`, `KEYS`, `SCAN`, `RANDOMKEY`, `DUMP`, `RESTORE`, `MIGRATE` |
+| **DB** | `SELECT`, `FLUSHDB`, `FLUSHALL`, `DBSIZE`, `SWAPDB`, `MOVE` |

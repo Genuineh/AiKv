@@ -15,6 +15,8 @@ description: AiKv Redis Cluster 协议层 — 16384 槽位 CRC16 计算、MOVED/
 - **不覆盖**: 数据面写批处理 `ClusterDataAdapter` → [storage.md](03-storage.md);
 - **不覆盖**: MIGRATE 网络传输与 RESTORE 编解码 → [commands-extended.md](05-commands-extended.md).
 
+> **命令与子命令清单**: 顶层集群命令 (`CLUSTER`, `READONLY`, `READWRITE`, `ASKING`) 见 [compatibility.md](../compatibility.md); `CLUSTER` 子命令见下文与 compatibility 文档 CLUSTER 节.
+
 ---
 
 ## 代码地图

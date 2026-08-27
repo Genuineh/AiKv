@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "aidb"
-version = "0.14.10"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -51,7 +51,7 @@ dependencies = [
 
 [[package]]
 name = "aikv"
-version = "0.10.5"
+version = "1.0.0"
 dependencies = [
  "aidb",
  "async-trait",

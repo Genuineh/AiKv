@@ -1,12 +1,12 @@
 # AiKv
 
 [![Rust 2021](https://img.shields.io/badge/Rust-2021-blue.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-0.10.5-orange.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)](Cargo.toml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI Status](https://img.shields.io/badge/CI-passing-brightgreen.svg)](.github/workflows/ci.yml)
 
-> **AiKv** 是一个用纯 Rust 实现的高性能, 轻量级 **Redis RESP 协议兼容的分布式键值服务** (bin + lib).  
-> 对外提供标准的 RESP2/RESP3 协议与 Redis 命令语义; 底层存储与分布式共识委托给嵌入式引擎 [wiqun/AiDb](https://github.com/wiqun/AiDb).
+> **AiKv** 是一个用纯 Rust 实现的高性能, 轻量级 **RESP2/RESP3 兼容的分布式键值服务** (bin + lib).
+> 对外提供 RESP2/RESP3 array framing 与 [已实现命令子集](docs/compatibility.md); 底层存储与分布式共识委托给嵌入式引擎 [wiqun/AiDb](https://github.com/wiqun/AiDb).
 
 ---
 
@@ -21,7 +21,7 @@
 
 ## 核心亮点 (Key Highlights)
 
-- **协议完全兼容**: 深度对齐 Redis 8.8, 支持 RESP2/RESP3 双栈协议与标准命令语义, 现有客户端与业务无需改动即可平滑迁移.
+- **RESP2/RESP3 兼容及已实现命令子集**: 支持标准 array framing 双栈协议与 registry 内命令语义; 完整清单见 [docs/compatibility.md](docs/compatibility.md), 非 registry 命令或未实现能力需客户端适配.
 - **纯 Rust 实现**: 内存安全, 零 C/C++ 依赖, 采用 mimalloc 降低内存碎片.
 - **丰富的数据结构与原生扩展**: 完整支持 String, Hash, List, Set, Sorted Set, 原生内置 JSON (JSONPath) 与 Lua 5.4 脚本 (EVAL / SCRIPT).
 - **细粒度并发与事务**: 4096 桶按 Key 字典序排序加锁, 彻底杜绝死锁; 支持 MULTI/EXEC/WATCH 原子事务.
@@ -110,7 +110,7 @@ redis-cli -p 6379 GET mykey
 仓库 `deploy/` 目录提供一键脚本, 基于 [`deploy/aikv.toml.example`](deploy/aikv.toml.example) 生成运行时配置:
 
 ```bash
-# 云端 AiDb new/main 构建
+# 默认 registry 构建 (aidb 1.0.0)
 ./deploy/build-image.sh
 ./deploy/up-single.sh
 ./deploy/status.sh
@@ -123,7 +123,7 @@ redis-cli -p 6379 GET mykey
 ./deploy/down.sh cluster --purge
 ```
 
-默认 Docker 构建固定使用云端 AiDb `new/main`; `--local` 使用 aikv 同层级的
+默认 Docker 构建使用 crates.io 上的 `aidb 1.0.0`; `--local` 使用 aikv 同层级的
 `../aidb`. Compose 文件只引用预构建镜像, 不负责 build 或 pull; 镜像名默认为
 `aikv:dev`, 可用 `AIKV_IMAGE` 覆盖.
 
@@ -147,12 +147,22 @@ redis-cli -p 6379 GET mykey
 
 ---
 
+## 安全、平台与升级边界
+
+AiKv v1 不内建 `AUTH`, `ACL` 或 `TLS`. `RESP`, `MetaRaft` 和 `MultiRaft` 端口不得暴露到不可信网络. 需要跨越信任边界时, 必须使用认证/TLS proxy 或 service mesh, 并配置网络访问控制.
+
+Linux x86_64 是正式支持平台, 其他平台仅 best-effort. 从 v1 之前版本升级时, 数据目录, `DUMP`, Raft snapshot 和已有集群不可原地升级或滚动升级; 请使用新部署及经过验证的迁移或恢复方案, 不要混用不同版本节点或持久化产物.
+
+漏洞报告与版本发布流程分别见 [SECURITY.md](SECURITY.md) 和 [RELEASING.md](RELEASING.md).
+
+---
+
 ## 与 AiDb 协同开发 (Monorepo Setup)
 
-AiKv 通过 Git 依赖引入 [wiqun/AiDb](https://github.com/wiqun/AiDb) (`branch = "new/main"`). 本地高频联调时, 在 `~/.cargo/config.toml` 中配置本地覆盖:
+AiKv 通过 crates.io 引入 [wiqun/AiDb](https://github.com/wiqun/AiDb) (`aidb = "1.0.0"`). 本地高频联调时, 在 `~/.cargo/config.toml` 中配置本地覆盖:
 
 ```toml
-[patch."https://github.com/wiqun/AiDb.git"]
+[patch.crates-io]
 aidb = { path = "/absolute/path/to/aidb" }
 ```
 
@@ -208,7 +218,10 @@ pytest e2e/function/ -v
 | **系统架构** | [ARCHITECTURE.md](ARCHITECTURE.md) | 分层设计, KeyLock 并发模型, Subkey 编码, Cluster 路由原理 |
 | **设计决策** | [docs/design.md](docs/design.md) | 技术选型理由, 跨模块权衡 (Why), YAGNI 与已知限制 |
 | **部署与运维** | [docs/deployment.md](docs/deployment.md) | Feature 构建, CLI 参数, 集群多节点部署, OTel 监控告警 |
+| **安全政策** | [SECURITY.md](SECURITY.md) | 漏洞报告入口, 支持版本与网络安全边界 |
+| **发布手册** | [RELEASING.md](RELEASING.md) | 版本预检, 最终门禁与发布候选流程 |
 | **开发与贡献** | [CONTRIBUTING.md](CONTRIBUTING.md) | Git 工作流, 测试矩阵, 规范要求与 PR 流程 |
+| **兼容矩阵** | [compatibility.md](docs/compatibility.md) | Redis 协议边界, 已实现命令与 `all_commands()` 自动核对 |
 | **AI 助手指南** | [AGENTS.md](AGENTS.md) | 编码硬约束 (Never / Always), 技术对照表与任务路由 |
 | **模块文档** | [docs/modules/](docs/modules/) | 8 篇模块深度规范 (Protocol, Server, Storage, Commands, Cluster, Observability) |
 | **变更记录** | [CHANGELOG.md](CHANGELOG.md) | 版本演进与特性变更日志 |

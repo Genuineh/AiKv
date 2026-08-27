@@ -15,6 +15,8 @@ description: AiKv 扩展 Redis 命令 — JSON/JSONPath 引擎、Lua EVAL/SCRIPT
 - **不覆盖**: 集群 MOVED/ASK 路由与 CLUSTER 子命令 → [cluster.md](06-cluster.md);
 - **不覆盖**: Slowlog 环形缓冲、Latency 直方图与 OTel 监控管道 → [observability.md](07-observability.md).
 
+> **命令清单**: 已实现命令以 [compatibility.md](../compatibility.md) 为准 (与 `all_commands()` 自动核对); 下文仅保留扩展命令分组索引.
+
 ---
 
 ## 代码地图
@@ -82,10 +84,12 @@ flowchart TD
 
 ## 核心扩展命令一览
 
-| 命令分组 | 支持的核心命令 |
+完整命令名见 [compatibility.md](../compatibility.md). 下表按分组列出 registry 内已实现顶层命令; 子命令 (如 `SCRIPT LOAD`, `CONFIG GET`) 见各模块实现, 不在 registry 单独注册.
+
+| 命令分组 | 已实现顶层命令 (registry) |
 | :--- | :--- |
-| **JSON** | `JSON.SET`, `JSON.GET`, `JSON.DEL`, `JSON.TYPE`, `JSON.NUMINCRBY`, `JSON.NUMMULTBY`, `JSON.STRAPPEND`, `JSON.STRLEN`, `JSON.ARRAPPEND`, `JSON.ARRINDEX`, `JSON.ARRINSERT`, `JSON.ARRLEN`, `JSON.ARRPOP`, `JSON.ARRTRIM`, `JSON.OBJKEYS`, `JSON.OBJLEN`, `JSON.TOGGLE`, `JSON.CLEAR`, `JSON.MGET` |
-| **Scripting** | `EVAL`, `EVALSHA`, `SCRIPT LOAD`, `SCRIPT EXISTS`, `SCRIPT FLUSH`, `SCRIPT HELP` |
-| **Blocking** | `BLPOP`, `BRPOP`, `BLMOVE`, `BLMPOP`, `BZPOPMIN`, `BZPOPMAX`, `BZMPOP` |
+| **JSON** | `JSON.SET`, `JSON.GET`, `JSON.DEL`, `JSON.TYPE`, `JSON.NUMINCRBY`, `JSON.STRLEN`, `JSON.ARRAPPEND`, `JSON.ARRLEN`, `JSON.OBJLEN`, `JSON.UPDATE`, `JSON.MGET`, `JSON.MSET` |
+| **Scripting** | `EVAL`, `EVALSHA`, `SCRIPT` |
+| **Blocking** | `BLPOP`, `BRPOP`, `BLMOVE`, `BZPOPMIN`, `BZPOPMAX` |
 | **Cluster & Sync** | `MIGRATE`, `RESTORE`, `DUMP` |
-| **Server & Admin** | `INFO`, `CONFIG GET`, `CONFIG SET`, `CLIENT LIST`, `CLIENT SETNAME`, `CLIENT GETNAME`, `CLIENT ID`, `CLIENT KILL`, `COMMAND`, `COMMAND COUNT`, `COMMAND DOCS`, `COMMAND GETKEYS`, `COMMAND INFO`, `COMMAND LIST`, `OBJECT ENCODING`, `OBJECT REFCOUNT`, `OBJECT IDLETIME`, `OBJECT FREQ`, `SLOWLOG GET`, `SLOWLOG LEN`, `SLOWLOG RESET`, `LATENCY LATEST`, `LATENCY HISTORY`, `LATENCY RESET`, `SAVE`, `BGSAVE`, `LASTSAVE`, `SHUTDOWN`, `TIME` |
+| **Server & Admin** | `INFO`, `TIME`, `CONFIG`, `OBJECT`, `CLIENT`, `LATENCY`, `SLOWLOG`, `COMMAND`, `SAVE`, `BGSAVE`, `LASTSAVE`, `SHUTDOWN` |

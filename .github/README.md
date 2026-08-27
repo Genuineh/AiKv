@@ -7,7 +7,7 @@ CI 质量门禁由本地 **Git Hooks(pre-commit)** 和云端 **GitHub Actions** 
 
 > 需执行 [`install-hooks.sh`](../install-hooks.sh) 脚本安装到本地 hooks (软链到 .git/hooks/) 才生效.
 >
-> **aidb 依赖**: `Cargo.toml` 声明 `aidb = { git = "https://github.com/wiqun/AiDb.git", branch = "new/main" }`, CI 构建前由 prepare action 执行 `cargo update -p aidb` 强制对齐分支最新; 本地开发通过 `~/.cargo/config.toml` 的 `[patch]` 覆盖为本地 path (见 [README.md §与 AiDb](../README.md#与-aidb)).
+> **aidb 依赖**: `Cargo.toml` 声明 `aidb = "1.0.0"`, CI 消费提交的 lockfile; 本地开发通过 `~/.cargo/config.toml` 的 `[patch.crates-io]` 覆盖为本地 path (见 [README.md §与 AiDb](../README.md#与-aidb)).
 
 ## 总览
 
@@ -63,7 +63,7 @@ aikv/
     │   └── config.yml # 禁用空白 Issue
     ├── PULL_REQUEST_TEMPLATE.md # PR 描述模板 (含 Closes #)
     ├── actions/
-    │   └── prepare/action.yml    # composite: rust + protoc + cargo update aidb (workflow 须先 checkout)
+    │   └── prepare/action.yml    # composite: rust + protoc (workflow 须先 checkout)
     └── workflows/               # GitHub Actions
         ├── ci.yml               # 主 CI (test-cluster → stress/slow; e2e 暂不入 CI)
         ├── security.yml         # 安全扫描 (audit + deny)
@@ -93,7 +93,7 @@ aikv/
 | GitHub | `[ISSUE_TEMPLATE/perf.yml](ISSUE_TEMPLATE/perf.yml)`             | Issue 模板: 性能                                            |
 | GitHub | `[ISSUE_TEMPLATE/config.yml](ISSUE_TEMPLATE/config.yml)`         | 禁用空白 Issue                                              |
 | GitHub | `[PULL_REQUEST_TEMPLATE.md](PULL_REQUEST_TEMPLATE.md)`           | PR 描述模板                                                 |
-| GitHub | `[actions/prepare/action.yml](actions/prepare/action.yml)`       | rust + protoc + `cargo update -p aidb`; 各 job 须先 `actions/checkout` |
+| GitHub | `[actions/prepare/action.yml](actions/prepare/action.yml)`       | rust + protoc; 各 job 须先 `actions/checkout` |
 | GitHub | `[workflows/ci.yml](workflows/ci.yml)`                           | 主 CI (test-cluster → stress/slow, compression 并行; e2e 暂不入 CI) |
 | GitHub | `[workflows/security.yml](workflows/security.yml)`               | 安全扫描 (audit + deny, push/PR/定时)                        |
 | GitHub | `[workflows/docs-link-check.yml](workflows/docs-link-check.yml)` | 文档外链检查 (lychee, push/PR 含 `.md`)                      |

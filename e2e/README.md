@@ -1,12 +1,27 @@
 # AiKv E2E Tests (Python / pytest)
 
-黑盒客户端验收: **用例仅连接已部署的被测服务** (单机或集群拓扑均可), 不直接控制进程生命周期.
+黑盒客户端验收: 大多数用例仅连接已部署的被测服务 (单机或集群拓扑均可);
+`crash/test_crash.py` 与 `crash/test_restart.py` 会在本机自建临时进程并控制其生命周期.
 
 ## 环境前置
 
 - 已部署并就绪的 AiKv 服务 (单机或集群), 地址端口可知
 - `redis-cli` 工具已安装在系统 `PATH` 中 (自动门禁检查)
 - 使用 [uv](https://github.com/astral-sh/uv) 管理 Python 虚拟环境
+
+### 候选 binary
+
+`crash/test_crash.py` 与 `crash/test_restart.py` 需要可执行的 AiKv binary.
+`AIKV_BIN` 存在时优先使用
+该路径, 且路径必须是普通文件并具有执行权限; 路径无效时直接失败, 不会回退到默认
+binary. 例如使用尚未 publish 的本地候选 binary:
+
+```bash
+AIKV_BIN=/path/to/aikv pytest e2e/function/crash/ -v
+```
+
+未设置 `AIKV_BIN` 时, harness 依次确认 `target/release/aikv` 是否为可执行文件;
+若不存在则执行 `cargo build --release --features cluster`, 构建后再次校验输出文件.
 
 ## 环境搭建 (uv)
 
@@ -54,6 +69,14 @@ AIKV_HOST=127.0.0.1 AIKV_PORT=6379 \
 | `crash/` | **持久化与崩溃恢复** | `test_crash.py`, `test_restart.py`, `test_rdb.py` |
 | `migration/` | **集群拓扑与动态槽位迁移** | `test_nodes.py`, `test_scale.py`, `test_migration.py` |
 | `failover/` | **高可用故障转移** | `test_reconnect.py`, `test_node_fail.py`, `test_failover.py` |
+
+执行目标说明:
+
+- **连接外部拓扑**: `command/` 全部用例, `crash/test_rdb.py`, `migration/` 全部用例,
+  以及 `failover/` 全部用例. 故障转移用例按现有六节点 Docker 端口约定运行.
+- **自建本机进程**: `crash/test_crash.py` 与 `crash/test_restart.py` 使用 harness
+  启动临时单机进程, 结束后清理数据目录. 这两个用例不接收 `svc` fixture 参数,
+  数据校验针对自建节点.
 
 ### Fixture
 

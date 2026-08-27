@@ -42,3 +42,16 @@
 - `BLPOP` / `BRPOP` / `BLMOVE` / `BZPOPMIN` / `BZPOPMAX` 对齐 Redis 8.8: `timeout=0` 无限阻塞, 负数 `timeout` 返回 `ERR timeout is negative`
 - Lua `redis.call` 热路径 span `cmd_lua_redis_call` 降为 `debug` 级别
 - 依赖安全: `crossbeam-epoch` 0.9.18 → 0.9.20 (RUSTSEC-2026-0204), `h2` 0.4.15 → 0.4.16 (RUSTSEC-2026-0258 部分), `deny.toml` 豁免 wit-bindgen/hashbrown 构建链重复版本
+
+## [1.0.0] - 2026-08-26
+
+### Added
+
+- AiKv `1.0.0` 拟发布版本. API 稳定范围为拟发布的 `aikv` crate 中已文档化的 Rust public API, CLI/config 配置面, 以及 [兼容矩阵](docs/compatibility.md) 中列出的命令与行为; 未文档化的内部实现, 未列出的 Redis 命令和 AiDb 内部 API 不属于稳定承诺.
+- RESP 稳定范围为 RESP2/RESP3 array framing, `HELLO 3` 协商, Pipeline 和兼容矩阵列出的已实现命令子集. Telnet inline command, Streams 和 Pub/Sub 不在范围内.
+
+### Changed
+
+- v1 不内建 `AUTH`, `ACL` 或 `TLS` (即无内建 AUTH/ACL/TLS). `RESP`, `MetaRaft` 和 `MultiRaft` 端口不得暴露到不可信网络; 跨信任边界必须使用认证/TLS proxy 或 service mesh.
+- 从 v1 之前版本升级时, 数据目录, `DUMP`, Raft snapshot 和已有集群均不兼容原地升级或滚动升级. 必须使用经过验证的新部署迁移或恢复方案.
+- Linux x86_64 为正式支持平台, 其他平台为 best-effort.

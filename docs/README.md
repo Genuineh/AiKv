@@ -22,6 +22,7 @@
 | [deployment.md](deployment.md) | Cargo Features 构建、CLI 参数、单机/集群部署、OTel 监控告警 |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Git Hooks、测试矩阵、规范要求与 PR 提交流程 |
 | [CHANGELOG.md](../CHANGELOG.md) | 历史版本演进与发布变更记录 |
+| [compatibility.md](compatibility.md) | Redis 兼容矩阵 (协议边界, 已实现命令, 与 `all_commands()` 自动核对) |
 | [AGENTS.md](../AGENTS.md) | AI 助手工作纪律、硬性约束 (Never / Always) 与技术对照表 |
 
 ---

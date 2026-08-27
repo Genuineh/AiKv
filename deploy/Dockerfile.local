@@ -4,7 +4,6 @@ FROM rust:bookworm@sha256:e536cf316987faedfe8ae120f83b70c7df0068fdb4fc9efcce55c7
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         protobuf-compiler \
-        git \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -14,15 +13,11 @@ COPY aikv/Cargo.toml aikv/Cargo.lock aikv/rust-toolchain.toml ./
 COPY aikv/src ./src
 COPY aidb /src/aidb
 
-# The host lockfile may describe aidb as a path package because of the
-# developer's global Cargo patch. Keep that resolution inside the image.
 RUN mkdir -p /usr/local/cargo \
     && printf '%s\n' \
-        '[patch."https://github.com/wiqun/AiDb.git"]' \
+        '[patch.crates-io]' \
         'aidb = { path = "/src/aidb" }' \
         > /usr/local/cargo/config.toml \
-    && cat /usr/local/cargo/config.toml \
-    && cargo update -p aidb \
     && cargo build --release --features cluster,monitoring,compression
 
 FROM debian:bookworm-slim

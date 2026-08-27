@@ -4,8 +4,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from harness.binary import ensure_release_binary
 from harness.node import start_node
 
@@ -13,10 +11,10 @@ _PREFIX = "{e2e:func:02:restart}:"
 
 
 # @title 优雅重启与数据完整性校验
-def test_graceful_restart_data_integrity(svc):
+def test_graceful_restart_data_integrity():
     """验证服务优雅停止 (SIGTERM) 并重启后数据零丢失.
 
-    本用例自建临时单机节点, 不依赖外部被测服务 (svc 仅保持 fixture 签名一致).
+    本用例自建临时单机节点, 不依赖外部被测服务.
 
     1. 构建/确认 aikv 二进制可执行文件 | 成功
     2. 启动临时单机测试节点 | 节点就绪
@@ -26,11 +24,7 @@ def test_graceful_restart_data_integrity(svc):
     6. 读取之前写入的 Key | 内容与重启前完全一致
     7. 优雅清理并关闭临时节点 | 清理成功
     """
-    try:
-        binary = ensure_release_binary()
-    except Exception:  # noqa: BLE001 — 无法构建二进制时整体 Skip
-        pytest.skip("无法构建/获取 aikv 可执行二进制文件，跳过优雅重启测试")
-
+    binary = ensure_release_binary()
     temp_node = start_node(binary=binary, engine="aidb")
     try:
         c = temp_node.client()

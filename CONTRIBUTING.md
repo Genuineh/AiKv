@@ -40,11 +40,11 @@ brew install protobuf
 
 ### AiDb 依赖与本地 Patch
 
-`Cargo.toml` 中 `aidb` 默认通过 Git 依赖引入 (`branch = "new/main"`). 本地高频联调时, 推荐在 `~/.cargo/config.toml` 中配置本地覆盖:
+`Cargo.toml` 中 `aidb` 通过 crates.io registry 引入 (`aidb = "1.0.0"`). 本地高频联调时, 推荐在 `~/.cargo/config.toml` 中配置本地覆盖:
 
 ```toml
 # ~/.cargo/config.toml (仅本地生效, 不提交到 Git 仓库)
-[patch."https://github.com/wiqun/AiDb.git"]
+[patch.crates-io]
 aidb = { path = "/absolute/path/to/aidb" }
 ```
 
