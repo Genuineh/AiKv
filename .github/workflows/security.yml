@@ -26,7 +26,8 @@ jobs:
       - name: Install cargo-audit
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-audit@0.21.2
+          # 不钉版本: cargo-audit 必须能解析持续演进的 advisory-db (如 CVSS 4.0)
+          tool: cargo-audit
 
       - name: Run cargo audit
         run: cargo audit
