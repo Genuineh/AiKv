@@ -1,446 +1,724 @@
-use aikv::{Server, StorageEngine};
-use serde::Deserialize;
-use std::fs;
-use tracing::{info, warn};
-use tracing_subscriber::{self, filter::LevelFilter, EnvFilter};
+//! aikv 入口: 加载配置, 初始化 tracing, 启动 TCP 服务.
+#![recursion_limit = "256"]
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
-const LOGO: &str = r#"
-     _    _ _  __
-    / \  (_) |/ /_   __
-   / _ \ | | ' /\ \ / /
-  / ___ \| | . \ \ V /
- /_/   \_\_|_|\_\ \_/
-"#;
+use mimalloc::MiMalloc;
 
-/// Server section of the configuration file
-#[derive(Deserialize, Default)]
-struct ServerConfig {
-    #[serde(default = "default_host")]
-    host: String,
-    #[serde(default = "default_port")]
-    port: u16,
-}
+#[global_allocator]
+static GLOBAL_ALLOCATOR: MiMalloc = MiMalloc;
 
-fn default_host() -> String {
-    "127.0.0.1".to_string()
-}
-
-fn default_port() -> u16 {
-    6379
-}
-
-/// Storage section of the configuration file
-#[derive(Deserialize, Default)]
-struct StorageConfig {
-    /// Storage engine type: "memory" or "aidb"
-    #[serde(default = "default_engine")]
-    engine: String,
-    /// Data directory for AiDb storage
-    #[serde(default = "default_data_dir")]
-    data_dir: String,
-    /// Number of databases (default: 16)
-    #[serde(default = "default_databases")]
-    databases: usize,
-}
-
-fn default_engine() -> String {
-    "memory".to_string()
-}
-
-fn default_data_dir() -> String {
-    "./data".to_string()
-}
-
-fn default_databases() -> usize {
-    16
-}
-
-/// Logging section of the configuration file
-#[derive(Deserialize, Default)]
-struct LoggingConfig {
-    /// Log level: trace, debug, info, warn, error
-    #[serde(default = "default_log_level")]
-    level: String,
-}
-
-fn default_log_level() -> String {
-    "info".to_string()
-}
-
-/// Cluster section of the configuration file
-#[cfg(feature = "cluster")]
-#[derive(Deserialize, Default)]
-struct ClusterConfigSection {
-    /// Enable cluster mode
-    #[serde(default)]
-    enabled: bool,
-    /// Raft address for cluster communication
-    #[serde(default = "default_raft_addr")]
-    raft_address: String,
-    /// Whether this is the bootstrap node (first node in cluster)
-    #[serde(default)]
-    is_bootstrap: bool,
-    /// Pre-configured peer addresses for multi-master MetaRaft bootstrap
-    /// Example: ["127.0.0.1:50051", "127.0.0.1:50052", "127.0.0.1:50053"]
-    #[serde(default)]
-    peers: Vec<String>,
-}
+use std::path::PathBuf;
+use std::sync::Arc;
 
 #[cfg(feature = "cluster")]
-fn default_raft_addr() -> String {
-    "127.0.0.1:50051".to_string()
+#[allow(unused_imports)]
+use std::collections::HashMap;
+#[cfg(feature = "cluster")]
+#[allow(unused_imports)]
+use std::path::Path;
+
+use aikv::command::blocking;
+use aikv::config::{print_resolved_config, resolve, Cli, EngineKind, ResolvedSettings};
+use aikv::server::{ConnectionConfig, Server, ServerSharedState};
+use aikv::storage::ttl_filter::TtlExpireFilter;
+use aikv::storage::{
+    server_db_options_with_preset, AiDbEngine, DbPreset, KvStorage, KvStorageAdapter, MemoryEngine,
+    StorageEngineKind, StorageObservation,
+};
+use clap::Parser;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter, Registry};
+
+/// Storage 构建结果: (storage, engine_kind, data_dir, 可选的 DB 引用)
+type StorageBuildResult = Result<
+    (
+        Arc<dyn KvStorage>,
+        StorageEngineKind,
+        Option<PathBuf>,
+        Option<Arc<aidb::DB>>,
+        Option<Arc<aikv::storage::types::DbKeyCounters>>,
+        Option<Arc<aikv::storage::types::ExpireDecrGate>>,
+    ),
+    String,
+>;
+
+async fn build_storage(
+    settings: &ResolvedSettings,
+    observation: Arc<StorageObservation>,
+) -> StorageBuildResult {
+    let preset = DbPreset::parse(&settings.aidb_preset).unwrap_or(DbPreset::Default);
+
+    match settings.engine {
+        EngineKind::Memory => Ok((
+            MemoryEngine::with_observation(16, Some(observation)),
+            StorageEngineKind::Memory,
+            None,
+            None,
+            None,
+            None,
+        )),
+        EngineKind::AiDb => {
+            let path = settings
+                .data_dir
+                .as_ref()
+                .expect("aidb engine requires data_dir after resolve");
+            let engine = AiDbEngine::open_with_options(
+                path,
+                server_db_options_with_preset(settings.sync_wal, preset),
+            )
+            .map_err(|e| e.to_string())?;
+            // 注入 TTL compaction 过滤器 (纯决策) + 键计数 Remove 监听器.
+            let counters = std::sync::Arc::new(aikv::storage::types::DbKeyCounters::new());
+            let expire_gate = std::sync::Arc::new(aikv::storage::types::ExpireDecrGate::new());
+            engine
+                .db
+                .set_compaction_filter(Some(std::sync::Arc::new(TtlExpireFilter)));
+            engine
+                .db
+                .set_compaction_removal_listener(Some(std::sync::Arc::new(
+                    aikv::storage::ttl_filter::DbKeyCounterRemovalListener::new(
+                        counters.clone(),
+                        expire_gate.clone(),
+                        engine.db.clone(),
+                    ),
+                )));
+            let db = engine.db.clone();
+            let adapter: Arc<dyn aikv::storage::StorageAdapter> = engine;
+            #[cfg(feature = "cluster")]
+            let adapter: Arc<dyn aikv::storage::StorageAdapter> =
+                aikv::storage::cluster_adapter::ClusterDataAdapter::new(
+                    adapter,
+                    aikv::storage::cluster_adapter::ClusterDataAdapter::DEFAULT_EAGER_FLUSH,
+                );
+            Ok((
+                KvStorageAdapter::open_with_counters(
+                    adapter,
+                    Some(observation),
+                    counters.clone(),
+                    expire_gate.clone(),
+                )
+                .await
+                .map_err(|e| e.to_string())?,
+                StorageEngineKind::AiDb,
+                Some(path.clone()),
+                Some(db),
+                Some(counters),
+                Some(expire_gate),
+            ))
+        }
+    }
 }
 
-/// Root configuration structure
-#[derive(Deserialize, Default)]
-struct Config {
-    #[serde(default)]
-    server: ServerConfig,
-    #[serde(default)]
-    storage: StorageConfig,
-    #[serde(default)]
-    logging: LoggingConfig,
-    #[cfg(feature = "cluster")]
-    #[serde(default)]
-    cluster: ClusterConfigSection,
+#[cfg(feature = "cluster")]
+fn spawn_client_addr_sync(
+    meta_raft: std::sync::Arc<aidb::cluster::MetaRaftNode>,
+    node_id: u64,
+    external_client_addr: String,
+) {
+    use aidb::cluster::meta_types::MetaRequest;
+
+    tokio::spawn(async move {
+        for attempt in 1u32..=20 {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            let meta = meta_raft.get_cluster_meta();
+            match meta.nodes.get(&node_id) {
+                Some(node) if node.client_addr.as_deref() != Some(&external_client_addr) => {
+                    match meta_raft
+                        .propose(MetaRequest::UpdateNodeClientAddr {
+                            node_id,
+                            client_addr: Some(external_client_addr.clone()),
+                        })
+                        .await
+                    {
+                        Ok(_) => {
+                            tracing::info!(
+                              client_addr = %external_client_addr,
+                              attempt,
+                              "client_addr updated in MetaRaft"
+                            );
+                            break;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                              attempt,
+                              error = %e,
+                              "failed to update client_addr, will retry"
+                            );
+                        }
+                    }
+                }
+                Some(_) => {
+                    tracing::info!("client_addr already correct, skipping update");
+                    break;
+                }
+                None => {
+                    // bootstrap 或尚未 MEET 注册, 继续等待.
+                }
+            }
+        }
+    });
 }
 
-/// Command line arguments structure
-struct CliArgs {
-    config_path: Option<String>,
-    host: Option<String>,
-    port: Option<u16>,
-    show_help: bool,
-    show_version: bool,
+/// 等到 Meta 中本节点应承载的 data group 已在 MultiRaft 打开, 再扫计数.
+/// `expected` 为空 (尚未 ADDSLOTS) 时立即返回; 超时则视为启动失败.
+#[cfg(feature = "cluster")]
+async fn wait_local_data_groups(timeout: std::time::Duration) -> Result<(), String> {
+    let Some(mgr) = aikv::cluster::state::CLUSTER_STATE_MGR.get() else {
+        return Err("CLUSTER_STATE_MGR not set".into());
+    };
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let meta = mgr.meta_raft.get_cluster_meta();
+        let expected: std::collections::HashSet<u64> = meta
+            .groups
+            .iter()
+            .filter(|(_, g)| g.replicas.iter().any(|r| r.node_id == mgr.node_id))
+            .map(|(id, _)| *id)
+            .collect();
+        let current: std::collections::HashSet<u64> =
+            mgr.multi_raft.local_group_ids().into_iter().collect();
+        if expected.is_subset(&current) {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(format!(
+                "local data groups not ready: expected {expected:?} have {current:?}"
+            ));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 }
 
-fn print_help() {
-    println!("{}", LOGO);
-    println!(
-        "AiKv v{} - Redis protocol compatible key-value store",
-        VERSION
-    );
-    println!();
-    println!("USAGE:");
-    println!("    aikv [OPTIONS]");
-    println!("    aikv [ADDRESS]");
-    println!();
-    println!("OPTIONS:");
-    println!("    -c, --config <FILE>    Path to configuration file (TOML format)");
-    println!("    -H, --host <HOST>      Bind address (default: 127.0.0.1)");
-    println!("    -p, --port <PORT>      Bind port (default: 6379)");
-    println!("    -h, --help             Print help information");
-    println!("    -v, --version          Print version information");
-    println!();
-    println!("EXAMPLES:");
-    println!("    # Start with default settings (127.0.0.1:6379)");
-    println!("    aikv");
-    println!();
-    println!("    # Start with configuration file");
-    println!("    aikv --config config.toml");
-    println!("    aikv -c config/aikv.toml");
-    println!();
-    println!("    # Start with custom host and port");
-    println!("    aikv --host 0.0.0.0 --port 6380");
-    println!("    aikv -H 0.0.0.0 -p 6380");
-    println!();
-    println!("    # Start with address directly (legacy mode)");
-    println!("    aikv 127.0.0.1:6379");
-    println!();
-    println!("CONFIGURATION FILE:");
-    println!("    See config/aikv.toml for a complete configuration template.");
-    println!("    Implemented configuration options:");
-    println!();
-    println!("    [server]");
-    println!("    host = \"127.0.0.1\"");
-    println!("    port = 6379");
-    println!();
-    println!("    [storage]");
-    println!("    engine = \"memory\"    # or \"aidb\"");
-    println!("    data_dir = \"./data\"  # for aidb engine");
-    println!("    databases = 16");
-    println!();
-    println!("    [logging]");
-    println!("    level = \"info\"       # trace, debug, info, warn, error");
-    println!();
-    println!("For more information, visit: https://github.com/Genuineh/AiKv");
-}
+#[cfg(feature = "cluster")]
+async fn init_cluster(
+    settings: &ResolvedSettings,
+    cluster_db: Option<Arc<aidb::DB>>,
+    metrics: Arc<aikv::server::metrics::ServerMetrics>,
+    key_counters: Arc<aikv::storage::types::DbKeyCounters>,
+    expire_gate: Arc<aikv::storage::types::ExpireDecrGate>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::net::SocketAddr as NetAddr;
 
-fn print_version() {
-    println!("aikv {}", VERSION);
-}
+    use aidb::cluster::{
+        membership_coordinator::MembershipCoordinator,
+        meta_types::{default_slot_table, ClusterMeta, SlotMigrationState, SlotTable},
+        slot_migration::SlotMigrationManager,
+        LeaderChangeWatcher, LifecycleManager, MetaRaftNode, MultiRaftNode,
+        RaftNetworkClientFactory, RaftServiceDispatcher, Router,
+    };
+    use aidb::config::MigrationConfig;
 
-/// Parse command line arguments
-fn parse_args() -> CliArgs {
-    let args: Vec<String> = std::env::args().collect();
-    let mut cli = CliArgs {
-        config_path: None,
-        host: None,
-        port: None,
-        show_help: false,
-        show_version: false,
+    let cluster = &settings.cluster;
+    let node_id = cluster.node_id.expect("cluster node_id required");
+    let rpc_addr = cluster
+        .rpc_addr
+        .as_deref()
+        .expect("cluster rpc_addr required");
+    let data_dir = settings
+        .data_dir
+        .as_deref()
+        .expect("data_dir required for cluster mode");
+    let bind_addr = settings.bind;
+    let aidb_preset = DbPreset::parse(&settings.aidb_preset).unwrap_or(DbPreset::Default);
+
+    // 1. 打开/重用 DB 引擎 (WAL 必须启用)
+    let db = match cluster_db {
+        Some(db) => db,
+        None => {
+            let opts = server_db_options_with_preset(settings.sync_wal, aidb_preset);
+            aidb::DB::open(data_dir, opts)?
+        }
     };
 
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "-h" | "--help" => {
-                cli.show_help = true;
-                return cli;
+    // 2. 创建 RaftNetworkClientFactory (MetaRaft 专用, 独立快超时)
+    let net_factory =
+        RaftNetworkClientFactory::new(node_id, 0, cluster.meta_rpc_timeout_ms, 64 * 1024 * 1024);
+    let net_factory = Arc::new(parking_lot::RwLock::new(net_factory));
+
+    let linearizable_read = cluster.linearizable_read;
+
+    // 3. 创建 MetaRaftNode (控制平面, group_id=0)
+    let raft_config = aidb::cluster::RaftNodeConfig {
+        node_id,
+        group_id: 0,
+        election_timeout_min: cluster.raft_election_timeout_min,
+        election_timeout_max: cluster.raft_election_timeout_max,
+        heartbeat_interval: cluster.raft_heartbeat_interval,
+        max_payload_entries: 100,
+        snapshot_logs_since_last: 256,
+        max_entry_size: 8 * 1024 * 1024,
+        rpc_timeout_ms: cluster.raft_rpc_timeout_ms,
+        grpc_max_message_size: 64 * 1024 * 1024,
+        snapshot_size_threshold: None,
+        linearizable_read,
+        log_committer_config: None, // MetaRaft 使用同步路径
+    };
+    let factory = net_factory.read().clone(); // drop read lock before .await
+    let meta_raft = Arc::new(MetaRaftNode::new(raft_config.clone(), db.clone(), factory).await?);
+
+    // 4. 注册 peer 地址到 net_factory
+    for peer_addr in &cluster.peers {
+        if peer_addr == rpc_addr {
+            continue;
+        }
+        net_factory.write().add_node(0, peer_addr.clone());
+    }
+
+    // 5. 确定本节点的 client_addr (外部可达地址).
+    let external_client_addr = cluster.client_addr.clone().unwrap_or_else(|| {
+        let rpc_host = rpc_addr
+            .rsplit_once(':')
+            .map(|(h, _)| h.to_string())
+            .unwrap_or_default();
+        format!("{rpc_host}:{}", bind_addr.port())
+    });
+
+    // 6. 首节点 bootstrap / 从节点自动发现
+    if cluster.peers.is_empty() {
+        meta_raft
+            .initialize_with_client(vec![(
+                node_id,
+                rpc_addr.to_string(),
+                Some(external_client_addr.clone()),
+            )])
+            .await?;
+        tracing::info!("meta raft initialized as bootstrap node");
+    } else {
+        tracing::info!("meta raft joining via peers (gRPC auto-discovery)");
+    }
+
+    // 6. 创建共享 RaftServiceDispatcher (MetaRaft + MultiRaft 共用).
+    let dispatcher: Arc<RaftServiceDispatcher> = Arc::new(RaftServiceDispatcher::new());
+
+    // 7. 启动 MetaRaft gRPC (独立端口, 使用共享 dispatcher).
+    let rpc_socket: NetAddr = tokio::net::lookup_host(rpc_addr)
+        .await?
+        .next()
+        .ok_or_else(|| format!("cannot resolve RPC address: {rpc_addr}"))?;
+    let meta_raft_clone = Arc::clone(&meta_raft);
+    let dispatcher_for_meta = Arc::clone(&dispatcher);
+    tokio::spawn(async move {
+        if let Err(e) = meta_raft_clone
+            .start_server_with_dispatcher(rpc_socket, 64 * 1024 * 1024, dispatcher_for_meta)
+            .await
+        {
+            tracing::error!(error = %e, "meta raft gRPC server failed");
+        }
+    });
+    tracing::info!(rpc_addr = %rpc_addr, "meta raft gRPC server started");
+
+    // 6a. 所有节点后台同步 client_addr → MetaRaft (含 bootstrap).
+    spawn_client_addr_sync(
+        Arc::clone(&meta_raft),
+        node_id,
+        external_client_addr.clone(),
+    );
+
+    // 7. 推算 MultiRaft 总线端口 (rpc_port + cluster_data_port_offset, 与 @cport 约定一致)
+    let rpc_port_u16: u16 = rpc_socket.port();
+    let cluster_data_port_offset = cluster.cluster_data_port_offset;
+    if rpc_port_u16 > 65535u16 - cluster_data_port_offset {
+        return Err(format!(
+            "RPC port {} is too large: rpc_port + {} = {} exceeds u16::MAX (65535). \
+       Use a port <= {}.",
+            rpc_port_u16,
+            cluster_data_port_offset,
+            rpc_port_u16 as u32 + cluster_data_port_offset as u32,
+            65535u16 - cluster_data_port_offset,
+        )
+        .into());
+    }
+    let data_port = rpc_port_u16 + cluster_data_port_offset;
+    let data_addr = format!("{}:{}", rpc_socket.ip(), data_port);
+
+    // 8. 创建 Router (初始空表, 由 LifecycleManager 刷新)
+    let router = Arc::new(Router::new(
+        default_slot_table(),
+        HashMap::new(),
+        HashMap::new(),
+    ));
+
+    // 9. MetaRaftProvider 包装 (MetaRaftNode 未实现 trait, 需手动包装)
+    struct MetaRaftProv(Arc<MetaRaftNode>);
+    impl aidb::cluster::lifecycle_manager::MetaRaftProvider for MetaRaftProv {
+        fn get_cluster_meta(&self) -> ClusterMeta {
+            self.0.get_cluster_meta()
+        }
+        fn get_slot_table(&self) -> SlotTable {
+            self.0.get_slot_table()
+        }
+        fn get_migration_state(&self) -> Option<SlotMigrationState> {
+            self.0.get_migration_state()
+        }
+    }
+
+    // 10. 创建 LifecycleManager + MultiRaftNode (复用共享 dispatcher).
+    let meta_raft_prov = Arc::new(MetaRaftProv(Arc::clone(&meta_raft)));
+    let lifecycle = LifecycleManager::new(node_id, router.clone(), meta_raft_prov)
+        .with_tick_interval(std::time::Duration::from_millis(cluster.lifecycle_tick_ms));
+    let multi_raft =
+        MultiRaftNode::new_with_lifecycle(node_id, router.clone(), dispatcher.clone(), lifecycle);
+    let multi_raft = Arc::new(multi_raft);
+
+    // 11. 启动 Lifecycle (数据 Group 自动创建/销毁)
+    let mut data_raft_config = raft_config.clone();
+    data_raft_config.log_committer_config =
+        Some(aidb::cluster::log_committer::LogCommitterConfig::default());
+    let lifecycle_cfg = aidb::cluster::multi_raft_node::LifecycleConfig {
+        data_dir: data_dir.to_path_buf(),
+        raft_node_config: data_raft_config,
+        options: server_db_options_with_preset(settings.sync_wal, aidb_preset),
+        compaction_filter: Some(std::sync::Arc::new(TtlExpireFilter)),
+        compaction_removal_listener_factory: Some(std::sync::Arc::new({
+            let counters = key_counters;
+            let gate = expire_gate;
+            move |db: std::sync::Arc<aidb::DB>| {
+                std::sync::Arc::new(aikv::storage::ttl_filter::DbKeyCounterRemovalListener::new(
+                    counters.clone(),
+                    gate.clone(),
+                    db,
+                ))
+                    as std::sync::Arc<dyn aidb::engine::compaction::CompactionRemovalListener>
             }
-            "-v" | "--version" => {
-                cli.show_version = true;
-                return cli;
-            }
-            "-c" | "--config" => {
-                if i + 1 < args.len() {
-                    cli.config_path = Some(args[i + 1].clone());
-                    i += 1;
-                } else {
-                    eprintln!("Error: {} requires a file path argument", args[i]);
-                    std::process::exit(1);
-                }
-            }
-            "-H" | "--host" => {
-                if i + 1 < args.len() {
-                    cli.host = Some(args[i + 1].clone());
-                    i += 1;
-                } else {
-                    eprintln!("Error: {} requires a host argument", args[i]);
-                    std::process::exit(1);
-                }
-            }
-            "-p" | "--port" => {
-                if i + 1 < args.len() {
-                    match args[i + 1].parse::<u16>() {
-                        Ok(port) => cli.port = Some(port),
-                        Err(_) => {
-                            eprintln!("Error: Invalid port number '{}'", args[i + 1]);
-                            std::process::exit(1);
-                        }
+        })),
+    };
+    let _lifecycle_shutdown = multi_raft.start_lifecycle_with_data(lifecycle_cfg);
+
+    // 12. 启动数据面 gRPC server (spawn 后台任务)
+    let data_socket: NetAddr = data_addr.parse()?;
+    let mr_for_grpc = Arc::clone(&multi_raft);
+    tokio::spawn(async move {
+        if let Err(e) = mr_for_grpc.start(data_socket, 64 * 1024 * 1024).await {
+            tracing::error!(error = %e, "multi raft gRPC server failed");
+        }
+    });
+    tracing::info!(data_addr = %data_addr, "multi raft gRPC server starting");
+
+    // 14. 创建 MembershipCoordinator
+    let membership = Arc::new(MembershipCoordinator::new(
+        meta_raft.clone(),
+        multi_raft.clone(),
+        router.clone(),
+        node_id,
+    ));
+
+    // 15. 创建 ClusterStateManager, 注入 membership, 设置全局单例
+    let mut state_mgr = aikv::cluster::state::ClusterStateManager::new(
+        router.as_ref().clone(),
+        meta_raft.clone(),
+        multi_raft.clone(),
+        node_id,
+        cluster.announce_mode,
+    );
+    state_mgr.set_membership_coordinator(membership.clone());
+    let slot_migration = Arc::new(SlotMigrationManager::new(
+        meta_raft.clone(),
+        multi_raft.clone(),
+        router.clone(),
+        node_id,
+        data_dir.join("slot_migration"),
+        MigrationConfig::default(),
+    ));
+    state_mgr.set_slot_migration_manager(slot_migration);
+    state_mgr.data_dir = Some(data_dir.to_path_buf());
+    state_mgr.data_port_offset = cluster_data_port_offset;
+    state_mgr.metrics = Some(metrics);
+    tracing::info!(
+      announce_mode = ?state_mgr.announce_resolver.mode(),
+      client_addr = %external_client_addr,
+      "cluster announce resolver ready"
+    );
+    let state_mgr = Arc::new(state_mgr);
+    let _ = aikv::cluster::state::CLUSTER_STATE_MGR.set(state_mgr);
+
+    // 16. 启动拓扑后台刷新 (leader 缓存 + gossip metrics)
+    let _topology_refresh_handle = aikv::cluster::gossip::start_background_refresh(
+        aikv::cluster::state::CLUSTER_STATE_MGR
+            .get()
+            .unwrap()
+            .clone(),
+        cluster.gossip_interval,
+    );
+
+    // 17. 启动 LeaderChangeWatcher (tick 后同步观测 leader 到路由缓存)
+    let tick_ms = (cluster.raft_election_timeout_min / 2).max(100);
+    let leader_watcher = std::sync::Arc::new(LeaderChangeWatcher::new(
+        node_id,
+        multi_raft.clone(),
+        meta_raft.clone(),
+        std::time::Duration::from_millis(tick_ms),
+        std::time::Duration::from_millis(cluster.raft_election_timeout_max), // lease = election_timeout_max
+    ));
+    let (watcher_tx, watcher_rx) = tokio::sync::watch::channel(false);
+    let watcher_for_task = leader_watcher.clone();
+    let tick_duration = std::time::Duration::from_millis(tick_ms);
+    tokio::spawn(async move {
+        let mut shutdown_rx = watcher_rx;
+        loop {
+            tokio::select! {
+              _ = tokio::time::sleep(tick_duration) => {
+                let changed = watcher_for_task.tick().await;
+                if let Some(mgr) = aikv::cluster::state::CLUSTER_STATE_MGR.get() {
+                  let cache = watcher_for_task.leader_cache().read();
+                  for group_id in changed {
+                    if let Some(leader_id) = cache.get(&group_id).and_then(|v| *v) {
+                      mgr.apply_observed_group_leader(group_id, leader_id);
                     }
-                    i += 1;
-                } else {
-                    eprintln!("Error: {} requires a port argument", args[i]);
-                    std::process::exit(1);
+                  }
+                  // 探活 quorum 状态注入 → 派生 cluster_state_ok (fail 时路由拒绝读写).
+                  mgr.apply_observed_group_quorum(
+                    watcher_for_task.leader_quorum_status(),
+                    mgr.meta_raft.get_slot_table(),
+                    mgr.meta_raft.get_cluster_meta(),
+                  );
                 }
-            }
-            arg => {
-                // Legacy mode: first argument is the address
-                if cli.config_path.is_none() && cli.host.is_none() && cli.port.is_none() {
-                    // Check if it looks like an address (contains ':')
-                    if arg.contains(':') {
-                        let parts: Vec<&str> = arg.split(':').collect();
-                        if parts.len() == 2 {
-                            cli.host = Some(parts[0].to_string());
-                            if let Ok(port) = parts[1].parse::<u16>() {
-                                cli.port = Some(port);
-                            } else {
-                                eprintln!(
-                                    "Error: Invalid port in address '{}'. Expected HOST:PORT",
-                                    arg
-                                );
-                                std::process::exit(1);
-                            }
-                        } else {
-                            eprintln!(
-                                "Error: Invalid address format '{}'. Expected HOST:PORT",
-                                arg
-                            );
-                            std::process::exit(1);
-                        }
-                    } else {
-                        eprintln!("Error: Unknown option '{}'. Use --help for usage.", arg);
-                        std::process::exit(1);
-                    }
-                } else {
-                    eprintln!(
-                        "Error: Unexpected argument '{}'. Use --help for usage.",
-                        arg
-                    );
-                    std::process::exit(1);
-                }
+              }
+              _ = shutdown_rx.changed() => {
+                tracing::info!("LeaderChangeWatcher shutting down");
+                break;
+              }
             }
         }
-        i += 1;
+    });
+    if let Some(mgr) = aikv::cluster::state::CLUSTER_STATE_MGR.get() {
+        *mgr._watcher_shutdown.lock() = Some(watcher_tx);
     }
+    tracing::info!(tick_ms, "LeaderChangeWatcher started");
 
-    cli
+    // 18. 启动 ConfigAutoSave
+    let auto_save = aikv::cluster::config_auto_save::ConfigAutoSave::new_with_interval(
+        meta_raft.clone(),
+        data_dir.to_path_buf(),
+        std::time::Duration::from_millis(cluster.config_auto_save_ms),
+    );
+    let (auto_save_tx, auto_save_rx) = tokio::sync::watch::channel(false);
+    tokio::spawn(async move {
+        auto_save.run(auto_save_rx).await;
+    });
+    if let Some(mgr) = aikv::cluster::state::CLUSTER_STATE_MGR.get() {
+        *mgr._auto_save_shutdown.lock() = Some(auto_save_tx);
+    }
+    tracing::info!("ConfigAutoSave started");
+
+    tracing::info!(node_id, rpc_addr, "cluster initialized successfully");
+    Ok(())
 }
 
-/// Load configuration from file and merge with CLI arguments
-#[cfg(feature = "cluster")]
-fn load_config(
-    cli: &CliArgs,
-) -> (
-    String,
-    u16,
-    StorageConfig,
-    LoggingConfig,
-    ClusterConfigSection,
-) {
-    let mut config = Config::default();
+fn init_logging(settings: &ResolvedSettings) {
+    let json_enabled = settings.observability.json_log;
+    #[cfg(feature = "monitoring")]
+    let tcp_port = settings.bind.port();
+    #[cfg(all(feature = "monitoring", feature = "cluster"))]
+    let cluster_node_id = settings.cluster.node_id;
+    #[cfg(all(feature = "monitoring", not(feature = "cluster")))]
+    let cluster_node_id: Option<u64> = None;
 
-    // Load from config file if specified
-    if let Some(ref path) = cli.config_path {
-        match fs::read_to_string(path) {
-            Ok(content) => match toml::from_str::<Config>(&content) {
-                Ok(cfg) => config = cfg,
-                Err(e) => {
-                    eprintln!("Failed to parse config file '{}': {}", path, e);
-                    std::process::exit(1);
-                }
-            },
-            Err(e) => {
-                eprintln!("Failed to read config file '{}': {}", path, e);
-                std::process::exit(1);
-            }
-        }
-    }
+    let filter = EnvFilter::builder()
+        .with_default_directive("info".parse().unwrap())
+        .from_env_lossy();
 
-    // CLI arguments override config file
-    let host = cli.host.clone().unwrap_or(config.server.host);
-    let port = cli.port.unwrap_or(config.server.port);
-
-    (host, port, config.storage, config.logging, config.cluster)
-}
-
-/// Load configuration from file and merge with CLI arguments
-#[cfg(not(feature = "cluster"))]
-fn load_config(cli: &CliArgs) -> (String, u16, StorageConfig, LoggingConfig) {
-    let mut config = Config::default();
-
-    // Load from config file if specified
-    if let Some(ref path) = cli.config_path {
-        match fs::read_to_string(path) {
-            Ok(content) => match toml::from_str::<Config>(&content) {
-                Ok(cfg) => config = cfg,
-                Err(e) => {
-                    eprintln!("Failed to parse config file '{}': {}", path, e);
-                    std::process::exit(1);
-                }
-            },
-            Err(e) => {
-                eprintln!("Failed to read config file '{}': {}", path, e);
-                std::process::exit(1);
-            }
+    #[cfg(feature = "monitoring")]
+    if let Some(config) = aikv::server::otel::otel_config_from_settings(
+        &settings.observability,
+        tcp_port,
+        cluster_node_id,
+    ) {
+        if aikv::server::otel::init_otel(&config) {
+            let tracer = opentelemetry::global::tracer("aikv");
+            let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+            let base = Registry::default().with(otel_layer);
+            let subscriber = if json_enabled {
+                base.with(
+                    fmt::layer()
+                        .json()
+                        .flatten_event(false)
+                        .with_current_span(true)
+                        .with_span_list(true)
+                        .with_writer(std::io::stderr)
+                        .boxed(),
+                )
+                .with(filter)
+            } else {
+                base.with(
+                    fmt::layer()
+                        .compact()
+                        .with_target(true)
+                        .with_writer(std::io::stderr)
+                        .boxed(),
+                )
+                .with(filter)
+            };
+            let _ = subscriber.try_init();
+            return;
         }
     }
 
-    // CLI arguments override config file
-    let host = cli.host.clone().unwrap_or(config.server.host);
-    let port = cli.port.unwrap_or(config.server.port);
-
-    (host, port, config.storage, config.logging)
-}
-
-/// Create storage engine based on configuration
-fn create_storage_engine(storage_config: &StorageConfig) -> StorageEngine {
-    match storage_config.engine.to_lowercase().as_str() {
-        "aidb" => {
-            info!(
-                "Using AiDb storage engine with data directory: {}",
-                storage_config.data_dir
-            );
-            match StorageEngine::new_aidb(&storage_config.data_dir, storage_config.databases) {
-                Ok(engine) => engine,
-                Err(e) => {
-                    eprintln!(
-                        "Failed to initialize AiDb storage at '{}': {}",
-                        storage_config.data_dir, e
-                    );
-                    std::process::exit(1);
-                }
-            }
-        }
-        "memory" => {
-            info!("Using in-memory storage engine");
-            StorageEngine::new_memory(storage_config.databases)
-        }
-        other => {
-            warn!("Unknown storage engine '{}', falling back to memory", other);
-            StorageEngine::new_memory(storage_config.databases)
-        }
+    // 无 OTel 时只初始化 fmt subscriber
+    let subscriber = if json_enabled {
+        Registry::default()
+            .with(
+                fmt::layer()
+                    .json()
+                    .flatten_event(false)
+                    .with_current_span(true)
+                    .with_span_list(true)
+                    .with_writer(std::io::stderr)
+                    .boxed(),
+            )
+            .with(filter)
+    } else {
+        Registry::default()
+            .with(
+                fmt::layer()
+                    .compact()
+                    .with_target(true)
+                    .with_writer(std::io::stderr)
+                    .boxed(),
+            )
+            .with(filter)
+    };
+    if let Err(e) = subscriber.try_init() {
+        eprintln!("warn: tracing subscriber already initialized ({})", e);
     }
 }
 
 #[tokio::main]
 async fn main() {
-    // Parse command line arguments
-    let cli = parse_args();
-
-    // Handle help and version
-    if cli.show_help {
-        print_help();
-        return;
+    let cli = Cli::parse();
+    let (settings, warnings) = match resolve(&cli) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    };
+    if cli.print_config {
+        match print_resolved_config(&settings) {
+            Ok(output) => print!("{output}"),
+            Err(e) => {
+                eprintln!("failed to serialize resolved config: {e}");
+                std::process::exit(1);
+            }
+        }
     }
-    if cli.show_version {
-        print_version();
-        return;
+    init_logging(&settings);
+    if let Some(path) = settings.config_file_used.as_deref() {
+        tracing::info!("config file: {}", path.display());
+    } else {
+        tracing::info!("config file: none");
+    }
+    for w in warnings {
+        tracing::warn!(target = "aikv::config", ?w, "configuration warning");
     }
 
-    // Load configuration
-    #[cfg(feature = "cluster")]
-    let (host, port, storage_config, logging_config, cluster_config) = load_config(&cli);
-    #[cfg(not(feature = "cluster"))]
-    let (host, port, storage_config, logging_config) = load_config(&cli);
-
-    // Initialize logging with configured level
-    let log_level = logging_config.level.to_lowercase();
-    let level_filter = log_level.parse::<LevelFilter>().unwrap_or_else(|_| {
-        eprintln!(
-            "Warning: Invalid log level '{}', using 'info'",
-            logging_config.level
-        );
-        LevelFilter::INFO
-    });
-    let filter = EnvFilter::builder()
-        .with_default_directive(level_filter.into())
-        .from_env_lossy();
-    tracing_subscriber::fmt()
-        .with_target(false)
-        .with_level(true)
-        .with_env_filter(filter)
-        .init();
-
-    let addr = format!("{}:{}", host, port);
-
-    // Print startup banner
-    println!("{}", LOGO);
-    println!(
-        "AiKv v{} - Redis protocol compatible key-value store",
-        VERSION
+    tracing::info!(
+        bind = %settings.bind,
+        engine = ?settings.engine,
+        "aikv starting"
     );
-    println!();
 
-    // Create storage engine based on configuration
-    let storage = create_storage_engine(&storage_config);
+    let observation = StorageObservation::new();
+    let (storage, engine_kind, data_dir, _cluster_db, key_counters, expire_gate) =
+        match build_storage(&settings, observation.clone()).await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!(error = %e, "failed to initialize storage");
+                std::process::exit(1);
+            }
+        };
+    #[cfg(not(feature = "cluster"))]
+    {
+        let _ = key_counters;
+        let _ = expire_gate;
+    }
+    let tcp_port = settings.bind.port();
+    let connection_config = ConnectionConfig {
+        max_clients: settings.max_clients,
+        ..Default::default()
+    };
+    let state = ServerSharedState::new_with_backup_dir(
+        connection_config,
+        storage,
+        tcp_port,
+        engine_kind,
+        data_dir,
+        settings.backup_dir.clone(),
+        settings.observability.metrics_port,
+        settings.observability.metrics_addr.clone(),
+        Some(observation),
+    );
 
-    // Create and run server
-    #[allow(unused_mut)]
-    let mut server = Server::new(addr, storage);
-
-    // Initialize cluster if enabled
+    // 集群初始化 (等待 init_cluster 完成, 确保 CLUSTER_STATE_MGR 就绪)
     #[cfg(feature = "cluster")]
-    if cluster_config.enabled {
-        info!("Cluster mode enabled in configuration");
-        if let Err(e) = server
-            .initialize_cluster(
-                &storage_config.data_dir,
-                &cluster_config.raft_address,
-                cluster_config.is_bootstrap,
-                &cluster_config.peers,
-            )
-            .await
+    if settings.cluster.node_id.is_some() && settings.cluster.rpc_addr.is_some() {
+        if let Err(e) = init_cluster(
+            &settings,
+            _cluster_db,
+            Arc::clone(&state.metrics),
+            key_counters.unwrap_or_else(|| Arc::new(aikv::storage::types::DbKeyCounters::new())),
+            expire_gate.unwrap_or_else(|| Arc::new(aikv::storage::types::ExpireDecrGate::new())),
+        )
+        .await
         {
-            eprintln!("Failed to initialize cluster: {}", e);
+            tracing::error!(error = %e, "cluster initialization failed");
+            std::process::exit(1);
+        }
+        let wait_timeout = std::time::Duration::from_millis(
+            settings
+                .cluster
+                .lifecycle_tick_ms
+                .saturating_mul(3)
+                .saturating_add(10_000),
+        );
+        if let Err(e) = wait_local_data_groups(wait_timeout).await {
+            tracing::error!(error = %e, "local data groups not ready after cluster init");
+            std::process::exit(1);
+        }
+        // MultiRaft group 已打开: 再扫 group 数据校正计数 (首次 open 时 CLUSTER_STATE_MGR 尚未就绪).
+        if let Err(e) = state.storage.rebuild_key_counts().await {
+            tracing::error!(error = %e, "rebuild_key_counts after cluster init failed");
             std::process::exit(1);
         }
     }
 
-    if let Err(e) = server.run().await {
-        eprintln!("Server error: {}", e);
+    // 启动 Metrics HTTP 服务器 (仅 monitoring feature)
+    #[cfg(feature = "monitoring")]
+    {
+        let metrics_addr_str = format!(
+            "{}:{}",
+            settings.observability.metrics_addr, settings.observability.metrics_port
+        );
+        match metrics_addr_str.parse::<std::net::SocketAddr>() {
+            Ok(metrics_addr) => {
+                let metrics_server = aikv::server::metrics_server::MetricsServer::new(metrics_addr);
+                tokio::spawn(async move {
+                    metrics_server.run().await;
+                });
+            }
+            Err(_) => {
+                tracing::warn!(addr = %metrics_addr_str, "invalid metrics address, metrics server disabled");
+            }
+        }
+
+        // 后台定期刷新 uptime / memory 指标
+        let bg_state = Arc::clone(&state);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
+            loop {
+                interval.tick().await;
+                bg_state.refresh_runtime_metrics().await;
+                bg_state.metrics().refresh_process_metrics();
+            }
+        });
+    }
+
+    blocking::start_background_eviction();
+
+    if let Err(e) = Server::run(settings.bind, state).await {
+        tracing::error!(error = %e, "server exited with error");
+        #[cfg(feature = "monitoring")]
+        aikv::server::otel::shutdown_otel();
         std::process::exit(1);
     }
+
+    #[cfg(feature = "monitoring")]
+    aikv::server::otel::shutdown_otel();
 }

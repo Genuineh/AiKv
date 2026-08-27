@@ -1,360 +1,229 @@
-# 贡献指南 (Contributing Guide)
+# 贡献指南
 
-感谢您考虑为 AiKv 项目做贡献！
+本文是面向开源贡献者与系统开发者的 **本地开发、测试验证、Git 分支与 PR 提交流程指南**.
 
-## 行为准则
+- 项目架构与分层设计见 [ARCHITECTURE.md](ARCHITECTURE.md);
+- 部署、Feature 开关与配置调优见 [docs/deployment.md](docs/deployment.md);
+- 设计决策与技术权衡见 [docs/design.md](docs/design.md);
+- 完整 CI 架构见 [.github/README.md](.github/README.md).
 
-参与本项目即表示您同意遵守我们的行为准则。请对所有社区成员保持尊重和专业。
-
-## 如何贡献
-
-### 报告问题 (Issues)
-
-如果您发现 bug 或有功能请求：
-
-1. 先搜索现有的 issues，避免重复
-2. 创建新 issue 时请提供：
-   - 清晰的标题和描述
-   - 复现步骤（如果是 bug）
-   - 预期行为和实际行为
-   - 环境信息（OS、Rust 版本等）
-   - 相关日志或错误信息
-
-### 提交代码
-
-1. **Fork 仓库**
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/AiKv.git
-   cd AiKv
-   ```
-
-2. **创建分支**
-   ```bash
-   git checkout -b feature/your-feature-name
-   # 或
-   git checkout -b fix/your-bug-fix
-   ```
-
-3. **进行修改**
-   - 遵循代码规范（见下文）
-   - 编写或更新测试
-   - 更新相关文档
-
-4. **提交更改**
-   ```bash
-   git add .
-   git commit -m "feat: add new feature"
-   ```
-   
-   提交信息格式请遵循 [Conventional Commits](https://www.conventionalcommits.org/)：
-   - `feat:` 新功能
-   - `fix:` Bug 修复
-   - `docs:` 文档更新
-   - `style:` 代码格式（不影响功能）
-   - `refactor:` 重构
-   - `perf:` 性能优化
-   - `test:` 测试相关
-   - `chore:` 构建/工具相关
-
-5. **推送到 GitHub**
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-6. **创建 Pull Request**
-   - 提供清晰的 PR 描述
-   - 关联相关的 issue（使用 `Fixes #123`）
-   - 等待 code review
-
-## 代码规范
-
-### Rust 代码风格
-
-我们使用标准的 Rust 代码风格，通过以下工具强制执行：
-
-#### 1. Rustfmt (代码格式化)
-
-```bash
-# 检查格式
-cargo fmt --all -- --check
-
-# 自动格式化
-cargo fmt --all
+```mermaid
+flowchart LR
+    S1[1. 准备开发环境] --> S2[2. 配置 Git 钩子]
+    S2 --> S3[3. Issue 与分支]
+    S3 --> S4[4. 本地验证与测试]
+    S4 --> S5[5. 规范 Commit]
+    S5 --> S6[6. 文档同步]
+    S6 --> S7[7. 提交 PR 并自检]
 ```
-
-配置文件：`rustfmt.toml`
-
-#### 2. Clippy (代码检查)
-
-```bash
-# 运行 clippy
-cargo clippy --all-targets --all-features -- -D warnings
-
-# 自动修复
-cargo clippy --fix --all-targets --all-features
-```
-
-配置文件：`clippy.toml`
-
-### 代码规范要点
-
-1. **命名规范**
-   - 类型和 trait：`PascalCase`
-   - 函数和变量：`snake_case`
-   - 常量：`SCREAMING_SNAKE_CASE`
-   - 模块：`snake_case`
-
-2. **注释规范**
-   - 公共 API 必须有文档注释（`///`）
-   - 复杂逻辑添加行内注释（`//`）
-   - 使用中文或英文均可，但同一文件保持一致
-
-3. **函数规范**
-   - 函数长度不超过 50 行（复杂函数除外）
-   - 参数数量不超过 5 个
-   - 返回 `Result<T, Error>` 而不是 panic
-
-4. **错误处理**
-   - 使用自定义错误类型
-   - 避免 `unwrap()` 和 `expect()`，除非在测试或示例中
-   - 提供有意义的错误信息
-
-5. **测试规范**
-   - 每个公共函数都应有测试
-   - 测试函数命名：`test_function_name_scenario`
-   - 使用 `#[test]` 标记单元测试
-   - 使用 `tests/` 目录存放集成测试
-
-### 代码示例
-
-```rust
-/// 获取键的值
-///
-/// # Arguments
-///
-/// * `key` - 要查询的键名
-///
-/// # Returns
-///
-/// 返回键对应的值，如果键不存在则返回 None
-///
-/// # Examples
-///
-/// ```
-/// use aikv::StorageAdapter;
-/// 
-/// let storage = StorageAdapter::new();
-/// let value = storage.get("mykey")?;
-/// ```
-pub fn get(&self, key: &str) -> Result<Option<Bytes>> {
-    let data = self.data.read()
-        .map_err(|e| AikvError::Storage(format!("Lock error: {}", e)))?;
-    Ok(data.get(key).cloned())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_existing_key() {
-        let storage = StorageAdapter::new();
-        storage.set("key1".to_string(), Bytes::from("value1")).unwrap();
-        
-        let result = storage.get("key1").unwrap();
-        assert_eq!(result, Some(Bytes::from("value1")));
-    }
-
-    #[test]
-    fn test_get_nonexistent_key() {
-        let storage = StorageAdapter::new();
-        let result = storage.get("nonexistent").unwrap();
-        assert_eq!(result, None);
-    }
-}
-```
-
-## 测试
-
-### 运行测试
-
-```bash
-# 运行所有测试
-cargo test
-
-# 运行特定测试
-cargo test test_name
-
-# 运行并显示输出
-cargo test -- --nocapture
-
-# 运行集成测试
-cargo test --test '*'
-```
-
-### 测试覆盖率
-
-```bash
-# 安装 tarpaulin
-cargo install cargo-tarpaulin
-
-# 生成覆盖率报告
-cargo tarpaulin --out Html
-```
-
-### 性能测试
-
-```bash
-# 运行 benchmark
-cargo bench
-
-# 查看基准测试报告
-# 报告将生成在 target/criterion/ 目录
-open target/criterion/report/index.html
-```
-
-### Pre-commit Hooks
-
-项目使用 pre-commit 来自动运行代码检查。安装和使用：
-
-```bash
-# 安装 pre-commit (如果未安装)
-pip install pre-commit
-# 或使用 homebrew (macOS)
-brew install pre-commit
-
-# 安装 git hooks
-pre-commit install
-
-# 手动运行所有 hooks
-pre-commit run --all-files
-```
-
-配置文件：`.pre-commit-config.yaml`
-
-Pre-commit 会在每次 commit 前自动运行：
-- 代码格式检查 (`cargo fmt`)
-- Clippy 检查 (`cargo clippy`)
-- 单元测试 (`cargo test`)
-- 文件格式检查（trailing whitespace, YAML, TOML等）
-
-## 构建和运行
-
-### 开发构建
-
-```bash
-# 调试构建
-cargo build
-
-# 运行
-cargo run
-```
-
-### 发布构建
-
-```bash
-# 优化构建
-cargo build --release
-
-# 运行
-./target/release/aikv
-```
-
-## 文档
-
-### 生成文档
-
-```bash
-# 生成并打开文档
-cargo doc --open
-
-# 生成所有依赖的文档
-cargo doc --no-deps
-```
-
-### 文档规范
-
-- 所有公共 API 必须有文档
-- 包含使用示例
-- 说明参数和返回值
-- 注明 panic 情况和错误情况
-
-## Pull Request 检查清单
-
-在提交 PR 之前，请确认：
-
-- [ ] 代码通过 `cargo fmt` 格式化
-- [ ] 代码通过 `cargo clippy` 检查
-- [ ] 所有测试通过 (`cargo test`)
-- [ ] 集成测试通过 (`cargo test --test '*'`)
-- [ ] 添加了新功能的测试
-- [ ] 更新了相关文档
-- [ ] 提交信息符合规范
-- [ ] PR 描述清晰，关联了相关 issue
-- [ ] 没有包含不相关的更改
-- [ ] （可选）运行了性能测试 (`cargo bench`)
-- [ ] （可选）配置了 pre-commit hooks
-
-## Code Review 流程
-
-1. 至少一位维护者审查代码
-2. 通过所有 CI 检查
-3. 解决所有审查意见
-4. 获得批准后合并
-
-## 开发环境设置
-
-### 必需工具
-
-```bash
-# 安装 Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# 安装开发工具
-rustup component add rustfmt clippy
-
-# 安装其他工具
-cargo install cargo-watch cargo-edit cargo-audit
-```
-
-### 推荐工具
-
-- IDE: VSCode + rust-analyzer
-- 调试: rust-gdb 或 rust-lldb
-- 性能分析: flamegraph, valgrind
-
-### 开发工作流
-
-```bash
-# 监视文件变化并自动测试
-cargo watch -x test
-
-# 监视并运行
-cargo watch -x run
-```
-
-## 发布流程
-
-（仅限维护者）
-
-1. 更新版本号在 `Cargo.toml`
-2. 更新 `CHANGELOG.md`
-3. 创建 git tag: `git tag -a v0.x.0 -m "Release v0.x.0"`
-4. 推送 tag: `git push origin v0.x.0`
-5. GitHub Actions 自动构建和发布
-
-## 获取帮助
-
-如有疑问，可以通过以下方式获取帮助：
-
-- 创建 issue 提问
-- 查看现有文档：`docs/` 目录
-- 参考 API 文档：`cargo doc --open`
-
-## 许可证
-
-提交代码即表示您同意您的贡献使用 MIT 许可证。
 
 ---
 
-再次感谢您的贡献！🎉
+## 1. 准备开发环境
+
+### Rust 工具链
+
+本项目固定使用 **Rust stable** (含 `clippy` 与 `rustfmt`), 由 [`rust-toolchain.toml`](rust-toolchain.toml) 声明.
+进入仓库目录后 `rustup` 会自动切换为对应版本, 可通过 `rustup show` 确认.
+
+### 系统依赖
+
+- **Linux / macOS**: 推荐开发环境 (CI 运行在 `ubuntu-latest`).
+- **protoc (Protobuf 编译器)**: 编译 `cluster` 特性时生成 Raft gRPC 协议桩代码需要.
+
+```bash
+# Ubuntu / Debian
+sudo apt-get install -y protobuf-compiler
+# macOS
+brew install protobuf
+```
+
+### AiDb 依赖与本地 Patch
+
+`Cargo.toml` 中 `aidb` 通过 GitHub `main` 分支引入. 本地高频联调时, 推荐在 `~/.cargo/config.toml` 中配置 Git source 的本地覆盖:
+
+```toml
+# ~/.cargo/config.toml (仅本地生效, 不提交到 Git 仓库)
+[patch."https://github.com/wiqun/AiDb.git"]
+aidb = { path = "/absolute/path/to/aidb" }
+```
+
+---
+
+## 2. 配置 Git 钩子
+
+建议在克隆仓库后立即安装本地 Git 钩子, 将质量与规范门禁前置到本地提交阶段:
+
+```bash
+./install-hooks.sh   # 软链接 hooks/* → .git/hooks/
+```
+
+### 钩子职责说明
+
+- [`hooks/pre-commit`](hooks/pre-commit): 在 `git commit` 时依次执行:
+  1. 分支保护 ([`hooks/check-branch.sh`](hooks/check-branch.sh)): 禁止直接在 `main` 分支提交
+  2. 文档链接检查 ([`hooks/check-docs-links.sh`](hooks/check-docs-links.sh)): 检查暂存区 `.md` 文件的相对链接与死链
+  3. 依赖解析检查: 验证 `aidb` 依赖解析正常
+  4. 代码格式检查: `cargo fmt --check`
+  5. 静态分析检查: `RUSTFLAGS='-D warnings' cargo clippy --all-targets --features cluster,monitoring`
+  6. 安全扫描 ([`hooks/check-security.sh`](hooks/check-security.sh)): `cargo audit` 与 `cargo deny check`
+- [`hooks/commit-msg`](hooks/commit-msg): 校验提交说明是否遵循 Conventional Commits 规范 (如 `feat:`, `fix:`, `chore:` 等).
+
+> **说明**: Git hook 默认 **不执行** `cargo test`, 测试由开发者本地手动或 CI 运行.
+
+### Security 检查
+
+`pre-commit` 中的 `cargo audit` 与 `cargo deny check` 基于 `Cargo.lock` 全量扫描依赖. `cargo audit` 读取 `.cargo/audit.toml` (与 `deny.toml` 独立).
+
+若本地未安装对应工具, 钩子会自动跳过并提示安装命令 (`cargo install cargo-audit --locked` / `cargo install cargo-deny --locked`).
+
+---
+
+## 3. Issue 驱动与分支规范
+
+### GitHub Issues 驱动
+
+所有新功能、bug 修复、重构或文档改动均须与 GitHub Issue 关联:
+
+1. 先创建 GitHub Issue (按场景选用模板: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`).
+2. 明确 Issue 的需求、复现步骤或验收条件后再开始编码.
+
+### 分支命名规范
+
+所有工作分支基于主开发分支 (`main`) 创建:
+
+- **分支命名格式**: `{type}/{NN}-{slug}`
+- **示例**:
+  - `feat/102-cluster-slot-migration`
+  - `fix/45-resp-parser-buffer-overflow`
+  - `docs/88-refactor-documentation-system`
+
+---
+
+## 4. 本地编码与测试矩阵
+
+在本地提交或推送前, 请确保代码通过以下校验与测试.
+集成测试与集群相关用例 **必须** 使用 `--test-threads=1`, 避免端口和数据目录冲突.
+
+### 核心快速门禁 (推荐推送前必跑)
+
+```bash
+export RUSTFLAGS='-D warnings'
+cargo fmt --check
+cargo clippy --all-targets --features cluster,monitoring
+cargo test --workspace --features cluster,monitoring -- --test-threads=1
+```
+
+### 专项测试与慢测
+
+```bash
+# 慢测与压力测试
+cargo test --test server --features cluster -- --ignored --test-threads=1
+cargo test --test commands --features cluster -- --ignored --test-threads=1
+cargo test --test stress_ttl --features cluster -- --ignored --test-threads=1
+
+# 默认压缩测试
+cargo test --lib storage::aidb_options
+
+# 无压缩兼容测试
+cargo test --no-default-features --lib storage::aidb_options
+```
+
+### E2E 黑盒验收测试
+
+基于 pytest 的黑盒验收测试套件 (需先启动待测服务):
+
+```bash
+pytest e2e/function/ -v
+```
+
+### 回归测试 (Bugfix 必带)
+
+所有 **bugfix PR** (`fix:`, 修 Issue, 行为修正) **必须** 附带可复现回归测试:
+
+- **落点**: [`tests/`](tests/) 对应模块的集成测试或单测.
+- **注释规范**: 测试函数正上方必须包含中文 `///` 注释, 清晰说明 bug 现象、期望行为以及关联的 Issue 编号.
+- **纯文档变更豁免**: 纯 `docs:` 变更或纯文档 Issue 可豁免回归测试.
+
+### 慢测与压测 (`#[ignore]`)
+
+默认 `cargo test` 会跳过标记为 `#[ignore]` 的耗时用例. 新增慢测或压力测试时:
+
+- **规范**: 必须使用 `#[ignore = "slow: <原因>"]` 或 `#[ignore = "stress: <原因>"]`, **禁止裸** `#[ignore]`.
+- **运行慢测**:
+```bash
+cargo test --features cluster -- --ignored --test-threads=1
+```
+
+> 详细的模块架构与测试约定详见 [`ARCHITECTURE.md`](ARCHITECTURE.md) 与 [`docs/README.md`](docs/README.md).
+
+---
+
+## 5. 提交规范
+
+提交说明遵循 Conventional Commits 格式, 统一使用中文描述变更目的:
+
+```md
+<type>: <中文简短描述>
+
+[可选的详细说明段落]
+
+Fixes #<Issue编号>
+```
+
+### 支持的 Type 列表
+
+- `feat`: 新增功能特性
+- `fix`: 修补缺陷与 bug
+- `refactor`: 代码重构 (不改变外部行为与 API)
+- `test`: 新增或修改测试用例
+- `docs`: 文档增补与修改
+- `chore`: 构建配置、依赖更新、辅助工具等杂项
+- `perf`: 性能优化
+
+### 提交示例
+
+```
+fix(protocol): 修复批量解析时缓冲区边界溢出问题
+
+当流式接收到超长 bulk string 时, 状态机跳步未正确清空已消费字节, 导致二次读取解析失败.
+
+Fixes #45
+```
+
+---
+
+## 6. 文档同步要求
+
+代码与文档保持一致是工程质量的重要一环. 修改涉及公共 API、命令语义、CLI 参数、架构或模块边界时, 必须同步更新相关文档:
+
+1. **修改公共 API、命令语义或 CLI 参数** → 同步更新 [`docs/modules/`](docs/modules/) 对应模块文档与 [`README.md`](README.md)
+2. **修改架构、核心机制或配置项** → 同步更新 [`ARCHITECTURE.md`](ARCHITECTURE.md) 与 [`docs/deployment.md`](docs/deployment.md)
+3. **修改设计决策与技术权衡** → 同步更新 [`docs/design.md`](docs/design.md)
+4. **面向用户的重大变更** → 在 [`CHANGELOG.md`](CHANGELOG.md) 的 `[Unreleased]` 小节登记
+
+> 若本次改动纯属内部微调且对文档无任何影响, 请在 PR 描述中显式注明「文档无需变更」.
+
+---
+
+## 7. PR 提交流程与自检清单
+
+### PR 提交步骤
+
+1. 将本地分支推送到远程, 并创建 Pull Request (目标分支为 `main`).
+2. PR 标题对齐 Commit 规范 (`type: 中文描述`).
+3. PR 描述首行附带 `Closes #<Issue编号>`, 以便 PR 合并后 GitHub 自动关闭关联 Issue.
+
+### PR 提交前自检清单
+
+- [ ] 代码已通过 `cargo fmt --check` (或已运行 `./install-hooks.sh`)
+- [ ] Clippy 检查无任何 warning (`RUSTFLAGS='-D warnings' cargo clippy --all-targets --features cluster,monitoring`)
+- [ ] 核心测试与集成测试通过 (`cargo test --workspace --features cluster,monitoring -- --test-threads=1`)
+- [ ] 若改动涉及 E2E 功能: 本地 `pytest e2e/function/ -v` 验证通过
+- [ ] 若为 bug 修复: 已在同一 PR 内附带回归测试, 且用例附有清晰的中文 `///` 注释
+- [ ] 若修改了 slow/stress 用例: `cargo test --features cluster -- --ignored --test-threads=1` 验证通过
+- [ ] 相关文档已同步更新, 或在 PR 描述中已注明「文档无需变更」
+
+### CI 门禁
+
+PR 提交后将自动触发 GitHub Actions CI 检查. 所有流水线 (Lint、Test、Security、Docs Link Check) 全绿且 Maintainer Review 通过后, 方可以 **Squash and merge** 方式合并回 `main`. 详细的 CI Job 编排与说明见 [`.github/README.md`](.github/README.md).

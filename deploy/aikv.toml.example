@@ -1,0 +1,22 @@
+# AiKv 配置示例 — 复制为 aikv.toml 或指定 --config 路径
+# 完整说明见 docs/modules/09-config.md
+
+# 单机 aidb 生产示例
+[server]
+# 未认证 RESP 默认仅监听 loopback; 跨信任边界需使用 proxy/firewall/service mesh.
+bind = "127.0.0.1:6379"
+max_clients = 10000
+
+[engine]
+kind = "aidb"              # memory | aidb
+data_dir = "/var/lib/aikv/data"
+sync_wal = false
+aidb_preset = "high-write" # default | high-write | high-read
+# backup_dir = "/var/lib/aikv/backup"  # 可选; 默认 {data_dir}/backup
+
+[observability]
+# 未认证 metrics 默认仅监听 loopback; 跨信任边界需使用 proxy/firewall/service mesh.
+metrics_addr = "127.0.0.1"
+metrics_port = 9191
+json_log = true
+# otlp_endpoint = "http://127.0.0.1:4317"  # 可选; 亦可用 OTEL_EXPORTER_OTLP_ENDPOINT

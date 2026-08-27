@@ -1,0 +1,61 @@
+//! AiKv 内部 DUMP 编解码 (非 Redis 兼容)
+
+use crate::error::{Error, Result};
+use crate::storage::StoredValue;
+
+pub const DUMP_VERSION: u8 = 1;
+
+pub fn encode(value: &StoredValue) -> Result<Vec<u8>> {
+    let mut out = Vec::with_capacity(1 + 64);
+    out.push(DUMP_VERSION);
+    let payload = postcard::to_allocvec(value)
+        .map_err(|e| Error::Storage(format!("DUMP encode failed: {e}")))?;
+    out.extend_from_slice(&payload);
+    Ok(out)
+}
+
+pub fn decode(payload: &[u8]) -> Result<StoredValue> {
+    if payload.is_empty() {
+        return Err(Error::Command(
+            "ERR DUMP payload version or checksum error".into(),
+        ));
+    }
+    let version = payload[0];
+    if version != DUMP_VERSION {
+        return Err(Error::Command(
+            "ERR DUMP payload version or checksum error".into(),
+        ));
+    }
+    postcard::from_bytes(&payload[1..])
+        .map_err(|_| Error::Command("ERR DUMP payload version or checksum error".into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::ValueType;
+
+    /// 验证 DUMP/RESTORE 数据序列化与反序列化 Roundtrip
+    #[test]
+    fn test_dump_roundtrip() {
+        let value = StoredValue {
+            value: ValueType::String(b"hello".to_vec()),
+            expires_at: Some(1_700_000_000_000),
+        };
+        let encoded = encode(&value).unwrap();
+        assert_eq!(encoded[0], DUMP_VERSION);
+        let decoded = decode(&encoded).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    /// 验证 DUMP 校验和与版本号前缀校验
+    #[test]
+    fn test_dump_version_check() {
+        let err = decode(&[0, 0, 1, 2]).unwrap_err();
+        assert!(matches!(err, Error::Command(_)));
+        let err = decode(&[2, 0, 1, 2]).unwrap_err();
+        assert!(matches!(err, Error::Command(_)));
+        let err = decode(&[]).unwrap_err();
+        assert!(matches!(err, Error::Command(_)));
+    }
+}

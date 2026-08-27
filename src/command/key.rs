@@ -1,776 +1,503 @@
-use crate::error::{AikvError, Result};
-use crate::protocol::RespValue;
-use crate::storage::{SerializableStoredValue, StorageEngine, StoredValue};
+//! Key 管理命令: 过期 (EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT/EXPIRETIME/PEXPIRETIME/TTL/PTTL/
+//! PERSIST)、键空间 (KEYS/SCAN/RANDOMKEY)、重命名 (RENAME/RENAMENX)、COPY、TYPE、
+//! DUMP/RESTORE、MIGRATE 编排.
+//!
+//! # 关键点
+//!
+//! - 过期: 负 TTL 直接 `delete`; 其余映射为 Unix ms 写入 `expires_at`; `TTL_NO_EXPIRY` (-1)
+//!   映射 Redis -1 (见 `map_ttl_seconds`/`map_pttl_ms`).
+//! - 键空间: KEYS 直调 `storage.keys` (pattern 走 `glob_match`, 仅 `*`/`?`); SCAN 走
+//!   引擎级游标 (`storage.scan`).
+//! - 双 key 写: RENAME/RENAMENX/COPY 用 `key_lock.lock_two` (字典序, 同 key 不重入).
+//! - DUMP 格式: `[u8 version=1][postcard(StoredValue)]` (非 Redis DUMP); RESTORE 校验
+//!   version, 失败 → `ERR DUMP payload version or checksum error`.
+//! - MIGRATE: 本文件编排 — `get_typed` → `dump_encode` → `migrate::send_restore` (TCP) →
+//!   非 COPY 时源端 `delete`; 支持 KEYS/AUTH/AUTH2/REPLACE 等选项.
+
+use std::sync::Arc;
+
 use bytes::Bytes;
-use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::instrument;
 
-/// Default number of databases (matching Redis default)
-const DEFAULT_DB_COUNT: usize = 16;
+use crate::command::migrate;
+use crate::command::router::{self, KeyLock};
+use crate::error::{Error, Result};
+use crate::protocol::RespValue;
+use crate::storage::{dump_decode, dump_encode, now_ms, KvStorage, TTL_NO_EXPIRY};
 
-/// Key command handler
 pub struct KeyCommands {
-    storage: StorageEngine,
+    storage: Arc<dyn KvStorage>,
+    key_lock: Arc<KeyLock>,
 }
 
 impl KeyCommands {
-    pub fn new(storage: StorageEngine) -> Self {
-        Self {
-            storage,
-        }
+    pub fn new(storage: Arc<dyn KvStorage>, key_lock: Arc<KeyLock>) -> Self {
+        Self { storage, key_lock }
     }
 
-    /// KEYS pattern - Find all keys matching pattern
-    /// Note: Simplified implementation, supports only * wildcard
-    pub fn keys(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("KEYS".to_string()));
-        }
-
-        let pattern = String::from_utf8_lossy(&args[0]).to_string();
-        let all_keys = self.storage.get_all_keys_in_db(current_db)?;
-
-        // Simple pattern matching: * matches everything, otherwise exact match
-        let matched_keys: Vec<RespValue> = if pattern == "*" {
-            all_keys.into_iter().map(RespValue::bulk_string).collect()
-        } else {
-            all_keys
-                .into_iter()
-                .filter(|k| self.match_pattern(k, &pattern))
-                .map(RespValue::bulk_string)
-                .collect()
-        };
-
-        Ok(RespValue::array(matched_keys))
+    pub fn storage(&self) -> &Arc<dyn KvStorage> {
+        &self.storage
     }
 
-    /// Simple pattern matching helper (supports * and ? wildcards)
-    fn match_pattern(&self, key: &str, pattern: &str) -> bool {
-        // Simple implementation: exact match or * wildcard
-        if pattern == "*" {
-            return true;
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "EXPIRE", key_count = 1))]
+    pub async fn expire(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("EXPIRE", args, 2)?;
+        let secs = parse_i64(&args[1])?;
+        if secs < 0 {
+            let deleted = self.storage.delete(db, &args[0]).await?;
+            return Ok(router::integer(i64::from(deleted)));
         }
-
-        // Support basic wildcards
-        let pattern_chars: Vec<char> = pattern.chars().collect();
-        let key_chars: Vec<char> = key.chars().collect();
-
-        Self::match_pattern_recursive(&key_chars, 0, &pattern_chars, 0)
+        let ttl_ms = (secs as u64).saturating_mul(1000);
+        let ok = self.storage.expire(db, &args[0], ttl_ms).await?;
+        Ok(router::integer(i64::from(ok)))
     }
 
-    fn match_pattern_recursive(key: &[char], ki: usize, pattern: &[char], pi: usize) -> bool {
-        if pi == pattern.len() {
-            return ki == key.len();
-        }
-
-        if pattern[pi] == '*' {
-            // Try matching zero or more characters
-            for i in ki..=key.len() {
-                if Self::match_pattern_recursive(key, i, pattern, pi + 1) {
-                    return true;
-                }
-            }
-            false
-        } else if pattern[pi] == '?' {
-            // Match exactly one character
-            if ki < key.len() {
-                Self::match_pattern_recursive(key, ki + 1, pattern, pi + 1)
-            } else {
-                false
-            }
-        } else {
-            // Exact character match
-            if ki < key.len() && key[ki] == pattern[pi] {
-                Self::match_pattern_recursive(key, ki + 1, pattern, pi + 1)
-            } else {
-                false
-            }
-        }
+    pub async fn expireat(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("EXPIREAT", args, 2)?;
+        let ts_secs = parse_i64(&args[1])?;
+        let ts_ms = (ts_secs as u64).saturating_mul(1000);
+        let ok = self.storage.expire_at(db, &args[0], ts_ms as u64).await?;
+        Ok(router::integer(i64::from(ok)))
     }
 
-    /// SCAN cursor \[MATCH pattern\] \[COUNT count\]
-    /// Iterate keys using cursor-based iteration
-    pub fn scan(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.is_empty() {
-            return Err(AikvError::WrongArgCount("SCAN".to_string()));
+    pub async fn pexpire(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("PEXPIRE", args, 2)?;
+        let ms = parse_i64(&args[1])?;
+        if ms < 0 {
+            let deleted = self.storage.delete(db, &args[0]).await?;
+            return Ok(router::integer(i64::from(deleted)));
         }
+        let ok = self.storage.expire(db, &args[0], ms as u64).await?;
+        Ok(router::integer(i64::from(ok)))
+    }
 
-        // Parse cursor
-        let cursor_str = String::from_utf8_lossy(&args[0]);
-        let cursor = cursor_str
-            .parse::<usize>()
-            .map_err(|_| AikvError::InvalidArgument("ERR invalid cursor".to_string()))?;
+    pub async fn pexpireat(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("PEXPIREAT", args, 2)?;
+        let ts_ms = parse_i64(&args[1])?;
+        if ts_ms < 0 {
+            let deleted = self.storage.delete(db, &args[0]).await?;
+            return Ok(router::integer(i64::from(deleted)));
+        }
+        let ok = self.storage.expire_at(db, &args[0], ts_ms as u64).await?;
+        Ok(router::integer(i64::from(ok)))
+    }
 
-        // Parse optional arguments
-        let mut pattern = String::from("*");
-        let mut count = 10_usize; // Default count
+    pub async fn ttl(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("TTL", args, 1)?;
+        Ok(router::integer(map_ttl_seconds(
+            self.storage.ttl(db, &args[0]).await?,
+        )))
+    }
 
+    pub async fn pttl(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("PTTL", args, 1)?;
+        Ok(router::integer(map_pttl_ms(
+            self.storage.ttl(db, &args[0]).await?,
+        )))
+    }
+
+    pub async fn persist(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("PERSIST", args, 1)?;
+        let ok = self.storage.persist(db, &args[0]).await?;
+        Ok(router::integer(i64::from(ok)))
+    }
+
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "KEYS"))]
+    pub async fn keys(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("KEYS", args, 1)?;
+        let matched = self.storage.keys(db, &args[0]).await?;
+        Ok(array_of_bulk(matched))
+    }
+
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "SCAN"))]
+    pub async fn scan(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_min_args("SCAN", args, 1)?;
+        let cursor = parse_u64(&args[0])?;
+        let mut pattern = Vec::new();
+        let mut count = 10usize;
         let mut i = 1;
         while i < args.len() {
-            let option = String::from_utf8_lossy(&args[i]).to_uppercase();
-            match option.as_str() {
-                "MATCH" => {
-                    if i + 1 >= args.len() {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    i += 1;
-                    pattern = String::from_utf8_lossy(&args[i]).to_string();
+            if eq_ignore_case(&args[i], b"MATCH") {
+                if i + 1 >= args.len() {
+                    return Err(router::wrong_args("SCAN", ""));
                 }
-                "COUNT" => {
-                    if i + 1 >= args.len() {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    i += 1;
-                    let count_str = String::from_utf8_lossy(&args[i]);
-                    count = count_str.parse::<usize>().map_err(|_| {
-                        AikvError::InvalidArgument("ERR value is not an integer".to_string())
-                    })?;
-                    if count == 0 {
-                        count = 1; // Minimum count is 1
-                    }
+                pattern = args[i + 1].to_vec();
+                i += 2;
+            } else if eq_ignore_case(&args[i], b"COUNT") {
+                if i + 1 >= args.len() {
+                    return Err(router::wrong_args("SCAN", ""));
                 }
-                _ => {
-                    return Err(AikvError::InvalidArgument(format!(
-                        "ERR unknown option '{}'",
-                        option
-                    )));
-                }
+                count = parse_i64(&args[i + 1])? as usize;
+                i += 2;
+            } else {
+                return Err(router::wrong_args("SCAN", ""));
             }
-            i += 1;
         }
-
-        // Get all keys and filter by pattern
-        let all_keys = self.storage.get_all_keys_in_db(current_db)?;
-        let matched_keys: Vec<String> = if pattern == "*" {
-            all_keys
-        } else {
-            all_keys
-                .into_iter()
-                .filter(|k| self.match_pattern(k, &pattern))
-                .collect()
-        };
-
-        // Calculate the range to return
-        let total_keys = matched_keys.len();
-        let start = cursor;
-        let end = std::cmp::min(start + count, total_keys);
-
-        // Determine next cursor (0 means iteration complete)
-        let next_cursor = if end >= total_keys { 0 } else { end };
-
-        // Collect keys for this iteration
-        let keys_to_return: Vec<RespValue> = matched_keys[start..end]
-            .iter()
-            .map(|k| RespValue::bulk_string(k.clone()))
-            .collect();
-
-        // Return [cursor, [keys]]
-        Ok(RespValue::array(vec![
-            RespValue::bulk_string(next_cursor.to_string()),
-            RespValue::array(keys_to_return),
-        ]))
+        let result = self.storage.scan(db, cursor, &pattern, count).await?;
+        Ok(RespValue::Array(Some(vec![
+            RespValue::BulkString(Some(Bytes::from(result.cursor.to_string()))),
+            array_of_bulk(result.keys),
+        ])))
     }
 
-    /// RANDOMKEY - Return a random key
-    pub fn randomkey(&self, _args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        match self.storage.random_key_in_db(current_db)? {
-            Some(key) => Ok(RespValue::bulk_string(key)),
-            None => Ok(RespValue::null_bulk_string()),
+    pub async fn randomkey(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("RANDOMKEY", args, 0)?;
+        match self.storage.random_key(db).await? {
+            None => Ok(router::nil_bulk()),
+            Some(k) => Ok(router::bulk(k)),
         }
     }
 
-    /// RENAME key newkey - Rename a key
-    pub fn rename(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("RENAME".to_string()));
-        }
-
-        let old_key = String::from_utf8_lossy(&args[0]).to_string();
-        let new_key = String::from_utf8_lossy(&args[1]).to_string();
-
-        if !self.storage.exists_in_db(current_db, &old_key)? {
-            return Err(AikvError::KeyNotFound);
-        }
-
-        self.storage.rename_in_db(current_db, &old_key, &new_key)?;
-        Ok(RespValue::ok())
-    }
-
-    /// RENAMENX key newkey - Rename key only if newkey doesn't exist
-    pub fn renamenx(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("RENAMENX".to_string()));
-        }
-
-        let old_key = String::from_utf8_lossy(&args[0]).to_string();
-        let new_key = String::from_utf8_lossy(&args[1]).to_string();
-
-        if !self.storage.exists_in_db(current_db, &old_key)? {
-            return Err(AikvError::KeyNotFound);
-        }
-
-        let renamed = self
-            .storage
-            .rename_nx_in_db(current_db, &old_key, &new_key)?;
-        Ok(RespValue::integer(if renamed { 1 } else { 0 }))
-    }
-
-    /// TYPE key - Return the type of the value stored at key
-    pub fn get_type(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("TYPE".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-
-        match self.storage.get_value(current_db, &key)? {
-            Some(stored_value) => {
-                let type_name = stored_value.get_type_name();
-                Ok(RespValue::simple_string(type_name))
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "RENAME"))]
+    pub async fn rename(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("RENAME", args, 2)?;
+        let key = &args[0];
+        let newkey = &args[1];
+        let (_lock_a, _lock_b) = self.key_lock.lock_two(key, newkey).await;
+        if key == newkey {
+            if self.storage.get_typed(db, key).await?.is_none() {
+                return Err(Error::Command("ERR no such key".into()));
             }
-            None => Ok(RespValue::simple_string("none")),
+            return Ok(router::ok());
+        }
+        if self.storage.get_typed(db, key).await?.is_none() {
+            return Err(Error::Command("ERR no such key".into()));
+        }
+        self.storage.rename_key(db, key, newkey).await?;
+        Ok(router::ok())
+    }
+
+    pub async fn renamenx(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("RENAMENX", args, 2)?;
+        let key = &args[0];
+        let newkey = &args[1];
+        let (_lock_a, _lock_b) = self.key_lock.lock_two(key, newkey).await;
+        if self.storage.get_typed(db, key).await?.is_none() {
+            return Err(Error::Command("ERR no such key".into()));
+        }
+        let ok = self.storage.rename_key_nx(db, key, newkey).await?;
+        Ok(router::integer(i64::from(ok)))
+    }
+
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "TYPE"))]
+    pub async fn type_cmd(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("TYPE", args, 1)?;
+        match self.storage.get_typed(db, &args[0]).await? {
+            None => Ok(RespValue::SimpleString("none".into())),
+            Some(stored) => Ok(RespValue::SimpleString(stored.type_name().into())),
         }
     }
 
-    /// COPY source destination \[DB destination-db\] \[REPLACE\]
-    pub fn copy(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() < 2 {
-            return Err(AikvError::WrongArgCount("COPY".to_string()));
-        }
-
-        let src_key = String::from_utf8_lossy(&args[0]).to_string();
-        let dst_key = String::from_utf8_lossy(&args[1]).to_string();
-
-        let mut dest_db = current_db;
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "COPY"))]
+    pub async fn copy(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_min_args("COPY", args, 2)?;
+        let src_key = &args[0];
+        let dst_key = &args[1];
+        let mut dest_db = db;
         let mut replace = false;
-
-        // Parse options
         let mut i = 2;
         while i < args.len() {
-            let option = String::from_utf8_lossy(&args[i]).to_uppercase();
-            match option.as_str() {
-                "DB" => {
-                    if i + 1 >= args.len() {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    i += 1;
-                    let db_str = String::from_utf8_lossy(&args[i]);
-                    dest_db = db_str.parse::<usize>().map_err(|_| {
-                        AikvError::InvalidArgument("ERR invalid DB index".to_string())
-                    })?;
+            if eq_ignore_case(&args[i], b"DB") {
+                if i + 1 >= args.len() {
+                    return Err(router::wrong_args("COPY", ""));
                 }
-                "REPLACE" => {
-                    replace = true;
-                }
-                _ => {
-                    return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                }
+                dest_db = parse_i64(&args[i + 1])? as usize;
+                i += 2;
+            } else if eq_ignore_case(&args[i], b"REPLACE") {
+                replace = true;
+                i += 1;
+            } else {
+                return Err(router::wrong_args("COPY", ""));
             }
-            i += 1;
         }
-
         let copied = self
             .storage
-            .copy_in_db(current_db, dest_db, &src_key, &dst_key, replace)?;
-        Ok(RespValue::integer(if copied { 1 } else { 0 }))
+            .copy_key(db, dest_db, src_key, dst_key, replace)
+            .await?;
+        Ok(router::integer(i64::from(copied)))
     }
 
-    /// EXPIRE key seconds - Set a key's time to live in seconds
-    pub fn expire(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("EXPIRE".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let seconds_str = String::from_utf8_lossy(&args[1]);
-        let seconds = seconds_str
-            .parse::<i64>()
-            .map_err(|_| AikvError::InvalidArgument("ERR value is not an integer".to_string()))?;
-
-        if seconds <= 0 {
-            // Delete the key immediately if seconds <= 0
-            let deleted = self.storage.delete_from_db(current_db, &key)?;
-            return Ok(RespValue::integer(if deleted { 1 } else { 0 }));
-        }
-
-        let expire_ms = (seconds as u64) * 1000;
-        let set = self.storage.set_expire_in_db(current_db, &key, expire_ms)?;
-        Ok(RespValue::integer(if set { 1 } else { 0 }))
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "EXPIRETIME"))]
+    pub async fn expiretime(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("EXPIRETIME", args, 1)?;
+        Ok(router::integer(map_expiretime(
+            self.storage.get_typed(db, &args[0]).await?,
+        )))
     }
 
-    /// EXPIREAT key timestamp - Set expiration as UNIX timestamp in seconds
-    pub fn expireat(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("EXPIREAT".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let timestamp_str = String::from_utf8_lossy(&args[1]);
-        let timestamp = timestamp_str
-            .parse::<i64>()
-            .map_err(|_| AikvError::InvalidArgument("ERR value is not an integer".to_string()))?;
-
-        if timestamp <= 0 {
-            let deleted = self.storage.delete_from_db(current_db, &key)?;
-            return Ok(RespValue::integer(if deleted { 1 } else { 0 }));
-        }
-
-        let timestamp_ms = (timestamp as u64) * 1000;
-        let set = self
-            .storage
-            .set_expire_at_in_db(current_db, &key, timestamp_ms)?;
-        Ok(RespValue::integer(if set { 1 } else { 0 }))
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "PEXPIRETIME"))]
+    pub async fn pexpiretime(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("PEXPIRETIME", args, 1)?;
+        Ok(router::integer(map_pexpiretime(
+            self.storage.get_typed(db, &args[0]).await?,
+        )))
     }
 
-    /// PEXPIRE key milliseconds - Set expiration in milliseconds
-    pub fn pexpire(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("PEXPIRE".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let ms_str = String::from_utf8_lossy(&args[1]);
-        let milliseconds = ms_str
-            .parse::<i64>()
-            .map_err(|_| AikvError::InvalidArgument("ERR value is not an integer".to_string()))?;
-
-        if milliseconds <= 0 {
-            let deleted = self.storage.delete_from_db(current_db, &key)?;
-            return Ok(RespValue::integer(if deleted { 1 } else { 0 }));
-        }
-
-        let set = self
-            .storage
-            .set_expire_in_db(current_db, &key, milliseconds as u64)?;
-        Ok(RespValue::integer(if set { 1 } else { 0 }))
-    }
-
-    /// PEXPIREAT key milliseconds-timestamp - Set expiration as UNIX timestamp in milliseconds
-    pub fn pexpireat(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 2 {
-            return Err(AikvError::WrongArgCount("PEXPIREAT".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let timestamp_str = String::from_utf8_lossy(&args[1]);
-        let timestamp_ms = timestamp_str
-            .parse::<i64>()
-            .map_err(|_| AikvError::InvalidArgument("ERR value is not an integer".to_string()))?;
-
-        if timestamp_ms <= 0 {
-            let deleted = self.storage.delete_from_db(current_db, &key)?;
-            return Ok(RespValue::integer(if deleted { 1 } else { 0 }));
-        }
-
-        let set = self
-            .storage
-            .set_expire_at_in_db(current_db, &key, timestamp_ms as u64)?;
-        Ok(RespValue::integer(if set { 1 } else { 0 }))
-    }
-
-    /// TTL key - Get the time to live for a key in seconds
-    pub fn ttl(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("TTL".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let ttl_ms = self.storage.get_ttl_in_db(current_db, &key)?;
-
-        let ttl_seconds = if ttl_ms > 0 { ttl_ms / 1000 } else { ttl_ms };
-
-        Ok(RespValue::integer(ttl_seconds))
-    }
-
-    /// PTTL key - Get the time to live for a key in milliseconds
-    pub fn pttl(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("PTTL".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let ttl_ms = self.storage.get_ttl_in_db(current_db, &key)?;
-
-        Ok(RespValue::integer(ttl_ms))
-    }
-
-    /// PERSIST key - Remove the expiration from a key
-    pub fn persist(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("PERSIST".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let persisted = self.storage.persist_in_db(current_db, &key)?;
-
-        Ok(RespValue::integer(if persisted { 1 } else { 0 }))
-    }
-
-    /// EXPIRETIME key - Get the expiration Unix timestamp in seconds
-    pub fn expiretime(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("EXPIRETIME".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let expire_time_ms = self.storage.get_expire_time_in_db(current_db, &key)?;
-
-        let expire_time_seconds = if expire_time_ms > 0 {
-            expire_time_ms / 1000
-        } else {
-            expire_time_ms
-        };
-
-        Ok(RespValue::integer(expire_time_seconds))
-    }
-
-    /// PEXPIRETIME key - Get the expiration Unix timestamp in milliseconds
-    pub fn pexpiretime(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("PEXPIRETIME".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let expire_time_ms = self.storage.get_expire_time_in_db(current_db, &key)?;
-
-        Ok(RespValue::integer(expire_time_ms))
-    }
-
-    /// DUMP key - Serialize the value stored at key in a Redis-specific format
-    ///
-    /// Returns a serialized representation of the value that can be restored
-    /// using the RESTORE command. The serialization format is compatible with
-    /// Redis's RDB format structure (simplified version).
-    ///
-    /// Format:
-    /// - 1 byte: type
-    /// - variable: serialized value (bincode)
-    /// - 2 bytes: RDB version (0x0009)
-    /// - 8 bytes: CRC64 checksum
-    pub fn dump(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() != 1 {
-            return Err(AikvError::WrongArgCount("DUMP".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-
-        // Get the value
-        match self.storage.get_value(current_db, &key)? {
-            Some(stored_value) => {
-                // Serialize the value
-                let serializable = stored_value.to_serializable();
-                let serialized = bincode::serialize(&serializable)
-                    .map_err(|e| AikvError::Storage(format!("Failed to serialize value: {}", e)))?;
-
-                // Build the dump format:
-                // - serialized value
-                // - 2 bytes RDB version (0x0009 = 9)
-                // - 8 bytes checksum (simplified additive checksum)
-                let mut dump_data = serialized;
-                dump_data.extend_from_slice(&[0x00, 0x09]); // RDB version 9
-
-                // Calculate a simple 64-bit additive checksum for data integrity
-                let checksum = Self::calculate_checksum(&dump_data);
-                dump_data.extend_from_slice(&checksum.to_le_bytes());
-
-                Ok(RespValue::bulk_string(Bytes::from(dump_data)))
+    /// DUMP — AiKv 内部格式 `[version: u8=1][postcard(StoredValue)]`, 非 Redis 兼容.
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "DUMP"))]
+    pub async fn dump(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_args("DUMP", args, 1)?;
+        match self.storage.get_typed(db, &args[0]).await? {
+            None => Ok(router::nil_bulk()),
+            Some(stored) => {
+                let payload = dump_encode(&stored)?;
+                Ok(router::bulk(payload))
             }
-            None => Ok(RespValue::null_bulk_string()),
         }
     }
 
-    /// Calculate a simple 64-bit additive checksum for the data
-    fn calculate_checksum(data: &[u8]) -> u64 {
-        let mut checksum: u64 = 0;
-        for (i, byte) in data.iter().enumerate() {
-            checksum =
-                checksum.wrapping_add((*byte as u64).wrapping_mul((i as u64).wrapping_add(1)));
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "RESTORE"))]
+    pub async fn restore(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_min_args("RESTORE", args, 3)?;
+        let key = &args[0];
+        let ttl_ms = parse_i64(&args[1])?;
+        if ttl_ms < 0 {
+            return Err(Error::Command("ERR Invalid TTL value".into()));
         }
-        checksum
-    }
-
-    /// Verify the checksum in the dump data
-    fn verify_checksum(data: &[u8]) -> bool {
-        if data.len() < 10 {
-            return false;
-        }
-
-        // Extract checksum (last 8 bytes)
-        let stored_checksum = u64::from_le_bytes([
-            data[data.len() - 8],
-            data[data.len() - 7],
-            data[data.len() - 6],
-            data[data.len() - 5],
-            data[data.len() - 4],
-            data[data.len() - 3],
-            data[data.len() - 2],
-            data[data.len() - 1],
-        ]);
-
-        // Calculate checksum on data without the checksum itself
-        let calculated_checksum = Self::calculate_checksum(&data[..data.len() - 8]);
-
-        stored_checksum == calculated_checksum
-    }
-
-    /// RESTORE key ttl serialized-value \[REPLACE\] \[ABSTTL\] \[IDLETIME seconds\] \[FREQ frequency\]
-    ///
-    /// Create a key using the provided serialized value, previously obtained using DUMP.
-    ///
-    /// Arguments:
-    /// - key: The key name to create
-    /// - ttl: Time to live in milliseconds (0 means no expiration)
-    /// - serialized-value: The serialized value from DUMP command
-    /// - REPLACE: Replace existing key if present
-    /// - ABSTTL: TTL is an absolute Unix timestamp in milliseconds
-    pub fn restore(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() < 3 {
-            return Err(AikvError::WrongArgCount("RESTORE".to_string()));
-        }
-
-        let key = String::from_utf8_lossy(&args[0]).to_string();
-        let ttl_str = String::from_utf8_lossy(&args[1]);
-        let ttl = ttl_str
-            .parse::<i64>()
-            .map_err(|_| AikvError::InvalidArgument("ERR invalid TTL value".to_string()))?;
-
-        let serialized_value = &args[2];
-
-        // Parse options
+        let payload = &args[2];
         let mut replace = false;
         let mut absttl = false;
-
         let mut i = 3;
         while i < args.len() {
-            let option = String::from_utf8_lossy(&args[i]).to_uppercase();
-            match option.as_str() {
-                "REPLACE" => {
-                    replace = true;
-                }
-                "ABSTTL" => {
-                    absttl = true;
-                }
-                "IDLETIME" | "FREQ" => {
-                    // These options are accepted but ignored (for Redis compatibility)
-                    if i + 1 >= args.len() {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    i += 1; // Skip the value
-                }
-                _ => {
-                    return Err(AikvError::InvalidArgument(format!(
-                        "ERR syntax error, unknown option: {}",
-                        option
-                    )));
-                }
-            }
-            i += 1;
-        }
-
-        // Check if key already exists
-        if !replace && self.storage.exists_in_db(current_db, &key)? {
-            return Err(AikvError::InvalidArgument(
-                "BUSYKEY Target key name already exists".to_string(),
-            ));
-        }
-
-        // Verify the serialized value format
-        if serialized_value.len() < 10 {
-            return Err(AikvError::InvalidArgument(
-                "ERR DUMP payload version or checksum are wrong".to_string(),
-            ));
-        }
-
-        // Verify checksum
-        if !Self::verify_checksum(serialized_value) {
-            return Err(AikvError::InvalidArgument(
-                "ERR DUMP payload version or checksum are wrong".to_string(),
-            ));
-        }
-
-        // Extract the serialized data (without RDB version and checksum)
-        let data_len = serialized_value.len() - 10; // -2 for version, -8 for checksum
-        let data = &serialized_value[..data_len];
-
-        // Deserialize the value
-        let serializable: SerializableStoredValue = bincode::deserialize(data).map_err(|e| {
-            AikvError::InvalidArgument(format!(
-                "ERR DUMP payload version or checksum are wrong: {}",
-                e
-            ))
-        })?;
-
-        let mut stored_value = StoredValue::from_serializable(serializable);
-
-        // Set expiration if TTL is provided
-        if ttl > 0 {
-            let expires_at = if absttl {
-                // TTL is an absolute timestamp
-                ttl as u64
+            if eq_ignore_case(&args[i], b"REPLACE") {
+                replace = true;
+                i += 1;
+            } else if eq_ignore_case(&args[i], b"ABSTTL") {
+                absttl = true;
+                i += 1;
             } else {
-                // TTL is relative (milliseconds from now)
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64;
-                now + (ttl as u64)
-            };
-            stored_value.set_expiration(Some(expires_at));
-        } else if ttl == 0 {
-            // No expiration
-            stored_value.set_expiration(None);
-        } else {
-            // Negative TTL is an error
-            return Err(AikvError::InvalidArgument(
-                "ERR invalid TTL value, must be >= 0".to_string(),
-            ));
+                return Err(router::wrong_args("RESTORE", ""));
+            }
         }
 
-        // Store the value
-        self.storage.set_value(current_db, key, stored_value)?;
+        let mut stored = dump_decode(payload)?;
+        apply_restore_ttl(&mut stored, ttl_ms, absttl);
 
-        Ok(RespValue::ok())
+        let _lock = self.key_lock.lock(key).await;
+        let get_result = self.storage.get_typed(db, key).await;
+        if let Err(e) = &get_result {
+            tracing::error!(key = %String::from_utf8_lossy(key), error = %e, "RESTORE get_typed failed");
+        }
+        if get_result?.is_some() {
+            if replace {
+                tracing::error!(key = %String::from_utf8_lossy(key), "RESTORE deleting existing key");
+                self.storage.delete(db, key).await?;
+            } else {
+                return Err(Error::Command(
+                    "BUSYKEY Target key name already exists.".into(),
+                ));
+            }
+        }
+        let set_result = self.storage.set_typed(db, key, stored).await;
+        if let Err(e) = &set_result {
+            tracing::error!(key = %String::from_utf8_lossy(key), error = %e, "RESTORE set_typed failed");
+        }
+        set_result?;
+        Ok(router::ok())
     }
 
-    /// MIGRATE host port key|"" destination-db timeout \[COPY\] \[REPLACE\] \[AUTH password\] \[AUTH2 username password\] \[KEYS key \[key ...\]\]
-    ///
-    /// Atomically transfer a key from a source Redis instance to a destination Redis instance.
-    ///
-    /// Note: This is a simplified implementation that works within a single AiKv instance.
-    /// It simulates migration by moving/copying keys between databases.
-    ///
-    /// For true cross-instance migration, a network client would need to be implemented.
-    pub fn migrate(&self, args: &[Bytes], current_db: usize) -> Result<RespValue> {
-        if args.len() < 5 {
-            return Err(AikvError::WrongArgCount("MIGRATE".to_string()));
-        }
+    #[instrument(level = "debug", name = "cmd_keys", skip(self, args), fields(cmd.name = "MIGRATE"))]
+    pub async fn migrate(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
+        router::require_min_args("MIGRATE", args, 5)?;
+        let host =
+            std::str::from_utf8(&args[0]).map_err(|_| Error::Command("ERR invalid host".into()))?;
+        let port = parse_u16(&args[1])?;
+        let key = &args[2];
+        let dest_db = parse_i64(&args[3])? as usize;
+        let timeout_ms = parse_i64(&args[4])? as u64;
 
-        let _host = String::from_utf8_lossy(&args[0]).to_string();
-        let _port = String::from_utf8_lossy(&args[1]);
-        let key_arg = String::from_utf8_lossy(&args[2]).to_string();
-        let dest_db_str = String::from_utf8_lossy(&args[3]);
-        let dest_db = dest_db_str
-            .parse::<usize>()
-            .map_err(|_| AikvError::InvalidArgument("ERR invalid DB index".to_string()))?;
-        let _timeout_str = String::from_utf8_lossy(&args[4]);
-        let _timeout = _timeout_str
-            .parse::<i64>()
-            .map_err(|_| AikvError::InvalidArgument("ERR timeout is not an integer".to_string()))?;
-
-        // Parse options
         let mut copy = false;
         let mut replace = false;
-        let mut keys: Vec<String> = Vec::new();
-
+        let mut auth: Option<migrate::RestoreAuth<'_>> = None;
+        let mut batch_keys: Vec<&[u8]> = Vec::new();
         let mut i = 5;
         while i < args.len() {
-            let option = String::from_utf8_lossy(&args[i]).to_uppercase();
-            match option.as_str() {
-                "COPY" => {
-                    copy = true;
+            if eq_ignore_case(&args[i], b"COPY") {
+                copy = true;
+                i += 1;
+            } else if eq_ignore_case(&args[i], b"REPLACE") {
+                replace = true;
+                i += 1;
+            } else if eq_ignore_case(&args[i], b"AUTH2") {
+                if i + 2 >= args.len() {
+                    return Err(router::wrong_args("MIGRATE", ""));
                 }
-                "REPLACE" => {
-                    replace = true;
+                auth = Some(migrate::RestoreAuth::Acl {
+                    username: &args[i + 1],
+                    password: &args[i + 2],
+                });
+                i += 3;
+            } else if eq_ignore_case(&args[i], b"AUTH") {
+                if i + 1 >= args.len() {
+                    return Err(router::wrong_args("MIGRATE", ""));
                 }
-                "AUTH" => {
-                    // Skip AUTH argument (password)
-                    if i + 1 >= args.len() {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
+                auth = Some(migrate::RestoreAuth::LegacyPassword(&args[i + 1]));
+                i += 2;
+            } else if eq_ignore_case(&args[i], b"KEYS") {
+                if i + 1 >= args.len() {
+                    return Err(router::wrong_args("MIGRATE", ""));
+                }
+                i += 1;
+                while i < args.len() {
+                    if eq_ignore_case(&args[i], b"COPY")
+                        || eq_ignore_case(&args[i], b"REPLACE")
+                        || eq_ignore_case(&args[i], b"AUTH")
+                        || eq_ignore_case(&args[i], b"AUTH2")
+                    {
+                        break;
                     }
+                    batch_keys.push(&args[i]);
                     i += 1;
                 }
-                "AUTH2" => {
-                    // Skip AUTH2 arguments (username, password)
-                    if i + 2 >= args.len() {
-                        return Err(AikvError::InvalidArgument("ERR syntax error".to_string()));
-                    }
-                    i += 2;
-                }
-                "KEYS" => {
-                    // Collect all remaining arguments as keys
-                    i += 1;
-                    while i < args.len() {
-                        keys.push(String::from_utf8_lossy(&args[i]).to_string());
-                        i += 1;
-                    }
-                    break;
-                }
-                _ => {
-                    return Err(AikvError::InvalidArgument(format!(
-                        "ERR syntax error, unknown option: {}",
-                        option
-                    )));
-                }
-            }
-            i += 1;
-        }
-
-        // If no KEYS argument, use the single key
-        if keys.is_empty() {
-            if key_arg.is_empty() {
-                return Err(AikvError::InvalidArgument(
-                    "ERR empty key specified".to_string(),
-                ));
-            }
-            keys.push(key_arg);
-        }
-
-        // Validate destination database
-        if dest_db >= DEFAULT_DB_COUNT {
-            return Err(AikvError::InvalidArgument(
-                "ERR invalid DB index".to_string(),
-            ));
-        }
-
-        // Process each key
-        let mut migrated_count = 0;
-        for key in &keys {
-            // Check if source key exists
-            if !self.storage.exists_in_db(current_db, key)? {
                 continue;
-            }
-
-            // Check if destination key exists and REPLACE is not set
-            if self.storage.exists_in_db(dest_db, key)? && !replace {
-                return Err(AikvError::InvalidArgument(
-                    "BUSYKEY Target key name already exists".to_string(),
-                ));
-            }
-
-            // Get the source value
-            if let Some(stored_value) = self.storage.get_value(current_db, key)? {
-                // Remember if destination had a value for rollback
-                let dest_had_value = self.storage.exists_in_db(dest_db, key)?;
-                let dest_old_value = if dest_had_value && replace {
-                    self.storage.get_value(dest_db, key)?
-                } else {
-                    None
-                };
-
-                // Copy to destination
-                self.storage
-                    .set_value(dest_db, key.clone(), stored_value.clone())?;
-
-                // Delete from source if not COPY mode
-                if !copy {
-                    if let Err(e) = self.storage.delete_from_db(current_db, key) {
-                        // Rollback: restore destination to previous state
-                        if let Some(old_val) = dest_old_value {
-                            let _ = self.storage.set_value(dest_db, key.clone(), old_val);
-                        } else if !dest_had_value {
-                            let _ = self.storage.delete_from_db(dest_db, key);
-                        }
-                        return Err(e);
-                    }
-                }
-
-                migrated_count += 1;
+            } else {
+                return Err(router::wrong_args("MIGRATE", ""));
             }
         }
 
-        if migrated_count == 0 {
-            Ok(RespValue::simple_string("NOKEY"))
-        } else {
-            Ok(RespValue::ok())
+        if !batch_keys.is_empty() {
+            for key in batch_keys {
+                let Some(stored) = self.storage.get_typed(db, key).await? else {
+                    continue;
+                };
+                let payload = dump_encode(&stored)?;
+                let ttl_ms = migrate_ttl_ms(&stored);
+                migrate::send_restore(migrate::RestoreTarget {
+                    host,
+                    port,
+                    timeout_ms,
+                    dest_db,
+                    key,
+                    ttl_ms,
+                    payload: &payload,
+                    replace,
+                    auth,
+                })
+                .await?;
+                if !copy {
+                    self.storage.delete(db, key).await?;
+                }
+            }
+            return Ok(router::ok());
+        }
+
+        let _lock = self.key_lock.lock(key).await;
+        let Some(stored) = self.storage.get_typed(db, key).await? else {
+            return Ok(router::ok());
+        };
+
+        let payload = dump_encode(&stored)?;
+        let ttl_ms = migrate_ttl_ms(&stored);
+
+        migrate::send_restore(migrate::RestoreTarget {
+            host,
+            port,
+            timeout_ms,
+            dest_db,
+            key,
+            ttl_ms,
+            payload: &payload,
+            replace,
+            auth,
+        })
+        .await?;
+
+        if !copy {
+            self.storage.delete(db, key).await?;
+        }
+        Ok(router::ok())
+    }
+}
+
+fn map_expiretime(stored: Option<crate::storage::StoredValue>) -> i64 {
+    match stored {
+        None => -2,
+        Some(s) => match s.expires_at {
+            None => -1,
+            Some(ms) => (ms / 1000) as i64,
+        },
+    }
+}
+
+fn map_pexpiretime(stored: Option<crate::storage::StoredValue>) -> i64 {
+    match stored {
+        None => -2,
+        Some(s) => match s.expires_at {
+            None => -1,
+            Some(ms) => ms as i64,
+        },
+    }
+}
+
+fn apply_restore_ttl(stored: &mut crate::storage::StoredValue, ttl_ms: i64, absttl: bool) {
+    if ttl_ms == 0 {
+        stored.expires_at = None;
+        return;
+    }
+    if absttl {
+        stored.expires_at = Some(ttl_ms as u64);
+    } else {
+        stored.expires_at = Some(now_ms().saturating_add(ttl_ms as u64));
+    }
+}
+
+fn migrate_ttl_ms(stored: &crate::storage::StoredValue) -> i64 {
+    match stored.expires_at {
+        None => 0,
+        Some(exp) => {
+            let now = now_ms();
+            if now >= exp {
+                0
+            } else {
+                (exp - now) as i64
+            }
         }
     }
+}
+
+fn parse_u16(b: &Bytes) -> Result<u16> {
+    let s =
+        std::str::from_utf8(b).map_err(|_| Error::Command("ERR value is not an integer".into()))?;
+    s.parse::<u16>()
+        .map_err(|_| Error::Command("ERR value is not an integer".into()))
+}
+
+fn map_ttl_seconds(ttl: Option<i64>) -> i64 {
+    match ttl {
+        None => -2,
+        Some(TTL_NO_EXPIRY) => -1,
+        Some(ms) => ms / 1000,
+    }
+}
+
+fn map_pttl_ms(ttl: Option<i64>) -> i64 {
+    match ttl {
+        None => -2,
+        Some(TTL_NO_EXPIRY) => -1,
+        Some(ms) => ms,
+    }
+}
+
+fn array_of_bulk(items: Vec<Vec<u8>>) -> RespValue {
+    RespValue::Array(Some(items.into_iter().map(router::bulk).collect()))
+}
+
+fn parse_i64(b: &Bytes) -> Result<i64> {
+    let s =
+        std::str::from_utf8(b).map_err(|_| Error::Command("ERR value is not an integer".into()))?;
+    s.parse::<i64>()
+        .map_err(|_| Error::Command("ERR value is not an integer".into()))
+}
+
+fn parse_u64(b: &Bytes) -> Result<u64> {
+    let s = std::str::from_utf8(b).map_err(|_| Error::Command("ERR invalid cursor".into()))?;
+    s.parse::<u64>()
+        .map_err(|_| Error::Command("ERR invalid cursor".into()))
+}
+
+fn eq_ignore_case(a: &Bytes, b: &[u8]) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .zip(b.iter())
+            .all(|(x, y)| x.eq_ignore_ascii_case(y))
 }

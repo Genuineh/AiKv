@@ -1,77 +1,101 @@
 [package]
 name = "aikv"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
-authors = ["Jerry"]
-description = "Redis protocol compatible key-value store based on AiDb"
+description = "Redis RESP2/RESP3 compatible persistent key-value server powered by AiDb"
 license = "MIT"
-repository = "https://github.com/Genuineh/AiKv"
+repository = "https://github.com/wiqun/AiKv"
+homepage = "https://github.com/wiqun/AiKv"
+documentation = "https://docs.rs/aikv"
 readme = "README.md"
-keywords = ["redis", "kvstore", "database", "resp"]
-categories = ["database", "network-programming"]
-
-[features]
-default = []
-cluster = ["aidb/raft-cluster", "openraft", "tonic"]
-
-[dependencies]
-# Async runtime
-tokio = { version = "1.35", features = ["full"] }
-
-# Networking and serialization
-bytes = "1.11"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-bincode = "1.3"
-
-# Error handling
-anyhow = "1.0"
-thiserror = "1.0"
-
-# Logging
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# OpenTelemetry tracing
-opentelemetry = "0.21"
-opentelemetry-otlp = "0.14"
-opentelemetry_sdk = { version = "0.21", features = ["rt-tokio"] }
-tracing-opentelemetry = "0.22"
-
-# Configuration
-toml = "0.8"
-
-# Storage engine
-aidb = { git = "https://github.com/wiqun/AiDb", tag = "v0.7.0" }
-
-# Raft consensus (optional, for cluster mode)
-openraft = { version = "0.9", features = ["serde"], optional = true }
-# gRPC transport used for Raft RPC server (optional, enabled with `cluster` feature)
-tonic = { version = "0.11", features = ["transport"], optional = true }
-
-# Lua scripting
-mlua = { version = "0.10", features = ["lua54", "async", "send", "vendored"] }
-sha1 = "0.10"
-rand = "0.8"
-
-# MessagePack serde used by Raft payloads
-rmp-serde = "1.1"
-
-# Temporary files for RDB operations
-tempfile = "3.8"
-
-[dev-dependencies]
-redis = "0.24"
-criterion = { version = "0.5", features = ["html_reports"] }
+keywords = ["database", "redis", "key-value", "raft", "resp"]
+categories = ["database-implementations", "network-programming", "command-line-utilities"]
+exclude = [
+  ".cargo/",
+  ".github/",
+  ".cursor/",
+  ".claude/",
+  "e2e/",
+  "hooks/",
+  "install-hooks.sh",
+  "clippy.toml",
+  "deny.toml",
+  "rustfmt.toml",
+]
 
 [[bin]]
 name = "aikv"
 path = "src/main.rs"
 
-[[bench]]
-name = "aikv_benchmark"
-harness = false
+[features]
+default = ["compression"]
+monitoring = ["dep:tracing-opentelemetry", "dep:opentelemetry-otlp", "dep:opentelemetry", "dep:opentelemetry_sdk", "dep:hyper", "dep:hyper-util", "dep:http-body-util", "aidb/monitoring"]
+cluster = ["aidb/cluster", "dep:openraft", "dep:openraft-rt-tokio"]
+cluster-test-util = ["cluster", "aidb/cluster-test-util"]
+compression = ["aidb/compression"]
 
-[[bench]]
-name = "comprehensive_benchmark"
-harness = false
+[dependencies]
+# Async runtime
+tokio       = { version = "1", features = ["full"] }
+tokio-util  = { version = "0.7", features = ["rt"] }
+async-trait = "0.1"
+
+# Core primitives
+parking_lot = "0.12"
+dashmap = "6"
+bytes     = "1"
+thiserror = "2"
+serde     = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml       = "0.8"
+postcard  = { version = "1", default-features = false, features = ["alloc"] }
+sha1      = "0.10"
+itoa = "1"
+ryu = "1"
+crc32fast = "1"
+rand      = "0.8"
+
+# Allocator
+mimalloc = "0.1"
+
+# Logging & tracing
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Lua scripting
+mlua = { version = "0.10", features = ["lua54", "async", "send", "vendored"] }
+
+# Openraft
+openraft = { version = "0.10.0-alpha.33", optional = true }
+openraft-rt-tokio = { version = "0.10.0-alpha.33", optional = true }
+
+# AiDb storage engine
+aidb = { git = "https://github.com/wiqun/AiDb.git", branch = "main" }
+
+# Monitoring (optional)
+# Metrics HTTP server (monitoring feature)
+hyper = { version = "1", features = ["server", "http1"], optional = true }
+hyper-util = { version = "0.1", features = ["tokio"], optional = true }
+http-body-util = { version = "0.1", optional = true }
+opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "metrics"], optional = true }
+opentelemetry = { version = "0.32", optional = true }
+opentelemetry_sdk = { version = "0.32", features = ["rt-tokio", "testing"], optional = true }
+tracing-opentelemetry = { version = "0.33", optional = true }
+
+[dev-dependencies]
+redis    = { version = "0.24", features = ["tokio-comp"] }
+tempfile = "3"
+criterion = { version = "0.5", features = ["html_reports"] }
+rand = "0.8"
+proptest = "1"
+
+[profile.release]
+lto           = true
+codegen-units = 1
+debug         = 1   # line tables for eBPF/Pyroscope flame graphs (不 strip)
+
+[lints.clippy]
+all = "warn"

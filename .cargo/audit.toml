@@ -1,12 +1,7 @@
-# cargo-audit configuration
-# https://rustsec.github.io/cargo-audit/
+# cargo-audit 独立配置 (不读 deny.toml)
+# 每个被忽略的 advisory 需注明原因与跟踪 Issue, 避免静默累积
 
 [advisories]
-# Temporary exception for RUSTSEC-2026-0001 (rkyv OOM issue). This is a tracked
-# technical debt item and should be removed once upstream patches rust_decimal/
-# openraft to depend on a safe rkyv >= 0.8.13.
-# Transient transitive dependency (rkyv) pulled in via rust_decimal -> byte-unit -> openraft;
-# no safe upgrade available yet. Tracked in repo issue.
-ignore = [
-    "RUSTSEC-2026-0001",
-]
+ignore = []
+informational_warnings = ["unmaintained"]
+severity_threshold = "low"

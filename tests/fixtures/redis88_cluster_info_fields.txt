@@ -1,0 +1,24 @@
+# Redis 8.8 CLUSTER INFO 常驻字段清单 (健康集群必须出现键名)
+# 对照: redis/redis@8.8 genClusterInfoString + asmCatInfoString
+# 不含: cluster_stats_messages_<type>_{sent,received} (仅非零时出现)
+# AiKv-only: cluster_slots_migrating
+cluster_state
+cluster_slots_assigned
+cluster_slots_ok
+cluster_slots_pfail
+cluster_slots_fail
+cluster_slots_migrating
+cluster_known_nodes
+cluster_size
+cluster_current_epoch
+cluster_my_epoch
+cluster_stats_messages_sent
+cluster_stats_messages_received
+total_cluster_links_buffer_limit_exceeded
+cluster_slot_migration_active_tasks
+cluster_slot_migration_active_trim_running
+cluster_slot_migration_active_trim_current_job_keys
+cluster_slot_migration_active_trim_current_job_trimmed
+cluster_slot_migration_stats_active_trim_started
+cluster_slot_migration_stats_active_trim_completed
+cluster_slot_migration_stats_active_trim_cancelled
