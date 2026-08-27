@@ -217,6 +217,8 @@ pub fn resolve_from_parts(
 | TOML 语法 / 未知键 / 类型错误 | `config error: file <path>: ...` |
 | `--config` 指向不存在文件 | `config error: file ...: file not found` |
 | `engine=aidb` 且无 `data_dir` | `validation engine.data_dir` |
+| 集群启用且 `engine != aidb` | `validation engine.kind` |
+| 集群启用且无 `data_dir` | `validation engine.data_dir` (现有 aidb 规则, 不另写检查) |
 | `raft_rpc_timeout_ms >= raft_election_timeout_min` | validation |
 | `raft_heartbeat_interval >= raft_election_timeout_min` | validation |
 
@@ -233,7 +235,7 @@ pub fn resolve_from_parts(
 | `PartialClusterConfig` | 仅配 `node_id` 或 `rpc_addr` 其一 | 退化为单机 |
 | `MemoryEngineProductionHint` | `engine=memory` | 提示生产慎用 |
 
-**集群门控**: 仅当 `cluster_node_id` **与** `cluster_rpc_addr` **同时有值** 时进入集群模式.
+**集群门控**: 仅当 `cluster_node_id` **与** `cluster_rpc_addr` **同时有值** 时进入集群模式. 集群启用时 `engine` 必须为 `aidb` 且必须设置 `data_dir`; `memory` 仅用于单机. 只配其一仍为 `PartialClusterConfig`, 不进入集群.
 
 ---
 

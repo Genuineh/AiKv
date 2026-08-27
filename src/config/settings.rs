@@ -369,6 +369,18 @@ impl Settings {
         #[cfg(feature = "cluster")]
         let cluster = resolve_cluster(&self.cluster, warnings)?;
 
+        #[cfg(feature = "cluster")]
+        {
+            let cluster_enabled = cluster.node_id.is_some() && cluster.rpc_addr.is_some();
+            if cluster_enabled && engine != EngineKind::AiDb {
+                return Err(ConfigError::Field {
+                    layer: "validation",
+                    field: "engine.kind",
+                    message: "cluster mode requires engine aidb, got memory".to_string(),
+                });
+            }
+        }
+
         Ok(ResolvedSettings {
             bind,
             max_clients,

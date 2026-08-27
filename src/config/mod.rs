@@ -179,6 +179,101 @@ kind = "aidb"
         ));
     }
 
+    /// 回归 #77: 集群启用且 `engine=memory` (无 data_dir) 必须在 resolve 阶段以 `engine.kind` 失败, 不得等到 init_cluster panic.
+    #[cfg(feature = "cluster")]
+    #[test]
+    fn cluster_with_memory_engine_fails_validation() {
+        let toml = r#"
+[engine]
+kind = "memory"
+
+[cluster]
+node_id = 1
+rpc_addr = "127.0.0.1:16379"
+"#;
+        let err = resolve_parts(Some(toml), HashMap::new(), CliOverrides::default()).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ConfigError::Field {
+                    field: "engine.kind",
+                    ..
+                }
+            ),
+            "expected engine.kind, got {err:?}"
+        );
+    }
+
+    /// 回归 #77: 即使配了 data_dir, cluster + memory 仍必须报 `engine.kind`, 禁止 memory 绕过 Raft.
+    #[cfg(feature = "cluster")]
+    #[test]
+    fn cluster_with_memory_engine_and_data_dir_fails_validation() {
+        let toml = r#"
+[engine]
+kind = "memory"
+data_dir = "/tmp/aikv-data"
+
+[cluster]
+node_id = 1
+rpc_addr = "127.0.0.1:16379"
+"#;
+        let err = resolve_parts(Some(toml), HashMap::new(), CliOverrides::default()).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ConfigError::Field {
+                    field: "engine.kind",
+                    ..
+                }
+            ),
+            "expected engine.kind, got {err:?}"
+        );
+    }
+
+    /// 回归 #77: 只配 node_id (PartialClusterConfig) 时仍可用单机 memory, 不得当成集群启用.
+    #[cfg(feature = "cluster")]
+    #[test]
+    fn partial_cluster_config_still_allows_memory_engine() {
+        let toml = r#"
+[engine]
+kind = "memory"
+
+[cluster]
+node_id = 1
+"#;
+        let (resolved, warnings) =
+            resolve_parts(Some(toml), HashMap::new(), CliOverrides::default()).unwrap();
+        assert_eq!(resolved.engine, EngineKind::Memory);
+        assert!(warnings.contains(&ConfigWarning::PartialClusterConfig));
+    }
+
+    /// 回归 #77: 集群 + aidb + data_dir 是合法配置, resolve 必须成功.
+    #[cfg(feature = "cluster")]
+    #[test]
+    fn cluster_with_aidb_and_data_dir_succeeds() {
+        let toml = r#"
+[engine]
+kind = "aidb"
+data_dir = "/var/lib/aikv/data"
+
+[cluster]
+node_id = 1
+rpc_addr = "127.0.0.1:16379"
+"#;
+        let (resolved, _) =
+            resolve_parts(Some(toml), HashMap::new(), CliOverrides::default()).unwrap();
+        assert_eq!(resolved.engine, EngineKind::AiDb);
+        assert_eq!(
+            resolved.data_dir.as_deref(),
+            Some(std::path::Path::new("/var/lib/aikv/data"))
+        );
+        assert_eq!(resolved.cluster.node_id, Some(1));
+        assert_eq!(
+            resolved.cluster.rpc_addr.as_deref(),
+            Some("127.0.0.1:16379")
+        );
+    }
+
     #[cfg(feature = "cluster")]
     #[test]
     fn raft_rpc_timeout_ge_election_min_fails() {
