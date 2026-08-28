@@ -141,6 +141,7 @@ impl Connection {
         };
         tracing::info!(remote = %remote, client_id, "kv.connection.open");
         let _ = conn.run().await;
+        conn.release_watches();
         state.unregister_client(client_id);
         tracing::info!(remote = %conn.remote, client_id, "kv.connection.close");
     }
@@ -369,6 +370,14 @@ impl Connection {
         };
 
         self.process_command(&cmd, &args).await
+    }
+
+    fn release_watches(&mut self) {
+        let registry = self.state.storage.watch_registry();
+        for (db, key) in self.tx_state.watched_keys.keys() {
+            registry.unwatch(*db, key);
+        }
+        self.tx_state.watched_keys.clear();
     }
 
     async fn process_command(&mut self, cmd: &str, args: &[Bytes]) -> Result<()> {

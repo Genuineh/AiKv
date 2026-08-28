@@ -14,6 +14,7 @@ pub mod observation;
 pub mod subkey;
 pub mod ttl_filter;
 pub mod types;
+pub mod watch_registry;
 pub mod watch_version;
 
 pub use adapter::{AdapterWriteOp, KvStorageAdapter, StorageAdapter, WriteBatchStats};
@@ -30,3 +31,4 @@ pub use types::{
 };
 
 pub use ttl_filter::{DbKeyCounterRemovalListener, TtlExpireFilter};
+pub use watch_registry::WatchRegistry;

@@ -62,6 +62,90 @@ pub(super) fn get_or_spawn_set_batcher(
     batcher
 }
 
+/// 将多笔 PUT/DELETE 全部送进 batcher 后再等 ack, 使同一请求的用户写与 watch meta
+/// 落入同一批 Raft propose (Issue #83).
+pub(super) async fn submit_write_ops(
+    batchers: &parking_lot::Mutex<HashMap<u64, Arc<GroupSetBatcher>>>,
+    eager_flush: usize,
+    mgr: Arc<ClusterStateManager>,
+    gid: u64,
+    ops: Vec<(Vec<u8>, Option<Vec<u8>>)>,
+) -> Result<Vec<bool>> {
+    enum Slot {
+        Ready(bool),
+        Wait(oneshot::Receiver<std::result::Result<bool, String>>),
+    }
+
+    if ops.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut prepared: Vec<(Vec<u8>, Option<Vec<u8>>, bool)> = Vec::with_capacity(ops.len());
+    for (key, value) in ops {
+        if value.is_none() {
+            let existed = mgr
+                .multi_raft
+                .get_local(gid, &key)
+                .await
+                .map_err(|e| {
+                    tracing::warn!(gid = gid, error = %e, "get_local failed in submit_write_ops");
+                    ClusterDataAdapter::map_err(e)
+                })?
+                .is_some();
+            if !existed {
+                prepared.push((key, value, false));
+                continue;
+            }
+        }
+        prepared.push((key, value, true));
+    }
+
+    let batcher = get_or_spawn_set_batcher(batchers, mgr, gid, eager_flush);
+    let mut slots: Vec<Slot> = Vec::with_capacity(prepared.len());
+    for (key, value, send) in prepared {
+        if !send {
+            slots.push(Slot::Ready(false));
+            continue;
+        }
+        let (ack, wait) = oneshot::channel();
+        let item = match value {
+            Some(v) => WriteBatchItem::Put { key, value: v, ack },
+            None => WriteBatchItem::Delete { key, ack },
+        };
+        batcher.tx.send(item).await.map_err(|_| {
+            Error::Cluster(crate::error::ClusterError::Aidb(
+                AidbClusterError::Internal("data group write batcher stopped".into()),
+            ))
+        })?;
+        slots.push(Slot::Wait(wait));
+    }
+
+    let mut out = Vec::with_capacity(slots.len());
+    for slot in slots {
+        match slot {
+            Slot::Ready(v) => out.push(v),
+            Slot::Wait(wait) => {
+                let flag = wait
+                    .await
+                    .map_err(|_| {
+                        Error::Cluster(crate::error::ClusterError::Aidb(
+                            AidbClusterError::Internal(
+                                "data group write batcher dropped response".into(),
+                            ),
+                        ))
+                    })?
+                    .map_err(|e| {
+                        Error::Cluster(crate::error::ClusterError::Aidb(
+                            AidbClusterError::Internal(e.to_string()),
+                        ))
+                    })?;
+                out.push(flag);
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// 统一写批入口: 将 PUT 或 DELETE 请求发送到对应 group 的 batcher.
 ///
 /// PUT: 不前置 `get_local`, 返回值来自 propose 后的 `WriteStats` (insert 语义).
@@ -74,44 +158,12 @@ pub(super) async fn submit_write_op(
     key: Vec<u8>,
     value: Option<Vec<u8>>,
 ) -> Result<bool> {
-    // DELETE: key 不存在则短路跳过 propose. PUT: 禁止前置 get_local.
-    if value.is_none() {
-        let existed = mgr
-            .multi_raft
-            .get_local(gid, &key)
-            .await
-            .map_err(|e| {
-                tracing::warn!(gid = gid, error = %e, "get_local failed in submit_write_op");
-                ClusterDataAdapter::map_err(e)
-            })?
-            .is_some();
-        if !existed {
-            return Ok(false);
-        }
-    }
-
-    let batcher = get_or_spawn_set_batcher(batchers, mgr, gid, eager_flush);
-    let (ack, wait) = oneshot::channel();
-    let item = match value {
-        Some(v) => WriteBatchItem::Put { key, value: v, ack },
-        None => WriteBatchItem::Delete { key, ack },
-    };
-    batcher.tx.send(item).await.map_err(|_| {
+    let mut flags = submit_write_ops(batchers, eager_flush, mgr, gid, vec![(key, value)]).await?;
+    flags.pop().ok_or_else(|| {
         Error::Cluster(crate::error::ClusterError::Aidb(
-            AidbClusterError::Internal("data group write batcher stopped".into()),
+            AidbClusterError::Internal("submit_write_ops returned no flags".into()),
         ))
-    })?;
-    wait.await
-        .map_err(|_| {
-            Error::Cluster(crate::error::ClusterError::Aidb(
-                AidbClusterError::Internal("data group write batcher dropped response".into()),
-            ))
-        })?
-        .map_err(|e| {
-            Error::Cluster(crate::error::ClusterError::Aidb(
-                AidbClusterError::Internal(e.to_string()),
-            ))
-        })
+    })
 }
 
 pub(super) async fn run_set_batcher(

@@ -27,6 +27,7 @@ use crate::storage::types::{
     now_ms, KeyspaceStats, KvStorage, ScanResult, StoredValue, ValueType, WriteOp, TTL_NO_EXPIRY,
     WRONGTYPE,
 };
+use crate::storage::watch_registry::WatchRegistry;
 use crate::storage::watch_version::{
     decode_version, encode_version, is_watch_meta_user_key, meta_user_key,
 };
@@ -34,6 +35,7 @@ use crate::storage::watch_version::{
 pub struct MemoryEngine {
     databases: Vec<RwLock<HashMap<Vec<u8>, StoredValue>>>,
     observation: Option<Arc<StorageObservation>>,
+    watchers: Arc<WatchRegistry>,
 }
 
 impl MemoryEngine {
@@ -49,6 +51,7 @@ impl MemoryEngine {
         Arc::new(Self {
             databases,
             observation,
+            watchers: WatchRegistry::new(),
         })
     }
 
@@ -113,7 +116,7 @@ impl MemoryEngine {
                 if Self::remove_expired(&mut map, key) {
                     self.record_expired(1);
                     if !is_watch_meta_user_key(key) {
-                        Self::bump_watch_version_map(&mut map, key);
+                        self.bump_watch_version_map(&mut map, db, key);
                     }
                 }
                 Ok(None)
@@ -133,8 +136,13 @@ impl MemoryEngine {
         })
     }
 
-    fn bump_watch_version_map(map: &mut HashMap<Vec<u8>, StoredValue>, user_key: &[u8]) {
-        if is_watch_meta_user_key(user_key) {
+    fn bump_watch_version_map(
+        &self,
+        map: &mut HashMap<Vec<u8>, StoredValue>,
+        db: usize,
+        user_key: &[u8],
+    ) {
+        if is_watch_meta_user_key(user_key) || !self.watchers.is_watched(db, user_key) {
             return;
         }
         let next = Self::read_watch_version_from_map(map, user_key).saturating_add(1);
@@ -217,7 +225,7 @@ impl KvStorage for MemoryEngine {
         Self::remove_expired(&mut map, key);
         let deleted = map.remove(key).is_some();
         if deleted && !is_watch_meta_user_key(key) {
-            Self::bump_watch_version_map(&mut map, key);
+            self.bump_watch_version_map(&mut map, db, key);
         }
         Ok(deleted)
     }
@@ -467,7 +475,7 @@ impl KvStorage for MemoryEngine {
         let mut map = self.databases[db].write();
         map.insert(key.to_vec(), value);
         if !is_watch_meta_user_key(key) {
-            Self::bump_watch_version_map(&mut map, key);
+            self.bump_watch_version_map(&mut map, db, key);
         }
         Ok(())
     }
@@ -476,6 +484,10 @@ impl KvStorage for MemoryEngine {
         self.check_db(db)?;
         let map = self.databases[db].read();
         Ok(Self::read_watch_version_from_map(&map, key))
+    }
+
+    fn watch_registry(&self) -> Arc<WatchRegistry> {
+        Arc::clone(&self.watchers)
     }
 
     async fn rename_key(&self, db: usize, old_key: &[u8], new_key: &[u8]) -> Result<()> {
