@@ -290,6 +290,7 @@ impl KvStorage for MemoryEngine {
         let mut valid: Vec<Vec<u8>> = map
             .iter()
             .filter(|(_, v)| !v.is_expired())
+            .filter(|(k, _)| !is_watch_meta_user_key(k))
             .filter(|(k, _)| pattern.is_empty() || glob_match(pattern, k))
             .map(|(k, _)| k.clone())
             .collect();
@@ -309,7 +310,10 @@ impl KvStorage for MemoryEngine {
     async fn len(&self, db: usize) -> Result<usize> {
         self.check_db(db)?;
         let map = self.databases[db].read();
-        let n = map.values().filter(|v| !v.is_expired()).count();
+        let n = map
+            .iter()
+            .filter(|(k, v)| !is_watch_meta_user_key(k) && !v.is_expired())
+            .count();
         Ok(n)
     }
 
@@ -320,8 +324,8 @@ impl KvStorage for MemoryEngine {
         let mut keys = 0usize;
         let mut expires = 0usize;
         let mut ttl_remaining = Vec::new();
-        for v in map.values() {
-            if v.is_expired() {
+        for (k, v) in map.iter() {
+            if is_watch_meta_user_key(k) || v.is_expired() {
                 continue;
             }
             keys += 1;
