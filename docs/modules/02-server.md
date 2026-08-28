@@ -105,7 +105,13 @@ AiKv 在 `Connection` 内部维护 `TransactionState`:
 2. **`MULTI`**: 设置 `in_multi = true`, 开启事务收集模式;
 3. **入队阶段**: 在 `in_multi = true` 期间, 除 `EXEC`, `DISCARD`, `WATCH`, `UNWATCH` 外的命令均被放入 `tx_queue`, 立即返回 `+QUEUED`;
 4. **`EXEC`**:
+   - 获取节点级事务门闩 (exclusive), 阻止其他连接的普通命令插队;
    - 检查 `watched_keys` 中的 Key 是否被外部并发写入修改;
    - 若发生冲突, 清空事务队列并返回 `RespValue::NullArray` (`*-1\r\n`);
-   - 若未发生冲突, 提取队列中所有 Key 统一按字典序获取 `KeyLock`, 通过 `WriteBatch` 原子落盘并返回各命令的执行结果数组;
+   - 集群模式下对整条队列做 slot / 路由预检: 跨 slot 返回 `CROSSSLOT`, 远端或非 Leader 返回 `MOVED` / `ASK` / `TRYAGAIN`, 均不执行任何队列命令;
+   - 含 `blocking` 或 `movablekeys` 标记的队列命令整笔拒绝;
+   - 在门闩内按序执行队列命令; 某条命令运行时错误写入结果数组, 后续命令继续执行 (**不回滚**, 对齐 Redis);
+   - 释放门闩后返回执行结果数组;
 5. **`DISCARD`**: 清空 `tx_queue` 与 `watched_keys`, 重置 `in_multi = false`, 返回 `+OK`.
+
+**Non-goals (本期)**: `EXEC <json>` JSON batch 行为不变; Lua `EVAL` 不走本路径; WATCH 版本真源见 Issue #79.

@@ -35,6 +35,7 @@ use crate::command::blocking::{self, BlockedClientGuard, BlockingRegistry};
 use crate::command::router::{self, KeyLock};
 use crate::error::{Error, Result};
 use crate::protocol::RespValue;
+use crate::server::config::TransactionGate;
 use crate::server::ServerMetrics;
 use crate::storage::{KvStorage, StoredValue, ValueType};
 
@@ -42,14 +43,20 @@ pub struct ListCommands {
     storage: Arc<dyn KvStorage>,
     key_lock: Arc<KeyLock>,
     metrics: Option<Arc<ServerMetrics>>,
+    transaction_gate: TransactionGate,
 }
 
 impl ListCommands {
-    pub fn new(storage: Arc<dyn KvStorage>, key_lock: Arc<KeyLock>) -> Self {
+    pub fn new(
+        storage: Arc<dyn KvStorage>,
+        key_lock: Arc<KeyLock>,
+        transaction_gate: TransactionGate,
+    ) -> Self {
         Self {
             storage,
             key_lock,
             metrics: None,
+            transaction_gate,
         }
     }
 
@@ -57,11 +64,13 @@ impl ListCommands {
         storage: Arc<dyn KvStorage>,
         key_lock: Arc<KeyLock>,
         metrics: Arc<ServerMetrics>,
+        transaction_gate: TransactionGate,
     ) -> Self {
         Self {
             storage,
             key_lock,
             metrics: Some(metrics),
+            transaction_gate,
         }
     }
 
@@ -471,11 +480,6 @@ impl ListCommands {
         timeout_secs: f64,
         left: bool,
     ) -> Result<RespValue> {
-        // Try non-blocking first
-        if let Some(result) = self.try_pop_any(db, keys, left).await? {
-            return Ok(result);
-        }
-
         let infinite = timeout_secs == 0.0;
         let dur = if infinite {
             Duration::from_secs(60 * 60 * 24 * 365)
@@ -483,34 +487,39 @@ impl ListCommands {
             Duration::from_secs_f64(timeout_secs)
         };
 
+        let registry = BlockingRegistry::global();
+        let deadline = Instant::now() + dur;
+        let mut receivers = match self
+            .prepare_blocking_pop(db, keys, left, dur, registry)
+            .await?
+        {
+            Ok(response) => return Ok(response),
+            Err(receivers) => receivers,
+        };
         let _blocked = BlockedClientGuard::enter(&self.metrics);
 
-        let registry = BlockingRegistry::global();
-        let mut receivers: Vec<oneshot::Receiver<RespValue>> = keys
-            .iter()
-            .map(|k| registry.register(k.to_vec(), dur))
-            .collect();
-
-        let deadline = Instant::now() + dur;
         while infinite || Instant::now() < deadline {
+            let mut notified = false;
             for rx in &mut receivers {
                 match rx.try_recv() {
                     Ok(_) | Err(oneshot::error::TryRecvError::Closed) => {
-                        let remaining = deadline.saturating_duration_since(Instant::now());
-                        if remaining.is_zero() {
-                            return Ok(blocking::nil_blocking_response());
-                        }
-                        if let Some(result) = self.try_pop_any(db, keys, left).await? {
-                            return Ok(result);
-                        }
-                        // Element taken by another waiter, re-register
-                        receivers = keys
-                            .iter()
-                            .map(|k| registry.register(k.to_vec(), remaining))
-                            .collect();
+                        notified = true;
                         break;
                     }
                     Err(oneshot::error::TryRecvError::Empty) => {}
+                }
+            }
+            if notified {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    break;
+                }
+                match self
+                    .prepare_blocking_pop(db, keys, left, remaining, registry)
+                    .await?
+                {
+                    Ok(response) => return Ok(response),
+                    Err(next) => receivers = next,
                 }
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -519,17 +528,34 @@ impl ListCommands {
         Ok(blocking::nil_blocking_response())
     }
 
+    async fn prepare_blocking_pop(
+        &self,
+        db: usize,
+        keys: &[&Bytes],
+        left: bool,
+        timeout: Duration,
+        registry: &BlockingRegistry,
+    ) -> Result<std::result::Result<RespValue, Vec<oneshot::Receiver<RespValue>>>> {
+        let gate = Arc::clone(&self.transaction_gate);
+        let _guard = gate.read_owned().await;
+        if let Some(response) = self.try_pop_any(db, keys, left).await? {
+            return Ok(Ok(response));
+        }
+        let receivers = keys
+            .iter()
+            .map(|key| registry.register(key.to_vec(), timeout))
+            .collect();
+        if let Some(response) = self.try_pop_any(db, keys, left).await? {
+            return Ok(Ok(response));
+        }
+        Ok(Err(receivers))
+    }
+
     /// BLMOVE with blocking when source is empty
     pub async fn blmove_blocking(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
         router::require_args("BLMOVE", args, 5)?;
         let source = &args[0];
         let timeout = Self::parse_timeout_secs(&args[4])?;
-
-        // Try non-blocking first
-        let immediate = self.lmove(db, &args[..4]).await?;
-        if !matches!(&immediate, RespValue::BulkString(None)) {
-            return Ok(immediate);
-        }
 
         let infinite = timeout == 0.0;
         let dur = if infinite {
@@ -538,27 +564,29 @@ impl ListCommands {
             Duration::from_secs_f64(timeout)
         };
 
-        let _blocked = BlockedClientGuard::enter(&self.metrics);
-
         let registry = BlockingRegistry::global();
         let deadline = Instant::now() + dur;
+        let mut receiver = match self.prepare_blmove(db, args, dur, registry, source).await? {
+            Ok(response) => return Ok(response),
+            Err(receiver) => receiver,
+        };
+        let _blocked = BlockedClientGuard::enter(&self.metrics);
 
         while infinite || Instant::now() < deadline {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 return Ok(blocking::nil_blocking_response());
             }
-            let mut rx = registry.register(source.to_vec(), remaining);
-
-            let result = tokio::time::timeout(remaining, &mut rx).await;
+            let result = tokio::time::timeout(remaining, &mut receiver).await;
             match result {
                 Ok(_) => {
-                    // Notified or sender dropped, retry LMOVE
-                    let retry = self.lmove(db, &args[..4]).await?;
-                    if !matches!(&retry, RespValue::BulkString(None)) {
-                        return Ok(retry);
+                    match self
+                        .prepare_blmove(db, args, remaining, registry, source)
+                        .await?
+                    {
+                        Ok(response) => return Ok(response),
+                        Err(next) => receiver = next,
                     }
-                    // Element taken, loop to re-register
                 }
                 Err(_) => {
                     // Timeout
@@ -568,6 +596,28 @@ impl ListCommands {
         }
 
         Ok(blocking::nil_blocking_response())
+    }
+
+    async fn prepare_blmove(
+        &self,
+        db: usize,
+        args: &[Bytes],
+        timeout: Duration,
+        registry: &BlockingRegistry,
+        source: &Bytes,
+    ) -> Result<std::result::Result<RespValue, oneshot::Receiver<RespValue>>> {
+        let gate = Arc::clone(&self.transaction_gate);
+        let _guard = gate.read_owned().await;
+        let response = self.lmove(db, &args[..4]).await?;
+        if !matches!(response, RespValue::BulkString(None)) {
+            return Ok(Ok(response));
+        }
+        let receiver = registry.register(source.to_vec(), timeout);
+        let response = self.lmove(db, &args[..4]).await?;
+        if !matches!(response, RespValue::BulkString(None)) {
+            return Ok(Ok(response));
+        }
+        Ok(Err(receiver))
     }
 }
 
@@ -766,5 +816,76 @@ fn find_lpos(list: &VecDeque<Vec<u8>>, element: &[u8], opts: &LposOptions) -> Re
         Some(_) => Err(Error::Command(
             "ERR value is not an integer or out of range".into(),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::MemoryEngine;
+
+    async fn wait_for_waiter(key: &[u8]) {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while BlockingRegistry::global().waiter_count(key) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("waiter registration timeout");
+    }
+
+    /// Issue #78: BLPOP 被空通知唤醒后必须无丢通知地完成重新注册.
+    #[tokio::test]
+    async fn issue_78_blpop_reregisters_after_empty_notification() {
+        let key = Bytes::from_static(b"issue-78-blpop-reregister");
+        let commands = Arc::new(ListCommands::new(
+            MemoryEngine::new(1),
+            Arc::new(KeyLock::new(4096)),
+            Arc::new(tokio::sync::RwLock::new(())),
+        ));
+        let task = {
+            let commands = Arc::clone(&commands);
+            let key = key.clone();
+            tokio::spawn(async move { commands.blpop(0, &[key, Bytes::from_static(b"5")]).await })
+        };
+
+        wait_for_waiter(&key).await;
+        BlockingRegistry::global().notify(&key, RespValue::SimpleString("OK".into()));
+        wait_for_waiter(&key).await;
+        task.abort();
+    }
+
+    /// Issue #78: BLMOVE 被空通知唤醒后必须无丢通知地完成重新注册.
+    #[tokio::test]
+    async fn issue_78_blmove_reregisters_after_empty_notification() {
+        let source = Bytes::from_static(b"issue-78-blmove-reregister");
+        let commands = Arc::new(ListCommands::new(
+            MemoryEngine::new(1),
+            Arc::new(KeyLock::new(4096)),
+            Arc::new(tokio::sync::RwLock::new(())),
+        ));
+        let task = {
+            let commands = Arc::clone(&commands);
+            let source = source.clone();
+            tokio::spawn(async move {
+                commands
+                    .blmove_blocking(
+                        0,
+                        &[
+                            source,
+                            Bytes::from_static(b"issue-78-blmove-dest"),
+                            Bytes::from_static(b"LEFT"),
+                            Bytes::from_static(b"RIGHT"),
+                            Bytes::from_static(b"5"),
+                        ],
+                    )
+                    .await
+            })
+        };
+
+        wait_for_waiter(&source).await;
+        BlockingRegistry::global().notify(&source, RespValue::SimpleString("OK".into()));
+        wait_for_waiter(&source).await;
+        task.abort();
     }
 }

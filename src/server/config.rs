@@ -16,6 +16,8 @@ use crate::server::metrics::ServerMetrics;
 use crate::server::slowlog::{SlowQueryLog, DEFAULT_SLOWLOG_MAX_LEN, DEFAULT_SLOWLOG_THRESHOLD_US};
 use crate::storage::{KvStorage, StorageEngineKind, StorageObservation};
 
+pub(crate) type TransactionGate = Arc<tokio::sync::RwLock<()>>;
+
 #[derive(Debug, Clone)]
 pub struct ConnectionConfig {
     pub read_timeout: Option<std::time::Duration>,
@@ -67,6 +69,7 @@ pub struct ServerSharedState {
     next_client_id: AtomicUsize,
     /// 每个 key 的版本计数器,用于 WATCH 乐观锁冲突检测
     pub key_versions: Arc<RwLock<HashMap<Vec<u8>, u64>>>,
+    pub(crate) transaction_gate: TransactionGate,
     storage_observation: Arc<StorageObservation>,
 }
 
@@ -192,6 +195,7 @@ impl ServerSharedState {
             metrics_addr,
             next_client_id: AtomicUsize::new(1),
             key_versions: Arc::new(RwLock::new(HashMap::new())),
+            transaction_gate: Arc::new(tokio::sync::RwLock::new(())),
             storage_observation: storage_observation.unwrap_or_default(),
         })
     }

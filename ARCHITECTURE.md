@@ -248,9 +248,10 @@ sequenceDiagram
 2. **`MULTI`**: 开启事务缓冲模式, 后续写命令均压入连接内部的 `tx_queue`, 立即返回 `+QUEUED`;
 3. **`EXEC`**:
    - 检查所有被 `WATCH` 的 Key 是否被外部写入修改 (若被修改则中止事务并返回 Null Array);
-   - 提取 `tx_queue` 中全部 Key 并全局字典序加锁;
-   - 通过 `WriteBatch` 一次性原子写入底层存储;
-   - 释放所有 Key 锁并按序返回执行结果数组.
+   - 持有节点级事务门闩, 阻止其他客户端命令在队列执行期间插队;
+   - 集群模式下整笔预检 slot 与路由 (`CROSSSLOT` / `MOVED` / `ASK` / `TRYAGAIN`);
+   - 在门闩内顺序执行 `tx_queue`; 运行时命令错误保留在响应数组中, **不做 rollback** (Redis 语义);
+   - 释放门闩并按序返回执行结果数组.
 
 ### 6.4 集群批处理写入流水线 (Batcher & MultiRaft Propose Flow)
 

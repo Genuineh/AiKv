@@ -81,12 +81,17 @@ pub struct CommandRouter {
 impl CommandRouter {
     pub fn new(storage: Arc<dyn KvStorage>) -> Self {
         let key_lock = Arc::new(KeyLock::new(KEY_LOCK_BUCKETS));
+        let transaction_gate = Arc::new(tokio::sync::RwLock::new(()));
         Self {
             string: string::StringCommands::new(storage.clone(), key_lock.clone()),
             hash: hash::HashCommands::new(storage.clone(), key_lock.clone()),
-            list: list::ListCommands::new(storage.clone(), key_lock.clone()),
+            list: list::ListCommands::new(
+                storage.clone(),
+                key_lock.clone(),
+                Arc::clone(&transaction_gate),
+            ),
             set: set::SetCommands::new(storage.clone(), key_lock.clone()),
-            zset: zset::ZSetCommands::new(storage.clone(), key_lock.clone()),
+            zset: zset::ZSetCommands::new(storage.clone(), key_lock.clone(), transaction_gate),
             json: json::JsonCommands::new(storage.clone(), key_lock.clone()),
             script: script::ScriptCommands::new(storage.clone(), key_lock.clone()),
             database: database::DatabaseCommands::new(storage.clone()),
@@ -110,12 +115,14 @@ impl CommandRouter {
                 storage.clone(),
                 key_lock.clone(),
                 shared.metrics.clone(),
+                Arc::clone(&shared.transaction_gate),
             ),
             set: set::SetCommands::new(storage.clone(), key_lock.clone()),
             zset: zset::ZSetCommands::with_metrics(
                 storage.clone(),
                 key_lock.clone(),
                 shared.metrics.clone(),
+                Arc::clone(&shared.transaction_gate),
             ),
             json: json::JsonCommands::with_metrics(
                 storage.clone(),
@@ -325,35 +332,114 @@ impl CommandRouter {
                 conn_state.is_asking(),
                 conn_state.is_readonly(),
             );
-            return match decision {
-                crate::cluster::router::RouteDecision::Execute => None,
-                crate::cluster::router::RouteDecision::Moved { slot, addr, .. } => {
-                    if let Some(m) = self.metrics.as_ref() {
-                        m.on_cluster_redirect("moved");
-                    }
-                    Some(Ok(RespValue::Error(format!("MOVED {slot} {addr}"))))
-                }
-                crate::cluster::router::RouteDecision::Ask { slot, addr, .. } => {
-                    if let Some(m) = self.metrics.as_ref() {
-                        m.on_cluster_redirect("ask");
-                    }
-                    Some(Ok(RespValue::Error(format!("ASK {slot} {addr}"))))
-                }
-                crate::cluster::router::RouteDecision::TryAgain { reason } => {
-                    // TRYAGAIN 计入 errorstats, 不计入成功 commandstats
-                    // (cluster_route 提前返回, record_command_outcome 不会跑到;
-                    // 由 connection 层对非 redirect 错误路径统计, 或此处显式记).
-                    if let Some(m) = self.metrics.as_ref() {
-                        m.on_error_stat(&reason);
-                    }
-                    Some(Ok(RespValue::Error(reason)))
-                }
-                crate::cluster::router::RouteDecision::ClusterDown(msg) => {
-                    Some(Ok(RespValue::Error(msg)))
-                }
-            };
+            if let Some(resp) = self.route_decision_to_response(decision) {
+                return Some(Ok(resp));
+            }
         }
         None
+    }
+
+    #[cfg(feature = "cluster")]
+    #[doc(hidden)]
+    pub async fn preflight_transaction(
+        &self,
+        queue: &[(String, Vec<Bytes>)],
+        conn_state: &crate::cluster::connection::ClusterConnectionState,
+    ) -> Result<Option<RespValue>> {
+        if crate::cluster::state::CLUSTER_STATE_MGR.get().is_none() {
+            return Ok(None);
+        }
+
+        for (cmd, _) in queue {
+            if let Some(info) = crate::command::lookup(cmd) {
+                if info.flags.contains(&"movablekeys") {
+                    return Ok(Some(RespValue::Error(
+                        "ERR movable-key commands are not supported inside MULTI/EXEC".into(),
+                    )));
+                }
+                if info.flags.contains(&"blocking") {
+                    return Ok(Some(RespValue::Error(
+                        "ERR blocking commands are not supported inside MULTI/EXEC".into(),
+                    )));
+                }
+            }
+        }
+
+        let keys: Vec<&[u8]> = queue
+            .iter()
+            .flat_map(|(cmd, args)| crate::command::command_keys(cmd, args))
+            .collect();
+        if let Err(msg) = crate::cluster::router::check_cross_slot(&keys) {
+            return Ok(Some(RespValue::Error(msg)));
+        }
+
+        for (cmd, args) in queue {
+            let lower = cmd.to_ascii_lowercase();
+            if let Some(crate::cluster::router::RouteDecision::TryAgain { reason }) =
+                crate::cluster::router::scan_tryagain_if_migrating(&lower)
+            {
+                if let Some(m) = self.metrics.as_ref() {
+                    m.on_error_stat(&reason);
+                }
+                return Ok(Some(RespValue::Error(reason)));
+            }
+
+            let cmd_keys = crate::command::command_keys(cmd, args);
+            let Some(first_key) = cmd_keys.first() else {
+                continue;
+            };
+
+            let is_readonly = crate::command::lookup(cmd)
+                .map(|info| info.flags.contains(&"readonly"))
+                .unwrap_or(false);
+            let cmd_type = if is_readonly {
+                crate::cluster::router::CommandType::Read
+            } else {
+                crate::cluster::router::CommandType::Write
+            };
+
+            let decision = crate::cluster::router::ClusterRouter::decide(
+                first_key,
+                cmd_type,
+                conn_state.is_asking(),
+                conn_state.is_readonly(),
+            );
+
+            if let Some(resp) = self.route_decision_to_response(decision) {
+                return Ok(Some(resp));
+            }
+        }
+
+        Ok(None)
+    }
+
+    #[cfg(feature = "cluster")]
+    fn route_decision_to_response(
+        &self,
+        decision: crate::cluster::router::RouteDecision,
+    ) -> Option<RespValue> {
+        match decision {
+            crate::cluster::router::RouteDecision::Execute => None,
+            crate::cluster::router::RouteDecision::Moved { slot, addr, .. } => {
+                if let Some(m) = self.metrics.as_ref() {
+                    m.on_cluster_redirect("moved");
+                }
+                Some(RespValue::Error(format!("MOVED {slot} {addr}")))
+            }
+            crate::cluster::router::RouteDecision::Ask { slot, addr, .. } => {
+                if let Some(m) = self.metrics.as_ref() {
+                    m.on_cluster_redirect("ask");
+                }
+                Some(RespValue::Error(format!("ASK {slot} {addr}")))
+            }
+            crate::cluster::router::RouteDecision::TryAgain { reason } => {
+                if let Some(m) = self.metrics.as_ref() {
+                    m.on_error_stat(&reason);
+                }
+                Some(RespValue::Error(reason))
+            }
+            crate::cluster::router::RouteDecision::ClusterDown(msg) => Some(RespValue::Error(msg)),
+        }
     }
 
     async fn execute_inner(
