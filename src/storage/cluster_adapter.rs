@@ -548,6 +548,14 @@ impl StorageAdapter for ClusterDataAdapter {
                 Vec<(usize, Vec<u8>, Option<Vec<u8>>)>,
             ),
         > = HashMap::new();
+        let mut by_mig: HashMap<
+            u64,
+            (
+                Arc<ClusterStateManager>,
+                u64,
+                Vec<(usize, Vec<u8>, Option<Vec<u8>>)>,
+            ),
+        > = HashMap::new();
         let mut fallback: Vec<(usize, AdapterWriteOp)> = Vec::new();
 
         for (i, op) in ops.into_iter().enumerate() {
@@ -566,6 +574,17 @@ impl StorageAdapter for ClusterDataAdapter {
                         .1
                         .push(tuple);
                 }
+                Some((mgr, WriteRoute::Migration { gid, epoch, .. })) => {
+                    let tuple = match op {
+                        AdapterWriteOp::Put { key, value } => (i, key, Some(value)),
+                        AdapterWriteOp::Delete { key } => (i, key, None),
+                    };
+                    by_mig
+                        .entry(gid)
+                        .or_insert_with(|| (mgr, epoch, Vec::new()))
+                        .2
+                        .push(tuple);
+                }
                 _ => fallback.push((i, op)),
             }
         }
@@ -577,6 +596,26 @@ impl StorageAdapter for ClusterDataAdapter {
                 .collect();
             let flags =
                 submit_write_ops(&self.set_batchers, self.eager_flush, mgr, gid, batch).await?;
+            for ((idx, _, _), flag) in items.into_iter().zip(flags) {
+                results[idx] = flag;
+            }
+        }
+
+        for (gid, (mgr, epoch, items)) in by_mig {
+            let mut tb = ThinWriteBatch::new();
+            for (_, key, value) in &items {
+                match value {
+                    Some(v) => tb.put(key.clone(), v.clone()),
+                    None => tb.delete(key.clone()),
+                }
+            }
+            let resp = Self::propose_group_with_retry(
+                &mgr,
+                gid,
+                Request::MigrationWrite { epoch, ops: tb },
+            )
+            .await?;
+            let flags = Self::parse_write_stats(resp)?;
             for ((idx, _, _), flag) in items.into_iter().zip(flags) {
                 results[idx] = flag;
             }

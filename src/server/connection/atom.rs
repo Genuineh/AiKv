@@ -136,6 +136,8 @@ impl Connection {
                 .write_response(RespValue::Error("ERR DISCARD without MULTI".into()))
                 .await;
         }
+        let gate = std::sync::Arc::clone(&self.state.transaction_gate);
+        let _guard = gate.write_owned().await;
         self.release_watches();
         self.tx_state.reset();
         self.write_response(RespValue::SimpleString("OK".into()))
@@ -170,6 +172,8 @@ impl Connection {
     }
 
     pub(super) async fn cmd_atom_unwatch(&mut self) -> Result<()> {
+        let gate = std::sync::Arc::clone(&self.state.transaction_gate);
+        let _guard = gate.write_owned().await;
         self.release_watches();
         self.write_response(RespValue::SimpleString("OK".into()))
             .await

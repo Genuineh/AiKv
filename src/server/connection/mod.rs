@@ -141,7 +141,10 @@ impl Connection {
         };
         tracing::info!(remote = %remote, client_id, "kv.connection.open");
         let _ = conn.run().await;
+        let gate = Arc::clone(&conn.state.transaction_gate);
+        let _guard = gate.write_owned().await;
         conn.release_watches();
+        drop(_guard);
         state.unregister_client(client_id);
         tracing::info!(remote = %conn.remote, client_id, "kv.connection.close");
     }

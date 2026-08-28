@@ -25,14 +25,15 @@ impl WatchRegistry {
     }
 
     pub fn unwatch(&self, db: usize, key: &[u8]) {
-        let id = (db, key.to_vec());
-        let mut drop_entry = false;
-        if let Some(mut count) = self.counts.get_mut(&id) {
-            *count = count.saturating_sub(1);
-            drop_entry = *count == 0;
-        }
-        if drop_entry {
-            self.counts.remove(&id);
+        use dashmap::mapref::entry::Entry;
+        match self.counts.entry((db, key.to_vec())) {
+            Entry::Occupied(mut occ) => {
+                *occ.get_mut() = occ.get().saturating_sub(1);
+                if *occ.get() == 0 {
+                    occ.remove();
+                }
+            }
+            Entry::Vacant(_) => {}
         }
     }
 
