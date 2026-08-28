@@ -218,6 +218,30 @@ async fn route_decision_all_branches() {
         }
         _ => panic!("expected ASK (v7 write redirect to target), got {:?}", r),
     }
+
+    // Issue #78: 标准 MULTI/EXEC 预检在 Migrating 写路径上必须整笔 ASK.
+    {
+        use bytes::Bytes;
+
+        use aikv::command::CommandRouter;
+        use aikv::protocol::RespValue;
+        use aikv::storage::MemoryEngine;
+
+        let router = CommandRouter::new(MemoryEngine::new(16));
+        let conn = ClusterConnectionState::new();
+        let queue = vec![(
+            "SET".to_string(),
+            vec![Bytes::from_static(b"\x00\x00"), Bytes::from_static(b"v")],
+        )];
+        let resp = router.preflight_transaction(&queue, &conn).await.unwrap();
+        match resp {
+            Some(RespValue::Error(msg)) => {
+                assert!(msg.starts_with("ASK "), "preflight Migrating write: {msg}");
+            }
+            other => panic!("expected ASK from transaction preflight, got {other:?}"),
+        }
+    }
+
     // FIX-0056-A1: Copying (Prepare/Migrating) 读不再纯 source (v7 断言作废) —
     // 与 Frozen 一样统一 ASK 到 target leader, 由其做合并读 (target 优先, 未拷贝
     // 时回落 source). Read → ASK(target), node 4 at addr ":7004".
@@ -398,6 +422,33 @@ async fn route_decision_all_branches() {
         "expected TryAgain (Frozen write), got {:?}",
         r
     );
+
+    // Issue #78: 标准 MULTI/EXEC 预检在 Frozen 写路径上必须整笔 TRYAGAIN.
+    {
+        use bytes::Bytes;
+
+        use aikv::command::CommandRouter;
+        use aikv::protocol::RespValue;
+        use aikv::storage::MemoryEngine;
+
+        let router = CommandRouter::new(MemoryEngine::new(16));
+        let conn = ClusterConnectionState::new();
+        let queue = vec![(
+            "SET".to_string(),
+            vec![Bytes::from_static(b"\x00\x00"), Bytes::from_static(b"v")],
+        )];
+        let resp = router.preflight_transaction(&queue, &conn).await.unwrap();
+        match resp {
+            Some(RespValue::Error(msg)) => {
+                assert!(
+                    msg.starts_with("TRYAGAIN "),
+                    "preflight Frozen write: {msg}"
+                );
+            }
+            other => panic!("expected TRYAGAIN from transaction preflight, got {other:?}"),
+        }
+    }
+
     let r = ClusterRouter::decide(b"\x00\x00", CommandType::Write, true, false);
     assert!(
         matches!(r, RouteDecision::TryAgain { .. }),

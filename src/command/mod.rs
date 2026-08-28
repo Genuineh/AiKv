@@ -20,6 +20,6 @@ mod string;
 mod zset;
 
 pub use json::JsonCommands;
-pub use registry::{all_commands, command_count, key_indices, lookup, CommandInfo};
+pub use registry::{all_commands, command_count, command_keys, key_indices, lookup, CommandInfo};
 pub use router::{CommandRouter, KeyLock, KeyLocksGuard};
 pub use script::ScriptCommands;

@@ -24,6 +24,8 @@
 
 use std::collections::HashMap;
 
+use bytes::Bytes;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CommandInfo {
     pub name: &'static str,
@@ -281,9 +283,75 @@ pub fn key_indices(info: &CommandInfo, argc: usize) -> Vec<usize> {
     out
 }
 
+pub fn command_keys<'a>(cmd: &str, args: &'a [Bytes]) -> Vec<&'a [u8]> {
+    match cmd.to_ascii_uppercase().as_str() {
+        "EVAL" | "EVALSHA" => counted_keys(args, 1, 2),
+        "ZINTER" | "ZUNION" | "ZDIFF" => counted_keys(args, 0, 1),
+        _ => lookup(cmd)
+            .map(|info| {
+                key_indices(&info, args.len() + 1)
+                    .into_iter()
+                    .filter_map(|index| args.get(index - 1).map(Bytes::as_ref))
+                    .collect()
+            })
+            .unwrap_or_default(),
+    }
+}
+
+fn counted_keys(args: &[Bytes], count_index: usize, first_key_index: usize) -> Vec<&[u8]> {
+    let Some(raw_count) = args.get(count_index) else {
+        return Vec::new();
+    };
+    let Ok(raw_count) = std::str::from_utf8(raw_count) else {
+        return Vec::new();
+    };
+    let Ok(count) = raw_count.parse::<usize>() else {
+        return Vec::new();
+    };
+    let Some(end) = first_key_index.checked_add(count) else {
+        return Vec::new();
+    };
+    let Some(keys) = args.get(first_key_index..end) else {
+        return Vec::new();
+    };
+    keys.iter().map(Bytes::as_ref).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn bytes(values: &[&'static str]) -> Vec<Bytes> {
+        values
+            .iter()
+            .map(|value| Bytes::from_static(value.as_bytes()))
+            .collect()
+    }
+
+    /// Issue #78: 事务预检必须统一提取静态与动态 key, 避免漏检跨 slot 命令.
+    #[test]
+    fn test_command_keys_static_and_dynamic() {
+        let mset = bytes(&["k1", "v1", "k2", "v2"]);
+        assert_eq!(command_keys("MSET", &mset), vec![b"k1".as_slice(), b"k2"]);
+
+        let eval = bytes(&["return 1", "2", "k1", "k2", "arg"]);
+        assert_eq!(command_keys("EVAL", &eval), vec![b"k1".as_slice(), b"k2"]);
+        let eval_without_keys = bytes(&["return 1", "0", "arg"]);
+        assert!(command_keys("EVAL", &eval_without_keys).is_empty());
+
+        let zinter = bytes(&["2", "z1", "z2", "WEIGHTS", "1", "2"]);
+        assert_eq!(
+            command_keys("ZINTER", &zinter),
+            vec![b"z1".as_slice(), b"z2"]
+        );
+        let zdiff = bytes(&["2", "z1", "z2", "WITHSCORES"]);
+        assert_eq!(command_keys("ZDIFF", &zdiff), vec![b"z1".as_slice(), b"z2"]);
+
+        let invalid = bytes(&["not-a-number", "z1"]);
+        assert!(command_keys("ZUNION", &invalid).is_empty());
+        let out_of_bounds = bytes(&["3", "z1", "z2"]);
+        assert!(command_keys("ZUNION", &out_of_bounds).is_empty());
+    }
 
     #[test]
     fn test_registry_lookup() {

@@ -47,6 +47,9 @@ impl Connection {
                 .await;
         }
 
+        let gate = std::sync::Arc::clone(&self.state.transaction_gate);
+        let transaction_guard = gate.write_owned().await;
+
         // Check WATCH conflicts: if any watched key's version changed, abort
         let conflict = self
             .tx_state
@@ -56,7 +59,32 @@ impl Connection {
 
         if conflict {
             self.tx_state.reset();
+            drop(transaction_guard);
             return self.write_response(RespValue::BulkString(None)).await;
+        }
+
+        if self.tx_state.tx_queue.iter().any(|(cmd, _)| {
+            command::lookup(cmd).is_some_and(|info| info.flags.contains(&"blocking"))
+        }) {
+            self.tx_state.reset();
+            drop(transaction_guard);
+            return self
+                .write_response(RespValue::Error(
+                    "ERR blocking commands are not supported inside MULTI/EXEC".into(),
+                ))
+                .await;
+        }
+
+        #[cfg(feature = "cluster")]
+        if let Some(resp) = self
+            .state
+            .router()
+            .preflight_transaction(&self.tx_state.tx_queue, &self.cluster_state)
+            .await?
+        {
+            self.tx_state.reset();
+            drop(transaction_guard);
+            return self.write_response(resp).await;
         }
 
         // Execute queued commands atomically
@@ -100,6 +128,7 @@ impl Connection {
             }
         }
 
+        drop(transaction_guard);
         self.write_response(RespValue::Array(Some(results))).await
     }
 

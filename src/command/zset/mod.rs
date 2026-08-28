@@ -37,6 +37,7 @@ use crate::command::router::{self, KeyLock};
 use crate::command::scan_util;
 use crate::error::{Error, Result};
 use crate::protocol::RespValue;
+use crate::server::config::TransactionGate;
 use crate::server::ServerMetrics;
 use crate::storage::memory::glob_match;
 use crate::storage::{KvStorage, StoredValue, ValueType};
@@ -54,14 +55,20 @@ pub struct ZSetCommands {
     storage: Arc<dyn KvStorage>,
     key_lock: Arc<KeyLock>,
     metrics: Option<Arc<ServerMetrics>>,
+    transaction_gate: TransactionGate,
 }
 
 impl ZSetCommands {
-    pub fn new(storage: Arc<dyn KvStorage>, key_lock: Arc<KeyLock>) -> Self {
+    pub fn new(
+        storage: Arc<dyn KvStorage>,
+        key_lock: Arc<KeyLock>,
+        transaction_gate: TransactionGate,
+    ) -> Self {
         Self {
             storage,
             key_lock,
             metrics: None,
+            transaction_gate,
         }
     }
 
@@ -69,11 +76,13 @@ impl ZSetCommands {
         storage: Arc<dyn KvStorage>,
         key_lock: Arc<KeyLock>,
         metrics: Arc<ServerMetrics>,
+        transaction_gate: TransactionGate,
     ) -> Self {
         Self {
             storage,
             key_lock,
             metrics: Some(metrics),
+            transaction_gate,
         }
     }
 
@@ -321,7 +330,7 @@ impl ZSetCommands {
     }
 
     pub async fn zpopmin(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
-        router::require_args("ZPOPMIN", args, 1)?;
+        router::require_min_args("ZPOPMIN", args, 1)?;
         let count = if args.len() > 1 {
             parse_i64(&args[1])? as usize
         } else {
@@ -331,7 +340,7 @@ impl ZSetCommands {
     }
 
     pub async fn zpopmax(&self, db: usize, args: &[Bytes]) -> Result<RespValue> {
-        router::require_args("ZPOPMAX", args, 1)?;
+        router::require_min_args("ZPOPMAX", args, 1)?;
         let count = if args.len() > 1 {
             parse_i64(&args[1])? as usize
         } else {
@@ -549,67 +558,131 @@ impl ZSetCommands {
         let keys: Vec<&Bytes> = args[..args.len() - 1].iter().collect();
         let timeout_s =
             crate::command::list::ListCommands::parse_timeout_secs(&args[args.len() - 1])?;
-        // Non-blocking first pass
-        for key in &keys {
-            let one = Bytes::from("1");
-            let sk = [(*key).clone(), one];
-            let r = if max {
-                self.zpopmax(db, &sk).await?
-            } else {
-                self.zpopmin(db, &sk).await?
-            };
-            if let RespValue::Array(Some(ref items)) = r {
-                if !items.is_empty() {
-                    return Ok(r);
-                }
-            }
-        }
         let infinite = timeout_s == 0.0;
         let dur = if infinite {
             Duration::from_secs(60 * 60 * 24 * 365)
         } else {
             Duration::from_secs_f64(timeout_s)
         };
-        let _blocked = BlockedClientGuard::enter(&self.metrics);
         let registry = BlockingRegistry::global();
         let deadline = Instant::now() + dur;
-        let mut rx: Vec<oneshot::Receiver<RespValue>> = keys
-            .iter()
-            .map(|k| registry.register(k.to_vec(), dur))
-            .collect();
+        let mut receivers = match self.prepare_bzpop(db, &keys, max, dur, registry).await? {
+            Ok(response) => return Ok(response),
+            Err(receivers) => receivers,
+        };
+        let _blocked = BlockedClientGuard::enter(&self.metrics);
+
         while infinite || Instant::now() < deadline {
-            for recv in &mut rx {
+            let mut notified = false;
+            for recv in &mut receivers {
                 match recv.try_recv() {
                     Ok(_) | Err(oneshot::error::TryRecvError::Closed) => {
-                        let rem = deadline.saturating_duration_since(Instant::now());
-                        if rem.is_zero() {
-                            return Ok(blocking::nil_blocking_response());
-                        }
-                        for key in &keys {
-                            let one = Bytes::from("1");
-                            let sk = [(*key).clone(), one];
-                            let r = if max {
-                                self.zpopmax(db, &sk).await?
-                            } else {
-                                self.zpopmin(db, &sk).await?
-                            };
-                            if let RespValue::Array(Some(ref items)) = r {
-                                if !items.is_empty() {
-                                    return Ok(r);
-                                }
-                            }
-                        }
-                        rx = keys
-                            .iter()
-                            .map(|k| registry.register(k.to_vec(), rem))
-                            .collect();
+                        notified = true;
                         break;
                     }
                     Err(oneshot::error::TryRecvError::Empty) => {}
                 }
             }
+            if notified {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    break;
+                }
+                match self
+                    .prepare_bzpop(db, &keys, max, remaining, registry)
+                    .await?
+                {
+                    Ok(response) => return Ok(response),
+                    Err(next) => receivers = next,
+                }
+            }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
         Ok(blocking::nil_blocking_response())
+    }
+
+    async fn prepare_bzpop(
+        &self,
+        db: usize,
+        keys: &[&Bytes],
+        max: bool,
+        timeout: Duration,
+        registry: &BlockingRegistry,
+    ) -> Result<std::result::Result<RespValue, Vec<oneshot::Receiver<RespValue>>>> {
+        let gate = Arc::clone(&self.transaction_gate);
+        let _guard = gate.read_owned().await;
+        if let Some(response) = self.try_bzpop_any(db, keys, max).await? {
+            return Ok(Ok(response));
+        }
+        let receivers = keys
+            .iter()
+            .map(|key| registry.register(key.to_vec(), timeout))
+            .collect();
+        if let Some(response) = self.try_bzpop_any(db, keys, max).await? {
+            return Ok(Ok(response));
+        }
+        Ok(Err(receivers))
+    }
+
+    async fn try_bzpop_any(
+        &self,
+        db: usize,
+        keys: &[&Bytes],
+        max: bool,
+    ) -> Result<Option<RespValue>> {
+        for key in keys {
+            let pop_args = [(*key).clone(), Bytes::from_static(b"1")];
+            let response = if max {
+                self.zpopmax(db, &pop_args).await?
+            } else {
+                self.zpopmin(db, &pop_args).await?
+            };
+            if let RespValue::Array(Some(mut items)) = response {
+                if !items.is_empty() {
+                    items.insert(0, RespValue::BulkString(Some((*key).clone())));
+                    return Ok(Some(RespValue::Array(Some(items))));
+                }
+            }
+        }
+        Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::MemoryEngine;
+
+    async fn wait_for_waiter(key: &[u8]) {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while BlockingRegistry::global().waiter_count(key) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("waiter registration timeout");
+    }
+
+    /// Issue #78: BZPOPMIN 被空通知唤醒后必须无丢通知地完成重新注册.
+    #[tokio::test]
+    async fn issue_78_bzpopmin_reregisters_after_empty_notification() {
+        let key = Bytes::from_static(b"issue-78-bzpopmin-reregister");
+        let commands = Arc::new(ZSetCommands::new(
+            MemoryEngine::new(1),
+            Arc::new(KeyLock::new(1)),
+            Arc::new(tokio::sync::RwLock::new(())),
+        ));
+        let task = {
+            let commands = Arc::clone(&commands);
+            let key = key.clone();
+            tokio::spawn(
+                async move { commands.bzpopmin(0, &[key, Bytes::from_static(b"5")]).await },
+            )
+        };
+
+        wait_for_waiter(&key).await;
+        BlockingRegistry::global().notify(&key, RespValue::SimpleString("OK".into()));
+        wait_for_waiter(&key).await;
+        task.abort();
     }
 }

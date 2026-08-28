@@ -28,6 +28,7 @@ use tokio::net::TcpStream;
 use tokio::time;
 
 use aidb::cluster::meta_types::{default_slot_table, SlotStatus};
+use aidb::cluster::router::key_to_slot;
 use aidb::cluster::{MultiRaftNode, RaftServiceDispatcher, Router};
 
 use aikv::cluster::announce::AnnounceResolver;
@@ -123,15 +124,15 @@ fn ensure_remote_slot0_cluster_state() {
     });
 }
 
-async fn start_server() -> SocketAddr {
-    let storage: Arc<dyn KvStorage> = MemoryEngine::new(16);
+async fn start_server() -> (SocketAddr, Arc<MemoryEngine>) {
+    let storage = MemoryEngine::new(16);
     let shared = ServerSharedState::new(
         ConnectionConfig {
             read_timeout: None,
             idle_timeout: None,
             max_clients: 0,
         },
-        storage,
+        storage.clone(),
         6379,
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -140,7 +141,7 @@ async fn start_server() -> SocketAddr {
         let _ = Server::run_with_listener(listener, shared).await;
     });
     time::sleep(Duration::from_millis(50)).await;
-    addr
+    (addr, storage)
 }
 
 fn parse_response(data: &[u8]) -> RespValue {
@@ -153,12 +154,22 @@ fn parse_response(data: &[u8]) -> RespValue {
 }
 
 async fn send(stream: &mut TcpStream, cmd: &str, args: &[&str]) -> Vec<u8> {
-    let mut frame = format!("*{}\r\n", 1 + args.len());
-    frame.push_str(&format!("${}\r\n{}\r\n", cmd.len(), cmd));
+    let byte_args: Vec<&[u8]> = args.iter().map(|arg| arg.as_bytes()).collect();
+    send_mixed(stream, cmd, &byte_args).await
+}
+
+async fn send_mixed(stream: &mut TcpStream, cmd: &str, args: &[&[u8]]) -> Vec<u8> {
+    let mut header = format!("*{}\r\n", 1 + args.len());
+    header.push_str(&format!("${}\r\n{}\r\n", cmd.len(), cmd));
+    stream.write_all(header.as_bytes()).await.unwrap();
     for arg in args {
-        frame.push_str(&format!("${}\r\n{}\r\n", arg.len(), arg));
+        stream
+            .write_all(format!("${}\r\n", arg.len()).as_bytes())
+            .await
+            .unwrap();
+        stream.write_all(arg).await.unwrap();
+        stream.write_all(b"\r\n").await.unwrap();
     }
-    stream.write_all(frame.as_bytes()).await.unwrap();
     let mut buf = vec![0u8; 8192];
     let n = time::timeout(Duration::from_secs(3), stream.read(&mut buf))
         .await
@@ -176,7 +187,7 @@ const REMOTE_SLOT_KEY_JSON_ESCAPED: &str = r#"\u0000\u0000"#;
 fn atom_exec_json_batch_snapshot_moved_is_passed_through_cleanly() {
     ensure_remote_slot0_cluster_state();
     RT.block_on(async {
-        let addr = start_server().await;
+        let (addr, _storage) = start_server().await;
         let mut stream = TcpStream::connect(addr).await.unwrap();
 
         let batch = format!(r#"[["SET","{REMOTE_SLOT_KEY_JSON_ESCAPED}","v"]]"#);
@@ -187,6 +198,85 @@ fn atom_exec_json_batch_snapshot_moved_is_passed_through_cleanly() {
                     msg.starts_with("MOVED "),
                     "batch 快照阶段命中非本地 slot 时应直接透传顶层 MOVED, \
                      而不能包裹成内部错误 (回归 8bfac2f 之后的行为), got: {msg}"
+                );
+            }
+            other => panic!("expected top-level MOVED error, got {other:?}"),
+        }
+    });
+}
+
+fn crossslot_key_pair() -> (&'static [u8], &'static [u8]) {
+    let candidates: &[&[u8]] = &[
+        b"cross-a{one}",
+        b"cross-b{two}",
+        b"cross-c{thr}",
+        b"cross-d{fou}",
+    ];
+    for i in 0..candidates.len() {
+        for j in (i + 1)..candidates.len() {
+            if key_to_slot(candidates[i]) != key_to_slot(candidates[j]) {
+                return (candidates[i], candidates[j]);
+            }
+        }
+    }
+    panic!("failed to find two keys with different slots");
+}
+
+/// Issue #78: 标准 MULTI/EXEC 跨 slot 必须在执行前整笔 CROSSSLOT, 不得部分写入.
+#[test]
+fn issue_78_standard_multi_exec_crossslot_rejects_before_any_write() {
+    ensure_remote_slot0_cluster_state();
+    let (key_a, key_b) = crossslot_key_pair();
+    RT.block_on(async {
+        let (addr, storage) = start_server().await;
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+
+        let _ = send_mixed(&mut stream, "MULTI", &[]).await;
+        let _ = send_mixed(&mut stream, "SET", &[key_a, b"v1"]).await;
+        let _ = send_mixed(&mut stream, "SET", &[key_b, b"v2"]).await;
+        let resp = send_mixed(&mut stream, "EXEC", &[]).await;
+
+        match parse_response(&resp) {
+            RespValue::Error(msg) => {
+                assert!(
+                    msg.starts_with("CROSSSLOT "),
+                    "expected top-level CROSSSLOT, got {msg}"
+                );
+            }
+            other => panic!("expected top-level CROSSSLOT error, got {other:?}"),
+        }
+
+        assert!(
+            storage.get(0, key_a).await.unwrap().is_none(),
+            "first queued key must not be written on CROSSSLOT"
+        );
+        assert!(
+            storage.get(0, key_b).await.unwrap().is_none(),
+            "second queued key must not be written on CROSSSLOT"
+        );
+    });
+}
+
+/// slot-0 二进制 key (CRC16 == 0), 标准 EXEC 应返回顶层 MOVED 而非数组元素.
+const REMOTE_SLOT0_KEY: &[u8] = b"\0\0";
+
+/// Issue #78: 标准 MULTI/EXEC 命中远端 slot 时必须整笔 MOVED, 不能先执行本地写.
+#[test]
+fn issue_78_standard_multi_exec_moved_is_top_level() {
+    ensure_remote_slot0_cluster_state();
+    RT.block_on(async {
+        let (addr, _storage) = start_server().await;
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+
+        let _ = send_mixed(&mut stream, "MULTI", &[]).await;
+        let _ = send_mixed(&mut stream, "SET", &[REMOTE_SLOT0_KEY, b"value"]).await;
+        let resp = send_mixed(&mut stream, "EXEC", &[]).await;
+
+        match parse_response(&resp) {
+            RespValue::Error(msg) => {
+                assert!(
+                    msg.starts_with("MOVED "),
+                    "expected top-level MOVED for standard EXEC, got {msg}"
                 );
             }
             other => panic!("expected top-level MOVED error, got {other:?}"),

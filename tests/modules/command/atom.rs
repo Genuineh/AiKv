@@ -63,7 +63,166 @@ impl TestConn {
     }
 }
 
+async fn wait_for_blocked_client(addr: SocketAddr) {
+    let mut conn = TestConn::connect(addr).await;
+    let mut last_response = Vec::new();
+    time::timeout(Duration::from_secs(3), async {
+        loop {
+            let resp = conn.send("INFO", &["clients"]).await;
+            if resp
+                .windows(b"blocked_clients:1".len())
+                .any(|window| window == b"blocked_clients:1")
+            {
+                break;
+            }
+            last_response = resp;
+            time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "wait for blocked client timeout; last INFO response: {}",
+            String::from_utf8_lossy(&last_response)
+        )
+    });
+}
+
 // ─── 测试 ─────────────────────────────────────────────────────
+
+/// Issue #78: EXEC 中的运行时错误不得 rollback, 后续命令仍须按顺序执行.
+#[tokio::test]
+async fn issue_78_multi_exec_runtime_error_does_not_stop_following_commands() {
+    let (addr, _server) = start_ephemeral_server().await;
+    let mut conn = TestConn::connect(addr).await;
+
+    assert_eq!(
+        parse_response(&conn.send("SET", &["runtime-key", "string"]).await),
+        RespValue::SimpleString("OK".into())
+    );
+    let _ = conn.send("MULTI", &[]).await;
+    let _ = conn.send("LPOP", &["runtime-key"]).await;
+    let _ = conn.send("SET", &["after-error", "ok"]).await;
+
+    let response = parse_response(&conn.send("EXEC", &[]).await);
+    let RespValue::Array(Some(items)) = response else {
+        panic!("expected EXEC array response");
+    };
+    assert_eq!(items.len(), 2);
+    assert!(matches!(
+        &items[0],
+        RespValue::Error(message) if message.contains("WRONGTYPE")
+    ));
+    assert_eq!(items[1], RespValue::SimpleString("OK".into()));
+    assert_eq!(
+        parse_response(&conn.send("GET", &["after-error"]).await),
+        RespValue::BulkString(Some("ok".into()))
+    );
+}
+
+/// Issue #78: MULTI/EXEC 必须整笔拒绝 blocking 命令, 且不得挂住后续请求.
+#[tokio::test]
+async fn issue_78_multi_exec_rejects_blocking_commands_without_hanging_server() {
+    let (addr, _server) = start_ephemeral_server().await;
+    let mut conn = TestConn::connect(addr).await;
+
+    let _ = conn.send("MULTI", &[]).await;
+    let _ = conn.send("BLPOP", &["never-ready", "0"]).await;
+    let response = time::timeout(Duration::from_secs(3), conn.send("EXEC", &[]))
+        .await
+        .expect("EXEC blocked");
+    assert!(matches!(
+        parse_response(&response),
+        RespValue::Error(message) if message.contains("blocking commands")
+    ));
+    assert_eq!(
+        parse_response(&conn.send("PING", &[]).await),
+        RespValue::SimpleString("PONG".into())
+    );
+}
+
+/// Issue #78: 已注册的 BLPOP waiter 不得插入 MULTI/EXEC 的命令序列.
+#[tokio::test]
+async fn issue_78_blocking_waiter_cannot_interleave_multi_exec() {
+    let (addr, _server) = start_ephemeral_server().await;
+    let waiter = tokio::spawn(async move {
+        let mut conn = TestConn::connect(addr).await;
+        parse_response(&conn.send("BLPOP", &["tx-list", "2"]).await)
+    });
+    wait_for_blocked_client(addr).await;
+
+    let mut conn = TestConn::connect(addr).await;
+    let _ = conn.send("MULTI", &[]).await;
+    let _ = conn.send("LPUSH", &["tx-list", "value"]).await;
+    let _ = conn.send("LLEN", &["tx-list"]).await;
+    assert_eq!(
+        parse_response(&conn.send("EXEC", &[]).await),
+        RespValue::Array(Some(vec![RespValue::Integer(1), RespValue::Integer(1)]))
+    );
+    assert_eq!(
+        waiter.await.expect("BLPOP task failed"),
+        RespValue::Array(Some(vec![
+            RespValue::BulkString(Some("tx-list".into())),
+            RespValue::BulkString(Some("value".into())),
+        ]))
+    );
+}
+
+/// Issue #78: 已注册的 BLMOVE waiter 不得插入 MULTI/EXEC 的命令序列.
+#[tokio::test]
+async fn issue_78_blmove_waiter_cannot_interleave_multi_exec() {
+    let (addr, _server) = start_ephemeral_server().await;
+    let waiter = tokio::spawn(async move {
+        let mut conn = TestConn::connect(addr).await;
+        parse_response(
+            &conn
+                .send("BLMOVE", &["source", "dest", "LEFT", "RIGHT", "2"])
+                .await,
+        )
+    });
+    wait_for_blocked_client(addr).await;
+
+    let mut conn = TestConn::connect(addr).await;
+    let _ = conn.send("MULTI", &[]).await;
+    let _ = conn.send("LPUSH", &["source", "value"]).await;
+    let _ = conn.send("LLEN", &["source"]).await;
+    assert_eq!(
+        parse_response(&conn.send("EXEC", &[]).await),
+        RespValue::Array(Some(vec![RespValue::Integer(1), RespValue::Integer(1)]))
+    );
+    assert_eq!(
+        waiter.await.expect("BLMOVE task failed"),
+        RespValue::BulkString(Some("value".into()))
+    );
+}
+
+/// Issue #78: 已注册的 BZPOPMIN waiter 不得插入 MULTI/EXEC 的命令序列.
+#[tokio::test]
+async fn issue_78_bzpop_waiter_cannot_interleave_multi_exec() {
+    let (addr, _server) = start_ephemeral_server().await;
+    let waiter = tokio::spawn(async move {
+        let mut conn = TestConn::connect(addr).await;
+        parse_response(&conn.send("BZPOPMIN", &["z", "2"]).await)
+    });
+    wait_for_blocked_client(addr).await;
+
+    let mut conn = TestConn::connect(addr).await;
+    let _ = conn.send("MULTI", &[]).await;
+    let _ = conn.send("ZADD", &["z", "1", "member"]).await;
+    let _ = conn.send("ZCARD", &["z"]).await;
+    assert_eq!(
+        parse_response(&conn.send("EXEC", &[]).await),
+        RespValue::Array(Some(vec![RespValue::Integer(1), RespValue::Integer(1)]))
+    );
+    assert_eq!(
+        waiter.await.expect("BZPOPMIN task failed"),
+        RespValue::Array(Some(vec![
+            RespValue::BulkString(Some("z".into())),
+            RespValue::BulkString(Some("member".into())),
+            RespValue::BulkString(Some("1".into())),
+        ]))
+    );
+}
 
 #[tokio::test]
 async fn test_standard_multi_exec_alias() {

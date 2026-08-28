@@ -377,104 +377,134 @@ impl Connection {
         }
 
         match cmd {
-            "PING" => self.cmd_ping(args).await,
-            "ECHO" => self.cmd_echo(args).await,
-            "HELLO" => self.cmd_hello(args).await,
-            "QUIT" => self.cmd_quit().await,
-            "MONITOR" => self.cmd_monitor().await,
             "MULTI" | "ATOM.MULTI" => self.cmd_atom_multi().await,
             "EXEC" | "ATOM.EXEC" => self.cmd_atom_exec(args).await,
             "DISCARD" | "ATOM.DISCARD" => self.cmd_atom_discard().await,
             "WATCH" | "ATOM.WATCH" => self.cmd_atom_watch(args).await,
             "UNWATCH" | "ATOM.UNWATCH" => self.cmd_atom_unwatch().await,
+            "PING" | "ECHO" | "HELLO" | "QUIT" | "MONITOR" => {
+                let gate = Arc::clone(&self.state.transaction_gate);
+                let _guard = gate.read_owned().await;
+                self.process_inline_command(cmd, args).await
+            }
             _ => {
-                // If in MULTI mode, queue the command instead of executing
                 if self.tx_state.in_multi {
                     return self.cmd_atom_enqueue(cmd, args).await;
                 }
-                // Handle ASKING/READONLY/READWRITE at connection level (operate on per-conn state)
-                #[cfg(feature = "cluster")]
-                if cmd.eq_ignore_ascii_case("asking") {
-                    self.cluster_state.set_asking(true);
-                    return self
-                        .write_response(RespValue::SimpleString("OK".into()))
-                        .await;
-                }
-                #[cfg(feature = "cluster")]
-                if cmd.eq_ignore_ascii_case("readonly") {
-                    self.cluster_state.set_readonly(true);
-                    return self
-                        .write_response(RespValue::SimpleString("OK".into()))
-                        .await;
-                }
-                #[cfg(feature = "cluster")]
-                if cmd.eq_ignore_ascii_case("readwrite") {
-                    self.cluster_state.set_readonly(false);
-                    return self
-                        .write_response(RespValue::SimpleString("OK".into()))
-                        .await;
-                }
-
-                let track = should_track_observability(cmd);
-                let arg_strings: Vec<String> = if track {
-                    args.iter()
-                        .map(|b| String::from_utf8_lossy(b).into_owned())
-                        .collect()
+                let is_blocking =
+                    command::lookup(cmd).is_some_and(|info| info.flags.contains(&"blocking"));
+                if is_blocking {
+                    self.process_command_immediate(cmd, args).await
                 } else {
-                    Vec::new()
-                };
-                let started = track.then(Instant::now);
-                let result = self
-                    .state
-                    .router()
-                    .execute_with_client(
-                        cmd,
-                        args,
-                        &mut self.current_db,
-                        Some(self.client_id),
-                        Some(self.remote),
-                        self.protocol_version,
-                        #[cfg(feature = "cluster")]
-                        Some(&self.cluster_state),
-                    )
-                    .await;
+                    let gate = Arc::clone(&self.state.transaction_gate);
+                    let _guard = gate.read_owned().await;
+                    self.process_command_immediate(cmd, args).await
+                }
+            }
+        }
+    }
+
+    async fn process_inline_command(&mut self, cmd: &str, args: &[Bytes]) -> Result<()> {
+        match cmd {
+            "PING" => self.cmd_ping(args).await,
+            "ECHO" => self.cmd_echo(args).await,
+            "HELLO" => self.cmd_hello(args).await,
+            "QUIT" => self.cmd_quit().await,
+            "MONITOR" => self.cmd_monitor().await,
+            _ => unreachable!("non-inline command"),
+        }
+    }
+
+    async fn process_command_immediate(&mut self, cmd: &str, args: &[Bytes]) -> Result<()> {
+        #[cfg(feature = "cluster")]
+        if cmd.eq_ignore_ascii_case("asking") {
+            self.cluster_state.set_asking(true);
+            return self
+                .write_response(RespValue::SimpleString("OK".into()))
+                .await;
+        }
+        #[cfg(feature = "cluster")]
+        if cmd.eq_ignore_ascii_case("readonly") {
+            self.cluster_state.set_readonly(true);
+            return self
+                .write_response(RespValue::SimpleString("OK".into()))
+                .await;
+        }
+        #[cfg(feature = "cluster")]
+        if cmd.eq_ignore_ascii_case("readwrite") {
+            self.cluster_state.set_readonly(false);
+            return self
+                .write_response(RespValue::SimpleString("OK".into()))
+                .await;
+        }
+
+        let track = should_track_observability(cmd);
+        let arg_strings: Vec<String> = if track {
+            args.iter()
+                .map(|b| String::from_utf8_lossy(b).into_owned())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let started = track.then(Instant::now);
+        let result = self
+            .state
+            .router()
+            .execute_with_client(
+                cmd,
+                args,
+                &mut self.current_db,
+                Some(self.client_id),
+                Some(self.remote),
+                self.protocol_version,
                 #[cfg(feature = "cluster")]
-                {
-                    self.cluster_state.reset_asking();
-                }
-                match result {
-                    Ok(resp) => {
-                        self.state.set_client_db(self.client_id, self.current_db);
-                        if let Some(start) = started {
-                            #[cfg(feature = "cluster")]
-                            let skip_obs = is_cluster_redirect_response(&resp);
-                            #[cfg(not(feature = "cluster"))]
-                            let skip_obs = false;
-                            if !skip_obs {
-                                self.record_command_observability(cmd, &arg_strings, start, true);
-                            }
-                        }
-                        self.write_response(resp).await?;
-                        // Track key versions for write commands (WATCH support)
-                        self.track_command_keys(cmd, args);
-                        if cmd == "SHUTDOWN" {
-                            self.quit = true;
-                        }
-                        Ok(())
-                    }
-                    Err(e) => {
-                        if let Some(start) = started {
-                            self.record_command_observability(cmd, &arg_strings, start, false);
-                        }
-                        tracing::error!(
-                          command = cmd,
-                          client_id = self.client_id,
-                          error = %e,
-                          "kv.command.error"
-                        );
-                        self.write_error(&e).await
+                Some(&self.cluster_state),
+            )
+            .await;
+        #[cfg(feature = "cluster")]
+        self.cluster_state.reset_asking();
+        self.finish_immediate_command(cmd, args, arg_strings, started, result)
+            .await
+    }
+
+    async fn finish_immediate_command(
+        &mut self,
+        cmd: &str,
+        args: &[Bytes],
+        arg_strings: Vec<String>,
+        started: Option<Instant>,
+        result: Result<RespValue>,
+    ) -> Result<()> {
+        match result {
+            Ok(resp) => {
+                self.state.set_client_db(self.client_id, self.current_db);
+                if let Some(start) = started {
+                    #[cfg(feature = "cluster")]
+                    let skip_obs = is_cluster_redirect_response(&resp);
+                    #[cfg(not(feature = "cluster"))]
+                    let skip_obs = false;
+                    if !skip_obs {
+                        self.record_command_observability(cmd, &arg_strings, start, true);
                     }
                 }
+                self.write_response(resp).await?;
+                self.track_command_keys(cmd, args);
+                if cmd == "SHUTDOWN" {
+                    self.quit = true;
+                }
+                Ok(())
+            }
+            Err(error) => {
+                if let Some(start) = started {
+                    self.record_command_observability(cmd, &arg_strings, start, false);
+                }
+                tracing::error!(
+                  command = cmd,
+                  client_id = self.client_id,
+                  error = %error,
+                  "kv.command.error"
+                );
+                self.write_error(&error).await
             }
         }
     }

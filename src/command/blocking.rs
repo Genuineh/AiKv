@@ -95,7 +95,7 @@ impl BlockingRegistry {
     }
 
     #[cfg(test)]
-    fn waiter_count(&self, key: &[u8]) -> usize {
+    pub(crate) fn waiter_count(&self, key: &[u8]) -> usize {
         self.waiters.get(key).map(|v| v.len()).unwrap_or(0)
     }
 }
