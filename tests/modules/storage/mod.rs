@@ -6,4 +6,5 @@ pub mod memory;
 pub mod prod_options;
 pub mod ttl_filter;
 pub mod types;
+pub mod watch_bump_batch;
 pub mod write_stats_batcher;

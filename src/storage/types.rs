@@ -294,6 +294,9 @@ pub trait KvStorage: Send + Sync {
         Ok(0)
     }
 
+    /// 本节点当前被 WATCH 的 key. 热路径无人 watch 时跳过 meta 写 (`#83`).
+    fn watch_registry(&self) -> std::sync::Arc<crate::storage::WatchRegistry>;
+
     fn engine_kind(&self) -> StorageEngineKind {
         StorageEngineKind::Memory
     }

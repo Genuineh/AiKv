@@ -7,7 +7,7 @@ description: AiKv 存储适配层 — KvStorage Trait、MemoryEngine、AiDbEngin
 
 ## 何时读本文
 
-- 修改 `src/storage/{adapter.rs, cluster_adapter.rs, cluster_batcher.rs, aidb.rs, memory.rs, subkey.rs, dump.rs, ttl_filter.rs, types.rs, mod.rs}` 源码;
+- 修改 `src/storage/{adapter.rs, cluster_adapter.rs, cluster_batcher.rs, aidb.rs, memory.rs, subkey.rs, dump.rs, ttl_filter.rs, types.rs, watch_version.rs, watch_registry.rs, mod.rs}` 源码;
 - 排查 `KvStorage` 接口行为、内存引擎 (`MemoryEngine`) 与持久化引擎 (`AiDbEngine`) 路径差异;
 - 排查 Subkey 扁平化编码、TTL 惰性过期机制、DUMP/RESTORE 编解码;
 - 排查集群模式下数据面写操作的 MultiRaft 批处理 (`ClusterDataAdapter` / `propose_group`);
@@ -29,7 +29,8 @@ description: AiKv 存储适配层 — KvStorage Trait、MemoryEngine、AiDbEngin
 | [`src/storage/aidb.rs`](../../src/storage/aidb.rs) | AiDb LSM 同步存储引擎适配 (基于 `spawn_blocking` 桥接 Tokio) | `AiDbEngine` |
 | [`src/storage/aidb_options.rs`](../../src/storage/aidb_options.rs) | LSM 存储参数预设映射 (`default`, `high-write`, `high-read`) | `server_db_options_with_preset`, `DbPreset` |
 | [`src/storage/cluster_adapter.rs`](../../src/storage/cluster_adapter.rs) | 集群数据面存储适配器: 槽位判断、写批处理 (`Batcher`) 与 Raft propose | `ClusterDataAdapter` (feature = "cluster") |
-| [`src/storage/cluster_batcher.rs`](../../src/storage/cluster_batcher.rs) | `GroupSetBatcher` 写凑批 actor; 入口仍是 `ClusterDataAdapter` | `GroupSetBatcher` (feature = "cluster") |
+| [`src/storage/watch_registry.rs`](../../src/storage/watch_registry.rs) | 本节点 WATCH 引用计数; 无人 watch 时跳过 meta 写 | `WatchRegistry` |
+| [`src/storage/watch_version.rs`](../../src/storage/watch_version.rs) | WATCH 版本 meta key 编码 (`{hash_tag}` 前缀保证同 slot) | `meta_user_key`, `is_watch_meta_user_key` |
 | [`src/storage/subkey.rs`](../../src/storage/subkey.rs) | 复杂数据结构 (Hash/List/Set/ZSet) 扁平化 Subkey 前缀编解码 | `encode_data_key`, `encode_meta_key`, `decode_key` |
 | [`src/storage/dump.rs`](../../src/storage/dump.rs) | `DUMP` / `RESTORE` 紧凑 postcard 序列化与版本校验 | `dump_encode`, `dump_decode`, `DUMP_VERSION` |
 | [`src/storage/ttl_filter.rs`](../../src/storage/ttl_filter.rs) | TTL compaction filter 与 Version 安装后的键计数移除监听 | `TtlExpireFilter`, `DbKeyCounterRemovalListener` |
@@ -61,7 +62,8 @@ description: AiKv 存储适配层 — KvStorage Trait、MemoryEngine、AiDbEngin
 - **DbKeyCounters 与 O(1) 键计数 (回传法)**:
   - `KvStorageAdapter` 持有 `DbKeyCounters` (`[AtomicU64; 16]`), 跟踪各 DB 逻辑 user key 数量 (跳过 subkey); 计数真源在 aikv, 不依赖 aidb `total_key_count`.
   - **单机写路径**: `AiDbEngine::set` / `write_batch` 消费引擎 `put`→`bool` / `EngineWriteStats`; `exists` 走 `DB::key_exists` (不物化 Value). 禁止跨任务 `exists + put` 二次读.
-  - **集群写路径 (Plain / 迁移 PUT / `write_batch`)**: `submit_write_op` 与 `ClusterDataAdapter::write_batch` **禁止** propose 前 `get_local` / `exists` 判定 insert; 摘要来自 apply 回传的 `Response::WriteStats.effects`. DELETE Plain **保留**前置 `get_local` 短路 (不存在则跳过 propose). Batcher 按 key 做 last-write-wins reverse-dedup; 丢掉的中间 op ack 映射为 `false`.
+  - **集群写路径 (Plain / 迁移 PUT / `write_batch`)**: `submit_write_op` / `submit_write_ops` 与 `ClusterDataAdapter::apply_writes` **禁止** propose 前 `get_local` / `exists` 判定 insert; 摘要来自 apply 回传的 `Response::WriteStats.effects`. DELETE Plain **保留**前置 `get_local` 短路 (不存在则跳过 propose). Batcher 按 key 做 last-write-wins reverse-dedup; 丢掉的中间 op ack 映射为 `false`.
+  - **WATCH meta 与用户写同一次 propose (Issue #83)**: 仅当 `WatchRegistry` 显示本节点有连接 WATCH 该 key 时, `set_typed` / `DEL` / `write_batch` 才把 user key 与 `{hash_tag}\xff\xff/aikv/watch/{user_key}` 送进同一 `put_many` / `apply_writes`; 集群走 `submit_write_ops` (全部入队后再等 ack). 压测热路径无人 WATCH, 因此只写用户 key. meta 复用 Redis hash tag, 保证与 user key 同 slot. `DbKeyCounters` 只计用户 key, 不计 meta.
   - **消费者 fail-fast**: 数据写成功响应须显式匹配 `WriteStats` (或控制面路径的 `Ok`); 禁止宽松 `_ => Ok(())` 吞掉意外 `Response` 变体. 仅支持同版本集群滚动.
   - `set_typed` / `write_batch` 成功后: 仅当 `inserted` 时 `incr`; **无论 `inserted` 真假均 `expire_gate.release`** (覆盖写也要释放门闩). `write_batch` 对全部 Delete op `try_claim` 门闩, 计数仍用 `stats.deleted` (禁止按删除条数截前缀).
   - 热路径计数含尚未惰性清理的过期 key; 惰性删除成功时 `decr`;

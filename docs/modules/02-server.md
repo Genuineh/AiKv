@@ -114,4 +114,6 @@ AiKv 在 `Connection` 内部维护 `TransactionState`:
    - 释放门闩后返回执行结果数组;
 5. **`DISCARD`**: 清空 `tx_queue` 与 `watched_keys`, 重置 `in_multi = false`, 返回 `+OK`.
 
-**Non-goals (本期)**: `EXEC <json>` JSON batch 行为不变; Lua `EVAL` 不走本路径; WATCH 版本真源见 Issue #79.
+**WATCH 版本**: 存储层 meta key `{hash_tag}\xff\xff/aikv/watch/{user_key}` (含 DB). 仅当本节点有连接 WATCH 该 key 时才写入, 并与用户写同一 Raft propose (`#79` 语义, `#83` 热路径). `WATCH` 读版本并登记 `WatchRegistry`, `EXEC` 在 `#78` 门闩内比对.
+
+**Non-goals (本期)**: `EXEC <json>` JSON batch 行为不变; Lua `EVAL` 不走本路径.

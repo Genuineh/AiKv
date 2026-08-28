@@ -632,3 +632,27 @@ async fn issue_79_watch_conflict_from_other_connection_storage_version() {
         RespValue::BulkString(Some("v2".into()))
     );
 }
+
+/// Issue #83: 一条连接 UNWATCH 不得清掉其它连接仍有效的 WATCH.
+#[tokio::test]
+async fn issue_83_unwatch_one_connection_keeps_other_watch() {
+    let (addr, _server) = start_ephemeral_server().await;
+    let mut writer = TestConn::connect(addr).await;
+    let mut watcher_keep = TestConn::connect(addr).await;
+    let mut watcher_drop = TestConn::connect(addr).await;
+
+    let _ = writer.send("SET", &["k", "v1"]).await;
+    let _ = watcher_keep.send("ATOM.WATCH", &["k"]).await;
+    let _ = watcher_drop.send("ATOM.WATCH", &["k"]).await;
+    let _ = watcher_drop.send("ATOM.UNWATCH", &[]).await;
+    let _ = writer.send("SET", &["k", "v2"]).await;
+
+    let _ = watcher_keep.send("ATOM.MULTI", &[]).await;
+    let _ = watcher_keep.send("SET", &["k", "v3"]).await;
+    let resp = watcher_keep.send("ATOM.EXEC", &[]).await;
+    assert_eq!(
+        parse_response(&resp),
+        RespValue::BulkString(None),
+        "remaining WATCH must still detect the write after another connection UNWATCH"
+    );
+}

@@ -125,6 +125,34 @@ impl StorageAdapter for AiDbEngine {
         .await
     }
 
+    async fn apply_writes(&self, ops: Vec<AdapterWriteOp>) -> Result<Vec<bool>> {
+        self.blocking(move |db| {
+            let mut wb = WriteBatch::new();
+            let mut flags = Vec::with_capacity(ops.len());
+            for op in ops {
+                match op {
+                    AdapterWriteOp::Put { key, value } => {
+                        flags.push(
+                            !db.key_exists(&key)
+                                .map_err(|e| Error::Storage(e.to_string()))?,
+                        );
+                        wb.put(key, value);
+                    }
+                    AdapterWriteOp::Delete { key } => {
+                        flags.push(
+                            db.key_exists(&key)
+                                .map_err(|e| Error::Storage(e.to_string()))?,
+                        );
+                        wb.delete(key);
+                    }
+                }
+            }
+            let _stats = db.write(&wb).map_err(|e| Error::Storage(e.to_string()))?;
+            Ok(flags)
+        })
+        .await
+    }
+
     async fn exists(&self, key: Vec<u8>) -> Result<bool> {
         self.blocking(move |db| {
             db.key_exists(&key)

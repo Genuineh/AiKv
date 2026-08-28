@@ -31,7 +31,7 @@ use aidb::cluster::{
 use aidb::error::ClusterError as AidbClusterError;
 use aidb::Checkpoint;
 
-use super::cluster_batcher::{submit_write_op, GroupSetBatcher};
+use super::cluster_batcher::{submit_write_op, submit_write_ops, GroupSetBatcher};
 use crate::cluster::router::{migration_phase_for_slot, MigrationRoutePhase, TRYAGAIN_MIGRATION};
 use crate::cluster::state::{ClusterStateManager, CLUSTER_STATE_MGR};
 use crate::error::{Error, Result};
@@ -534,6 +534,100 @@ impl StorageAdapter for ClusterDataAdapter {
             None if Self::should_use_local_engine(&key) => self.local.set(key, value).await,
             None => Err(Self::data_group_not_ready_err()),
         }
+    }
+
+    async fn apply_writes(&self, ops: Vec<AdapterWriteOp>) -> Result<Vec<bool>> {
+        if ops.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut results = vec![false; ops.len()];
+        let mut by_gid: HashMap<
+            u64,
+            (
+                Arc<ClusterStateManager>,
+                Vec<(usize, Vec<u8>, Option<Vec<u8>>)>,
+            ),
+        > = HashMap::new();
+        let mut by_mig: HashMap<
+            u64,
+            (
+                Arc<ClusterStateManager>,
+                u64,
+                Vec<(usize, Vec<u8>, Option<Vec<u8>>)>,
+            ),
+        > = HashMap::new();
+        let mut fallback: Vec<(usize, AdapterWriteOp)> = Vec::new();
+
+        for (i, op) in ops.into_iter().enumerate() {
+            let key_ref = match &op {
+                AdapterWriteOp::Put { key, .. } | AdapterWriteOp::Delete { key } => key.as_slice(),
+            };
+            match Self::route_write(key_ref)? {
+                Some((mgr, WriteRoute::Plain(gid))) => {
+                    let tuple = match op {
+                        AdapterWriteOp::Put { key, value } => (i, key, Some(value)),
+                        AdapterWriteOp::Delete { key } => (i, key, None),
+                    };
+                    by_gid
+                        .entry(gid)
+                        .or_insert_with(|| (mgr, Vec::new()))
+                        .1
+                        .push(tuple);
+                }
+                Some((mgr, WriteRoute::Migration { gid, epoch, .. })) => {
+                    let tuple = match op {
+                        AdapterWriteOp::Put { key, value } => (i, key, Some(value)),
+                        AdapterWriteOp::Delete { key } => (i, key, None),
+                    };
+                    by_mig
+                        .entry(gid)
+                        .or_insert_with(|| (mgr, epoch, Vec::new()))
+                        .2
+                        .push(tuple);
+                }
+                _ => fallback.push((i, op)),
+            }
+        }
+
+        for (gid, (mgr, items)) in by_gid {
+            let batch: Vec<_> = items
+                .iter()
+                .map(|(_, k, v)| (k.clone(), v.clone()))
+                .collect();
+            let flags =
+                submit_write_ops(&self.set_batchers, self.eager_flush, mgr, gid, batch).await?;
+            for ((idx, _, _), flag) in items.into_iter().zip(flags) {
+                results[idx] = flag;
+            }
+        }
+
+        for (gid, (mgr, epoch, items)) in by_mig {
+            let mut tb = ThinWriteBatch::new();
+            for (_, key, value) in &items {
+                match value {
+                    Some(v) => tb.put(key.clone(), v.clone()),
+                    None => tb.delete(key.clone()),
+                }
+            }
+            let resp = Self::propose_group_with_retry(
+                &mgr,
+                gid,
+                Request::MigrationWrite { epoch, ops: tb },
+            )
+            .await?;
+            let flags = Self::parse_write_stats(resp)?;
+            for ((idx, _, _), flag) in items.into_iter().zip(flags) {
+                results[idx] = flag;
+            }
+        }
+
+        for (i, op) in fallback {
+            results[i] = match op {
+                AdapterWriteOp::Put { key, value } => self.set(key, value).await?,
+                AdapterWriteOp::Delete { key } => self.delete(key).await?,
+            };
+        }
+        Ok(results)
     }
 
     async fn delete(&self, key: Vec<u8>) -> Result<bool> {

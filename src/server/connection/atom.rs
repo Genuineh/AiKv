@@ -60,6 +60,7 @@ impl Connection {
         }
 
         if conflict {
+            self.release_watches();
             self.tx_state.reset();
             drop(transaction_guard);
             return self.write_response(RespValue::BulkString(None)).await;
@@ -68,6 +69,7 @@ impl Connection {
         if self.tx_state.tx_queue.iter().any(|(cmd, _)| {
             command::lookup(cmd).is_some_and(|info| info.flags.contains(&"blocking"))
         }) {
+            self.release_watches();
             self.tx_state.reset();
             drop(transaction_guard);
             return self
@@ -84,6 +86,7 @@ impl Connection {
             .preflight_transaction(&self.tx_state.tx_queue, &self.cluster_state)
             .await?
         {
+            self.release_watches();
             self.tx_state.reset();
             drop(transaction_guard);
             return self.write_response(resp).await;
@@ -92,7 +95,7 @@ impl Connection {
         // Execute queued commands atomically
         let queue = std::mem::take(&mut self.tx_state.tx_queue);
         self.tx_state.in_multi = false;
-        self.tx_state.watched_keys.clear();
+        self.release_watches();
 
         let mut results = Vec::with_capacity(queue.len());
 
@@ -133,6 +136,9 @@ impl Connection {
                 .write_response(RespValue::Error("ERR DISCARD without MULTI".into()))
                 .await;
         }
+        let gate = std::sync::Arc::clone(&self.state.transaction_gate);
+        let _guard = gate.write_owned().await;
+        self.release_watches();
         self.tx_state.reset();
         self.write_response(RespValue::SimpleString("OK".into()))
             .await
@@ -146,23 +152,29 @@ impl Connection {
                 ))
                 .await;
         }
-        // Record current version for each watched key
+        let gate = std::sync::Arc::clone(&self.state.transaction_gate);
+        let _guard = gate.write_owned().await;
+        let registry = self.state.storage.watch_registry();
         for key in args {
+            let id = (self.current_db, key.to_vec());
+            if !self.tx_state.watched_keys.contains_key(&id) {
+                registry.watch(self.current_db, key);
+            }
             let version = self
                 .state
                 .storage
                 .get_watch_version(self.current_db, key)
                 .await?;
-            self.tx_state
-                .watched_keys
-                .insert((self.current_db, key.to_vec()), version);
+            self.tx_state.watched_keys.insert(id, version);
         }
         self.write_response(RespValue::SimpleString("OK".into()))
             .await
     }
 
     pub(super) async fn cmd_atom_unwatch(&mut self) -> Result<()> {
-        self.tx_state.watched_keys.clear();
+        let gate = std::sync::Arc::clone(&self.state.transaction_gate);
+        let _guard = gate.write_owned().await;
+        self.release_watches();
         self.write_response(RespValue::SimpleString("OK".into()))
             .await
     }

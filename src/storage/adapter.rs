@@ -39,6 +39,7 @@ use crate::storage::types::{
     now_ms, DbKeyCounters, ExpireDecrGate, KeyspaceStats, KvStorage, ScanResult, StorageEngineKind,
     StoredValue, ValueType, WriteOp, DB_COUNT, TTL_NO_EXPIRY, WRONGTYPE,
 };
+use crate::storage::watch_registry::WatchRegistry;
 use crate::storage::watch_version::{
     decode_version, encode_version, is_watch_meta_user_key, meta_user_key,
 };
@@ -62,6 +63,28 @@ pub struct WriteBatchStats {
 pub trait StorageAdapter: Send + Sync {
     async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>>;
     async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<bool>;
+    /// 一次提交多笔写. 集群实现须把 ops 全部送进同一 group 的 `GroupSetBatcher`
+    /// 后再等 ack, 避免每条 SET 串行两次 Raft propose (Issue #83).
+    /// 默认逐条 `set` / `delete`.
+    async fn apply_writes(&self, ops: Vec<AdapterWriteOp>) -> Result<Vec<bool>> {
+        let mut out = Vec::with_capacity(ops.len());
+        for op in ops {
+            match op {
+                AdapterWriteOp::Put { key, value } => out.push(self.set(key, value).await?),
+                AdapterWriteOp::Delete { key } => out.push(self.delete(key).await?),
+            }
+        }
+        Ok(out)
+    }
+    /// 一次提交多笔 PUT; 默认转发 `apply_writes`.
+    async fn put_many(&self, ops: Vec<(Vec<u8>, Vec<u8>)>) -> Result<Vec<bool>> {
+        self.apply_writes(
+            ops.into_iter()
+                .map(|(key, value)| AdapterWriteOp::Put { key, value })
+                .collect(),
+        )
+        .await
+    }
     async fn delete(&self, key: Vec<u8>) -> Result<bool>;
     async fn exists(&self, key: Vec<u8>) -> Result<bool>;
     async fn write_batch(&self, batch: Vec<AdapterWriteOp>) -> Result<WriteBatchStats>;
@@ -143,6 +166,7 @@ pub struct KvStorageAdapter {
     observation: Option<Arc<StorageObservation>>,
     counters: Arc<DbKeyCounters>,
     expire_gate: Arc<ExpireDecrGate>,
+    watchers: Arc<WatchRegistry>,
 }
 
 impl KvStorageAdapter {
@@ -172,6 +196,7 @@ impl KvStorageAdapter {
             observation,
             counters,
             expire_gate,
+            watchers: WatchRegistry::new(),
         });
         adapter.rebuild_counters().await?;
         Ok(adapter)
@@ -191,6 +216,7 @@ impl KvStorageAdapter {
             observation,
             counters: Arc::new(DbKeyCounters::new()),
             expire_gate: Arc::new(ExpireDecrGate::new()),
+            watchers: WatchRegistry::new(),
         })
     }
 
@@ -254,16 +280,6 @@ impl KvStorageAdapter {
         self.storage.get(Self::encode(db, key)).await
     }
 
-    async fn set_raw(&self, db: usize, key: &[u8], bytes: Vec<u8>) -> Result<bool> {
-        self.check_db(db)?;
-        self.storage.set(Self::encode(db, key), bytes).await
-    }
-
-    async fn delete_encoded(&self, db: usize, key: &[u8]) -> Result<bool> {
-        self.check_db(db)?;
-        self.storage.delete(Self::encode(db, key)).await
-    }
-
     fn deserialize(bytes: &[u8]) -> Result<StoredValue> {
         postcard::from_bytes(bytes).map_err(|e| Error::Storage(format!("postcard decode: {e}")))
     }
@@ -283,18 +299,26 @@ impl KvStorageAdapter {
         }
     }
 
-    async fn bump_watch_version(&self, db: usize, user_key: &[u8]) -> Result<()> {
+    /// 下一次 watch meta 的物理 key 与 8 字节 version. meta key 自身不再 bump.
+    async fn next_watch_meta_put(
+        &self,
+        db: usize,
+        user_key: &[u8],
+    ) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
         if is_watch_meta_user_key(user_key) {
-            return Ok(());
+            return Ok(None);
+        }
+        if !self.watchers.is_watched(db, user_key) {
+            return Ok(None);
         }
         let next = self
             .read_watch_version(db, user_key)
             .await?
             .saturating_add(1);
-        let meta = meta_user_key(user_key);
-        self.set_raw(db, &meta, encode_version(next).to_vec())
-            .await?;
-        Ok(())
+        Ok(Some((
+            Self::encode(db, &meta_user_key(user_key)),
+            encode_version(next).to_vec(),
+        )))
     }
 
     async fn load_typed(&self, db: usize, key: &[u8]) -> Result<Option<StoredValue>> {
@@ -323,12 +347,16 @@ impl KvStorageAdapter {
         if !self.storage.allow_lazy_expire_delete(&encoded) {
             return;
         }
-        if let Ok(true) = self.storage.delete(encoded.clone()).await {
-            if self.expire_gate.try_claim(&encoded) {
+        let mut ops = vec![AdapterWriteOp::Delete {
+            key: encoded.clone(),
+        }];
+        if let Ok(Some((mk, mv))) = self.next_watch_meta_put(db, key).await {
+            ops.push(AdapterWriteOp::Put { key: mk, value: mv });
+        }
+        if let Ok(flags) = self.storage.apply_writes(ops).await {
+            if flags.first().copied().unwrap_or(false) && self.expire_gate.try_claim(&encoded) {
                 self.counters.decr(db);
-                // 持有至重生 (`set_typed`), 避免 compaction 对 tombstone 再扣.
             }
-            let _ = self.bump_watch_version(db, key).await;
         }
     }
 
@@ -477,12 +505,20 @@ impl KvStorage for KvStorageAdapter {
     }
 
     async fn delete(&self, db: usize, key: &[u8]) -> Result<bool> {
-        let deleted = self.delete_encoded(db, key).await?;
-        if deleted {
-            if self.expire_gate.try_claim(&Self::encode(db, key)) {
-                self.counters.decr(db);
-            }
-            self.bump_watch_version(db, key).await?;
+        let encoded = Self::encode(db, key);
+        if self.get_raw(db, key).await?.is_none() {
+            return Ok(false);
+        }
+        let mut ops = vec![AdapterWriteOp::Delete {
+            key: encoded.clone(),
+        }];
+        if let Some((mk, mv)) = self.next_watch_meta_put(db, key).await? {
+            ops.push(AdapterWriteOp::Put { key: mk, value: mv });
+        }
+        let flags = self.storage.apply_writes(ops).await?;
+        let deleted = flags.first().copied().unwrap_or(false);
+        if deleted && self.expire_gate.try_claim(&encoded) {
+            self.counters.decr(db);
         }
         Ok(deleted)
     }
@@ -519,6 +555,7 @@ impl KvStorage for KvStorageAdapter {
         let mut batch = Vec::with_capacity(ops.len());
         let mut deleted_keys: Vec<Vec<u8>> = Vec::new();
         let mut put_keys: Vec<Vec<u8>> = Vec::new();
+        let mut user_is_put: Vec<bool> = Vec::with_capacity(ops.len());
         for (key, op) in ops {
             let encoded = Self::encode(db, &key);
             match op {
@@ -530,15 +567,25 @@ impl KvStorage for KvStorageAdapter {
                         key: encoded,
                         value: bytes,
                     });
+                    user_is_put.push(true);
                 }
                 WriteOp::Delete => {
                     deleted_keys.push(encoded.clone());
                     batch.push(AdapterWriteOp::Delete { key: encoded });
+                    user_is_put.push(false);
                 }
             }
         }
-        let stats = match self.storage.write_batch(batch).await {
-            Ok(stats) => stats,
+        for encoded in put_keys.iter().chain(deleted_keys.iter()) {
+            let Some(user_key) = Self::decode_user_key(encoded) else {
+                continue;
+            };
+            if let Some((mk, mv)) = self.next_watch_meta_put(db, &user_key).await? {
+                batch.push(AdapterWriteOp::Put { key: mk, value: mv });
+            }
+        }
+        let flags = match self.storage.apply_writes(batch).await {
+            Ok(flags) => flags,
             Err(e) => {
                 if let Err(rebuild_err) = self.rebuild_counters().await {
                     tracing::warn!(error = %rebuild_err, "write_batch failed and rebuild_counters also failed");
@@ -552,21 +599,25 @@ impl KvStorage for KvStorageAdapter {
                 return Err(e);
             }
         };
+        let mut inserted = 0u64;
+        let mut deleted = 0u64;
+        for (i, is_put) in user_is_put.iter().enumerate() {
+            if flags.get(i).copied().unwrap_or(false) {
+                if *is_put {
+                    inserted += 1;
+                } else {
+                    deleted += 1;
+                }
+            }
+        }
         crate::storage::counter_batch::apply_successful_batch(
             &self.counters,
             &self.expire_gate,
             db,
             &put_keys,
             &deleted_keys,
-            stats,
+            WriteBatchStats { inserted, deleted },
         );
-        for key in put_keys.iter().chain(deleted_keys.iter()) {
-            if let Some(user_key) = Self::decode_user_key(key) {
-                if !is_watch_meta_user_key(&user_key) {
-                    self.bump_watch_version(db, &user_key).await?;
-                }
-            }
-        }
         Ok(())
     }
 
@@ -721,18 +772,25 @@ impl KvStorage for KvStorageAdapter {
 
     async fn set_typed(&self, db: usize, key: &[u8], value: StoredValue) -> Result<()> {
         let bytes = Self::serialize(&value)?;
-        let inserted = self.set_raw(db, key, bytes).await?;
-        if inserted {
+        let encoded = Self::encode(db, key);
+        let mut ops = vec![(encoded.clone(), bytes)];
+        if let Some(meta) = self.next_watch_meta_put(db, key).await? {
+            ops.push(meta);
+        }
+        let flags = self.storage.put_many(ops).await?;
+        if flags.first().copied().unwrap_or(false) {
             self.counters.incr(db);
         }
-        // 重生: 放开过期代门闩, 允许该 key 下次过期再扣.
-        self.expire_gate.release(&Self::encode(db, key));
-        self.bump_watch_version(db, key).await?;
+        self.expire_gate.release(&encoded);
         Ok(())
     }
 
     async fn get_watch_version(&self, db: usize, key: &[u8]) -> Result<u64> {
         self.read_watch_version(db, key).await
+    }
+
+    fn watch_registry(&self) -> Arc<WatchRegistry> {
+        Arc::clone(&self.watchers)
     }
 
     async fn rename_key(&self, db: usize, old_key: &[u8], new_key: &[u8]) -> Result<()> {
