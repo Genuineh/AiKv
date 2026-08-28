@@ -14,6 +14,7 @@ pub mod observation;
 pub mod subkey;
 pub mod ttl_filter;
 pub mod types;
+pub mod watch_version;
 
 pub use adapter::{AdapterWriteOp, KvStorageAdapter, StorageAdapter, WriteBatchStats};
 pub use aidb::AiDbEngine;

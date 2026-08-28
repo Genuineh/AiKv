@@ -67,8 +67,6 @@ pub struct ServerSharedState {
     pub metrics_port: u16,
     pub metrics_addr: String,
     next_client_id: AtomicUsize,
-    /// 每个 key 的版本计数器,用于 WATCH 乐观锁冲突检测
-    pub key_versions: Arc<RwLock<HashMap<Vec<u8>, u64>>>,
     pub(crate) transaction_gate: TransactionGate,
     storage_observation: Arc<StorageObservation>,
 }
@@ -194,7 +192,6 @@ impl ServerSharedState {
             metrics_port,
             metrics_addr,
             next_client_id: AtomicUsize::new(1),
-            key_versions: Arc::new(RwLock::new(HashMap::new())),
             transaction_gate: Arc::new(tokio::sync::RwLock::new(())),
             storage_observation: storage_observation.unwrap_or_default(),
         })
@@ -268,18 +265,6 @@ impl ServerSharedState {
 
     pub fn metrics(&self) -> &ServerMetrics {
         &self.metrics
-    }
-
-    /// 递增 key 的版本计数器(WATCH 冲突检测用)
-    pub fn increment_key_version(&self, key: &[u8]) {
-        let mut versions = self.key_versions.write();
-        let counter = versions.entry(key.to_vec()).or_insert(0);
-        *counter += 1;
-    }
-
-    /// 获取 key 的当前版本号
-    pub fn get_key_version(&self, key: &[u8]) -> u64 {
-        self.key_versions.read().get(key).copied().unwrap_or(0)
     }
 
     pub fn try_register_connection(self: &Arc<Self>) -> bool {

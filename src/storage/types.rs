@@ -288,6 +288,12 @@ pub trait KvStorage: Send + Sync {
     ) -> Result<bool>;
     async fn random_key(&self, db: usize) -> Result<Option<Vec<u8>>>;
 
+    /// WATCH 乐观锁版本; 0 表示从未写入.
+    async fn get_watch_version(&self, db: usize, key: &[u8]) -> Result<u64> {
+        let _ = (db, key);
+        Ok(0)
+    }
+
     fn engine_kind(&self) -> StorageEngineKind {
         StorageEngineKind::Memory
     }

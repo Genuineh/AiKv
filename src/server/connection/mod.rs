@@ -75,7 +75,7 @@ enum ConnectionMode {
 struct TransactionState {
     in_multi: bool,
     tx_queue: Vec<(String, Vec<Bytes>)>,
-    watched_keys: HashMap<Vec<u8>, u64>,
+    watched_keys: HashMap<(usize, Vec<u8>), u64>,
 }
 
 impl TransactionState {
@@ -470,7 +470,7 @@ impl Connection {
     async fn finish_immediate_command(
         &mut self,
         cmd: &str,
-        args: &[Bytes],
+        _args: &[Bytes],
         arg_strings: Vec<String>,
         started: Option<Instant>,
         result: Result<RespValue>,
@@ -488,7 +488,6 @@ impl Connection {
                     }
                 }
                 self.write_response(resp).await?;
-                self.track_command_keys(cmd, args);
                 if cmd == "SHUTDOWN" {
                     self.quit = true;
                 }

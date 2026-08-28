@@ -39,6 +39,9 @@ use crate::storage::types::{
     now_ms, DbKeyCounters, ExpireDecrGate, KeyspaceStats, KvStorage, ScanResult, StorageEngineKind,
     StoredValue, ValueType, WriteOp, DB_COUNT, TTL_NO_EXPIRY, WRONGTYPE,
 };
+use crate::storage::watch_version::{
+    decode_version, encode_version, is_watch_meta_user_key, meta_user_key,
+};
 use crate::storage::AiDbEngine;
 
 /// 底层扁平 KV 写操作 (与 `storage::WriteOp` 不同)
@@ -269,6 +272,31 @@ impl KvStorageAdapter {
         postcard::to_allocvec(value).map_err(|e| Error::Storage(format!("postcard encode: {e}")))
     }
 
+    async fn read_watch_version(&self, db: usize, user_key: &[u8]) -> Result<u64> {
+        if is_watch_meta_user_key(user_key) {
+            return Ok(0);
+        }
+        let meta = meta_user_key(user_key);
+        match self.get_raw(db, &meta).await? {
+            Some(bytes) => Ok(decode_version(&bytes)),
+            None => Ok(0),
+        }
+    }
+
+    async fn bump_watch_version(&self, db: usize, user_key: &[u8]) -> Result<()> {
+        if is_watch_meta_user_key(user_key) {
+            return Ok(());
+        }
+        let next = self
+            .read_watch_version(db, user_key)
+            .await?
+            .saturating_add(1);
+        let meta = meta_user_key(user_key);
+        self.set_raw(db, &meta, encode_version(next).to_vec())
+            .await?;
+        Ok(())
+    }
+
     async fn load_typed(&self, db: usize, key: &[u8]) -> Result<Option<StoredValue>> {
         let Some(raw) = self.get_raw(db, key).await? else {
             return Ok(None);
@@ -300,6 +328,7 @@ impl KvStorageAdapter {
                 self.counters.decr(db);
                 // 持有至重生 (`set_typed`), 避免 compaction 对 tombstone 再扣.
             }
+            let _ = self.bump_watch_version(db, key).await;
         }
     }
 
@@ -320,6 +349,9 @@ impl KvStorageAdapter {
                     let Some(user_key) = Self::decode_user_key(&encoded) else {
                         return Ok(());
                     };
+                    if is_watch_meta_user_key(&user_key) {
+                        return Ok(());
+                    }
                     // 跳过 subkey entry (非 StoredValue 编码)
                     let Ok(stored) = Self::deserialize(&raw) else {
                         return Ok(());
@@ -361,6 +393,9 @@ impl KvStorageAdapter {
                     let Some(user_key) = Self::decode_user_key(&encoded) else {
                         return Ok(());
                     };
+                    if is_watch_meta_user_key(&user_key) {
+                        return Ok(());
+                    }
                     // 跳过 subkey entry (非 StoredValue 编码)
                     let Ok(stored) = Self::deserialize(&raw) else {
                         return Ok(());
@@ -443,8 +478,11 @@ impl KvStorage for KvStorageAdapter {
 
     async fn delete(&self, db: usize, key: &[u8]) -> Result<bool> {
         let deleted = self.delete_encoded(db, key).await?;
-        if deleted && self.expire_gate.try_claim(&Self::encode(db, key)) {
-            self.counters.decr(db);
+        if deleted {
+            if self.expire_gate.try_claim(&Self::encode(db, key)) {
+                self.counters.decr(db);
+            }
+            self.bump_watch_version(db, key).await?;
         }
         Ok(deleted)
     }
@@ -522,6 +560,13 @@ impl KvStorage for KvStorageAdapter {
             &deleted_keys,
             stats,
         );
+        for key in put_keys.iter().chain(deleted_keys.iter()) {
+            if let Some(user_key) = Self::decode_user_key(key) {
+                if !is_watch_meta_user_key(&user_key) {
+                    self.bump_watch_version(db, &user_key).await?;
+                }
+            }
+        }
         Ok(())
     }
 
@@ -682,7 +727,12 @@ impl KvStorage for KvStorageAdapter {
         }
         // 重生: 放开过期代门闩, 允许该 key 下次过期再扣.
         self.expire_gate.release(&Self::encode(db, key));
+        self.bump_watch_version(db, key).await?;
         Ok(())
+    }
+
+    async fn get_watch_version(&self, db: usize, key: &[u8]) -> Result<u64> {
+        self.read_watch_version(db, key).await
     }
 
     async fn rename_key(&self, db: usize, old_key: &[u8], new_key: &[u8]) -> Result<()> {
