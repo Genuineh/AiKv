@@ -50,12 +50,14 @@ impl Connection {
         let gate = std::sync::Arc::clone(&self.state.transaction_gate);
         let transaction_guard = gate.write_owned().await;
 
-        // Check WATCH conflicts: if any watched key's version changed, abort
-        let conflict = self
-            .tx_state
-            .watched_keys
-            .iter()
-            .any(|(key, version)| self.state.get_key_version(key) != *version);
+        // Check WATCH conflicts under transaction gate (after #78 exclusive lock).
+        let mut conflict = false;
+        for ((db, key), version) in &self.tx_state.watched_keys {
+            if self.state.storage.get_watch_version(*db, key).await? != *version {
+                conflict = true;
+                break;
+            }
+        }
 
         if conflict {
             self.tx_state.reset();
@@ -95,10 +97,6 @@ impl Connection {
         let mut results = Vec::with_capacity(queue.len());
 
         for (cmd_name, cmd_args) in queue {
-            // Track whether this is a write command for key version tracking
-            let is_write =
-                command::lookup(&cmd_name).is_some_and(|info| info.flags.contains(&"write"));
-
             let result = self
                 .state
                 .router()
@@ -116,9 +114,6 @@ impl Connection {
 
             match result {
                 Ok(resp) => {
-                    if is_write {
-                        self.track_command_keys(&cmd_name, &cmd_args);
-                    }
                     results.push(resp);
                 }
                 Err(e) => {
@@ -153,8 +148,14 @@ impl Connection {
         }
         // Record current version for each watched key
         for key in args {
-            let version = self.state.get_key_version(key);
-            self.tx_state.watched_keys.insert(key.to_vec(), version);
+            let version = self
+                .state
+                .storage
+                .get_watch_version(self.current_db, key)
+                .await?;
+            self.tx_state
+                .watched_keys
+                .insert((self.current_db, key.to_vec()), version);
         }
         self.write_response(RespValue::SimpleString("OK".into()))
             .await
@@ -185,7 +186,6 @@ impl Connection {
         let mut snapshots: Vec<BatchRollbackFrame> = Vec::new();
         let mut snapshotted: HashSet<Vec<u8>> = HashSet::new();
         let mut results: Vec<RespValue> = Vec::with_capacity(commands.len());
-        let mut written_cmds: Vec<(String, Vec<Bytes>)> = Vec::new();
 
         for (cmd_name, cmd_args) in commands {
             if let Err(e) = self
@@ -251,12 +251,7 @@ impl Connection {
             if let Ok(resp) = result {
                 mark_batch_command_keys_written(&cmd_name, &cmd_args, &mut snapshots);
                 results.push(resp);
-                written_cmds.push((cmd_name, cmd_args));
             }
-        }
-
-        for (cmd_name, cmd_args) in &written_cmds {
-            self.track_command_keys(cmd_name, cmd_args);
         }
 
         self.write_response(RespValue::Array(Some(results))).await
@@ -369,25 +364,6 @@ impl Connection {
             .push((cmd.to_string(), args.to_vec()));
         self.write_response(RespValue::SimpleString("QUEUED".into()))
             .await
-    }
-
-    /// 为写命令跟踪 key 版本(WATCH 冲突检测用)
-    pub(super) fn track_command_keys(&self, cmd: &str, args: &[Bytes]) {
-        let Some(info) = command::lookup(cmd) else {
-            return;
-        };
-        if !info.flags.contains(&"write") {
-            return;
-        }
-        let indices = command::key_indices(&info, args.len() + 1);
-        for idx in indices {
-            if idx > 0 {
-                let arr_idx = idx - 1;
-                if arr_idx < args.len() {
-                    self.state.increment_key_version(&args[arr_idx]);
-                }
-            }
-        }
     }
 }
 

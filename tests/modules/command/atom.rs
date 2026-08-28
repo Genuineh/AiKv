@@ -572,3 +572,63 @@ async fn test_atom_watch_discard_clears() {
         other => panic!("expected Array, got {:?}", other),
     }
 }
+
+/// Issue #79: WATCH 版本按 DB 隔离, 不同 DB 同名 key 不串.
+#[tokio::test]
+async fn issue_79_watch_db_isolation_same_key_name() {
+    let (addr, _server) = start_ephemeral_server().await;
+    let mut conn1 = TestConn::connect(addr).await;
+    let mut conn2 = TestConn::connect(addr).await;
+
+    let _ = conn1.send("SELECT", &["1"]).await;
+    let _ = conn1.send("SET", &["shared", "db1-val"]).await;
+
+    let _ = conn2.send("SELECT", &["0"]).await;
+    let _ = conn2.send("ATOM.WATCH", &["shared"]).await;
+    let _ = conn2.send("ATOM.MULTI", &[]).await;
+    let _ = conn2.send("GET", &["shared"]).await;
+
+    // conn1 写 DB1 的同名 key 不应影响 DB0 的 WATCH
+    let _ = conn1.send("SET", &["shared", "db1-changed"]).await;
+
+    let resp = conn2.send("ATOM.EXEC", &[]).await;
+    let parsed = parse_response(&resp);
+    match parsed {
+        RespValue::Array(Some(items)) => {
+            assert_eq!(items.len(), 1);
+            assert_eq!(
+                items[0],
+                RespValue::BulkString(None),
+                "DB0 key missing should read nil"
+            );
+        }
+        other => panic!("expected successful EXEC on DB0 after DB1 write, got {other:?}"),
+    }
+}
+
+/// Issue #79: 存储层 bump 后, 另一连接写入应使 EXEC 返回 nil.
+#[tokio::test]
+async fn issue_79_watch_conflict_from_other_connection_storage_version() {
+    let (addr, _server) = start_ephemeral_server().await;
+    let mut writer = TestConn::connect(addr).await;
+    let mut watcher = TestConn::connect(addr).await;
+
+    let _ = writer.send("SET", &["k", "v1"]).await;
+    let _ = watcher.send("ATOM.WATCH", &["k"]).await;
+    let _ = writer.send("SET", &["k", "v2"]).await;
+
+    let _ = watcher.send("ATOM.MULTI", &[]).await;
+    let _ = watcher.send("SET", &["k", "v3"]).await;
+    let resp = watcher.send("ATOM.EXEC", &[]).await;
+    assert_eq!(
+        parse_response(&resp),
+        RespValue::BulkString(None),
+        "storage-backed WATCH must detect cross-connection write"
+    );
+
+    let resp = writer.send("GET", &["k"]).await;
+    assert_eq!(
+        parse_response(&resp),
+        RespValue::BulkString(Some("v2".into()))
+    );
+}

@@ -101,7 +101,7 @@ sequenceDiagram
 
 AiKv 在 `Connection` 内部维护 `TransactionState`:
 
-1. **`WATCH <key>`**: 查询被监听 Key 的当前版本号并存入 `watched_keys` 字典;
+1. **`WATCH <key>`**: 读取存储层 meta 版本 `(db_index, user_key)` 并存入 `watched_keys`;
 2. **`MULTI`**: 设置 `in_multi = true`, 开启事务收集模式;
 3. **入队阶段**: 在 `in_multi = true` 期间, 除 `EXEC`, `DISCARD`, `WATCH`, `UNWATCH` 外的命令均被放入 `tx_queue`, 立即返回 `+QUEUED`;
 4. **`EXEC`**:

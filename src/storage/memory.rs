@@ -27,6 +27,9 @@ use crate::storage::types::{
     now_ms, KeyspaceStats, KvStorage, ScanResult, StoredValue, ValueType, WriteOp, TTL_NO_EXPIRY,
     WRONGTYPE,
 };
+use crate::storage::watch_version::{
+    decode_version, encode_version, is_watch_meta_user_key, meta_user_key,
+};
 
 pub struct MemoryEngine {
     databases: Vec<RwLock<HashMap<Vec<u8>, StoredValue>>>,
@@ -109,11 +112,34 @@ impl MemoryEngine {
                 let mut map = self.databases[db].write();
                 if Self::remove_expired(&mut map, key) {
                     self.record_expired(1);
+                    if !is_watch_meta_user_key(key) {
+                        Self::bump_watch_version_map(&mut map, key);
+                    }
                 }
                 Ok(None)
             }
             Some(stored) => Ok(Some(stored.clone())),
         }
+    }
+
+    fn read_watch_version_from_map(map: &HashMap<Vec<u8>, StoredValue>, user_key: &[u8]) -> u64 {
+        if is_watch_meta_user_key(user_key) {
+            return 0;
+        }
+        let meta = meta_user_key(user_key);
+        map.get(&meta).map_or(0, |stored| match &stored.value {
+            ValueType::String(v) => decode_version(v),
+            _ => 0,
+        })
+    }
+
+    fn bump_watch_version_map(map: &mut HashMap<Vec<u8>, StoredValue>, user_key: &[u8]) {
+        if is_watch_meta_user_key(user_key) {
+            return;
+        }
+        let next = Self::read_watch_version_from_map(map, user_key).saturating_add(1);
+        let meta = meta_user_key(user_key);
+        map.insert(meta, StoredValue::string(encode_version(next).to_vec()));
     }
 }
 
@@ -189,7 +215,11 @@ impl KvStorage for MemoryEngine {
         self.check_db(db)?;
         let mut map = self.databases[db].write();
         Self::remove_expired(&mut map, key);
-        Ok(map.remove(key).is_some())
+        let deleted = map.remove(key).is_some();
+        if deleted && !is_watch_meta_user_key(key) {
+            Self::bump_watch_version_map(&mut map, key);
+        }
+        Ok(deleted)
     }
 
     async fn exists(&self, db: usize, key: &[u8]) -> Result<bool> {
@@ -236,6 +266,7 @@ impl KvStorage for MemoryEngine {
         let keys: Vec<Vec<u8>> = map
             .iter()
             .filter(|(_, v)| !v.is_expired())
+            .filter(|(k, _)| !is_watch_meta_user_key(k))
             .filter(|(k, _)| glob_match(pattern, k))
             .map(|(k, _)| k.clone())
             .collect();
@@ -259,6 +290,7 @@ impl KvStorage for MemoryEngine {
         let mut valid: Vec<Vec<u8>> = map
             .iter()
             .filter(|(_, v)| !v.is_expired())
+            .filter(|(k, _)| !is_watch_meta_user_key(k))
             .filter(|(k, _)| pattern.is_empty() || glob_match(pattern, k))
             .map(|(k, _)| k.clone())
             .collect();
@@ -278,7 +310,10 @@ impl KvStorage for MemoryEngine {
     async fn len(&self, db: usize) -> Result<usize> {
         self.check_db(db)?;
         let map = self.databases[db].read();
-        let n = map.values().filter(|v| !v.is_expired()).count();
+        let n = map
+            .iter()
+            .filter(|(k, v)| !is_watch_meta_user_key(k) && !v.is_expired())
+            .count();
         Ok(n)
     }
 
@@ -289,8 +324,8 @@ impl KvStorage for MemoryEngine {
         let mut keys = 0usize;
         let mut expires = 0usize;
         let mut ttl_remaining = Vec::new();
-        for v in map.values() {
-            if v.is_expired() {
+        for (k, v) in map.iter() {
+            if is_watch_meta_user_key(k) || v.is_expired() {
                 continue;
             }
             keys += 1;
@@ -429,8 +464,18 @@ impl KvStorage for MemoryEngine {
 
     async fn set_typed(&self, db: usize, key: &[u8], value: StoredValue) -> Result<()> {
         self.check_db(db)?;
-        self.databases[db].write().insert(key.to_vec(), value);
+        let mut map = self.databases[db].write();
+        map.insert(key.to_vec(), value);
+        if !is_watch_meta_user_key(key) {
+            Self::bump_watch_version_map(&mut map, key);
+        }
         Ok(())
+    }
+
+    async fn get_watch_version(&self, db: usize, key: &[u8]) -> Result<u64> {
+        self.check_db(db)?;
+        let map = self.databases[db].read();
+        Ok(Self::read_watch_version_from_map(&map, key))
     }
 
     async fn rename_key(&self, db: usize, old_key: &[u8], new_key: &[u8]) -> Result<()> {
