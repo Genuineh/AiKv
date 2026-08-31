@@ -1,0 +1,17 @@
+target/
+.git/
+.runtime/
+deploy/.runtime/
+.env
+.env.*
+.venv*
+*.log
+*.pid
+tests/
+benches/
+docs/
+e2e/
+examples/
+archive/
+hooks/
+.github/

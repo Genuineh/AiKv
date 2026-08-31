@@ -75,7 +75,7 @@ AiKv 采用四层配置合并, 优先级从低到高: **内置默认值 → TOML
 2. 未指定时依次尝试 `./aikv.toml` (cwd) → `/etc/aikv/aikv.toml`.
 3. 均不存在 → 跳过文件层, 行为与纯 CLI 启动一致.
 
-可复制模板: [`deploy/aikv.toml.example`](../deploy/aikv.toml.example).
+可复制模板: [`deploy/aikv.example.toml`](../deploy/aikv.example.toml).
 
 ### 3.3 容器化部署脚本
 
@@ -89,7 +89,7 @@ AiKv 采用四层配置合并, 优先级从低到高: **内置默认值 → TOML
 ./deploy/down.sh
 ```
 
-- `up-single.sh`: 单机 aidb 模式, 使用 [`deploy/aikv.toml.example`](../deploy/aikv.toml.example) 中的容器路径与 Metrics 端口.
+- `up-single.sh`: 单机 aidb 模式, 使用 [`deploy/aikv.example.toml`](../deploy/aikv.example.toml) 中的容器路径与 Metrics 端口.
 - `up-cluster.sh`: 启动 **6 个节点** 的 Redis Cluster 拓扑.
 - 集群客户端入口: `redis-cli -c -p 6379` (智能客户端, 自动跟随 `-MOVED` / `-ASK` 重定向).
 

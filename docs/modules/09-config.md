@@ -76,11 +76,11 @@ flowchart TD
 - 已知 section 内 **未知键拒绝** (`deny_unknown_fields`), typo 会 fatal.
 - 未开 `cluster` feature 时 `[cluster]` 捕获为 `Option<toml::Value>`, 合并后 emit `ConfigWarning::ClusterSectionIgnored`, 不 fatal.
 
-示例模板: [`deploy/aikv.toml.example`](../../deploy/aikv.toml.example). 容器化部署脚本见 [deployment.md § 3.3](../deployment.md#33-容器化部署脚本).
+示例模板: [`deploy/aikv.example.toml`](../../deploy/aikv.example.toml). 容器化部署脚本见 [deployment.md § 3.3](../deployment.md#33-容器化部署脚本).
 
 ### 容器化部署配置
 
-`deploy/aikv.toml.example` 是单机基线模板, 不包含 `[cluster]` 段.
+`deploy/aikv.example.toml` 是单机基线模板, 不包含 `[cluster]` 段.
 `up-single.sh` 将它复制到 `deploy/.runtime/single/aikv.toml` 后挂载到容器;
 `up-cluster.sh` 为 `node1` 至 `node6` 分别复制模板并追加 `[cluster]`, 写入
 唯一的 `node_id`、Docker service RPC 地址、宿主机 client 地址和
