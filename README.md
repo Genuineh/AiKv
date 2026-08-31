@@ -90,7 +90,7 @@ cargo build --release --no-default-features --features cluster,monitoring
 
 ### 单机运行
 
-可选: 将 [`deploy/aikv.toml.example`](deploy/aikv.toml.example) 复制为 `aikv.toml` 放置于工作目录, 或通过 `--config` 指定; 详见 [docs/modules/09-config.md](docs/modules/09-config.md).
+可选: 将 [`deploy/aikv.example.toml`](deploy/aikv.example.toml) 复制为 `aikv.toml` 放置于工作目录, 或通过 `--config` 指定; 详见 [docs/modules/09-config.md](docs/modules/09-config.md).
 
 ```bash
 # 启动持久化服务 (推荐生产配置)
@@ -107,7 +107,7 @@ redis-cli -p 6379 GET mykey
 
 ### 容器化部署
 
-仓库 `deploy/` 目录提供一键脚本, 基于 [`deploy/aikv.toml.example`](deploy/aikv.toml.example) 生成运行时配置:
+仓库 `deploy/` 目录提供一键脚本, 基于 [`deploy/aikv.example.toml`](deploy/aikv.example.toml) 生成运行时配置:
 
 ```bash
 # 默认 GitHub main 构建 (aidb)

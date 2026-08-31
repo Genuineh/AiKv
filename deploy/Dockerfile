@@ -1,5 +1,5 @@
+# syntax=docker/dockerfile:1
 # Multi-stage build: compile aikv with the GitHub main aidb dependency, ship minimal runtime.
-# rust:bookworm is the available official Bookworm image and ships stable Rust.
 FROM rust:bookworm@sha256:e536cf316987faedfe8ae120f83b70c7df0068fdb4fc9efcce55c71a625001d5 AS builder
 
 RUN apt-get update \
@@ -13,16 +13,27 @@ WORKDIR /src/aikv
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY src ./src
 
-RUN cargo build --locked --release --features cluster,monitoring,compression
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/src/aikv/target \
+    cargo build --locked --release --features cluster,monitoring,compression \
+    && cp /src/aikv/target/release/aikv /usr/local/bin/aikv
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        tini \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /src/aikv/target/release/aikv /usr/local/bin/aikv
+RUN mkdir -p /var/lib/aikv/data /etc/aikv
+
+COPY --from=builder /usr/local/bin/aikv /usr/local/bin/aikv
+
+WORKDIR /var/lib/aikv
 
 EXPOSE 6379 16379 26379 9191
 
-ENTRYPOINT ["/usr/local/bin/aikv"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/aikv"]

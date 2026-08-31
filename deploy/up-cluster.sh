@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.cluster.yaml"
-TEMPLATE="$SCRIPT_DIR/aikv.toml.example"
+TEMPLATE="$SCRIPT_DIR/aikv.example.toml"
 RUNTIME_ROOT="$SCRIPT_DIR/.runtime/cluster"
 PROJECT_NAME="aikv-cluster"
 STARTUP_TIMEOUT_SECONDS="${AIKV_CLUSTER_TIMEOUT_SECONDS:-120}"

@@ -12,6 +12,12 @@ services:
         target: /etc/aikv/aikv.toml
         read_only: true
       - aikv:/var/lib/aikv/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9191/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
 
 volumes:
   aikv:
