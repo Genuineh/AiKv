@@ -80,6 +80,49 @@ pub(super) fn is_multi_key_cmd(cmd: &str) -> bool {
     )
 }
 
+/// 集群模式下在本节点本地执行、不按 `args[0]` 做 slot 路由的命令.
+///
+/// 含管理面命令, 以及 KEYS / SCAN 族 (首参是 pattern 或 cursor, 不是 key).
+#[cfg(feature = "cluster")]
+pub(super) fn is_cluster_local_admin_cmd(cmd: &str) -> bool {
+    matches!(
+        cmd,
+        "cluster"
+            | "ping"
+            | "echo"
+            | "hello"
+            | "quit"
+            | "reset"
+            | "info"
+            | "time"
+            | "config"
+            | "client"
+            | "shutdown"
+            | "readonly"
+            | "readwrite"
+            | "asking"
+            | "select"
+            | "auth"
+            | "save"
+            | "bgsave"
+            | "lastsave"
+            | "command"
+            | "latency"
+            | "slowlog"
+            | "script"
+            | "dbsize"
+            | "flushdb"
+            | "flushall"
+            | "keys"
+            // Cursor-based iteration — MUST NOT be routed by key
+            // (args.first() is the cursor, not a key).
+            | "scan"
+            | "hscan"
+            | "sscan"
+            | "zscan"
+    )
+}
+
 #[cfg(feature = "cluster")]
 pub(super) fn classify_command(cmd: &str) -> crate::cluster::router::CommandType {
     match cmd.to_ascii_lowercase().as_str() {
@@ -90,5 +133,25 @@ pub(super) fn classify_command(cmd: &str) -> crate::cluster::router::CommandType
             crate::cluster::router::CommandType::Read
         }
         _ => crate::cluster::router::CommandType::Write,
+    }
+}
+
+#[cfg(all(test, feature = "cluster"))]
+mod tests {
+    use super::is_cluster_local_admin_cmd;
+
+    /// KEYS/DBSIZE/FLUSH* 首参不是路由 key; 若走 slot 路由会误返 MOVED.
+    #[test]
+    fn keyspace_admin_cmds_are_local() {
+        for cmd in ["keys", "dbsize", "flushdb", "flushall", "scan"] {
+            assert!(
+                is_cluster_local_admin_cmd(cmd),
+                "{cmd} must execute locally without slot routing"
+            );
+        }
+        assert!(
+            !is_cluster_local_admin_cmd("get"),
+            "GET must still go through slot routing"
+        );
     }
 }

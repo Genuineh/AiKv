@@ -7,7 +7,7 @@
 //! Connection ── execute_with_client(cmd, args, db, client_id, proto, cluster_state)
 //!   │
 //!   ├─ [feature cluster] cluster_route:            ┐
-//!   │    admin 白名单 (PING/INFO/SCAN 族等) 直通    │ 命中 → 直接返回
+//!   │    admin 白名单 (PING/INFO/KEYS/DBSIZE/SCAN 族等) 直通 │ 命中 → 直接返回
 //!   │    MIGRATE/RESTORE: 仅写冻结 TRYAGAIN        │ (MOVED/ASK/CROSSSLOT/
 //!   │    多 key 命令: CROSSSLOT 校验               │  TRYAGAIN/CLUSTERDOWN)
 //!   │    (MSET 取偶索引, BLPOP/BRPOP 去末参数)     ┘
@@ -56,7 +56,7 @@ pub use keylock::{KeyLock, KeyLocksGuard};
 #[cfg(feature = "monitoring")]
 use stats::record_command_span_status;
 #[cfg(feature = "cluster")]
-use stats::{classify_command, is_multi_key_cmd};
+use stats::{classify_command, is_cluster_local_admin_cmd, is_multi_key_cmd};
 use stats::{record_command_outcome, record_keyspace_lookup};
 
 pub struct CommandRouter {
@@ -243,38 +243,8 @@ impl CommandRouter {
             }
             return Some(Ok(RespValue::Error(reason)));
         }
-        let admin_cmds = [
-            "cluster",
-            "ping",
-            "echo",
-            "hello",
-            "quit",
-            "reset",
-            "info",
-            "time",
-            "config",
-            "client",
-            "shutdown",
-            "readonly",
-            "readwrite",
-            "asking",
-            "select",
-            "auth",
-            "save",
-            "bgsave",
-            "lastsave",
-            "command",
-            "latency",
-            "slowlog",
-            "script",
-            // Cursor-based iteration — these scan the local keyspace and MUST
-            // NOT be routed by key (args.first() is the cursor, not a key).
-            "scan",
-            "hscan",
-            "sscan",
-            "zscan",
-        ];
-        if admin_cmds.contains(&lower.as_str()) {
+        // 节点本地命令: 不按 args[0] 做 slot 路由 (含无 key / pattern / cursor 族).
+        if is_cluster_local_admin_cmd(&lower) {
             return None;
         }
         // MIGRATE/RESTORE: 平时不走 MOVED/ASK (本地读 + 远端 RESTORE), 但 F-056

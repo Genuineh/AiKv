@@ -138,8 +138,17 @@ redis-cli -p 6379 GET mykey
 `16379`, `16380`, `16381`, `17379`, `17380`, `17381`; MultiRaft 端口依次为
 `26379`, `26380`, `26381`, `27379`, `27380`, `27381`; Metrics 端口为
 `9191-9196`. 本地客户端入口为 `redis-cli -c -p 6379`;
-`MOVED` 地址公布为 `127.0.0.1:<宿主客户端端口>`, 因此该拓扑面向同一台宿主机
-上的客户端.
+默认 `MOVED` 地址公布为 `127.0.0.1:<宿主客户端端口>`, 面向本机客户端.
+远程或跨主机访问时需同时设置宿主机绑定与公布地址:
+
+```bash
+AIKV_BIND_IP=0.0.0.0 AIKV_ANNOUNCE_IP=192.168.1.112 ./deploy/up-cluster.sh
+```
+
+- `AIKV_BIND_IP`: Compose 端口映射的宿主机地址, 默认 `127.0.0.1`
+- `AIKV_ANNOUNCE_IP`: 写入 `client_addr` / `CLUSTER MEET` 的公布 IP, 默认 `127.0.0.1`
+
+单机 Compose (`up-single.sh`) 同样支持 `AIKV_BIND_IP`, 默认仍仅本机可连.
 
 ### 集群部署与运维
 

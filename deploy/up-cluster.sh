@@ -7,6 +7,7 @@ TEMPLATE="$SCRIPT_DIR/aikv.example.toml"
 RUNTIME_ROOT="$SCRIPT_DIR/.runtime/cluster"
 PROJECT_NAME="aikv-cluster"
 STARTUP_TIMEOUT_SECONDS="${AIKV_CLUSTER_TIMEOUT_SECONDS:-120}"
+ANNOUNCE_IP="${AIKV_ANNOUNCE_IP:-127.0.0.1}"
 
 CLIENT_PORTS=(6379 6380 6381 7379 7380 7381)
 RPC_PORTS=(16379 16380 16381 17379 17380 17381)
@@ -71,7 +72,7 @@ generate_configs() {
                 printf 'peers = ["aikv-1:16379"]\n'
             fi
             printf 'cluster_data_port_offset = 10000\n'
-            printf 'client_addr = "127.0.0.1:%s"\n' "$client_port"
+            printf 'client_addr = "%s:%s"\n' "$ANNOUNCE_IP" "$client_port"
             printf 'announce_mode = "fixed"\n'
         } >> "$node_dir/aikv.toml"
     done
@@ -147,7 +148,7 @@ validate_known_nodes() {
 
     for port in "${CLIENT_PORTS[@]}"; do
         [[ -n "$(node_line "$nodes" "$port")" ]] ||
-            die "conflicting cluster topology: no node advertises 127.0.0.1:$port"
+            die "conflicting cluster topology: no node advertises $ANNOUNCE_IP:$port"
     done
 }
 
@@ -182,7 +183,7 @@ meet_missing_nodes() {
             continue
         fi
 
-        response="$(redis_command 6379 CLUSTER MEET "$node_name" "$port" "$rpc_port" 127.0.0.1)"
+        response="$(redis_command 6379 CLUSTER MEET "$node_name" "$port" "$rpc_port" "$ANNOUNCE_IP")"
         [[ "$response" == "OK" ]] ||
             die "CLUSTER MEET for $node_name returned: $response"
     done

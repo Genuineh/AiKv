@@ -52,6 +52,9 @@ description: AiKv Redis Cluster 协议层 — 16384 槽位 CRC16 计算、MOVED/
   - AiKv 内部的 Gossip 仅负责周期性拉取 MetaRaft 拓扑并刷新本地缓存, 严禁使用 Gossip 进行投票选主.
 - **不支持 `CLUSTER RESET`**:
   - 由于元数据受 MetaRaft 共识保护, `CLUSTER RESET` 必须返回明确的报错信息, 禁止客户端在线重置元数据.
+- **节点本地命令不做 slot 路由**:
+  - `PING` / `INFO` / `KEYS` / `DBSIZE` / `FLUSHDB` / `FLUSHALL` / `SCAN` 族等在本节点本地执行;
+  - 其首参是 pattern、cursor 或无参, 不得按 `args[0]` 计算槽位并返回 `-MOVED`.
 
 ---
 
