@@ -92,9 +92,11 @@ flowchart TD
 MetaRaft 端口依次为 `16379`, `16380`, `16381`, `17379`, `17380`, `17381`,
 MultiRaft 端口依次为 `26379`, `26380`, `26381`, `27379`, `27380`, `27381`.
 集群数据卷为 `aikv1-data` 至 `aikv6-data`. 容器内每个节点的监听端口与其
-宿主机映射端口一致. 集群配置的 `announce_mode = "fixed"` 会公布
+宿主机映射端口一致. 集群配置的 `announce_mode = "fixed"` 默认公布
 `127.0.0.1:<宿主机 client 端口>`; 本机客户端应使用 `redis-cli -c -p 6379`
-跟随 `MOVED` 重定向.
+跟随 `MOVED` 重定向. 远程访问时由 `up-cluster.sh` 的 `AIKV_ANNOUNCE_IP`
+覆盖公布地址, 并由 Compose 的 `AIKV_BIND_IP` (默认 `127.0.0.1`) 控制宿主机
+端口绑定; 详见 [deployment.md § 容器化部署](../deployment.md).
 
 ---
 

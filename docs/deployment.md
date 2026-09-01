@@ -129,9 +129,23 @@ AiKv 采用四层配置合并, 优先级从低到高: **内置默认值 → TOML
 旧卷到新卷的数据迁移. 如果 single 和 cluster 容器同时存在, `down.sh` 必须显式
 指定模式以避免误删.
 
-集群对外公布的 client 地址固定为 `127.0.0.1:<宿主客户端端口>`. 这是单主机
-部署约定, 本机 `redis-cli -c -p 6379` 可根据 `MOVED` 自动连接其他节点;
-远程主机或独立 Docker 网络中的客户端不能直接使用这些公布地址.
+集群对外公布的 client 地址默认仍为 `127.0.0.1:<宿主客户端端口>`, 适合本机
+`redis-cli -c -p 6379` 跟随 `MOVED` 重定向. 远程或跨主机访问时须同时设置:
+
+- `AIKV_ANNOUNCE_IP`: 写入各节点 `client_addr` 与 `CLUSTER MEET` 的公布地址
+  (出现在 `MOVED` / `CLUSTER NODES` 中);
+- `AIKV_BIND_IP`: Compose 宿主机端口绑定地址, 默认 `127.0.0.1` (仅本机);
+  对外暴露时设为 `0.0.0.0` 或具体网卡 IP.
+
+二者职责分离: 绑定决定「谁能连上端口」, 公布决定「重定向告诉客户端去哪」.
+只改绑定不改公布时, 外部客户端可连首节点, 但会收到指向 `127.0.0.1` 的
+`MOVED` 而失败.
+
+示例 (局域网单机六节点, 对外公布本机局域网 IP):
+
+```bash
+AIKV_BIND_IP=0.0.0.0 AIKV_ANNOUNCE_IP=192.168.1.112 ./deploy/up-cluster.sh
+```
 
 ### 3.5 环境变量概要
 
@@ -143,6 +157,7 @@ AiKv 采用四层配置合并, 优先级从低到高: **内置默认值 → TOML
 | 可观测 | `AIKV_JSON_LOG`, `AIKV_METRICS_ADDR`, `AIKV_OTLP_ENDPOINT` | 对应 `[observability]`; OTLP 端点 `OTEL_EXPORTER_OTLP_ENDPOINT` 优先于 `AIKV_OTLP_ENDPOINT` |
 | 集群 | `AIKV_CLUSTER_NODE_ID`, `AIKV_CLUSTER_RPC_ADDR`, `AIKV_CLUSTER_PEERS` | 对应 `[cluster]`; peers 逗号分隔 |
 | 已有 env | `AIKV_CLIENT_ADDR`, `AIKV_CLUSTER_ANNOUNCE_MODE`, `AIKV_LINEARIZABLE_READ` | 名称不变, 纳入 env 层 merge; `AIKV_LINEARIZABLE_READ` 仅 `1`/大小写不敏感的 `true` 为真, 其他值均为假 |
+| 部署脚本 | `AIKV_BIND_IP`, `AIKV_ANNOUNCE_IP`, `AIKV_IMAGE`, `AIKV_CLUSTER_TIMEOUT_SECONDS` | 仅 `deploy/` Compose / `up-*.sh` 使用, 不进入进程四层配置 merge |
 | 日志 | `RUST_LOG` | 仅 env, 不参与四层 merge struct |
 
 `--print-config` 可将合并后有效配置以 TOML 格式输出到 stdout (然后继续启动), 便于排查优先级.

@@ -4,8 +4,8 @@ services:
     command: ["--config", "/etc/aikv/aikv.toml"]
     restart: unless-stopped
     ports:
-      - "127.0.0.1:6379:6379"
-      - "127.0.0.1:9191:9191"
+      - "${AIKV_BIND_IP:-127.0.0.1}:6379:6379"
+      - "${AIKV_BIND_IP:-127.0.0.1}:9191:9191"
     volumes:
       - type: bind
         source: ./.runtime/single/aikv.toml
