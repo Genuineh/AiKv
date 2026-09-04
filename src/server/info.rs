@@ -633,6 +633,52 @@ impl<'a> InfoRenderer<'a> {
             append_kv_u64(&mut out, "aidb_sstable_count_total", sst_count);
             let sst_size: u64 = snap.sstable_size_bytes.iter().sum();
             append_kv_u64(&mut out, "aidb_sstable_size_bytes_total", sst_size);
+
+            // 写放大 (WA) 指标
+            append_kv_u64(&mut out, "aidb_wal_written_bytes", snap.wal_written_bytes);
+            append_kv_u64(
+                &mut out,
+                "aidb_flush_written_bytes",
+                snap.flush_written_bytes,
+            );
+            append_kv_u64(
+                &mut out,
+                "aidb_compaction_written_bytes",
+                snap.compaction_written_bytes,
+            );
+            append_kv_u64(
+                &mut out,
+                "aidb_logical_write_bytes",
+                snap.logical_write_bytes,
+            );
+
+            // 读放大 (RA) 指标
+            append_kv_u64(&mut out, "aidb_block_read_bytes", snap.block_read_bytes);
+            append_kv_u64(&mut out, "aidb_logical_read_bytes", snap.logical_read_bytes);
+            append_kv_u64(
+                &mut out,
+                "aidb_compaction_read_bytes",
+                snap.compaction_read_bytes,
+            );
+            append_kv_u64(&mut out, "aidb_bloom_useful", snap.bloom_useful);
+
+            // Compaction 积压
+            append_kv_u64(
+                &mut out,
+                "aidb_compaction_pending_bytes",
+                snap.compaction_pending_bytes,
+            );
+
+            // 写停顿 (Write Stall) 汇总指标
+            let stall_requests: u64 = snap.write_stall_requests.iter().sum();
+            append_kv_u64(&mut out, "aidb_write_stall_requests", stall_requests);
+            let stall_duration_us: u64 = snap.write_stall_duration_sum_us.iter().sum();
+            append_kv_u64(&mut out, "aidb_write_stall_duration_us", stall_duration_us);
+            append_kv_u64(
+                &mut out,
+                "aidb_write_stall_max_duration_us",
+                snap.write_stall_max_duration_us,
+            );
         } else {
             let engine = match self.shared.engine_kind {
                 StorageEngineKind::Memory => "memory",
