@@ -217,19 +217,30 @@ async fn init_cluster(
     };
     let bind_addr = settings.bind;
     let aidb_preset = DbPreset::parse(&settings.aidb_preset).unwrap_or(DbPreset::Default);
+    let shared_opts = server_db_options_with_preset(settings.sync_wal, aidb_preset);
+    let shared_stats = match &cluster_db {
+        Some(db) => db.statistics(),
+        None => Arc::new(aidb::Statistics::new(shared_opts.max_levels)),
+    };
 
     // 1. 打开/重用 DB 引擎 (WAL 必须启用)
     let db = match cluster_db {
         Some(db) => db,
         None => {
-            let opts = server_db_options_with_preset(settings.sync_wal, aidb_preset);
+            let mut opts = shared_opts.clone();
+            opts.statistics = Some(shared_stats.clone());
             aidb::DB::open(data_dir, opts)?
         }
     };
 
-    // 2. 创建 RaftNetworkClientFactory (MetaRaft 专用, 独立快超时)
-    let net_factory =
-        RaftNetworkClientFactory::new(node_id, 0, cluster.meta_rpc_timeout_ms, 64 * 1024 * 1024);
+    // 2. 创建 RaftNetworkClientFactory (MetaRaft 专用, 独立快超时, 注入 shared_stats)
+    let net_factory = RaftNetworkClientFactory::new_with_stats(
+        node_id,
+        0,
+        cluster.meta_rpc_timeout_ms,
+        64 * 1024 * 1024,
+        Some(shared_stats.clone()),
+    );
     let net_factory = Arc::new(parking_lot::RwLock::new(net_factory));
 
     let linearizable_read = cluster.linearizable_read;
@@ -284,8 +295,10 @@ async fn init_cluster(
         tracing::info!("meta raft joining via peers (gRPC auto-discovery)");
     }
 
-    // 6. 创建共享 RaftServiceDispatcher (MetaRaft + MultiRaft 共用).
-    let dispatcher: Arc<RaftServiceDispatcher> = Arc::new(RaftServiceDispatcher::new());
+    // 6. 创建共享 RaftServiceDispatcher (MetaRaft + MultiRaft 共用, 注入 shared_stats).
+    let dispatcher: Arc<RaftServiceDispatcher> = Arc::new(RaftServiceDispatcher::new_with_stats(
+        Some(shared_stats.clone()),
+    ));
 
     // 7. 启动 MetaRaft gRPC (独立端口, 使用共享 dispatcher).
     let rpc_socket: NetAddr = tokio::net::lookup_host(rpc_addr)
@@ -361,10 +374,12 @@ async fn init_cluster(
     let mut data_raft_config = raft_config.clone();
     data_raft_config.log_committer_config =
         Some(aidb::cluster::log_committer::LogCommitterConfig::default());
+    let mut data_options = server_db_options_with_preset(settings.sync_wal, aidb_preset);
+    data_options.statistics = Some(shared_stats.clone());
     let lifecycle_cfg = aidb::cluster::multi_raft_node::LifecycleConfig {
         data_dir: data_dir.to_path_buf(),
         raft_node_config: data_raft_config,
-        options: server_db_options_with_preset(settings.sync_wal, aidb_preset),
+        options: data_options,
         compaction_filter: Some(std::sync::Arc::new(TtlExpireFilter)),
         compaction_removal_listener_factory: Some(std::sync::Arc::new({
             let counters = key_counters;
@@ -697,7 +712,7 @@ async fn main() {
             }
         }
 
-        // 后台定期刷新 uptime / memory 指标
+        // 后台定期刷新 uptime / memory 指标, 并同步底层 aidb 统计至 OTel
         let bg_state = Arc::clone(&state);
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
@@ -705,6 +720,9 @@ async fn main() {
                 interval.tick().await;
                 bg_state.refresh_runtime_metrics().await;
                 bg_state.metrics().refresh_process_metrics();
+                if let Some(stats) = bg_state.storage.aidb_statistics() {
+                    aidb::metrics::sync_to_otel(&stats);
+                }
             }
         });
     }

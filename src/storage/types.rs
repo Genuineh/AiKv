@@ -235,6 +235,11 @@ pub fn is_wrongtype(err: &Error) -> bool {
 
 #[async_trait]
 pub trait KvStorage: Send + Sync {
+    /// 暴露底层 AiDb 引擎的无锁原子统计实例 (若支持)
+    fn aidb_statistics(&self) -> Option<std::sync::Arc<aidb::Statistics>> {
+        None
+    }
+
     async fn get(&self, db: usize, key: &[u8]) -> Result<Option<Vec<u8>>>;
     async fn set(&self, db: usize, key: &[u8], value: &[u8]) -> Result<()>;
     async fn set_with_ttl(

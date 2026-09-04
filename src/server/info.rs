@@ -110,6 +110,7 @@ impl<'a> InfoRenderer<'a> {
             "keysizes" => self.render_keysizes().await,
             "hotkeys" => self.render_hotkeys(),
             "modules" => self.render_modules(),
+            "storage" => self.render_storage(),
             _ => String::new(),
         }
     }
@@ -125,6 +126,7 @@ impl<'a> InfoRenderer<'a> {
         append_section(&mut out, &self.render_cpu());
         append_section(&mut out, &self.render_cluster_section());
         append_section(&mut out, &self.render_keyspace().await);
+        append_section(&mut out, &self.render_storage());
         out
     }
 
@@ -593,6 +595,52 @@ impl<'a> InfoRenderer<'a> {
 
     fn render_modules(&self) -> String {
         "# Modules\r\n".to_string()
+    }
+
+    fn render_storage(&self) -> String {
+        let mut out = String::from("# Storage\r\n");
+        if let Some(stats) = self.storage.aidb_statistics() {
+            append_kv(&mut out, "storage_engine", "aidb");
+            let snap = stats.snapshot();
+            append_kv_u64(&mut out, "aidb_block_cache_hits", snap.block_cache_hits);
+            append_kv_u64(&mut out, "aidb_block_cache_misses", snap.block_cache_misses);
+            append_kv_u64(&mut out, "aidb_block_cache_size", snap.block_cache_size);
+            append_kv_u64(
+                &mut out,
+                "aidb_block_cache_capacity",
+                snap.block_cache_capacity,
+            );
+            append_kv_u64(
+                &mut out,
+                "aidb_memtable_active_bytes",
+                snap.memtable_size_bytes[0],
+            );
+            append_kv_u64(
+                &mut out,
+                "aidb_memtable_frozen_bytes",
+                snap.memtable_size_bytes[1],
+            );
+            append_kv_u64(&mut out, "aidb_wal_size_bytes", snap.wal_size_bytes);
+            append_kv_u64(&mut out, "aidb_total_key_count", snap.total_key_count);
+            append_kv_u64(&mut out, "aidb_sequence", snap.sequence);
+            append_kv_u64(&mut out, "aidb_flush_total", snap.flush_total);
+            append_kv_u64(
+                &mut out,
+                "aidb_bloom_false_positive",
+                snap.bloom_false_positive,
+            );
+            let sst_count: u64 = snap.sstable_count.iter().sum();
+            append_kv_u64(&mut out, "aidb_sstable_count_total", sst_count);
+            let sst_size: u64 = snap.sstable_size_bytes.iter().sum();
+            append_kv_u64(&mut out, "aidb_sstable_size_bytes_total", sst_size);
+        } else {
+            let engine = match self.shared.engine_kind {
+                StorageEngineKind::Memory => "memory",
+                StorageEngineKind::AiDb => "aidb",
+            };
+            append_kv(&mut out, "storage_engine", engine);
+        }
+        out
     }
 }
 

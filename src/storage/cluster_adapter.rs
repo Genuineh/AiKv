@@ -902,6 +902,10 @@ impl StorageAdapter for ClusterDataAdapter {
         self.local.approximate_memory_bytes()
     }
 
+    fn aidb_statistics(&self) -> Option<std::sync::Arc<aidb::Statistics>> {
+        self.local.aidb_statistics()
+    }
+
     fn allow_lazy_expire_delete(&self, key: &[u8]) -> bool {
         match Self::route_read(key) {
             // 只有本节点是该 group 的 Raft leader 时, 惰性过期才值得发起 propose;

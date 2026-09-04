@@ -272,6 +272,10 @@ impl StorageAdapter for AiDbEngine {
     fn approximate_memory_bytes(&self) -> Option<u64> {
         Some(self.db.approximate_memory_bytes())
     }
+
+    fn aidb_statistics(&self) -> Option<std::sync::Arc<aidb::Statistics>> {
+        Some(self.db.statistics())
+    }
 }
 
 #[expect(dead_code)]

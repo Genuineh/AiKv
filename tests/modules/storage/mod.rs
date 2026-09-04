@@ -1,5 +1,6 @@
 pub mod aidb;
 pub mod aidb_blocking;
+pub mod aidb_integration_test;
 pub mod compat;
 pub mod counters;
 pub mod memory;

@@ -61,6 +61,11 @@ pub struct WriteBatchStats {
 
 #[async_trait]
 pub trait StorageAdapter: Send + Sync {
+    /// 暴露底层引擎的无锁原子统计实例 (若支持)
+    fn aidb_statistics(&self) -> Option<std::sync::Arc<aidb::Statistics>> {
+        None
+    }
+
     async fn get(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>>;
     async fn set(&self, key: Vec<u8>, value: Vec<u8>) -> Result<bool>;
     /// 一次提交多笔写. 集群实现须把 ops 全部送进同一 group 的 `GroupSetBatcher`
@@ -470,6 +475,10 @@ impl KvStorageAdapter {
 
 #[async_trait]
 impl KvStorage for KvStorageAdapter {
+    fn aidb_statistics(&self) -> Option<std::sync::Arc<aidb::Statistics>> {
+        self.storage.aidb_statistics()
+    }
+
     async fn get(&self, db: usize, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let stored = self.get_typed(db, key).await?;
         match stored {

@@ -109,6 +109,7 @@ async fn info_default_section_order_and_fields() {
         "CPU",
         "Cluster",
         "Keyspace",
+        "Storage",
     ];
     assert_eq!(headers, expected);
     assert!(text.contains("redis_compatible_version:8.8"));
